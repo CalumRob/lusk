@@ -25,14 +25,22 @@ import type {
   CahierExportRequest,
 } from './cahierExportCapture'
 import {
-  hauteurSousTitre,
   sousTitreComparaison,
   type SousTitreComparaison,
 } from './cahierPdfComparaison'
+import {
+  LARGEUR_CORPS_PT,
+  PAGE_APPROUVEE,
+  PADDING_SECTION_PT,
+  ROLE_PDF,
+  RYTHME_PX,
+  mmDepuisPt,
+  ptDepuisCssPx,
+  rythmePt,
+} from './cahierPdfGrammaire'
 import { visibleGroupedBarSeries } from './cahierFigureReadings'
 import {
   POLICES_PDF,
-  POLICE_PDF,
   chargerPolicePdf,
   type ChargeurPolicePdf,
 } from './cahierPdfFonts'
@@ -82,30 +90,62 @@ export interface OptionsCompositionCahierPdf {
   readonly urlAccueil?: string | null
 }
 
+const mm = mmDepuisPt
+
+/**
+ * Approved A4 box (points → mm). The content box is the desktop column at the
+ * approved reading scale; the header lives above it, the footer below it.
+ */
 const PAGE = {
   width: 210,
   height: 297,
-  margeGauche: 18,
-  margeDroite: 18,
-  margeHaute: 16,
-  margeBasse: 14,
-  largeurUtile: 174,
-  basSources: 30,
-  pied: 9,
-  comparaison: 6,
+  margeGauche: mm(PAGE_APPROUVEE.insetGauchePt),
+  margeDroite: mm(PAGE_APPROUVEE.insetDroitPt),
+  contenuHaut: mm(PAGE_APPROUVEE.hautContenuPt),
+  contenuBas: mm(PAGE_APPROUVEE.hauteurPt - PAGE_APPROUVEE.basContenuPt),
+  largeurUtile: mm(PAGE_APPROUVEE.largeurUtilePt),
+  paddingSection: mm(PADDING_SECTION_PT),
+  largeurCorps: mm(LARGEUR_CORPS_PT),
+  corpsX: mm(PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT),
+  enteteHaut: mm(PAGE_APPROUVEE.hautEnTetePt),
+  filetEntete: mm(PAGE_APPROUVEE.filetEnTetePt),
+  piedComparaison: mm(PAGE_APPROUVEE.hauteurPt - 35),
+  piedInvitation: mm(PAGE_APPROUVEE.hauteurPt - 23),
+  piedNumero: mm(PAGE_APPROUVEE.hauteurPt - 24),
+} as const
+
+/** Source rhythm in mm, named by its CSS-px role. */
+const ESPACE = {
+  titreTableauxHaut: mm(rythmePt(RYTHME_PX.titreTableauxHaut)),
+  titreTableauxBas: mm(rythmePt(RYTHME_PX.titreTableauxBas)),
+  entreTableaux: mm(rythmePt(RYTHME_PX.entreTableaux)),
+  sousTitreTableauBas: mm(rythmePt(RYTHME_PX.sousTitreTableauBas)),
+  sourcesHaut: mm(rythmePt(RYTHME_PX.sourcesHaut)),
+  identiteSousTitre: mm(rythmePt(RYTHME_PX.identiteSousTitre)),
+  apresIdentite: mm(rythmePt(RYTHME_PX.apresIdentite)),
 } as const
 
 const TAILLE = {
-  titrePage: 16,
-  identite: 25,
-  identiteSuite: 12,
-  comparaison: 13.5,
-  prefixeComparaison: 7.5,
-  source: 6.2,
-  pied: 6.4,
-  titreTableaux: 9,
+  titrePage: ROLE_PDF.titrePage.taille,
+  identite: ROLE_PDF.identite.taille,
+  comparaison: ROLE_PDF.comparaisonNom.taille,
+  prefixeComparaison: ROLE_PDF.comparaisonPrefixe.taille,
+  source: ROLE_PDF.source.taille,
+  pied: ROLE_PDF.pied.taille,
+  titreTableaux: ROLE_PDF.titreTableau.taille,
   note: 6.4,
 } as const
+
+/** `line-height: 26px` of the approved comparison subtitle line box. */
+const LIGNE_COMPARAISON = mm(ptDepuisCssPx(26))
+/** `line-height: 1` of `--text-page-heading`. */
+const LIGNE_IDENTITE = mm(TAILLE.identite)
+/** Ascent of the embedded display face, measured on the approved artifacts. */
+const ASCENTE_DISPLAY = 0.945
+
+function espaceTexte(taille: number, em: number): number {
+  return taille * em
+}
 
 function verifierAbandon(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -123,6 +163,12 @@ function setFill(doc: jsPDF, hex: string, opacity = 1): void {
 function setStroke(doc: jsPDF, hex: string, opacity = 1): void {
   doc.setDrawColor(...rgb(hex))
   doc.setGState(doc.GState({ 'stroke-opacity': opacity }))
+}
+
+function largeurAvancePdf(doc: jsPDF, value: string, espacement: number): number {
+  let total = 0
+  for (const caractere of Array.from(value)) total += doc.getTextWidth(caractere)
+  return total + mm(espacement) * Array.from(value).length
 }
 
 function texte(
@@ -143,12 +189,28 @@ function texte(
   doc.setFont(options.police, 'normal')
   doc.setFontSize(options.taille)
   doc.setTextColor(...rgb(options.couleur))
-  doc.setCharSpace(options.espacement ?? 0)
-  doc.text(value, x, y, {
-    align: options.align ?? 'left',
-    baseline: options.baseline ?? 'top',
-  })
+  const espacement = options.espacement ?? 0
+  if (!espacement) {
+    doc.setCharSpace(0)
+    doc.text(value, x, y, {
+      align: options.align ?? 'left',
+      baseline: options.baseline ?? 'top',
+    })
+    return
+  }
+  // The approved generator paints tracked runs glyph by glyph (it never emits a
+  // PDF `Tc` spacing), so a reader's text extraction keeps the word intact.
   doc.setCharSpace(0)
+  const largeur = largeurAvancePdf(doc, value, espacement)
+  const align = options.align ?? 'left'
+  // The trailing tracking space after the last glyph is not visible: align on
+  // the visible run.
+  const largeurVisible = Math.max(0, largeur - mm(espacement))
+  let cx = align === 'center' ? x - largeurVisible / 2 : align === 'right' ? x - largeurVisible : x
+  for (const caractere of Array.from(value)) {
+    doc.text(caractere, cx, y, { baseline: options.baseline ?? 'top' })
+    cx += doc.getTextWidth(caractere) + mm(espacement)
+  }
 }
 
 class MesureJsPdf implements MesureTexte {
@@ -157,10 +219,10 @@ class MesureJsPdf implements MesureTexte {
   largeur(value: string, police: string, taillePt: number, espacementPt = 0): number {
     this.doc.setFont(police, 'normal')
     this.doc.setFontSize(taillePt)
-    this.doc.setCharSpace(espacementPt)
     const width = this.doc.getTextWidth(value)
-    this.doc.setCharSpace(0)
-    return width
+    // `getTextWidth` excludes the active char space (`Tc`): add the glyph
+    // advances so a tracked run is measured with the width the reader receives.
+    return width + mm(espacementPt) * Array.from(value).length
   }
 
   hauteurLigne(police: string, taillePt: number): number {
@@ -285,6 +347,7 @@ interface FigureBloc {
   readonly kind: 'figure'
   readonly projection: CahierFigureProjection
   readonly height: number
+  readonly gapAvant: number
 }
 
 interface TableBloc {
@@ -293,6 +356,7 @@ interface TableBloc {
   readonly rows: readonly LigneTableauPdf[]
   readonly height: number
   readonly continued: boolean
+  readonly gapAvant: number
 }
 
 interface TextBloc {
@@ -300,6 +364,7 @@ interface TextBloc {
   readonly role: 'tables-heading' | 'note' | 'unavailable'
   readonly text: string
   readonly height: number
+  readonly gapAvant: number
 }
 
 type BlocPdf = FigureBloc | TableBloc | TextBloc
@@ -315,7 +380,6 @@ interface DocumentPdf {
   readonly pages: readonly PagePdf[]
   readonly sousTitre: SousTitreComparaison | null
   readonly identityHeight: number
-  readonly headerHeight: number
   readonly sourcesHeight: number
 }
 
@@ -330,10 +394,6 @@ function hauteurTexteSimple(
     * mesure.hauteurLigne(police, taille) * 1.18
 }
 
-function socleBas(): number {
-  return PAGE.pied + PAGE.comparaison
-}
-
 function construireSousTitre(
   capture: CahierExportCapture,
   mesure: MesureTexte,
@@ -341,11 +401,16 @@ function construireSousTitre(
   return sousTitreComparaison(capture.comparison, {
     mesure,
     largeur: PAGE.largeurUtile,
-    police: POLICE_PDF.displayStrong,
+    police: ROLE_PDF.comparaisonNom.police,
     taillePt: TAILLE.comparaison,
-    policePrefixe: POLICE_PDF.body,
+    espacementPt: espaceTexte(TAILLE.comparaison, ROLE_PDF.comparaisonNom.espacementEm),
+    policePrefixe: ROLE_PDF.comparaisonPrefixe.police,
     taillePrefixePt: TAILLE.prefixeComparaison,
   })
+}
+
+function hauteurSousTitreMm(sousTitre: SousTitreComparaison): number {
+  return sousTitre.lignes.length * LIGNE_COMPARAISON
 }
 
 function hauteurIdentite(
@@ -354,21 +419,13 @@ function hauteurIdentite(
   mesure: MesureTexte,
 ): number {
   const lignesFocal = plierTexte(capture.identity.territory.name.toLocaleUpperCase('fr-FR'), mesure, {
-    police: POLICE_PDF.displayStrong,
+    police: ROLE_PDF.identite.police,
     taillePt: TAILLE.identite,
     largeurMax: PAGE.largeurUtile,
   }).length
-  const focal = lignesFocal * mesure.hauteurLigne(POLICE_PDF.displayStrong, TAILLE.identite) * 1.12
-  const sous = sousTitre
-    ? hauteurSousTitre(sousTitre, {
-      mesure,
-      police: POLICE_PDF.displayStrong,
-      taillePt: TAILLE.comparaison,
-      policePrefixe: POLICE_PDF.body,
-      taillePrefixePt: TAILLE.prefixeComparaison,
-    })
-    : 0
-  return focal + (sousTitre ? 3 + sous : 0) + 7
+  const focal = lignesFocal * LIGNE_IDENTITE
+  const sous = sousTitre ? ESPACE.identiteSousTitre + hauteurSousTitreMm(sousTitre) : 0
+  return focal + sous + ESPACE.apresIdentite
 }
 
 function sourcesTexte(source: CahierCaptureSource): string {
@@ -457,40 +514,51 @@ function construirePages(
       .filter((figure) => figure.family === 'aedar-equipment-explorer')
       .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
   )
-  const headerHeight = 25
+  const modelesBars = new Map(
+    capture.figures
+      .filter((figure) => figure.family === 'mobilite-bars')
+      .map((figure) => [figure.slot, figure.model.figure]),
+  )
   const identityHeight = hauteurIdentite(capture, sousTitre, mesure)
   const sourcesLines = capture.sources.map((source) => plierTexte(
     `Source(s) : ${sourcesTexte(source)}`,
     mesure,
-    { police: POLICE_PDF.meta, taillePt: TAILLE.source, largeurMax: 104, casserMotsLongs: true },
+    {
+      police: ROLE_PDF.source.police,
+      taillePt: TAILLE.source,
+      largeurMax: PAGE.largeurCorps,
+      espacementPt: espaceTexte(TAILLE.source, ROLE_PDF.source.espacementEm),
+      casserMotsLongs: true,
+    },
   )).flat().map((ligne) => ligne.texte)
-  const sourcesHeight = Math.max(4, sourcesLines.length * mesure.hauteurLigne(POLICE_PDF.meta, TAILLE.source) * 1.2)
-  const reservePied = socleBas()
-  const sousTitreHauteur = sousTitre
-    ? hauteurSousTitre(sousTitre, {
-      mesure,
-      police: POLICE_PDF.displayStrong,
-      taillePt: TAILLE.comparaison,
-      policePrefixe: POLICE_PDF.body,
-      taillePrefixePt: TAILLE.prefixeComparaison,
-    }) + 3
-    : 0
-  const availableFirst = PAGE.height - PAGE.margeBasse - PAGE.margeHaute - headerHeight - identityHeight - sourcesHeight - reservePied
-  const availableNext = PAGE.height - PAGE.margeBasse - PAGE.margeHaute - headerHeight - 8 - sousTitreHauteur - sourcesHeight - reservePied
+  const sourcesHeight = Math.max(4, sourcesLines.length
+    * mesure.hauteurLigne(ROLE_PDF.source.police, TAILLE.source) * 1.4) + ESPACE.sourcesHaut
+  // The vertically centred section stack: body padding, repeated identity
+  // (with its comparison subtitle), the measured blocks and the sources.
+  const hauteurUtile = PAGE.contenuBas - PAGE.contenuHaut
+  const disponibles = hauteurUtile - 2 * PAGE.paddingSection - identityHeight - sourcesHeight
+  const availableFirst = disponibles
+  const availableNext = disponibles
 
   const blocks: BlocPdf[] = []
   const messagesVus = new Set<string>()
+  let premierBloc = true
   for (const projection of projections) {
     blocks.push({
       kind: 'figure',
       projection,
-      height: hauteurFigurePdf(projection, PAGE.largeurUtile, mesure, {
+      gapAvant: premierBloc ? 0 : ESPACE.entreTableaux,
+      height: hauteurFigurePdf(projection, PAGE.largeurCorps, mesure, {
         comparisonProof: preuveFigureComparative(projection, capture),
         ...(titresDistribution.has(projection.slot)
           ? { distributionTitle: titresDistribution.get(projection.slot) }
           : {}),
+        ...(modelesBars.has(projection.slot)
+          ? { modeleBars: modelesBars.get(projection.slot) }
+          : {}),
       }),
     })
+    premierBloc = false
     for (const item of projection.unavailable) {
       if (messagesVus.has(item.message)) continue
       messagesVus.add(item.message)
@@ -498,7 +566,8 @@ function construirePages(
         kind: 'text',
         role: 'unavailable',
         text: item.message,
-        height: hauteurTexteSimple(item.message, mesure, POLICE_PDF.body, TAILLE.note, PAGE.largeurUtile) + 1,
+        gapAvant: mm(2),
+        height: hauteurTexteSimple(item.message, mesure, ROLE_PDF.comparaisonPrefixe.police, TAILLE.note, PAGE.largeurCorps) + 1,
       })
     }
   }
@@ -506,7 +575,7 @@ function construirePages(
   const tableParts = projections.flatMap((projection) => projection.tables.flatMap((table) => (
     construireTableauxPdf(table, {
       mesure,
-      largeurDisponible: PAGE.largeurUtile,
+      largeurDisponible: PAGE.largeurCorps,
       nomTerritoire: capture.identity.territory.name,
       ownerDisplayed: preuveProprietaire(capture, familySlots(projection)),
     })
@@ -517,13 +586,18 @@ function construirePages(
       kind: 'text',
       role: 'tables-heading',
       text: libelle,
-      height: mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titreTableaux) * 1.4 + 2,
+      // `desktop.js`: heading `margin:24px 0 12px`.
+      gapAvant: ESPACE.titreTableauxHaut,
+      height: mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux) * 1.4,
     })
-    for (const part of tableParts) {
+    for (const [index, part] of tableParts.entries()) {
       blocks.push({
         kind: 'table',
         part,
         rows: part.rows,
+        // The first caption keeps the heading's 12 px bottom margin; stacked
+        // tables keep their 20 px `margin-bottom` (source rhythm, not zero).
+        gapAvant: index === 0 ? ESPACE.titreTableauxBas : ESPACE.entreTableaux,
         height: hauteurTableauPdf(part),
         continued: false,
       })
@@ -536,7 +610,8 @@ function construirePages(
         kind: 'text',
         role: 'note',
         text: note,
-        height: hauteurTexteSimple(note, mesure, POLICE_PDF.body, TAILLE.note, PAGE.largeurUtile) + 1,
+        gapAvant: mm(2),
+        height: hauteurTexteSimple(note, mesure, ROLE_PDF.comparaisonPrefixe.police, TAILLE.note, PAGE.largeurCorps) + 1,
       })
     }
     if (tableParts.some((part) => part.abbreviatedUnavailable)) {
@@ -546,7 +621,8 @@ function construirePages(
           kind: 'text',
           role: 'note',
           text: EXPLICATION_INDISPONIBLE,
-          height: hauteurTexteSimple(EXPLICATION_INDISPONIBLE, mesure, POLICE_PDF.body, TAILLE.note, PAGE.largeurUtile) + 1,
+          gapAvant: mm(2),
+          height: hauteurTexteSimple(EXPLICATION_INDISPONIBLE, mesure, ROLE_PDF.comparaisonPrefixe.police, TAILLE.note, PAGE.largeurCorps) + 1,
         })
       }
     }
@@ -562,7 +638,7 @@ function construirePages(
   }
   const poserBloc = (bloc: BlocPdf) => {
     page.blocks.push(bloc)
-    page.remaining -= bloc.height
+    page.remaining -= bloc.gapAvant + bloc.height
   }
 
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
@@ -572,9 +648,10 @@ function construirePages(
       let first = true
       while (rows.length) {
         const suite = !first || bloc.continued ? 2.8 : 0
-        const hauteurEntete = bloc.part.titleLines.length * 6.4 * 0.3528 * 1.2
+        const gapAvant = first ? bloc.gapAvant : 0
+        const hauteurEntete = bloc.part.titleLines.length * TAILLE.titreTableaux * 0.3528 * 1.2
           + bloc.part.headerHeight + 2 + suite + (bloc.part.unit ? 2.4 : 0)
-        if (page.remaining < hauteurEntete + (rows[0]?.height ?? 0)) {
+        if (page.remaining < gapAvant + hauteurEntete + (rows[0]?.height ?? 0)) {
           if (!page.blocks.length) {
             throw new CahierPdfCompositionError('layout', 'Un tableau ne peut pas commencer sur la page.')
           }
@@ -582,7 +659,7 @@ function construirePages(
         }
         let index = 0
         let hauteur = hauteurEntete
-        while (index < rows.length && hauteur + rows[index]!.height <= page.remaining) {
+        while (index < rows.length && gapAvant + hauteur + rows[index]!.height <= page.remaining) {
           hauteur += rows[index]!.height
           index += 1
         }
@@ -595,6 +672,7 @@ function construirePages(
           rows: rows.slice(0, index),
           height: hauteur,
           continued: !first || bloc.continued,
+          gapAvant,
         })
         rows = rows.slice(index)
         first = false
@@ -605,14 +683,14 @@ function construirePages(
     if (bloc.kind === 'text' && bloc.role === 'tables-heading') {
       const suite = blocks[blockIndex + 1]
       if (suite?.kind === 'table' && page.blocks.length) {
-        const hauteurEntete = suite.part.titleLines.length * 6.4 * 0.3528 * 1.2
+        const hauteurEntete = suite.part.titleLines.length * TAILLE.titreTableaux * 0.3528 * 1.2
           + suite.part.headerHeight + 2 + (suite.rows[0]?.height ?? 0)
-        if (page.remaining < bloc.height + hauteurEntete) {
+        if (page.remaining < bloc.gapAvant + bloc.height + suite.gapAvant + hauteurEntete) {
           nouvellePage()
         }
       }
     }
-    if (bloc.height > page.remaining) {
+    if (bloc.gapAvant + bloc.height > page.remaining) {
       if (!page.blocks.length) {
         throw new CahierPdfCompositionError('layout', 'Un bloc dépasse la page utile.')
       }
@@ -640,14 +718,15 @@ function construirePages(
     pages,
     sousTitre: pages.some((candidate) => candidate.hasComparisonProof) ? sousTitre : null,
     identityHeight,
-    headerHeight,
     sourcesHeight,
   }
 }
 
-async function dessinerMarque(doc: jsPDF, x: number, y: number): Promise<void> {
+async function dessinerMarque(doc: jsPDF, x: number, sommetErmine: number, baseMot: number): Promise<void> {
   // The lockup is drawn from the locked brand paths; the wordmark uses the
-  // Newsreader face actually embedded in the document.
+  // Newsreader face actually embedded in the document. The ermine is em-relative
+  // to the word (`LuskBrand.vue`: width/height 1.18em), never a fixed millimetre.
+  const cote = mm(ROLE_PDF.marqueMot.taille * ROLE_PDF.marqueErmineEm)
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', MARQUE_LUSK_ERMINE.viewBox)
   for (const path of MARQUE_LUSK_ERMINE.chemins) {
@@ -657,12 +736,13 @@ async function dessinerMarque(doc: jsPDF, x: number, y: number): Promise<void> {
     svg.append(node)
   }
   const painter = doc as jsPDF & { svg: (element: Element, options: { x: number; y: number; width: number; height: number }) => Promise<unknown> }
-  await painter.svg(svg, { x, y, width: 13, height: 7.2 })
-  texte(doc, 'lusk', x + 14, y - 0.2, {
-    police: POLICE_PDF.wordmark,
-    taille: 15,
-    couleur: PALETTE_PDF.ink,
-    baseline: 'top',
+  await painter.svg(svg, { x, y: sommetErmine, width: cote, height: cote })
+  texte(doc, 'lusk', x + cote + mm(rythmePt(8)), baseMot, {
+    police: ROLE_PDF.marqueMot.police,
+    taille: ROLE_PDF.marqueMot.taille,
+    couleur: PALETTE_PDF.textPrimary,
+    baseline: 'alphabetic',
+    espacement: espaceTexte(ROLE_PDF.marqueMot.taille, ROLE_PDF.marqueMot.espacementEm),
   })
 }
 
@@ -676,40 +756,57 @@ async function dessinerEntete(
 ): Promise<void> {
   setFill(doc, PALETTE_PDF.paper)
   doc.rect(0, 0, PAGE.width, PAGE.height, 'F')
-  // Notebook margin rule, then the approved header rule.
-  setStroke(doc, PALETTE_PDF.marginSoft)
-  doc.setLineWidth(0.2)
-  doc.line(14, 10, 14, PAGE.height - 10)
-  await dessinerMarque(doc, PAGE.margeGauche, PAGE.margeHaute - 2)
+  await dessinerMarque(doc, PAGE.margeGauche, mm(26.9), mm(36.7))
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-  if (urlAccueil) doc.link(PAGE.margeGauche, PAGE.margeHaute - 3, 26, 9, { url: urlAccueil })
+  if (urlAccueil) doc.link(PAGE.margeGauche, mm(26), mm(20), mm(6), { url: urlAccueil })
   const titre = capture.identity.unit.label
-  texte(doc, titre, PAGE.width / 2, PAGE.margeHaute - 1, {
-    police: POLICE_PDF.display,
+  texte(doc, titre, PAGE.width / 2, mm(41.8), {
+    police: ROLE_PDF.titrePage.police,
     taille: TAILLE.titrePage,
     couleur: PALETTE_PDF.ink,
     align: 'center',
+    baseline: 'alphabetic',
+    espacement: espaceTexte(TAILLE.titrePage, ROLE_PDF.titrePage.espacementEm),
   })
   const territory = capture.identity.territory.name
-  const largeurTerritory = mesure.largeur(territory, POLICE_PDF.bodyStrong, 7.5)
-  const tx = PAGE.width - PAGE.margeDroite - largeurTerritory - 5
-  texte(doc, territory, tx, PAGE.margeHaute, {
-    police: POLICE_PDF.bodyStrong,
-    taille: 7.5,
-    couleur: PALETTE_PDF.margin,
+  const largeurTerritory = mesure.largeur(territory, ROLE_PDF.territoireEntete.police, ROLE_PDF.territoireEntete.taille)
+  // `desktop.js` lays the live territory + external-link icon against the right
+  // edge: the icon keeps its own ~6 pt column.
+  const margeIcone = mm(10.7)
+  const tx = PAGE.width - PAGE.margeDroite - margeIcone
+  texte(doc, territory, tx, mm(36.9), {
+    police: ROLE_PDF.territoireEntete.police,
+    taille: ROLE_PDF.territoireEntete.taille,
+    couleur: PALETTE_PDF.accentPrimary,
+    align: 'right',
+    baseline: 'alphabetic',
   })
   // Small external-link arrow; the whole territory+arrow is the live link.
-  setStroke(doc, PALETTE_PDF.margin)
-  doc.setLineWidth(0.25)
-  const ax = PAGE.width - PAGE.margeDroite - 2.6
-  const ay = PAGE.margeHaute + 0.7
-  doc.line(ax, ay + 1.4, ax + 1.4, ay)
-  doc.line(ax, ay, ax + 1.4, ay)
-  doc.line(ax + 1.4, ay, ax + 1.4, ay + 1.4)
-  if (urlPublique) doc.link(tx - 1, PAGE.margeHaute - 2, largeurTerritory + 8, 6, { url: urlPublique })
+  setStroke(doc, PALETTE_PDF.accentPrimary)
+  doc.setLineWidth(mm(0.7))
+  const ax = PAGE.width - PAGE.margeDroite - mm(4.6)
+  const ay = mm(30.9)
+  doc.line(ax, ay + mm(2.1), ax + mm(2.1), ay)
+  doc.line(ax, ay, ax + mm(2.1), ay)
+  doc.line(ax + mm(2.1), ay, ax + mm(2.1), ay + mm(2.1))
+  if (urlPublique) doc.link(tx - largeurTerritory - mm(1), mm(28.4), largeurTerritory + margeIcone, mm(11), { url: urlPublique })
+  // The approved header rule is the live `.page-heading` border-bottom, not a
+  // notebook margin: canvas red-soft, 1 CSS px.
   setStroke(doc, PALETTE_PDF.marginSoft)
-  doc.setLineWidth(0.35)
-  doc.line(PAGE.margeGauche, PAGE.margeHaute + 9, PAGE.width - PAGE.margeDroite, PAGE.margeHaute + 9)
+  doc.setLineWidth(mm(ptDepuisCssPx(1)))
+  doc.line(PAGE.margeGauche, PAGE.filetEntete, PAGE.width - PAGE.margeDroite, PAGE.filetEntete)
+}
+
+/** The `.cahier--sans-grille .concept-group` surface around the whole section. */
+function dessinerSurfaceSection(doc: jsPDF, haut: number, bas: number): void {
+  setStroke(doc, PALETTE_PDF.figureSurfaceBorder)
+  doc.setLineWidth(mm(ptDepuisCssPx(1)))
+  // Four edges, like the approved border painting: a single closed `re` path is
+  // not a set of measured edges for a reader/tool inspecting the document.
+  doc.line(PAGE.margeGauche, haut, PAGE.margeGauche + PAGE.largeurUtile, haut)
+  doc.line(PAGE.margeGauche, bas, PAGE.margeGauche + PAGE.largeurUtile, bas)
+  doc.line(PAGE.margeGauche, haut, PAGE.margeGauche, bas)
+  doc.line(PAGE.margeGauche + PAGE.largeurUtile, haut, PAGE.margeGauche + PAGE.largeurUtile, bas)
 }
 
 function dessinerIdentite(
@@ -718,55 +815,64 @@ function dessinerIdentite(
   sousTitre: SousTitreComparaison | null,
   mesure: MesureTexte,
   y: number,
-  large: boolean,
   urlPublique: string | null,
 ): number {
   const nom = capture.identity.territory.name.toLocaleUpperCase('fr-FR')
-  const taille = large ? TAILLE.identite : TAILLE.identiteSuite
   const lignes = plierTexte(nom, mesure, {
-    police: POLICE_PDF.displayStrong,
-    taillePt: taille,
+    police: ROLE_PDF.identite.police,
+    taillePt: TAILLE.identite,
     largeurMax: PAGE.largeurUtile,
   })
   let cy = y
-  const hauteur = mesure.hauteurLigne(POLICE_PDF.displayStrong, taille) * 1.12
   for (const ligne of lignes) {
     texte(doc, ligne.texte, PAGE.width / 2, cy, {
-      police: POLICE_PDF.displayStrong,
-      taille,
-      couleur: PALETTE_PDF.ink,
+      police: ROLE_PDF.identite.police,
+      taille: TAILLE.identite,
+      couleur: PALETTE_PDF.editorialMuted,
       align: 'center',
+      espacement: espaceTexte(TAILLE.identite, ROLE_PDF.identite.espacementEm),
     })
-    cy += hauteur
+    cy += LIGNE_IDENTITE
   }
-  if (large && urlPublique) {
-    doc.link(PAGE.margeGauche, y - 1, PAGE.largeurUtile, cy - y, { url: urlPublique })
+  const basIdentite = cy
+  if (urlPublique) {
+    doc.link(PAGE.margeGauche, y - mm(1), PAGE.largeurUtile, basIdentite - y, { url: urlPublique })
   }
-  if (sousTitre) {
-    cy += 1.5
-    const lineHeight = mesure.hauteurLigne(POLICE_PDF.displayStrong, TAILLE.comparaison) * 1.18
-    for (const ligne of sousTitre.lignes) {
-      let cx = PAGE.width / 2
-      const largeurLigne = ligne.reduce((total, run) => total + mesure.largeur(
+  if (!sousTitre) return basIdentite
+  cy += ESPACE.identiteSousTitre
+  // The approved subtitle is one line box with two inline runs: prefix and
+  // names share one alphabetic baseline (measured bottom delta 0.67 pt).
+  const baseline = cy + mm(
+    (ptDepuisCssPx(26) - TAILLE.comparaison) / 2 + ASCENTE_DISPLAY * TAILLE.comparaison,
+  )
+  for (const ligne of sousTitre.lignes) {
+    const largeurLigne = ligne.reduce((total, run) => total + mesure.largeur(
+      run.texte,
+      run.kind === 'prefix' ? ROLE_PDF.comparaisonPrefixe.police : ROLE_PDF.comparaisonNom.police,
+      run.kind === 'prefix' ? TAILLE.prefixeComparaison : TAILLE.comparaison,
+      run.kind === 'prefix' ? 0 : espaceTexte(TAILLE.comparaison, ROLE_PDF.comparaisonNom.espacementEm),
+    ), 0)
+    let cx = PAGE.width / 2 - largeurLigne / 2
+    for (const run of ligne) {
+      const prefixe = run.kind === 'prefix'
+      const espacement = prefixe ? 0 : espaceTexte(TAILLE.comparaison, ROLE_PDF.comparaisonNom.espacementEm)
+      texte(doc, run.texte, cx, baseline, {
+        police: prefixe ? ROLE_PDF.comparaisonPrefixe.police : ROLE_PDF.comparaisonNom.police,
+        taille: prefixe ? TAILLE.prefixeComparaison : TAILLE.comparaison,
+        couleur: PALETTE_PDF.editorialMuted,
+        baseline: 'alphabetic',
+        espacement,
+      })
+      cx += mesure.largeur(
         run.texte,
-        run.kind === 'prefix' ? POLICE_PDF.body : POLICE_PDF.displayStrong,
-        run.kind === 'prefix' ? TAILLE.prefixeComparaison : TAILLE.comparaison,
-      ) + (run.kind === 'prefix' ? 1.2 : 0), 0)
-      cx -= largeurLigne / 2
-      for (const run of ligne) {
-        const police = run.kind === 'prefix' ? POLICE_PDF.body : POLICE_PDF.displayStrong
-        const tailleRun = run.kind === 'prefix' ? TAILLE.prefixeComparaison : TAILLE.comparaison
-        texte(doc, run.texte, cx, cy, {
-          police,
-          taille: tailleRun,
-          couleur: run.kind === 'prefix' ? PALETTE_PDF.muted : PALETTE_PDF.ink,
-        })
-        cx += mesure.largeur(run.texte, police, tailleRun) + (run.kind === 'prefix' ? 1.2 : 0)
-      }
-      cy += lineHeight
+        prefixe ? ROLE_PDF.comparaisonPrefixe.police : ROLE_PDF.comparaisonNom.police,
+        prefixe ? TAILLE.prefixeComparaison : TAILLE.comparaison,
+        espacement,
+      )
     }
+    cy += LIGNE_COMPARAISON
   }
-  return cy + 3
+  return cy
 }
 
 function dessinerTableau(
@@ -782,16 +888,16 @@ function dessinerTableau(
   let cy = y
   for (const ligne of part.titleLines) {
     texte(doc, ligne, x + width / 2, cy, {
-      police: POLICE_PDF.bodyStrong,
-      taille: 8,
-      couleur: PALETTE_PDF.ink,
+      police: ROLE_PDF.titreTableau.police,
+      taille: TAILLE.titreTableaux,
+      couleur: PALETTE_PDF.brand700,
       align: 'center',
     })
-    cy += 3.2
+    cy += mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux) * 1.18
   }
   if (continued) {
     texte(doc, '(suite)', x + width / 2, cy, {
-      police: POLICE_PDF.body,
+      police: ROLE_PDF.comparaisonPrefixe.police,
       taille: 6,
       couleur: PALETTE_PDF.muted,
       align: 'center',
@@ -802,7 +908,7 @@ function dessinerTableau(
   }
   if (part.unit) {
     texte(doc, `Unité : ${part.unit}`, x + width / 2, cy, {
-      police: POLICE_PDF.body,
+      police: ROLE_PDF.comparaisonPrefixe.police,
       taille: 6,
       couleur: PALETTE_PDF.muted,
       align: 'center',
@@ -814,18 +920,17 @@ function dessinerTableau(
   // their actual data cells, not over the row-label column.
   let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
-    const align = colonne.column.kind === 'comparison' ? 'left' : 'left'
     let hy = cy
     for (const [lineIndex, ligne] of colonne.headerLines.entries()) {
       texte(doc, ligne, cx + 1, hy, {
-        police: POLICE_PDF.bodyStrong,
-        taille: 6.4,
+        police: ROLE_PDF.enteteTableauSous.police,
+        taille: ROLE_PDF.enteteTableauSous.taille,
         couleur: PALETTE_PDF.ink,
-        align,
+        align: 'left',
       })
-      if (colonne.column.kind === 'comparison' && part.hasComparison && lineIndex === colonne.headerLines.length - 1) {
-        texte(doc, '¹', cx + 1 + mesure.largeur(ligne, POLICE_PDF.bodyStrong, 6.4) + 0.6, hy, {
-          police: POLICE_PDF.meta,
+      if (colonne.role === 'rang' && part.hasComparison && lineIndex === colonne.headerLines.length - 1) {
+        texte(doc, '¹', cx + 1 + mesure.largeur(ligne, ROLE_PDF.enteteTableauSous.police, ROLE_PDF.enteteTableauSous.taille) + 0.6, hy, {
+          police: ROLE_PDF.legende.police,
           taille: 5.4,
           couleur: PALETTE_PDF.muted,
         })
@@ -837,7 +942,7 @@ function dessinerTableau(
   cy = enteteTop + part.headerHeight
   // Light rule under the header, plus the section's red-margin accent.
   setStroke(doc, PALETTE_PDF.marginSoft)
-  doc.setLineWidth(0.35)
+  doc.setLineWidth(mm(ptDepuisCssPx(1)))
   doc.line(x, cy, x + width, cy)
   // Vertical rules between mode/column groups, spanning the header and every
   // row block on this page part.
@@ -846,7 +951,7 @@ function dessinerTableau(
     if (!separateurVertical(part.columns, index)) continue
     const ruleX = x + part.rowLabelWidth + part.columns.slice(0, index).reduce((sum, colonne) => sum + colonne.width, 0)
     setStroke(doc, PALETTE_PDF.muted, 0.45)
-    doc.setLineWidth(0.2)
+    doc.setLineWidth(mm(0.2))
     doc.line(ruleX, enteteTop, ruleX, cy + hauteurLignes)
   }
   // Rows: complete cells, all relationships retained.
@@ -855,8 +960,8 @@ function dessinerTableau(
     let rh = 0
     row.labelLines.forEach((ligne, index) => {
       texte(doc, ligne, cellX + 1, cy + 1 + index * 2.5, {
-        police: POLICE_PDF.body,
-        taille: 7,
+        police: ROLE_PDF.libelleTableau.police,
+        taille: ROLE_PDF.libelleTableau.taille,
         couleur: PALETTE_PDF.ink,
       })
     })
@@ -865,32 +970,34 @@ function dessinerTableau(
     for (let index = 0; index < part.columns.length; index += 1) {
       const colonne = part.columns[index]!
       const cellule = row.cells[index]!
+      if (colonne.role === 'rang') {
+        texte(doc, cellule.display, cellX + 1, cy + 1, {
+          police: ROLE_PDF.valeurTableau.police,
+          taille: ROLE_PDF.valeurTableau.taille,
+          couleur: PALETTE_PDF.ink,
+        })
+        rh = Math.max(rh, 2.5)
+        cellX += colonne.width
+        continue
+      }
       const lignes = plierTexte(cellule.display, mesure, {
-        police: POLICE_PDF.value,
-        taillePt: 7,
+        police: ROLE_PDF.valeurTableau.police,
+        taillePt: ROLE_PDF.valeurTableau.taille,
         largeurMax: colonne.width - 2,
         casserMotsLongs: cellule.cell.value === null,
       })
       lignes.forEach((ligne, ligneIndex) => {
         texte(doc, ligne.texte, cellX + 1, cy + 1 + ligneIndex * 2.5, {
-          police: POLICE_PDF.value,
-          taille: 7,
+          police: ROLE_PDF.valeurTableau.police,
+          taille: ROLE_PDF.valeurTableau.taille,
           couleur: PALETTE_PDF.ink,
         })
       })
       rh = Math.max(rh, lignes.length * 2.5)
-      if (cellule.rankDisplay) {
-        texte(doc, cellule.rankDisplay, cellX + 1, cy + 1 + lignes.length * 2.5, {
-          police: POLICE_PDF.meta,
-          taille: 5.6,
-          couleur: PALETTE_PDF.brand200,
-        })
-        rh = Math.max(rh, lignes.length * 2.5 + 2.2)
-      }
       cellX += colonne.width
     }
     setStroke(doc, PALETTE_PDF.borderLight)
-    doc.setLineWidth(0.15)
+    doc.setLineWidth(mm(ptDepuisCssPx(1)))
     doc.line(x, cy + row.height - 0.4, x + width, cy + row.height - 0.4)
     cy += row.height
   }
@@ -901,66 +1008,71 @@ function dessinerSources(
   doc: jsPDF,
   capture: CahierExportCapture,
   mesure: MesureTexte,
-  sourcesHeight: number,
   y: number,
   largeur: number,
 ): void {
   let cy = y
+  const espacement = espaceTexte(TAILLE.source, ROLE_PDF.source.espacementEm)
   for (let index = 0; index < capture.sources.length; index += 1) {
     const source = capture.sources[index]!
     const texteSource = `${index === 0 ? 'Source(s) : ' : ''}${sourcesTexte(source)}`
     const lignes = plierTexte(texteSource, mesure, {
-      police: POLICE_PDF.meta,
+      police: ROLE_PDF.source.police,
       taillePt: TAILLE.source,
       largeurMax: largeur,
+      espacementPt: espacement,
       casserMotsLongs: true,
     })
     for (const ligne of lignes) {
       texte(doc, ligne.texte, PAGE.width - PAGE.margeDroite, cy, {
-        police: POLICE_PDF.meta,
+        police: ROLE_PDF.source.police,
         taille: TAILLE.source,
         couleur: PALETTE_PDF.muted,
         align: 'right',
+        espacement,
       })
       if (source.url) {
-        const width = mesure.largeur(ligne.texte, POLICE_PDF.meta, TAILLE.source)
+        const width = mesure.largeur(ligne.texte, ROLE_PDF.source.police, TAILLE.source, espacement)
         doc.link(PAGE.width - PAGE.margeDroite - width, cy - 0.5, width, 2.6, { url: source.url })
       }
-      cy += mesure.hauteurLigne(POLICE_PDF.meta, TAILLE.source) * 1.2
+      cy += mesure.hauteurLigne(ROLE_PDF.source.police, TAILLE.source) * 1.4
     }
   }
-  void sourcesHeight
 }
 
 function dessinerPied(
   doc: jsPDF,
+  mesure: MesureTexte,
   page: number,
   total: number,
   capture: CahierExportCapture,
   urlAccueil: string | null,
   hasComparisonProof: boolean,
 ): void {
-  const footerY = PAGE.height - PAGE.margeBasse - 1
   if (hasComparisonProof && capture.comparison.group) {
     const group = capture.comparison.group.label ?? capture.comparison.group.names.join(', ')
     if (group) {
-      texte(doc, `¹ Groupe comparé : ${group}`, PAGE.margeGauche, footerY - 6.2, {
-        police: POLICE_PDF.body,
-        taille: TAILLE.note,
+      texte(doc, `¹ Groupe comparé : ${group}`, PAGE.margeGauche, PAGE.piedComparaison, {
+        police: ROLE_PDF.pied.police,
+        taille: TAILLE.pied,
         couleur: PALETTE_PDF.muted,
       })
     }
   }
   const host = urlAccueil ? new URL(urlAccueil).host : 'lusk'
   const invitation = `Retrouvez les cartes et explorez les données sur ${host}`
-  texte(doc, invitation, PAGE.margeGauche, footerY, {
-    police: POLICE_PDF.body,
+  texte(doc, invitation, PAGE.margeGauche, PAGE.piedInvitation, {
+    police: ROLE_PDF.pied.police,
     taille: TAILLE.pied,
     couleur: PALETTE_PDF.muted,
+    baseline: 'alphabetic',
   })
-  if (urlAccueil) doc.link(PAGE.margeGauche, footerY - 1, 86, 3.4, { url: urlAccueil })
-  texte(doc, `${page} / ${total}`, PAGE.width - PAGE.margeDroite, footerY, {
-    police: POLICE_PDF.body,
+  if (urlAccueil) {
+    const width = mesure.largeur(invitation, ROLE_PDF.pied.police, TAILLE.pied)
+    doc.link(PAGE.margeGauche, PAGE.piedInvitation - mm(1), width, mm(3.4), { url: urlAccueil })
+  }
+  texte(doc, `${page} / ${total}`, PAGE.width - PAGE.margeDroite, PAGE.piedNumero, {
+    police: ROLE_PDF.pied.police,
     taille: TAILLE.pied,
     couleur: PALETTE_PDF.muted,
     align: 'right',
@@ -1089,46 +1201,38 @@ export async function composerCahierPdf(
     const page = documentPdf.pages[index]!
     if (index > 0) doc.addPage('a4', 'portrait')
     await dessinerEntete(doc, capture, mesure, urlAccueil, urlPublique, signal)
-    let top = PAGE.margeHaute + documentPdf.headerHeight
-    if (index === 0) {
-      top = dessinerIdentite(
-        doc,
-        capture,
-        page.hasComparisonProof ? documentPdf.sousTitre : null,
-        mesure,
-        top + 3,
-        true,
-        urlPublique,
-      )
-    } else {
-      top = dessinerIdentite(
-        doc,
-        capture,
-        page.hasComparisonProof ? documentPdf.sousTitre : null,
-        mesure,
-        top + 2,
-        false,
-        urlPublique,
-      )
-    }
-    const reserveBas = documentPdf.sourcesHeight + PAGE.pied + PAGE.comparaison + 4
-    const hauteurContenu = page.blocks.reduce((sum, bloc) => sum + bloc.height, 0)
-    const disponible = PAGE.height - PAGE.margeBasse - reserveBas - top
-    const decalage = Math.max(0, (disponible - hauteurContenu) / 2)
-    let cy = top + decalage
+    const sousTitrePage = page.hasComparisonProof ? documentPdf.sousTitre : null
+    const identitePage = hauteurIdentite(capture, sousTitrePage, mesure)
+    const hauteurContenu = page.blocks.reduce((sum, bloc) => sum + bloc.gapAvant + bloc.height, 0)
+    const hauteurSection = 2 * PAGE.paddingSection + identitePage + hauteurContenu + documentPdf.sourcesHeight
+    const hauteurUtile = PAGE.contenuBas - PAGE.contenuHaut
+    const inset = Math.max(0, (hauteurUtile - hauteurSection) / 2)
+    const frameTop = PAGE.contenuHaut + inset
+    const frameBottom = frameTop + hauteurSection
+    dessinerSurfaceSection(doc, frameTop, frameBottom)
+    let cy = dessinerIdentite(
+      doc,
+      capture,
+      sousTitrePage,
+      mesure,
+      frameTop + PAGE.paddingSection,
+      urlPublique,
+    ) + ESPACE.apresIdentite
     for (const bloc of page.blocks) {
       verifierAbandon(signal)
+      cy += bloc.gapAvant
       if (bloc.kind === 'figure') {
         const modele = modelesBars.get(bloc.projection.slot)
         const modeleCourbe = modelesCourbes.get(bloc.projection.slot)
         const distributionTitle = titresDistribution.get(bloc.projection.slot)
         try {
-          cy += await dessinerFigurePdf({
+          const start = cy
+          await dessinerFigurePdf({
             doc,
             mesure,
-            x: PAGE.margeGauche,
+            x: PAGE.corpsX,
             y: cy,
-            width: PAGE.largeurUtile,
+            width: PAGE.largeurCorps,
             signal,
             chargerImage,
             comparisonProof: preuveFigureComparative(bloc.projection, capture),
@@ -1139,6 +1243,7 @@ export async function composerCahierPdf(
               ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
               : {}),
           }, bloc.projection)
+          cy = start + bloc.height
         } catch (error) {
           if (error instanceof CahierPdfAssetError) {
             throw new CahierPdfCompositionError('asset', error.message, error)
@@ -1147,22 +1252,22 @@ export async function composerCahierPdf(
         }
       } else if (bloc.kind === 'table') {
         const start = cy
-        dessinerTableau(doc, mesure, bloc.part, bloc.rows, PAGE.margeGauche, cy, PAGE.largeurUtile, bloc.continued)
+        dessinerTableau(doc, mesure, bloc.part, bloc.rows, PAGE.corpsX, cy, PAGE.largeurCorps, bloc.continued)
         cy = start + bloc.height
       } else {
         const align = bloc.role === 'tables-heading' ? 'center' : 'left'
-        const police = bloc.role === 'tables-heading' ? POLICE_PDF.bodyStrong : POLICE_PDF.body
+        const police = bloc.role === 'tables-heading' ? ROLE_PDF.titreTableau.police : ROLE_PDF.comparaisonPrefixe.police
         const taille = bloc.role === 'tables-heading' ? TAILLE.titreTableaux : TAILLE.note
         const couleur = bloc.role === 'tables-heading' ? PALETTE_PDF.ink : PALETTE_PDF.muted
         const lignes = plierTexte(bloc.text, mesure, {
           police,
           taillePt: taille,
-          largeurMax: PAGE.largeurUtile,
+          largeurMax: PAGE.largeurCorps,
           casserMotsLongs: true,
         })
         const start = cy
         for (const ligne of lignes) {
-          texte(doc, ligne.texte, align === 'center' ? PAGE.width / 2 : PAGE.margeGauche, cy, {
+          texte(doc, ligne.texte, align === 'center' ? PAGE.width / 2 : PAGE.corpsX, cy, {
             police,
             taille,
             couleur,
@@ -1179,11 +1284,10 @@ export async function composerCahierPdf(
       doc,
       capture,
       mesure,
-      documentPdf.sourcesHeight,
-      PAGE.height - PAGE.margeBasse - PAGE.pied - PAGE.comparaison - documentPdf.sourcesHeight - 1,
-      104,
+      cy + ESPACE.sourcesHaut,
+      PAGE.largeurCorps,
     )
-    dessinerPied(doc, index + 1, total, capture, urlAccueil, page.hasComparisonProof)
+    dessinerPied(doc, mesure, index + 1, total, capture, urlAccueil, page.hasComparisonProof)
   }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error

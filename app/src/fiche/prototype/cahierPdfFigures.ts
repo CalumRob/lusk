@@ -57,6 +57,13 @@ import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import { POLICE_PDF } from './cahierPdfFonts'
+import {
+  ROLE_PDF,
+  RYTHME_PX,
+  mmDepuisPt,
+  ptDepuisCssPx,
+  rythmePt,
+} from './cahierPdfGrammaire'
 
 export interface ImagePdf {
   readonly dataUrl: string
@@ -97,13 +104,31 @@ export interface OptionsFigurePdf {
 }
 
 const TAILLE = {
-  titre: 8.5,
-  sousTitre: 7,
-  axe: 6,
-  tick: 5.6,
-  legende: 6.4,
+  titre: ROLE_PDF.titreFigure.taille,
+  sousTitre: ROLE_PDF.sousTitreFigure.taille,
+  axe: ROLE_PDF.axe.taille,
+  tick: ROLE_PDF.tick.taille,
+  legende: ROLE_PDF.legende.taille,
   valeur: 14,
   note: 6.2,
+} as const
+
+/** Owner mark geometry (`.cahier-figure-legend-mark`, in mm). */
+/** Plot bottom → legend row: clears the axis title, then the 10 px legend margin. */
+const LEGENDE_APRES_PLOT = mmDepuisPt(16)
+
+const MARQUE = {
+  ligneLargeur: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueLargeur)),
+  ligneHauteur: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueHauteur)),
+  rayon: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueRayon)),
+  carre: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueCarre)),
+  point: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marquePoint)),
+  trait: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueTraitLargeur)),
+  tickLargeur: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueTickLargeur)),
+  tickHauteur: mmDepuisPt(ptDepuisCssPx(RYTHME_PX.marqueTickHauteur)),
+  gapMarque: mmDepuisPt(rythmePt(RYTHME_PX.legendeGapMarque)),
+  gapColonne: mmDepuisPt(rythmePt(RYTHME_PX.legendeGapColonne)),
+  gapLigne: mmDepuisPt(rythmePt(RYTHME_PX.legendeGapLigne)),
 } as const
 
 function rgb(value: string): [number, number, number] {
@@ -148,12 +173,29 @@ export function textePdf(
   doc.setFont(options.police, 'normal')
   doc.setFontSize(options.taille)
   doc.setTextColor(...rgb(options.couleur))
-  doc.setCharSpace(options.espacement ?? 0)
-  doc.text(texte, x, y, {
-    align: options.align ?? 'left',
-    baseline: options.baseline ?? 'top',
-  })
+  const espacement = options.espacement ?? 0
+  if (!espacement) {
+    doc.setCharSpace(0)
+    doc.text(texte, x, y, {
+      align: options.align ?? 'left',
+      baseline: options.baseline ?? 'top',
+    })
+    return
+  }
+  // Tracked roles are painted glyph by glyph (the approved generator's own
+  // DOM paint), so extraction keeps the word intact and no `Tc` is emitted.
   doc.setCharSpace(0)
+  let largeur = 0
+  for (const caractere of Array.from(texte)) largeur += doc.getTextWidth(caractere)
+  largeur += mmDepuisPt(espacement) * Array.from(texte).length
+  const align = options.align ?? 'left'
+  // The trailing tracking space after the last glyph is not visible.
+  const largeurVisible = Math.max(0, largeur - mmDepuisPt(espacement))
+  let cx = align === 'center' ? x - largeurVisible / 2 : align === 'right' ? x - largeurVisible : x
+  for (const caractere of Array.from(texte)) {
+    doc.text(caractere, cx, y, { baseline: options.baseline ?? 'top' })
+    cx += doc.getTextWidth(caractere) + mmDepuisPt(espacement)
+  }
 }
 
 function dessinerTextePlie(
@@ -265,7 +307,7 @@ function couleurSerie(value: string): string {
 
 function titreLignes(projection: CahierFigureProjection, width: number, mesure: MesureTexte): string[] {
   return plierTexte(projection.title, mesure, {
-    police: POLICE_PDF.bodyStrong,
+    police: ROLE_PDF.titreFigure.police,
     taillePt: TAILLE.titre,
     largeurMax: width,
     casserMotsLongs: true,
@@ -274,7 +316,7 @@ function titreLignes(projection: CahierFigureProjection, width: number, mesure: 
 
 function hauteurTitre(projection: CahierFigureProjection, width: number, mesure: MesureTexte): number {
   return titreLignes(projection, width, mesure).length
-    * mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titre) * 1.18
+    * mesure.hauteurLigne(ROLE_PDF.titreFigure.police, TAILLE.titre) * 1.18
 }
 
 function dessinerTitre(
@@ -288,71 +330,186 @@ function dessinerTitre(
   let cy = y
   for (const ligne of titreLignes(projection, width, mesure)) {
     textePdf(doc, ligne, x + width / 2, cy, {
-      police: POLICE_PDF.bodyStrong,
+      police: ROLE_PDF.titreFigure.police,
       taille: TAILLE.titre,
-      couleur: PALETTE_PDF.ink,
+      couleur: PALETTE_PDF.brand700,
       align: 'center',
     })
-    cy += mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE.titre) * 1.18
+    cy += mesure.hauteurLigne(ROLE_PDF.titreFigure.police, TAILLE.titre) * 1.18
   }
   return cy - y
 }
 
-function legendeLigne(
+export type MarqueLegende = 'line' | 'dash' | 'square' | 'dot' | 'tick' | 'slash'
+
+export interface ElementLegende {
+  readonly label: string
+  /** Series colour of the owner mark; unused by the pure height measure. */
+  readonly color?: string
+  readonly marker?: MarqueLegende
+  /** Legacy callers describe the native mark with a boolean. */
+  readonly dash?: boolean
+  readonly square?: boolean
+}
+
+function marqueDe(element: ElementLegende): MarqueLegende {
+  if (element.marker) return element.marker
+  if (element.dash) return 'dash'
+  if (element.square) return 'square'
+  return 'line'
+}
+
+function largeurMarque(marker: MarqueLegende): number {
+  switch (marker) {
+    case 'line':
+    case 'dash': return MARQUE.ligneLargeur
+    case 'square':
+    case 'dot': return MARQUE.carre
+    case 'tick': return MARQUE.tickLargeur
+    case 'slash': return MARQUE.trait
+  }
+}
+
+function hauteurMarque(marker: MarqueLegende): number {
+  switch (marker) {
+    case 'line':
+    case 'dash': return MARQUE.ligneHauteur
+    case 'square':
+    case 'dot': return MARQUE.carre
+    case 'tick': return MARQUE.tickHauteur
+    case 'slash': return MARQUE.trait
+  }
+}
+
+function largeurElementLegende(mesure: MesureTexte, element: ElementLegende): number {
+  return largeurMarque(marqueDe(element))
+    + MARQUE.gapMarque
+    + mesure.largeur(element.label, ROLE_PDF.legende.police, TAILLE.legende)
+}
+
+function dessinerMarqueLegende(
+  doc: jsPDF,
+  element: ElementLegende,
+  x: number,
+  centreY: number,
+): void {
+  const marker = marqueDe(element)
+  const largeur = largeurMarque(marker)
+  const hauteur = hauteurMarque(marker)
+  const y = centreY - hauteur / 2
+  const couleur = element.color ?? PALETTE_PDF.editorialMuted
+  switch (marker) {
+    case 'line':
+      setFill(doc, couleur)
+      doc.roundedRect(x, y, largeur, hauteur, MARQUE.rayon, MARQUE.rayon, 'F')
+      break
+    case 'dash':
+      doc.setLineDashPattern([ptDepuisCssPx(3), ptDepuisCssPx(2)].map((pt) => mmDepuisPt(pt)), 0)
+      setStroke(doc, couleur)
+      doc.setLineWidth(mmDepuisPt(ptDepuisCssPx(2)))
+      doc.line(x, centreY, x + largeur, centreY)
+      doc.setLineDashPattern([], 0)
+      break
+    case 'square':
+      setFill(doc, couleur)
+      doc.rect(x, y, largeur, hauteur, 'F')
+      break
+    case 'dot':
+      setFill(doc, couleur)
+      doc.circle(x + largeur / 2, centreY, largeur / 2, 'F')
+      break
+    case 'tick':
+      setStroke(doc, couleur)
+      doc.setLineWidth(largeur)
+      doc.line(x + largeur / 2, y, x + largeur / 2, y + hauteur)
+      break
+    case 'slash':
+      setStroke(doc, couleur)
+      doc.setLineWidth(mmDepuisPt(ptDepuisCssPx(2)))
+      doc.circle(x + largeur / 2, centreY, largeur / 2.4, 'S')
+      doc.line(x + 1, centreY + hauteur / 2 - 1, x + largeur - 1, centreY - hauteur / 2 + 1)
+      break
+  }
+  resetOpacity(doc)
+}
+
+/**
+ * The figure's one centred legend row (or centred wrapped rows), as
+ * `.cahier-figure-legend { display:flex; flex-wrap:wrap; justify-content:center;
+ * gap:8px 18px; font:var(--text-caption) }`. Labels use the metadata face and
+ * the muted legend colour; the owner mark keeps the series colour.
+ */
+function dessinerLegendeFigure(
   doc: jsPDF,
   mesure: MesureTexte,
-  elements: readonly { label: string; color: string; dash?: boolean; square?: boolean }[],
+  elements: readonly ElementLegende[],
   x: number,
   y: number,
   width: number,
 ): number {
-  const hauteur = mesure.hauteurLigne(POLICE_PDF.body, TAILLE.legende) * 1.3
-  let cx = x
-  let cy = y
+  if (!elements.length) return 0
+  const ligneTexte = mesure.hauteurLigne(ROLE_PDF.legende.police, TAILLE.legende) * 1.35
+  const hauteurLigne = Math.max(ligneTexte, hauteurMarque('tick'))
+  const lignes: ElementLegende[][] = []
+  let courant: ElementLegende[] = []
+  let largeur = 0
   for (const element of elements) {
-    const labelWidth = mesure.largeur(element.label, POLICE_PDF.body, TAILLE.legende) + 7
-    if (cx > x && cx + labelWidth > x + width) {
-      cx = x
-      cy += hauteur
+    const largeurElement = largeurElementLegende(mesure, element)
+    if (courant.length > 0 && largeur + MARQUE.gapColonne + largeurElement > width) {
+      lignes.push(courant)
+      courant = []
+      largeur = 0
     }
-    if (element.dash) {
-      doc.setLineDashPattern([1, 1], 0)
-      setStroke(doc, element.color)
-      doc.setLineWidth(0.25)
-      doc.line(cx, cy + hauteur * 0.45, cx + 4.5, cy + hauteur * 0.45)
-      doc.setLineDashPattern([], 0)
-    } else {
-      setFill(doc, element.color)
-      doc.rect(cx, cy + hauteur * 0.28, 4.5, element.square ? 3.2 : 1.4, 'F')
-    }
-    textePdf(doc, element.label, cx + 5.6, cy + hauteur * 0.04, {
-      police: POLICE_PDF.body,
-      taille: TAILLE.legende,
-      couleur: PALETTE_PDF.ink,
-    })
-    cx += labelWidth
-    resetOpacity(doc)
+    largeur += (courant.length ? MARQUE.gapColonne : 0) + largeurElement
+    courant.push(element)
   }
-  return cy + hauteur - y
+  if (courant.length) lignes.push(courant)
+
+  let cy = y
+  for (const [ligneIndex, ligne] of lignes.entries()) {
+    const largeurLigne = ligne.reduce((total, element, index) => (
+      total + (index ? MARQUE.gapColonne : 0) + largeurElementLegende(mesure, element)
+    ), 0)
+    // `.cahier-figure-legend` centres the row; the owner marks hang to the left
+    // of their label, so centre the *labels* block (the readable row) rather
+    // than letting the first mark shift every label right.
+    const decalageMarque = largeurMarque(marqueDe(ligne[0]!)) + MARQUE.gapMarque
+    let cx = x + (width - largeurLigne) / 2 - decalageMarque / 2
+    const centreY = cy + hauteurLigne / 2
+    for (const element of ligne) {
+      dessinerMarqueLegende(doc, element, cx, centreY)
+      textePdf(doc, element.label, cx + largeurMarque(marqueDe(element)) + MARQUE.gapMarque, centreY, {
+        police: ROLE_PDF.legende.police,
+        taille: TAILLE.legende,
+        couleur: PALETTE_PDF.editorialMuted,
+        baseline: 'middle',
+      })
+      cx += largeurElementLegende(mesure, element) + MARQUE.gapColonne
+    }
+    cy += hauteurLigne + (ligneIndex < lignes.length - 1 ? MARQUE.gapLigne : 0)
+  }
+  return cy - y
 }
 
 function hauteurLegende(
   mesure: MesureTexte,
-  elements: readonly { label: string }[],
+  elements: readonly ElementLegende[],
   width: number,
 ): number {
   if (!elements.length) return 0
+  const ligneTexte = mesure.hauteurLigne(ROLE_PDF.legende.police, TAILLE.legende) * 1.35
+  const hauteurLigne = Math.max(ligneTexte, hauteurMarque('tick'))
   let largeur = 0
   let lignes = 1
   for (const element of elements) {
-    const labelWidth = mesure.largeur(element.label, POLICE_PDF.body, TAILLE.legende) + 7
-    if (largeur > 0 && largeur + labelWidth > width) {
+    const largeurElement = largeurElementLegende(mesure, element)
+    if (largeur > 0 && largeur + MARQUE.gapColonne + largeurElement > width) {
       lignes += 1
       largeur = 0
     }
-    largeur += labelWidth
+    largeur += (largeur > 0 ? MARQUE.gapColonne : 0) + largeurElement
   }
-  return lignes * mesure.hauteurLigne(POLICE_PDF.body, TAILLE.legende) * 1.3
+  return lignes * hauteurLigne + (lignes - 1) * MARQUE.gapLigne
 }
 
 function hauteurCartesPdf(maps: CahierMapsProjection | null | undefined, width: number): number {
@@ -401,40 +558,54 @@ function dessinerAxes(
 ): void {
   const { x, y, height, xTicks, yTicks, xTitle, yTitle, plotLeft, plotBottom, plotWidth, plotHeight } = options
   void plotHeight
+  const tickSpace = ROLE_PDF.tick.taille * ROLE_PDF.tick.espacementEm
   for (const tick of yTicks) {
     if (tick.label === null) continue
     textePdf(doc, tick.label, x + plotLeft - 1.4, y + tick.position - 2, {
-      police: POLICE_PDF.meta,
+      police: ROLE_PDF.tick.police,
       taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
+      couleur: PALETTE_PDF.editorialMuted,
       align: 'right',
+      espacement: tickSpace,
     })
   }
   for (const tick of xTicks) {
     if (tick.label === null) continue
     textePdf(doc, tick.label, x + tick.position, y + plotBottom + 1, {
-      police: POLICE_PDF.body,
+      police: ROLE_PDF.tick.police,
       taille: TAILLE.tick,
-      couleur: PALETTE_PDF.muted,
+      couleur: PALETTE_PDF.editorialMuted,
       align: 'center',
+      espacement: tickSpace,
     })
   }
   textePdf(doc, xTitle, x + plotLeft + plotWidth / 2, y + plotBottom + 5.2, {
-    police: POLICE_PDF.body,
+    police: ROLE_PDF.axe.police,
     taille: TAILLE.axe,
-    couleur: PALETTE_PDF.muted,
+    couleur: PALETTE_PDF.editorialMuted,
     align: 'center',
+    espacement: TAILLE.axe * ROLE_PDF.axe.espacementEm,
   })
   doc.saveGraphicsState()
   // jsPDF's center alignment subtracts half the unrotated width from x before
   // rotation. Center along the rotated baseline instead, keeping the label in
   // its own panel and clear of the neighbouring panel's title.
-  const titleWidth = mesure.largeur(yTitle, POLICE_PDF.body, TAILLE.axe)
-  const tickWidth = Math.max(0, ...yTicks.map((tick) => mesure.largeur(tick.label ?? '', POLICE_PDF.meta, TAILLE.tick)))
-  doc.setFont(POLICE_PDF.body, 'normal')
+  const titleWidth = mesure.largeur(
+    yTitle,
+    ROLE_PDF.axe.police,
+    TAILLE.axe,
+    TAILLE.axe * ROLE_PDF.axe.espacementEm,
+  )
+  const tickWidth = Math.max(0, ...yTicks.map((tick) => mesure.largeur(tick.label ?? '', ROLE_PDF.tick.police, TAILLE.tick, TAILLE.tick * ROLE_PDF.tick.espacementEm)))
+  doc.setFont(ROLE_PDF.axe.police, 'normal')
   doc.setFontSize(TAILLE.axe)
-  doc.setTextColor(...rgb(PALETTE_PDF.muted))
+  doc.setTextColor(...rgb(PALETTE_PDF.editorialMuted))
+  // The approved vertical axis title is one rotated run (desktop.js), so a
+  // reader keeps the whole role name; char space is converted to the document
+  // unit (jsPDF's `Tc` takes the doc unit, the role owns points).
+  doc.setCharSpace(mmDepuisPt(TAILLE.axe * ROLE_PDF.axe.espacementEm))
   doc.text(yTitle, x + plotLeft - tickWidth - 3.2, y + height / 2 + titleWidth / 2, { angle: 90 })
+  doc.setCharSpace(0)
   doc.restoreGraphicsState()
 }
 
@@ -473,13 +644,13 @@ async function dessinerRampes(
   const panelWidth = (width - gap * (nombre - 1)) / nombre
   const plotHeight = 42
   const panelTitles = projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
-    police: POLICE_PDF.bodyMedium,
+    police: ROLE_PDF.sousTitreFigure.police,
     taillePt: TAILLE.sousTitre,
     largeurMax: panelWidth,
     casserMotsLongs: true,
   }).map((ligne) => ligne.texte))
   const titleHeight = Math.max(...panelTitles.map((lines) => lines.length))
-    * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+    * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
   let bas = y + titleHeight
   for (let index = 0; index < projection.ramps.length; index += 1) {
     const ramp = projection.ramps[index]!
@@ -487,12 +658,12 @@ async function dessinerRampes(
     let py = y
     for (const ligne of panelTitles[index]!) {
       textePdf(doc, ligne, px + panelWidth / 2, py, {
-        police: POLICE_PDF.bodyMedium,
+        police: ROLE_PDF.sousTitreFigure.police,
         taille: TAILLE.sousTitre,
-        couleur: PALETTE_PDF.ink,
+        couleur: PALETTE_PDF.brand700,
         align: 'center',
       })
-      py += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+      py += mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
     }
     const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue])))
@@ -503,14 +674,18 @@ async function dessinerRampes(
       margin: { top: 2, right: 2, bottom: 2, left: 9 },
     } as const
     const initialTicks = rampGeometry(rampPoints(firstSeries), panelScale, initialGeometry, ramp.yAxis.unit).yTicks
-    const tickWidth = Math.max(0, ...initialTicks.map((tick) => mesure.largeur(tick.label ?? '', POLICE_PDF.meta, TAILLE.tick)))
+    const tickWidth = Math.max(0, ...initialTicks.map((tick) => mesure.largeur(tick.label ?? '', ROLE_PDF.tick.police, TAILLE.tick, TAILLE.tick * ROLE_PDF.tick.espacementEm)))
     const nativeGeometry = { ...initialGeometry, margin: {
       ...initialGeometry.margin, left: Math.max(initialGeometry.margin.left, tickWidth + 5.3),
     } }
     const geom = rampGeometry(rampPoints(firstSeries), panelScale, nativeGeometry, ramp.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+    }
+    // Native access-ramp grid draws one vertical line per time cut on both axes.
+    for (const tick of geom.xTicks) {
+      svgLine(svg, tick.position, nativeGeometry.margin.top, tick.position, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
     svgLine(
       svg,
@@ -518,7 +693,7 @@ async function dessinerRampes(
       plotHeight - nativeGeometry.margin.bottom,
       panelWidth - nativeGeometry.margin.right,
       plotHeight - nativeGeometry.margin.bottom,
-      PALETTE_PDF.ink,
+      PALETTE_PDF.figureAxis,
       cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx),
     )
     for (const serie of ramp.series) {
@@ -565,10 +740,18 @@ async function dessinerRampes(
       plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
       plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    const legend = legendeLigne(doc, mesure, rampLegend(projection, Boolean(options.comparisonProof)), px, py + plotHeight + 8, panelWidth)
-    bas = Math.max(bas, py + plotHeight + 8 + legend)
+    bas = Math.max(bas, py + plotHeight)
   }
-  return bas - y
+  // One centred legend for the whole figure, not one per panel.
+  const legend = dessinerLegendeFigure(
+    doc,
+    mesure,
+    rampLegend(projection, Boolean(options.comparisonProof)),
+    x,
+    bas + LEGENDE_APRES_PLOT,
+    width,
+  )
+  return bas + LEGENDE_APRES_PLOT + legend - y
 }
 
 async function dessinerCourbe(
@@ -593,7 +776,7 @@ async function dessinerCourbe(
     plotWidth / CSS_PX_EN_MM,
     plotWidth,
     projection.marker?.detail ?? null,
-    (label) => mesure.largeur(label ?? '', POLICE_PDF.body, TAILLE.tick) / CSS_PX_EN_MM,
+    (label) => mesure.largeur(label ?? '', ROLE_PDF.tick.police, TAILLE.tick, TAILLE.tick * ROLE_PDF.tick.espacementEm) / CSS_PX_EN_MM,
     new Set((modeleCourbe.trajectory?.ticks ?? [])
       .filter((tick) => tick.mobile === true)
       .map((tick) => tick.detail)),
@@ -601,9 +784,13 @@ async function dessinerCourbe(
   const yTicks = native.yTicks
   const svg = svgCanvas(plotWidth, plotHeight)
   for (const tick of yTicks) {
-    svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+    svgLine(svg, nativeGeometry.margin.left, tick.position, plotWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
   }
-  svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+  // Native curve grid keeps every declared x tick as a vertical gridline.
+  for (const tick of native.xTicks) {
+    svgLine(svg, tick.position, nativeGeometry.margin.top, tick.position, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+  }
+  svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, plotWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
   const focalPath = curveSeriesPath(modeleCourbe.points, modeleCourbe, native)
   if (focalPath) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -661,10 +848,11 @@ async function dessinerCourbe(
     plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
   })
   const legend = [
-    { label: 'Valeur du territoire', color: PALETTE_PDF.brand500 },
-    ...(options.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.brand200, dash: true }] : []),
+    { label: 'Valeur du territoire', color: PALETTE_PDF.brand500, marker: 'line' as const },
+    ...(options.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.brand200, marker: 'dash' as const }] : []),
   ]
-  return plotY + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, plotY + plotHeight + 8, width) - y
+  const legendY = plotY + plotHeight + LEGENDE_APRES_PLOT
+  return legendY + dessinerLegendeFigure(doc, mesure, legend, x, legendY, width) - y
 }
 
 async function dessinerBarres(
@@ -684,9 +872,9 @@ async function dessinerBarres(
   const svg = svgCanvas(width, nativeGeometry.height)
   const yTicks = mobiliteBarYTicks(scale, nativeGeometry)
   for (const tick of yTicks) {
-    svgLine(svg, nativeGeometry.margin.left, tick.position, width - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+    svgLine(svg, nativeGeometry.margin.left, tick.position, width - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
   }
-  svgLine(svg, nativeGeometry.margin.left, plotBottom, width - nativeGeometry.margin.right, plotBottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+  svgLine(svg, nativeGeometry.margin.left, plotBottom, width - nativeGeometry.margin.right, plotBottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
   modele.categories.forEach((category, categoryIndex) => {
     const focalColor = couleurSerie(mobiliteBarTone(category))
     if (!category.segments.length) {
@@ -731,14 +919,15 @@ async function dessinerBarres(
     ...modele.categories.flatMap((category) => category.segments.map((segment) => ({
       label: segment.legendLabel ?? segment.label,
       color: couleurSerie(mobiliteBarSegmentColor(segment)),
-      square: true,
+      marker: 'square' as const,
     }))),
     ...(comparisonAligned
-      ? [{ label: 'Groupe comparé', color: couleurSerie('color-mix(in srgb, var(--cahier-theme-strong) 45%, var(--paper))'), square: true }]
+      ? [{ label: 'Groupe comparé', color: couleurSerie('color-mix(in srgb, var(--cahier-theme-strong) 45%, var(--paper))'), marker: 'square' as const }]
       : []),
   ]
-  const legendHeight = legendeLigne(doc, mesure, legend, x, cy + 2 + nativeGeometry.height + 8, width)
-  let bas = cy + 2 + nativeGeometry.height + 8 + legendHeight
+  const legendY = cy + 2 + nativeGeometry.height + LEGENDE_APRES_PLOT
+  const legendHeight = dessinerLegendeFigure(doc, mesure, legend, x, legendY, width)
+  let bas = legendY + legendHeight
   if (projection.maps && projection.maps.status !== 'none') {
     bas += await dessinerCartes(options, projection.maps, bas + 2)
   }
@@ -754,7 +943,7 @@ async function dessinerBarresGroupees(
   const panelWidth = (width - gap) / 2
   const plotHeight = 42
   const leftTitle = plierTexte(projection.volume.title, mesure, {
-    police: POLICE_PDF.bodyMedium,
+    police: ROLE_PDF.sousTitreFigure.police,
     taillePt: TAILLE.sousTitre,
     largeurMax: panelWidth,
     casserMotsLongs: true,
@@ -762,18 +951,18 @@ async function dessinerBarresGroupees(
   const rightTitle = plierTexte(
     options.distributionTitle ?? projection.distribution.figure.xAxisTitle,
     mesure,
-    { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true },
+    { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true },
   ).map((ligne) => ligne.texte)
   const drawGrouped = async (originX: number, figure: CahierGroupedVerticalBarFigureData, hidden: readonly string[], titleLines: string[], unit: string) => {
     let cy = y
     for (const line of titleLines) {
       textePdf(doc, line, originX + panelWidth / 2, cy, {
-        police: POLICE_PDF.bodyMedium,
+        police: ROLE_PDF.sousTitreFigure.police,
         taille: TAILLE.sousTitre,
-        couleur: PALETTE_PDF.ink,
+        couleur: PALETTE_PDF.brand700,
         align: 'center',
       })
-      cy += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+      cy += mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
     }
     const visible = visibleGroupedBarSeries(figure, hidden)
     const scale = groupedBarScaleFromFigure(visible)
@@ -782,9 +971,9 @@ async function dessinerBarresGroupees(
     const svg = svgCanvas(panelWidth, plotHeight)
     const ticks = groupedBarTicksFromFigure(figure, nativeGeometry, bar, scale)
     for (const tick of ticks.y) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
-    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+    svgLine(svg, nativeGeometry.margin.left, nativeGeometry.height - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, nativeGeometry.height - nativeGeometry.margin.bottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
     visible.forEach((series, seriesIndex) => {
       figure.categories.forEach((_category, categoryIndex) => {
         const value = series.values[categoryIndex]
@@ -807,19 +996,20 @@ async function dessinerBarresGroupees(
       plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
       plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    const legend = visible.map((series) => ({ label: series.label, color: couleurSerie(series.color) }))
-    return cy + 2 + plotHeight + 8 + legendeLigne(doc, mesure, legend, originX, cy + 2 + plotHeight + 8, panelWidth)
+    // The native grouped chart has no legend of its own; the explorer's one
+    // shared mode legend is painted once under the whole figure below.
+    return cy + 2 + plotHeight
   }
   const leftBottom = await (async () => {
     let cy = y
     for (const line of leftTitle) {
       textePdf(doc, line, x + panelWidth / 2, cy, {
-        police: POLICE_PDF.bodyMedium,
+        police: ROLE_PDF.sousTitreFigure.police,
         taille: TAILLE.sousTitre,
-        couleur: PALETTE_PDF.ink,
+        couleur: PALETTE_PDF.brand700,
         align: 'center',
       })
-      cy += mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18
+      cy += mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
     }
     const values = projection.volume.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue]))
@@ -830,9 +1020,13 @@ async function dessinerBarresGroupees(
     const geom = rampGeometry(points, scale, nativeGeometry, projection.volume.yAxis.unit)
     const svg = svgCanvas(panelWidth, plotHeight)
     for (const tick of geom.yTicks) {
-      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.border, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+      svgLine(svg, nativeGeometry.margin.left, tick.position, panelWidth - nativeGeometry.margin.right, tick.position, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
     }
-    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.ink, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
+    // The volume ramp is the same native ramp grammar: vertical grid per cut.
+    for (const tick of geom.xTicks) {
+      svgLine(svg, tick.position, nativeGeometry.margin.top, tick.position, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureGrid, cssPxToMm(CAHIER_FIGURE_STROKE.gridWidthPx))
+    }
+    svgLine(svg, nativeGeometry.margin.left, plotHeight - nativeGeometry.margin.bottom, panelWidth - nativeGeometry.margin.right, plotHeight - nativeGeometry.margin.bottom, PALETTE_PDF.figureAxis, cssPxToMm(CAHIER_FIGURE_STROKE.axisWidthPx))
     for (const serie of projection.volume.series) {
       const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
       const seriePoints = rampPoints(serie)
@@ -842,6 +1036,20 @@ async function dessinerBarresGroupees(
         node.setAttribute('fill', 'none')
         node.setAttribute('stroke', color)
         node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.widthPx)))
+        node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
+        node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
+        svg.append(node)
+      }
+      // The native volume ramp draws its displayed reference layer as dashed
+      // paths in the series colour, exactly like the access ramps.
+      for (const path of rampPaths(seriePoints, (point) => point.referenceValue, geom.x, geom.y)) {
+        const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        node.setAttribute('d', path)
+        node.setAttribute('fill', 'none')
+        node.setAttribute('stroke', color)
+        node.setAttribute('stroke-width', String(cssPxToMm(CAHIER_FIGURE_STROKE.comparisonWidthPx)))
+        node.setAttribute('stroke-opacity', String(CAHIER_FIGURE_STROKE.comparisonOpacity))
+        node.setAttribute('stroke-dasharray', dashArrayMm(CAHIER_FIGURE_STROKE.comparisonDashPx))
         node.setAttribute('stroke-linecap', CAHIER_FIGURE_STROKE.linecap)
         node.setAttribute('stroke-linejoin', CAHIER_FIGURE_STROKE.linejoin)
         svg.append(node)
@@ -865,14 +1073,21 @@ async function dessinerBarresGroupees(
       plotWidth: panelWidth - nativeGeometry.margin.left - nativeGeometry.margin.right,
       plotHeight: plotHeight - nativeGeometry.margin.top - nativeGeometry.margin.bottom,
     })
-    const legend = projection.volume.series.map((serie) => ({
-      label: serie.label,
-      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
-    }))
-    return cy + 2 + plotHeight + 8 + legendeLigne(doc, mesure, legend, x, cy + 2 + plotHeight + 8, panelWidth)
+    return cy + 2 + plotHeight
   })()
   const rightBottom = await drawGrouped(x + panelWidth + gap, projection.distribution.figure, projection.distribution.hiddenSeriesKeys, rightTitle, options.distributionUnit ?? '')
-  return Math.max(leftBottom, rightBottom) - y
+  const legend = [
+    ...projection.volume.series.map((serie) => ({
+      label: serie.label,
+      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
+      marker: 'line' as const,
+    })),
+    ...(options.comparisonProof
+      ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, marker: 'dash' as const }]
+      : []),
+  ]
+  const legendY = Math.max(leftBottom, rightBottom) + LEGENDE_APRES_PLOT
+  return legendY + dessinerLegendeFigure(doc, mesure, legend, x, legendY, width) - y
 }
 
 /* The following thin adapters keep the shared native geometry calls typed
@@ -994,9 +1209,9 @@ async function dessinerProfil(
   const elements = projection.buckets.map((bucket) => ({
     label: `${bucket.label} (${bucket.count})`,
     color: couleurSerie(AEDAR_TIME_MODE_COLORS[bucket.key] ?? (bucket.key === 'inaccessible' ? PALETTE_PDF.textTertiary : PALETTE_PDF.muted)),
-    square: true,
+    marker: 'square' as const,
   }))
-  cy += legendeLigne(doc, mesure, elements, x, cy, width)
+  cy += dessinerLegendeFigure(doc, mesure, elements, x, cy, width)
   return cy - y
 }
 
@@ -1150,26 +1365,31 @@ export function hauteurFigurePdf(
   projection: CahierFigureProjection,
   width: number,
   mesure: MesureTexte,
-  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle'>,
+  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle' | 'modeleBars'>,
 ): number {
   const titre = hauteurTitre(projection, width, mesure)
+  const gapLegende = LEGENDE_APRES_PLOT
   switch (projection.family) {
     case 'aedar-ramps': {
       const panelWidth = width / Math.max(1, projection.ramps.length)
       const titles = Math.max(...projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
-        police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true,
+        police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true,
       }).length))
-      const legend = hauteurLegende(mesure, rampLegend(projection, Boolean(options?.comparisonProof)), panelWidth)
-      return titles * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18 + 2 + 42 + 8 + legend
+      const legend = hauteurLegende(mesure, rampLegend(projection, Boolean(options?.comparisonProof)), width)
+      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18 + 2 + 42 + gapLegende + legend
     }
     case 'aedar-equipment-explorer': {
       const panelWidth = width / 2
       const rightTitle = options?.distributionTitle ?? projection.distribution.figure.xAxisTitle
       const titles = Math.max(
-        plierTexte(projection.volume.title, mesure, { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
-        plierTexte(rightTitle, mesure, { police: POLICE_PDF.bodyMedium, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
+        plierTexte(projection.volume.title, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
+        plierTexte(rightTitle, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
       )
-      return titles * mesure.hauteurLigne(POLICE_PDF.bodyMedium, TAILLE.sousTitre) * 1.18 + 2 + 42 + 8 + 8
+      const legend = hauteurLegende(mesure, [
+        ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!) })),
+        ...(options?.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, dash: true }] : []),
+      ], width)
+      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18 + 2 + 42 + gapLegende + legend
     }
     case 'aedar-car-overview': {
       const scalars = Math.ceil(Math.max(1, projection.scalars.length) / 2) * 22
@@ -1182,17 +1402,30 @@ export function hauteurFigurePdf(
       const colonnes = Math.ceil(projection.types.length / 5)
       const tile = Math.min((width - 4) / colonnes, 6)
       const legend = hauteurLegende(mesure, projection.buckets.map((bucket) => ({ label: `${bucket.label} (${bucket.count})` })), width)
-      return titre + tile * 5 + 8 + legend
+      return titre + tile * 5 + 2 + legend
     }
     case 'mobilite-bars': {
       const maps = hauteurCartesPdf(projection.maps, width)
-      return titre + 2 + 48 + 8 + 8 + maps
+      const modele = options?.modeleBars
+      const legend = modele
+        ? hauteurLegende(mesure, modele.categories.flatMap((category) => [
+          ...category.segments.map((segment) => ({ label: segment.legendLabel ?? segment.label })),
+          ...(category.segments.length ? [] : [{ label: category.label }]),
+        ]), width)
+        : 8
+      return titre + 2 + 48 + gapLegende + legend + maps
     }
     case 'mobilite-share': {
       const lines = projection.notes.length + (projection.stateMessage ? 1 : 0)
       return titre + 40 + lines * 3
     }
-    case 'mobilite-curve': return titre + 2 + 45 + 8 + 8
+    case 'mobilite-curve': {
+      const legend = hauteurLegende(mesure, [
+        { label: 'Valeur du territoire' },
+        ...(options?.comparisonProof ? [{ label: 'Groupe comparé' }] : []),
+      ], width)
+      return titre + 2 + 45 + gapLegende + legend
+    }
   }
 }
 

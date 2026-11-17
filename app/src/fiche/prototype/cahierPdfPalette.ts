@@ -28,6 +28,12 @@ export const PALETTE_PDF = {
   paperDeep: couleurPdf('--paper-deep'),
   ink: couleurPdf('--ink'),
   muted: couleurPdf('--muted'),
+  /** `--editorial-muted`: the focal identity, comparison names and legends. */
+  editorialMuted: couleurPdf('--editorial-muted'),
+  /** `.page-heading-territory` uses `--accent-primary`. */
+  accentPrimary: couleurPdf('--accent-primary'),
+  /** `LuskBrand.vue` wordmark colour. */
+  textPrimary: couleurPdf('--text-primary'),
   margin: couleurPdf('--red'),
   marginSoft: couleurPdf('--red-soft'),
   border: couleurPdf('--editorial-page-border-color'),
@@ -35,6 +41,21 @@ export const PALETTE_PDF = {
   textTertiary: couleurPdf('--text-tertiary'),
   brand200: couleurPdf('--brand-200'),
   brand500: couleurPdf('--brand-500'),
+  /** `.cahier-figure-title` uses `--brand-700`. */
+  brand700: couleurPdf('--brand-700'),
+  /**
+   * `.cahier--sans-grille .concept-group` surface border:
+   * `color-mix(in srgb, var(--cahier-theme) 24%, var(--paper))`.
+   */
+  figureSurfaceBorder: couleurPdf('color-mix(in srgb, var(--cahier-theme) 24%, var(--paper))'),
+  /**
+   * Native figure grid stroke, shared by the four plotted figures:
+   * `color-mix(in srgb, var(--cahier-theme) 17%, transparent)`, composited on
+   * the actual editorial paper (the PDF has one opaque ground).
+   */
+  figureGrid: couleurPdf('color-mix(in srgb, var(--cahier-theme) 17%, transparent)'),
+  /** Native figure axis stroke: `var(--cahier-theme-strong)`. */
+  figureAxis: couleurPdf('var(--cahier-theme-strong)'),
   themeMobiliteStrong: couleurPdf('--cahier-theme-strong'),
   themeMobilite: couleurPdf('--cahier-theme'),
   modeFoot: couleurPdf('--cahier-mode-foot'),

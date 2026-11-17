@@ -7,6 +7,14 @@
  * when the real cell width cannot hold the word — reported once under the
  * tables. A table wider than the page is split into coherent column groups and
  * continued with repeated headers, never scaled down.
+ *
+ * The approved generator prints the served comparison rank as its own `Rang`
+ * column next to the compared group (`desktop.js`: headers
+ * `['Temps','Mode',territory,'Groupe comparé','Rang']`, value
+ * `row.comparison.rank ?? '—'`). The rank is therefore a column, never a second
+ * micro-line under the value, and it is only ever the producer-served display:
+ * `formatServedRank` has already folded absent/1-of-1 ranks to null, and the
+ * painter writes the approved em dash for that absence. Nothing is recomputed.
  */
 import type {
   CahierFigureTable,
@@ -16,22 +24,31 @@ import type {
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte, tronquerParMesure } from './cahierPdfMesure'
 import { PALETTE_PDF } from './cahierPdfPalette'
-import { POLICE_PDF } from './cahierPdfFonts'
+import { ROLE_PDF } from './cahierPdfGrammaire'
 
 export const TAILLE_TABLEAU = {
-  titre: 8,
-  entete: 6.4,
-  cellule: 7,
-  note: 6.2,
-  rang: 5.6,
+  titre: ROLE_PDF.titreTableau.taille,
+  entete: ROLE_PDF.enteteTableauSous.taille,
+  enteteMode: ROLE_PDF.enteteTableauMode.taille,
+  cellule: ROLE_PDF.valeurTableau.taille,
+  libelle: ROLE_PDF.libelleTableau.taille,
 } as const
 
 export const INDISPONIBLE = 'Indisponible'
 export const INDISPONIBLE_ABREGEE = 'Indisp.'
 export const EXPLICATION_INDISPONIBLE = 'Indisp. : valeur indisponible.'
+export const RANG_ABSENT = '—'
+
+export type RoleColonneTableauPdf = 'valeur' | 'rang'
 
 export interface ColonneTableauPdf {
+  /** Stable key: the source column key, or `${source}:rang`. */
+  readonly key: string
+  /** The source column this PDF column displays (a rank column keeps its comparison column). */
   readonly column: CahierTableColumn
+  readonly role: RoleColonneTableauPdf
+  /** Mode/column group: focal, comparison and rank of one mode stay together. */
+  readonly groupe: string
   readonly width: number
   readonly headerLines: readonly string[]
   readonly headerHeight: number
@@ -39,8 +56,8 @@ export interface ColonneTableauPdf {
 
 export interface CelluleTableauPdf {
   readonly cell: CahierTableCell
+  readonly role: RoleColonneTableauPdf
   readonly display: string
-  readonly rankDisplay: string | null
 }
 
 export interface LigneTableauPdf {
@@ -80,12 +97,7 @@ function largeurCellule(
   cell: CahierTableCell,
   mesure: MesureTexte,
 ): number {
-  return Math.max(
-    mesure.largeur(cell.display, POLICE_PDF.value, TAILLE_TABLEAU.cellule),
-    cell.rankDisplay
-      ? mesure.largeur(cell.rankDisplay, POLICE_PDF.meta, TAILLE_TABLEAU.rang)
-      : 0,
-  )
+  return mesure.largeur(cell.display, ROLE_PDF.valeurTableau.police, ROLE_PDF.valeurTableau.taille)
 }
 
 function estNumerique(cell: CahierTableCell): boolean {
@@ -99,28 +111,20 @@ function mesurerEntete(
   nomTerritoire: string | null,
 ): readonly string[] {
   const compact = nomTerritoire !== null && column.label === nomTerritoire
+  const commun = {
+    police: ROLE_PDF.enteteTableauSous.police,
+    taillePt: ROLE_PDF.enteteTableauSous.taille,
+    largeurMax: largeur - 2,
+    casserMotsLongs: true,
+  } as const
   if (compact) {
-    const lignes = plierTexte(column.label, mesure, {
-      police: POLICE_PDF.bodyStrong,
-      taillePt: TAILLE_TABLEAU.entete,
-      largeurMax: largeur - 2,
-      casserMotsLongs: true,
-    })
+    const lignes = plierTexte(column.label, mesure, commun)
     if (lignes.length <= 2) return lignes.map((ligne) => ligne.texte)
     const first = lignes[0]!.texte
     const reste = lignes.slice(1).map((ligne) => ligne.texte).join(' ')
-    return [first, tronquerParMesure(reste, mesure, {
-      police: POLICE_PDF.bodyStrong,
-      taillePt: TAILLE_TABLEAU.entete,
-      largeurMax: largeur - 2,
-    })]
+    return [first, tronquerParMesure(reste, mesure, commun)]
   }
-  return plierTexte(column.label, mesure, {
-    police: POLICE_PDF.bodyStrong,
-    taillePt: TAILLE_TABLEAU.entete,
-    largeurMax: largeur - 2,
-    casserMotsLongs: true,
-  }).map((ligne) => ligne.texte)
+  return plierTexte(column.label, mesure, commun).map((ligne) => ligne.texte)
 }
 
 export class CahierPdfTableLayoutError extends Error {
@@ -131,9 +135,77 @@ export class CahierPdfTableLayoutError extends Error {
   }
 }
 
+/** The explicit `Rang` column that follows one compared-group column. */
+function colonneRang(column: CahierTableColumn): ColonneTableauPdf['column'] {
+  return {
+    ...column,
+    key: `${column.key}:rang`,
+    label: 'Rang',
+    unit: null,
+    kind: 'comparison',
+  }
+}
+
+/**
+ * Reading order of one table: a mode's focal value, its compared-group value and
+ * the served rank stay adjacent, as in the approved desktop grouped table.
+ * Series-keyed families are regrouped by their mode; flat families already
+ * arrive as focal/comparison pairs and keep their source order.
+ */
+function ordonnerColonnes(columns: readonly CahierTableColumn[]): readonly CahierTableColumn[] {
+  if (!columns.some((column) => column.seriesKey !== null)) return columns
+  const groupes = new Map<string, CahierTableColumn[]>()
+  for (const column of columns) {
+    const groupe = column.seriesKey ?? column.key
+    const liste = groupes.get(groupe) ?? []
+    liste.push(column)
+    groupes.set(groupe, liste)
+  }
+  return [...groupes.values()].flat()
+}
+
+/**
+ * One focal/comparison pair is one group: a flat table's consecutive focal and
+ * comparison columns stay together (and receive the rank column), while a
+ * series-keyed table groups all its mode columns.
+ */
+function groupesSource(columns: readonly CahierTableColumn[]): readonly (readonly CahierTableColumn[])[] {
+  if (columns.some((column) => column.seriesKey !== null)) {
+    const groupes = new Map<string, CahierTableColumn[]>()
+    for (const column of columns) {
+      const groupe = column.seriesKey ?? column.key
+      const liste = groupes.get(groupe) ?? []
+      liste.push(column)
+      groupes.set(groupe, liste)
+    }
+    return [...groupes.values()]
+  }
+  const groupes: CahierTableColumn[][] = []
+  let index = 0
+  while (index < columns.length) {
+    const column = columns[index]!
+    const suivant = columns[index + 1]
+    if (column.kind === 'focal' && suivant?.kind === 'comparison') {
+      groupes.push([column, suivant])
+      index += 2
+    } else {
+      groupes.push([column])
+      index += 1
+    }
+  }
+  return groupes
+}
+
+interface ColonneAffichage {
+  readonly column: CahierTableColumn
+  readonly role: RoleColonneTableauPdf
+  readonly groupe: string
+  readonly natural: number
+}
+
 /**
  * Build the coherent page parts of one table. Column groups never split a
- * focal/comparison pair (`seriesKey`) and every part repeats the row label.
+ * focal/comparison/rank group (`seriesKey`) and every part repeats the row label.
  */
 export function construireTableauxPdf(
   table: CahierFigureTable,
@@ -146,8 +218,8 @@ export function construireTableauxPdf(
       sourceKey: table.key,
       title: table.title,
       titleLines: plierTexte(table.title, mesure, {
-        police: POLICE_PDF.bodyStrong,
-        taillePt: TAILLE_TABLEAU.titre,
+        police: ROLE_PDF.titreTableau.police,
+        taillePt: ROLE_PDF.titreTableau.taille,
         largeurMax: largeurDisponible,
       }).map((ligne) => ligne.texte),
       columns: [],
@@ -176,11 +248,22 @@ export function construireTableauxPdf(
     36,
     Math.max(
       20,
-      ...table.rows.map((row) => mesure.largeur(row.label, POLICE_PDF.body, TAILLE_TABLEAU.cellule) + 4),
+      ...table.rows.map((row) => mesure.largeur(
+        row.label,
+        ROLE_PDF.libelleTableau.police,
+        ROLE_PDF.libelleTableau.taille,
+      ) + 4),
     ),
   )
 
-  const largeursNaturelles = table.columns.map((column) => {
+  const groupesOrdonnes = groupesSource(ordonnerColonnes(table.columns))
+  const groupeParCle = new Map<string, string>()
+  groupesOrdonnes.forEach((groupe, index) => {
+    for (const colonne of groupe) groupeParCle.set(colonne.key, `g${index}`)
+  })
+  const colonnesOrdonnees = groupesOrdonnes.flat()
+  const affichage: ColonneAffichage[] = []
+  for (const column of colonnesOrdonnees) {
     const cellules = table.rows.map((row) => row.cells.find((cell) => cell.columnKey === column.key))
     const numerique = Math.max(
       0,
@@ -191,38 +274,65 @@ export function construireTableauxPdf(
     const enteteMin = nomTerritoire !== null && column.label === nomTerritoire
       ? 24
       : Math.max(
-        ...column.label.split(/\s+/).map((word) => mesure.largeur(word, POLICE_PDF.bodyStrong, TAILLE_TABLEAU.entete)),
+        ...column.label.split(/\s+/).map((word) => mesure.largeur(
+          word,
+          ROLE_PDF.enteteTableauSous.police,
+          ROLE_PDF.enteteTableauSous.taille,
+        )),
       )
     const texte = Math.max(
       ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => (
         cell.display === INDISPONIBLE
-          ? mesure.largeur(INDISPONIBLE_ABREGEE, POLICE_PDF.value, TAILLE_TABLEAU.cellule)
+          ? mesure.largeur(INDISPONIBLE_ABREGEE, ROLE_PDF.valeurTableau.police, ROLE_PDF.valeurTableau.taille)
           : largeurCellule(cell, mesure)
       )),
     )
-    return Math.max(9, numerique, enteteMin, Math.min(texte, 24)) + 2.6
-  })
-
-  const paires: { column: CahierTableColumn; natural: number }[][] = []
-  for (let index = 0; index < table.columns.length; index += 1) {
-    const column = table.columns[index]!
-    const natural = largeursNaturelles[index]!
-    if (natural + largeurLibelle > largeurDisponible) {
-      throw new CahierPdfTableLayoutError(
-        `La valeur de la colonne « ${column.label} » dépasse la largeur utile du PDF ; aucun nombre n’est tronqué.`,
+    const natural = Math.max(9, numerique, enteteMin, Math.min(texte, 24)) + 2.6
+    const groupe = groupeParCle.get(column.key) ?? column.key
+    affichage.push({ column, role: 'valeur', groupe, natural })
+    if (column.kind === 'comparison') {
+      const libelleRang = colonneRang(column)
+      const rangMax = Math.max(
+        0,
+        ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => (
+          mesure.largeur(
+            cell.rankDisplay ?? RANG_ABSENT,
+            ROLE_PDF.valeurTableau.police,
+            ROLE_PDF.valeurTableau.taille,
+          )
+        )),
       )
-    }
-    const derniere = paires[paires.length - 1]
-    const precedent = derniere?.[derniere.length - 1]
-    if (precedent && column.seriesKey !== null && precedent.column.seriesKey === column.seriesKey) {
-      derniere!.push({ column, natural })
-    } else {
-      paires.push([{ column, natural }])
+      const enteteRang = mesure.largeur(
+        libelleRang.label,
+        ROLE_PDF.enteteTableauSous.police,
+        ROLE_PDF.enteteTableauSous.taille,
+      )
+      affichage.push({
+        column: libelleRang,
+        role: 'rang',
+        groupe,
+        natural: Math.max(7, enteteRang, rangMax) + 2.6,
+      })
     }
   }
 
-  const groupes: { column: CahierTableColumn; natural: number }[][] = []
-  let courant: { column: CahierTableColumn; natural: number }[] = []
+  const paires: ColonneAffichage[][] = []
+  for (const colonne of affichage) {
+    if (colonne.natural + largeurLibelle > largeurDisponible) {
+      throw new CahierPdfTableLayoutError(
+        `La valeur de la colonne « ${colonne.column.label} » dépasse la largeur utile du PDF ; aucun nombre n’est tronqué.`,
+      )
+    }
+    const derniere = paires[paires.length - 1]
+    if (derniere && derniere[0]!.groupe === colonne.groupe) {
+      derniere.push(colonne)
+    } else {
+      paires.push([colonne])
+    }
+  }
+
+  const groupes: ColonneAffichage[][] = []
+  let courant: ColonneAffichage[] = []
   let total = largeurLibelle
   for (const paire of paires) {
     const largeurPaire = paire.reduce((sum, item) => sum + item.natural, 0)
@@ -249,51 +359,82 @@ export function construireTableauxPdf(
     const bonus = groupe.length ? marge / groupe.length : 0
     const colonnes: ColonneTableauPdf[] = groupe.map((item) => {
       const width = item.natural + bonus
+      if (item.role === 'rang') {
+        const headerLines = [item.column.label]
+        return {
+          key: item.column.key,
+          column: item.column,
+          role: 'rang',
+          groupe: item.groupe,
+          width,
+          headerLines,
+          headerHeight: mesure.hauteurLigne(
+            ROLE_PDF.enteteTableauSous.police,
+            ROLE_PDF.enteteTableauSous.taille,
+          ) * 1.16 + 1.8,
+        }
+      }
       const headerLines = mesurerEntete(item.column, width, mesure, nomTerritoire)
       return {
+        key: item.column.key,
         column: item.column,
+        role: 'valeur',
+        groupe: item.groupe,
         width,
         headerLines,
-        headerHeight: headerLines.length * (mesure.hauteurLigne(POLICE_PDF.bodyStrong, TAILLE_TABLEAU.entete) * 1.16) + 1.8,
+        headerHeight: headerLines.length * (
+          mesure.hauteurLigne(ROLE_PDF.enteteTableauSous.police, ROLE_PDF.enteteTableauSous.taille) * 1.16
+        ) + 1.8,
       }
     })
     let abrege = false
     const rows: LigneTableauPdf[] = table.rows.map((row) => {
       const cells: CelluleTableauPdf[] = colonnes.map((colonne) => {
-        const cell = row.cells.find((candidate) => candidate.columnKey === colonne.column.key)
-        if (!cell) {
+        const source = row.cells.find((candidate) => (
+          candidate.columnKey === colonne.column.key
+          || candidate.columnKey === colonne.column.key.replace(/:rang$/, '')
+        ))
+        if (!source) {
           throw new CahierPdfTableLayoutError(
             `Cellule manquante pour « ${row.label} » / « ${colonne.column.label} ».`,
           )
         }
-        let display = cell.display
+        if (colonne.role === 'rang') {
+          return { cell: source, role: 'rang' as const, display: source.rankDisplay ?? RANG_ABSENT }
+        }
+        let display = source.display
         if (display === INDISPONIBLE) {
-          const largeur = mesure.largeur(display, POLICE_PDF.value, TAILLE_TABLEAU.cellule)
+          const largeur = mesure.largeur(
+            display,
+            ROLE_PDF.valeurTableau.police,
+            ROLE_PDF.valeurTableau.taille,
+          )
           if (largeur > colonne.width - 2) {
             display = INDISPONIBLE_ABREGEE
             abrege = true
           }
         }
-        return { cell, display, rankDisplay: cell.rankDisplay }
+        return { cell: source, role: 'valeur' as const, display }
       })
       const labelLines = plierTexte(row.label, mesure, {
-        police: POLICE_PDF.body,
-        taillePt: TAILLE_TABLEAU.cellule,
+        police: ROLE_PDF.libelleTableau.police,
+        taillePt: ROLE_PDF.libelleTableau.taille,
         largeurMax: largeurLibelle - 2,
         casserMotsLongs: true,
       }).map((ligne) => ligne.texte)
       const hauteurCellule = cells.reduce((max, cellule) => {
+        if (cellule.role === 'rang') return Math.max(max, 1)
         const lignes = plierTexte(cellule.display, mesure, {
-          police: POLICE_PDF.value,
-          taillePt: TAILLE_TABLEAU.cellule,
+          police: ROLE_PDF.valeurTableau.police,
+          taillePt: ROLE_PDF.valeurTableau.taille,
           largeurMax: colonneLargeur(colonnes, cellule.cell.columnKey) - 2,
           casserMotsLongs: cellule.cell.value === null,
-        }).length + (cellule.rankDisplay ? 1 : 0)
+        }).length
         return Math.max(max, lignes)
       }, labelLines.length)
       const hauteurLigneTexte = Math.max(
-        mesure.hauteurLigne(POLICE_PDF.value, TAILLE_TABLEAU.cellule),
-        mesure.hauteurLigne(POLICE_PDF.body, TAILLE_TABLEAU.cellule),
+        mesure.hauteurLigne(ROLE_PDF.valeurTableau.police, ROLE_PDF.valeurTableau.taille),
+        mesure.hauteurLigne(ROLE_PDF.libelleTableau.police, ROLE_PDF.libelleTableau.taille),
       )
       return {
         label: row.label,
@@ -309,8 +450,8 @@ export function construireTableauxPdf(
       sourceKey: table.key,
       title: table.title,
       titleLines: plierTexte(table.title, mesure, {
-        police: POLICE_PDF.bodyStrong,
-        taillePt: TAILLE_TABLEAU.titre,
+        police: ROLE_PDF.titreTableau.police,
+        taillePt: ROLE_PDF.titreTableau.taille,
         largeurMax: largeurDisponible,
       }).map((ligne) => ligne.texte),
       columns: colonnes,
@@ -331,7 +472,7 @@ function colonneLargeur(
   colonnes: readonly ColonneTableauPdf[],
   key: string,
 ): number {
-  return colonnes.find((colonne) => colonne.column.key === key)?.width ?? 10
+  return colonnes.find((colonne) => colonne.key === key)?.width ?? 10
 }
 
 /** Fixed vertical rules only between mode/column groups. */
@@ -340,19 +481,13 @@ export function separateurVertical(
   index: number,
 ): boolean {
   if (index <= 0) return false
-  const previous = columns[index - 1]!.column
-  const current = columns[index]!.column
-  if (current.kind === 'comparison' && previous.kind !== 'comparison') return true
-  if (current.kind !== 'comparison' && previous.kind === 'comparison') return true
-  return current.seriesKey !== null
-    && previous.seriesKey !== null
-    && current.seriesKey !== previous.seriesKey
+  return columns[index]!.groupe !== columns[index - 1]!.groupe
 }
 
 /** Total table height before any row split; title/headers included. */
 export function hauteurTableauPdf(part: TableauPdfPart): number {
   const hauteurTitre = part.titleLines.length
-    * (TAILLE_TABLEAU.titre * 0.3528 * 1.18)
+    * (ROLE_PDF.titreTableau.taille * 0.3528 * 1.18)
   const hauteurUnite = part.unit ? 2.4 : 0
   return hauteurTitre + 2 + hauteurUnite + part.headerHeight + part.rows.reduce((sum, row) => sum + row.height, 0) + 6
 }
