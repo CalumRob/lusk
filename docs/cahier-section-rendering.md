@@ -359,6 +359,12 @@ groups. The 24 px heading / 20 px stacked-table / 12 px and 8 px caption rhythm
 is emitted as measured block gaps, so a continuation is chosen instead of
 shrinking the document.
 
+The screen rank-chip grammar is untouched: DESIGN.md/CONTEXT.md still own the
+indicator chip (new line after the reference value, `--brand-200`, tie/singleton
+rules). The correction above applies only to the exported value table, which
+follows the approved desktop generator (`desktop.js` prints a `Rang` column and
+ink table text); it does not restyle or move any on-screen chip.
+
 `cahier-pdf-fidelity.spec.ts` asserts this contract on real PDFs: the embedded
 role metrics and tracking advance of the focal identity, the wordmark/page-title
 ratio, the shared comparison baseline and 13.5 pt owner size, the one-line
