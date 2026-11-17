@@ -21,6 +21,9 @@ export const TABLEAU_TEMPS_LABEL = 'Temps'
 /** Row-dimension header of the distribution table. */
 export const TABLEAU_STATISTIQUE_LABEL = 'Statistique'
 
+/** Mode column of the flat access table (approved `desktop.js:220`). */
+export const TABLEAU_MODE_LABEL = 'Mode'
+
 /**
  * Sub-header of the compared cell inside a legend-key group. The approved
  * generator renders `Groupe` plus its `¹` footnote reference; the painter owns

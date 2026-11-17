@@ -6,8 +6,8 @@ import type {
   CahierGroupedVerticalBarFigureData,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import {
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
   cahierFigureStrokeVars,
   groupedBarGeometry,
@@ -29,11 +29,6 @@ const props = withDefaults(defineProps<{ figure: CahierGroupedVerticalBarFigureD
   hiddenSeriesKeys: () => [],
 })
 
-const BASE_FIGURE_GEOMETRY = {
-  width: 640,
-  height: 300,
-  margin: { top: 22, right: 68, bottom: 62, left: 64 },
-} as const satisfies CahierFigureGeometry
 const plotElement = ref<HTMLElement | null>(null)
 /** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
 const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
@@ -51,7 +46,7 @@ const yTickLabels = computed(() => yDomain.value.ticks.map(formatAxisTick))
 const figureGeometry = useMeasuredCahierFigureGeometry(
   plotElement,
   yTickLabels,
-  BASE_FIGURE_GEOMETRY,
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
 )
 const barGeometry = computed(() => groupedBarGeometry(
   figureGeometry.value,

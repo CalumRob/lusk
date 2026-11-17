@@ -11,12 +11,14 @@
 import type { jsPDF } from 'jspdf'
 
 import {
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
   CSS_PX_EN_MM,
   curveGeometry,
   curveSeriesPath,
   cssPxToMm,
   dashArrayMm,
+  deriveAedarFigureGeometry,
   mobiliteBarComparisonSegments,
   mobiliteBarGeometry,
   mobiliteBarScale,
@@ -46,11 +48,11 @@ import type {
   CahierShareProjection,
 } from './cahierExportAdapters'
 import type { CahierCaptureFigure } from './cahierExportCapture'
-import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
+import type { CahierFigureGeometry, CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS, CAHIER_FIGURE_RAIL, cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
 import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import type { TimeRampPoint } from '@/fiche/content/territoryFacts'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_COLORS, aedarTimeModeColor } from './aedarTimeModeColors'
 import { mobiliteBarSegmentColor } from './cahierMobiliteReadings'
 import { visibleGroupedBarSeries } from './cahierFigureReadings'
 import type { MesureTexte } from './cahierPdfMesure'
@@ -532,29 +534,49 @@ function titreAvecUnite(titre: string, unite: string): string {
 
 /**
  * Native `.cahier-grouped-vertical-bar-chart__bar { fill-opacity: .78 }`.
- * The PDF has one opaque paper ground and its SVG converter carries no shape
- * alpha, so the painter composites the same 78% onto that ground — the pixels
- * are the native ones, not an opaque bar.
+ * The painter keeps the series ink and sets the native shape alpha, so the
+ * grid beneath the bar shows through exactly as it does on screen.
  */
 const OPACITE_BARRES_GROUPEES = 0.78
 
 /**
- * Native plot box of the two AEDAR families (`AccessRampFigureCahier.vue:44-50`
- * and `CahierGroupedVerticalBarChart.vue:32-36`): the screen SVG's own viewBox
- * and margins. The PDF maps this box to the panel width and reads every stroke
- * and label position from it, instead of a parallel 96 dpi millimetre policy.
+ * Native plot box of the two AEDAR families, read from the shared owner that
+ * both mounted components import. The PDF maps this box to the panel width and
+ * reads every stroke and label position from it, instead of a parallel
+ * 96 dpi millimetre policy.
  */
-const GEOMETRIE_NATIVE_AEDAR = {
-  width: 640,
-  height: 300,
-  margin: { top: 22, right: 68, bottom: 62, left: 64 },
-} as const
+const GEOMETRIE_NATIVE_AEDAR = CAHIER_AEDAR_FIGURE_GEOMETRY
 
 /** Native label offset of the AEDAR figures (`CahierFigureAxisLabels`, 8 px). */
 const DECALAGE_ETIQUETTE_X = 8
 
 function hauteurPanneauAedar(largeurPanneau: number): number {
   return largeurPanneau * GEOMETRIE_NATIVE_AEDAR.height / GEOMETRIE_NATIVE_AEDAR.width
+}
+
+/**
+ * The native y rail measured with the embedded face. `deriveAedarFigureGeometry`
+ * is the same rule the browser applies (`useMeasuredCahierFigureGeometry`):
+ * title lane + longest rendered label + label gap, in native user units.
+ */
+function geometrieAedarMesuree(
+  panelWidth: number,
+  labels: readonly (string | null)[],
+  mesure: MesureTexte,
+): CahierFigureGeometry {
+  const largeurMm = Math.max(0, ...labels
+    .filter((label): label is string => label !== null)
+    .map((label) => mesure.largeur(
+      label,
+      ROLE_PDF.tick.police,
+      TAILLE.tick,
+      TAILLE.tick * ROLE_PDF.tick.espacementEm,
+    )))
+  // The native rule counts the title lane and the label gap in the same user
+  // units as the viewBox: convert the embedded-face label width to user units
+  // and apply the shared derivation at the native 640-unit width.
+  const largeurUser = largeurMm * GEOMETRIE_NATIVE_AEDAR.width / panelWidth
+  return deriveAedarFigureGeometry(GEOMETRIE_NATIVE_AEDAR, GEOMETRIE_NATIVE_AEDAR.width, largeurUser)
 }
 
 /**
@@ -572,6 +594,7 @@ function dessinerAxesAedar(
     x: number
     y: number
     panelWidth: number
+    geometry: CahierFigureGeometry
     xTicks: readonly { key: string | number; position: number; label: string | null }[]
     yTicks: readonly { key: string | number; position: number; label: string | null }[]
     xTitle: string
@@ -579,13 +602,15 @@ function dessinerAxesAedar(
   },
 ): void {
   const { x, y, panelWidth, xTicks, yTicks, xTitle, yTitle } = options
-  const native = GEOMETRIE_NATIVE_AEDAR
+  const native = options.geometry
   const echelle = panelWidth / native.width
   const u = (value: number) => value * echelle
   const tickSpace = ROLE_PDF.tick.taille * ROLE_PDF.tick.espacementEm
   for (const tick of yTicks) {
     if (tick.label === null) continue
-    textePdf(doc, tick.label, x + u(native.margin.left) - 0.2, y + u(tick.position), {
+    // `CahierFigureAxisLabels`: the y label's right edge sits on the measured
+    // rail (`margin.left`) and its line box is centred on the tick + 4 px.
+    textePdf(doc, tick.label, x + u(native.margin.left), y + u(tick.position + CAHIER_FIGURE_AXIS.yLabelBaseline), {
       police: ROLE_PDF.tick.police,
       taille: TAILLE.tick,
       couleur: PALETTE_PDF.editorialMuted,
@@ -630,8 +655,11 @@ function dessinerAxesAedar(
   doc.setFontSize(TAILLE.axe)
   doc.setTextColor(...rgb(PALETTE_PDF.editorialMuted))
   doc.setCharSpace(mmDepuisPt(TAILLE.axe * ROLE_PDF.axe.espacementEm))
-  // The native title is a rotated run whose centre sits 8 px from the left edge.
-  doc.text(titreY, x + u(11), y + plotMilieu + titreWidth / 2, { angle: 90 })
+  // The native run is centred in the 16 px title lane (`left: 0 + 8px;
+  // translate(-50%, -50%) rotate(-90deg)`), so its rotated alphabetic baseline
+  // sits on the lane's outer edge: R1 measures ink 39.08–46.65 for a panel at
+  // 38.84 (lane 16 px), which this anchor reproduces.
+  doc.text(titreY, x + u(CAHIER_FIGURE_RAIL.titleLane), y + plotMilieu + titreWidth / 2, { angle: 90 })
   doc.setCharSpace(0)
   doc.restoreGraphicsState()
 }
@@ -725,7 +753,7 @@ function rampLegend(projection: CahierRampsProjection, comparisonProof: boolean)
   return [
     ...projection.ramps[0]!.series.map((serie) => ({
       label: serie.label,
-      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
+      color: couleurSerie(aedarTimeModeColor(serie.key)),
     })),
     ...(comparisonProof
       ? [{ label: 'Groupe comparé', color: PALETTE_PDF.muted, dash: true }]
@@ -767,20 +795,27 @@ async function dessinerRampes(
     const panelScale = cahierIntegerYAxisScale(ramp.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue])))
     const firstSeries = ramp.series[0]!
-    const geom = rampGeometry(rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR, ramp.yAxis.unit)
-    const plotBottom = GEOMETRIE_NATIVE_AEDAR.height - GEOMETRIE_NATIVE_AEDAR.margin.bottom
-    const plotRight = GEOMETRIE_NATIVE_AEDAR.width - GEOMETRIE_NATIVE_AEDAR.margin.right
-    const svg = svgCanvas(GEOMETRIE_NATIVE_AEDAR.width, GEOMETRIE_NATIVE_AEDAR.height)
+    // Measure the native rail with the embedded face before placing the plot:
+    // long unit labels (`40 établissements`) widen the left margin exactly as
+    // `AccessRampFigureCahier` does in the browser.
+    const plentyTicks = rampGeometry(
+      rampPoints(firstSeries), panelScale, GEOMETRIE_NATIVE_AEDAR, ramp.yAxis.unit,
+    ).yTicks
+    const native = geometrieAedarMesuree(panelWidth, plentyTicks.map((tick) => tick.label), mesure)
+    const geom = rampGeometry(rampPoints(firstSeries), panelScale, native, ramp.yAxis.unit)
+    const plotBottom = native.height - native.margin.bottom
+    const plotRight = native.width - native.margin.right
+    const svg = svgCanvas(native.width, native.height)
     for (const tick of geom.yTicks) {
-      svgLine(svg, GEOMETRIE_NATIVE_AEDAR.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
+      svgLine(svg, native.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
     // Native access-ramp grid draws one vertical line per time cut on both axes.
     for (const tick of geom.xTicks) {
-      svgLine(svg, tick.position, GEOMETRIE_NATIVE_AEDAR.margin.top, tick.position, plotBottom, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
+      svgLine(svg, tick.position, native.margin.top, tick.position, plotBottom, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
     }
     svgLine(
       svg,
-      GEOMETRIE_NATIVE_AEDAR.margin.left,
+      native.margin.left,
       plotBottom,
       plotRight,
       plotBottom,
@@ -788,7 +823,7 @@ async function dessinerRampes(
       CAHIER_FIGURE_STROKE.axisWidthPx,
     )
     for (const serie of ramp.series) {
-      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
+      const color = couleurSerie(aedarTimeModeColor(serie.key))
       const points = rampPoints(serie)
       for (const path of rampPaths(points, (point) => point.value, geom.x, geom.y)) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -819,6 +854,7 @@ async function dessinerRampes(
       x: px,
       y: py + 2,
       panelWidth,
+      geometry: native,
       xTicks: geom.xTicks,
       yTicks: geom.yTicks,
       xTitle: ramp.xAxis.label,
@@ -1055,9 +1091,6 @@ async function dessinerBarresGroupees(
     }
     return cy
   }
-  const native = GEOMETRIE_NATIVE_AEDAR
-  const plotBottom = native.height - native.margin.bottom
-  const plotRight = native.width - native.margin.right
   const drawGrouped = async (
     originX: number,
     figure: CahierGroupedVerticalBarFigureData,
@@ -1068,6 +1101,11 @@ async function dessinerBarresGroupees(
     const cy = dessinerTitres(titleLines, originX)
     const visible = visibleGroupedBarSeries(figure, hidden)
     const scale = groupedBarScaleFromFigure(visible)
+    const tickLabels = scale.ticks.map((value) => figure.formatAxisTick?.(value)
+      ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value))
+    const native = geometrieAedarMesuree(panelWidth, tickLabels, mesure)
+    const plotBottom = native.height - native.margin.bottom
+    const plotRight = native.width - native.margin.right
     const bar = groupedBarGeometryFromFigure(native, figure.categories.length, visible.length, scale)
     const ticks = groupedBarTicksFromFigure(figure, native, bar, scale)
     const svg = svgCanvas(native.width, native.height)
@@ -1088,7 +1126,10 @@ async function dessinerBarresGroupees(
           Math.min(yFor(value), yFor(0)),
           bar.barWidth,
           bar.height(value),
-          couleurSerie(`color-mix(in srgb, ${series.color} ${OPACITE_BARRES_GROUPEES * 100}%, var(--paper))`),
+          // Native `.cahier-grouped-vertical-bar-chart__bar { fill-opacity: .78 }`:
+          // the bar keeps its own ink and the grid beneath shows through.
+          couleurSerie(series.color),
+          OPACITE_BARRES_GROUPEES,
         )
       })
     })
@@ -1097,6 +1138,7 @@ async function dessinerBarresGroupees(
       x: originX,
       y: cy + 2,
       panelWidth,
+      geometry: native,
       xTicks: ticks.x,
       yTicks: ticks.y,
       xTitle: figure.xAxisTitle,
@@ -1113,7 +1155,12 @@ async function dessinerBarresGroupees(
     const scale = cahierIntegerYAxisScale(values)
     const first = projection.volume.series[0]!
     const points = rampPoints(first)
+    const libelles = rampGeometry(points, scale, GEOMETRIE_NATIVE_AEDAR, projection.volume.yAxis.unit)
+      .yTicks.map((tick) => tick.label)
+    const native = geometrieAedarMesuree(panelWidth, libelles, mesure)
     const geom = rampGeometry(points, scale, native, projection.volume.yAxis.unit)
+    const plotBottom = native.height - native.margin.bottom
+    const plotRight = native.width - native.margin.right
     const svg = svgCanvas(native.width, native.height)
     for (const tick of geom.yTicks) {
       svgLine(svg, native.margin.left, tick.position, plotRight, tick.position, PALETTE_PDF.figureGrid, CAHIER_FIGURE_STROKE.gridWidthPx)
@@ -1124,7 +1171,7 @@ async function dessinerBarresGroupees(
     }
     svgLine(svg, native.margin.left, plotBottom, plotRight, plotBottom, PALETTE_PDF.figureAxis, CAHIER_FIGURE_STROKE.axisWidthPx)
     for (const serie of projection.volume.series) {
-      const color = couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!)
+      const color = couleurSerie(aedarTimeModeColor(serie.key))
       const seriePoints = rampPoints(serie)
       for (const path of rampPaths(seriePoints, (point) => point.value, geom.x, geom.y)) {
         const node = document.createElementNS('http://www.w3.org/2000/svg', 'path')
@@ -1157,6 +1204,7 @@ async function dessinerBarresGroupees(
       x,
       y: cy + 2,
       panelWidth,
+      geometry: native,
       xTicks: geom.xTicks,
       yTicks: geom.yTicks,
       xTitle: projection.volume.xAxis.label,
@@ -1168,7 +1216,7 @@ async function dessinerBarresGroupees(
   const legend = [
     ...projection.volume.series.map((serie) => ({
       label: serie.label,
-      color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!),
+      color: couleurSerie(aedarTimeModeColor(serie.key)),
       marker: 'line' as const,
     })),
     ...(options.comparisonProof
@@ -1484,7 +1532,7 @@ export function hauteurFigurePdf(
         plierTexte(rightTitle, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
       ) + subtitleLines
       const legend = hauteurLegende(mesure, [
-        ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(AEDAR_TIME_MODE_COLORS[serie.key]!) })),
+        ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(aedarTimeModeColor(serie.key)) })),
         ...(options?.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, dash: true }] : []),
       ], width)
       return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18

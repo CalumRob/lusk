@@ -12,13 +12,14 @@ import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampF
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import {
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
   cahierFigureStrokeVars,
   rampGeometry,
   rampPaths,
   rampScale,
 } from './cahierFigureNativeGeometry'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { aedarTimeModeColor } from './aedarTimeModeColors'
 import {
   formatTimeRampNumber,
   timeRampAccessibleReading,
@@ -41,13 +42,6 @@ const props = withDefaults(defineProps<{
 }>(), { showModeLegend: true, comparisonVisible: null })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
-const WIDTH = 640
-const HEIGHT = 300
-const BASE_FIGURE_GEOMETRY = {
-  width: WIDTH,
-  height: HEIGHT,
-  margin: { top: 22, right: 68, bottom: 62, left: 64 },
-} as const
 const plotElement = ref<HTMLElement | null>(null)
 /** The shared stroke owner is injected as CSS custom properties on the plot. */
 const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
@@ -64,7 +58,7 @@ function timeSeriesLineClass(key: string): string {
   return TIME_MODE_LINE_CLASS[key] ?? ''
 }
 function timeSeriesColor(key: string): string {
-  return AEDAR_TIME_MODE_COLORS[key] ?? 'var(--cahier-theme-strong)'
+  return aedarTimeModeColor(key)
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set<string>(AEDAR_DEFAULT_VISIBLE_RAMP_MODES))
@@ -89,7 +83,7 @@ const figureGeometry = useMeasuredCahierFigureGeometry(
   plotElement,
   computed(() => timeYAxis.value.ticks.map((value) =>
     `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)),
-  BASE_FIGURE_GEOMETRY,
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
 )
 const rampGeom = computed(() => rampGeometry(
   timePoints.value,
@@ -128,7 +122,7 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
   }] : []),
 ])
 const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
-  (props.timeRamp?.series ?? []).map((series) => [series.key, AEDAR_TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)']),
+  (props.timeRamp?.series ?? []).map((series) => [series.key, aedarTimeModeColor(series.key)]),
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
 const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / figureGeometry.value.width)) * 100}%`, y: '12%' } : undefined)

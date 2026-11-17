@@ -55,8 +55,8 @@ import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import {
   EXPLICATION_INDISPONIBLE,
+  CahierPdfTableLayoutError,
   construireTableauxPdf,
-  hauteurTableauPdf,
   separateurVertical,
   type LigneTableauPdf,
   type TableauPdfPart,
@@ -123,6 +123,16 @@ const ESPACE = {
   sourcesHaut: mm(rythmePt(RYTHME_PX.sourcesHaut)),
   identiteSousTitre: mm(rythmePt(RYTHME_PX.identiteSousTitre)),
   apresIdentite: mm(rythmePt(RYTHME_PX.apresIdentite)),
+} as const
+
+/**
+ * Approved access-table grid (`desktop.js:197`):
+ * `grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px`.
+ * The measured page box reproduces those two equal columns and the source gap.
+ */
+const PAIRE_TABLEAUX = {
+  gap: mm(ptDepuisCssPx(24)),
+  largeur: (mm(LARGEUR_CORPS_PT) - mm(ptDepuisCssPx(24))) / 2,
 } as const
 
 const TAILLE = {
@@ -350,12 +360,19 @@ interface FigureBloc {
   readonly gapAvant: number
 }
 
-interface TableBloc {
-  readonly kind: 'table'
+interface CelluleTableauBloc {
   readonly part: TableauPdfPart
   readonly rows: readonly LigneTableauPdf[]
-  readonly height: number
+  readonly x: number
+  readonly width: number
   readonly continued: boolean
+}
+
+interface TableBloc {
+  readonly kind: 'table'
+  /** One table in the flat shape, or the two side-by-side approved access panels. */
+  readonly cells: readonly CelluleTableauBloc[]
+  readonly height: number
   readonly gapAvant: number
 }
 
@@ -392,6 +409,20 @@ function hauteurTexteSimple(
 ): number {
   return plierTexte(texteValue, mesure, { police, taillePt: taille, largeurMax: largeur, casserMotsLongs: true }).length
     * mesure.hauteurLigne(police, taille) * 1.18
+}
+
+/**
+ * Measured height of one table cell's caption + header before its first row.
+ * `suite` is the painter's `(suite)` line box on a continuation.
+ */
+function hauteurEnteteTableau(part: TableauPdfPart, continued: boolean): number {
+  const hauteurTitre = part.titleLines.length
+    * mesureTitreTableauHaut()
+  return hauteurTitre + part.headerHeight + 2 + (continued ? 2.8 : 0)
+}
+
+function mesureTitreTableauHaut(): number {
+  return ROLE_PDF.titreTableau.taille * 0.3528 * 1.2 * 1.18
 }
 
 function construireSousTitre(
@@ -580,15 +611,45 @@ function construirePages(
     }
   }
 
-  const tableParts = projections.flatMap((projection) => projection.tables.flatMap((table) => (
-    construireTableauxPdf(table, {
-      mesure,
-      largeurDisponible: PAGE.largeurCorps,
-      nomTerritoire: capture.identity.territory.name,
-      ownerDisplayed: preuveProprietaire(capture, familySlots(projection)),
-    })
-  ))).filter((part) => part.rows.length > 0)
-  if (tableParts.length) {
+  const tableGroups: TableauPdfPart[][] = []
+  for (const projection of projections) {
+    const ownerDisplayed = preuveProprietaire(capture, familySlots(projection))
+    const build = (table: Parameters<typeof construireTableauxPdf>[0], largeurDisponible: number) => (
+      construireTableauxPdf(table, {
+        mesure,
+        largeurDisponible,
+        nomTerritoire: capture.identity.territory.name,
+        ownerDisplayed,
+      })
+    )
+    // Approved flat shape (A): the access ramps are two panels; the approved
+    // generator lays their tables in one two-column grid (`desktop.js:197`).
+    // Pair only when both measured tables fit a half column; otherwise the
+    // table keeps the full content width (an honest measured continuation,
+    // never a clipped number or a permanently stacked pair).
+    if (projection.family === 'aedar-ramps' && projection.tables.length > 0) {
+      const large = projection.tables.map((table) => build(table, PAGE.largeurCorps))
+      if (large.every((parts) => parts.length === 1 && (parts[0]!.colgroupFixe
+        || parts[0]!.naturalWidth <= PAIRE_TABLEAUX.largeur + 1e-6))) {
+        try {
+          const pair = projection.tables.map((table) => build(table, PAIRE_TABLEAUX.largeur))
+          if (pair.every((parts) => parts.length === 1 && parts[0]!.rows.length > 0)) {
+            tableGroups.push(pair.map((parts) => parts[0]!))
+            continue
+          }
+        } catch (error) {
+          if (!(error instanceof CahierPdfTableLayoutError)) throw error
+        }
+      }
+      for (const parts of large) for (const part of parts) tableGroups.push([part])
+      continue
+    }
+    for (const table of projection.tables) {
+      for (const part of build(table, PAGE.largeurCorps)) tableGroups.push([part])
+    }
+  }
+  const tableParts = tableGroups.flat()
+  if (tableGroups.length) {
     const libelle = tableParts.length > 1 ? 'Valeurs des graphiques' : 'Valeurs du graphique'
     blocks.push({
       kind: 'text',
@@ -598,16 +659,23 @@ function construirePages(
       gapAvant: ESPACE.titreTableauxHaut,
       height: mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux) * 1.4,
     })
-    for (const [index, part] of tableParts.entries()) {
+    const largeurCellule = (group: TableauPdfPart[]) => (
+      group.length === 2 ? PAIRE_TABLEAUX.largeur : PAGE.largeurCorps
+    )
+    for (const [index, group] of tableGroups.entries()) {
       blocks.push({
         kind: 'table',
-        part,
-        rows: part.rows,
-        // The first caption keeps the heading's 12 px bottom margin; stacked
-        // tables keep their 20 px `margin-bottom` (source rhythm, not zero).
+        cells: group.map((part, cellIndex) => ({
+          part,
+          rows: part.rows,
+          x: PAGE.corpsX + cellIndex * (PAIRE_TABLEAUX.largeur + PAIRE_TABLEAUX.gap),
+          width: largeurCellule(group),
+          continued: false,
+        })),
+        // The first caption keeps the heading's 12 px bottom margin; a new
+        // table row keeps its 20 px `margin-bottom` (source rhythm, not zero).
         gapAvant: index === 0 ? ESPACE.titreTableauxBas : ESPACE.entreTableaux,
-        height: hauteurTableauPdf(part),
-        continued: false,
+        height: 0,
       })
     }
     const notes = [...new Set(tableParts.flatMap((part) => part.notes))]
@@ -652,48 +720,67 @@ function construirePages(
   for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
     const bloc = blocks[blockIndex]!
     if (bloc.kind === 'table') {
-      let rows = [...bloc.rows]
+      const cells = bloc.cells.map((cell) => ({
+        part: cell.part,
+        x: cell.x,
+        width: cell.width,
+        continued: cell.continued,
+        rows: [...cell.rows] as LigneTableauPdf[],
+      }))
       let first = true
-      while (rows.length) {
-        const suite = !first || bloc.continued ? 2.8 : 0
+      while (cells.some((cell) => cell.rows.length)) {
         const gapAvant = first ? bloc.gapAvant : 0
-        const hauteurEntete = bloc.part.titleLines.length * TAILLE.titreTableaux * 0.3528 * 1.2
-          + bloc.part.headerHeight + 2 + suite + (bloc.part.unit ? 2.4 : 0)
-        if (page.remaining < gapAvant + hauteurEntete + (rows[0]?.height ?? 0)) {
+        const entetes = cells.map((cell) => hauteurEnteteTableau(cell.part, !first || cell.continued))
+        const hauteurEntete = Math.max(...entetes)
+        const premiereHauteur = Math.max(...cells.map((cell) => cell.rows[0]?.height ?? 0))
+        if (page.remaining < gapAvant + hauteurEntete + premiereHauteur) {
           if (!page.blocks.length) {
             throw new CahierPdfCompositionError('layout', 'Un tableau ne peut pas commencer sur la page.')
           }
           nouvellePage()
+          continue
         }
-        let index = 0
+        let n = 0
         let hauteur = hauteurEntete
-        while (index < rows.length && gapAvant + hauteur + rows[index]!.height <= page.remaining) {
-          hauteur += rows[index]!.height
-          index += 1
+        while (cells.some((cell) => cell.rows[n] !== undefined)) {
+          const hauteurRangee = Math.max(...cells.map((cell) => cell.rows[n]?.height ?? 0))
+          if (gapAvant + hauteur + hauteurRangee > page.remaining) break
+          hauteur += hauteurRangee
+          n += 1
         }
-        if (index === 0) {
-          throw new CahierPdfCompositionError('layout', 'Une ligne de tableau dépasse la page utile.')
+        if (n === 0) {
+          if (!page.blocks.length) {
+            throw new CahierPdfCompositionError('layout', 'Une ligne de tableau dépasse la page utile.')
+          }
+          nouvellePage()
+          continue
         }
         poserBloc({
           kind: 'table',
-          part: bloc.part,
-          rows: rows.slice(0, index),
+          cells: cells.map((cell) => ({
+            part: cell.part,
+            x: cell.x,
+            width: cell.width,
+            rows: cell.rows.slice(0, n),
+            continued: !first || cell.continued,
+          })),
           height: hauteur,
-          continued: !first || bloc.continued,
           gapAvant,
         })
-        rows = rows.slice(index)
+        for (const cell of cells) cell.rows = cell.rows.slice(n)
         first = false
-        if (rows.length) nouvellePage()
+        if (cells.some((cell) => cell.rows.length)) nouvellePage()
       }
       continue
     }
     if (bloc.kind === 'text' && bloc.role === 'tables-heading') {
       const suite = blocks[blockIndex + 1]
       if (suite?.kind === 'table' && page.blocks.length) {
-        const hauteurEntete = suite.part.titleLines.length * TAILLE.titreTableaux * 0.3528 * 1.2
-          + suite.part.headerHeight + 2 + (suite.rows[0]?.height ?? 0)
-        if (page.remaining < bloc.gapAvant + bloc.height + suite.gapAvant + hauteurEntete) {
+        const hauteurEntete = Math.max(...suite.cells.map((cell) => (
+          hauteurEnteteTableau(cell.part, cell.continued)
+        )))
+        const premiere = Math.max(...suite.cells.map((cell) => cell.rows[0]?.height ?? 0))
+        if (page.remaining < bloc.gapAvant + bloc.height + suite.gapAvant + hauteurEntete + premiere) {
           nouvellePage()
         }
       }
@@ -717,7 +804,7 @@ function construirePages(
     ...candidate,
     hasComparisonProof: candidate.blocks.some((bloc) => {
       if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection, capture)
-      if (bloc.kind === 'table') return bloc.part.hasComparison
+      if (bloc.kind === 'table') return bloc.cells.some((cell) => cell.part.hasComparison)
       return false
     }),
   }))
@@ -914,20 +1001,8 @@ function dessinerTableau(
   } else {
     cy += 1.2
   }
-  if (part.unit) {
-    texte(doc, `Unité : ${part.unit}`, x + width / 2, cy, {
-      police: ROLE_PDF.comparaisonPrefixe.police,
-      taille: 6,
-      couleur: PALETTE_PDF.muted,
-      align: 'center',
-    })
-    cy += 2.4
-  }
   const enteteTop = cy
-  const hauteurMode = part.layout === 'grouped'
-    ? mesure.hauteurLigne(ROLE_PDF.enteteTableauMode.police, ROLE_PDF.enteteTableauMode.taille) * 1.16 + 1.6
-    : 0
-  const sousEnteteTop = enteteTop + hauteurMode
+  const sousEnteteTop = enteteTop + part.groupHeaderHeight
   // Row-dimension header (`Temps` / `Statistique`): in the grouped shape it is
   // the approved `th[colspan=1][rowspan=2]`, bottom-aligned across both header
   // rows; in the flat shape it is the first column's header.
@@ -942,13 +1017,20 @@ function dessinerTableau(
   }
   if (part.layout === 'grouped') {
     // Legend-key header row: one coloured, spanning cell per mode, exactly like
-    // the approved generator's `th[colspan=count]` with `column.color`.
+    // the approved generator's `th[colspan=count]` with `column.color`. The
+    // label is wrapped to the measured colSpan width (native `overflow-wrap`).
     let gx = x + part.rowLabelWidth
+    const hauteurLigneMode = mesure.hauteurLigne(
+      ROLE_PDF.enteteTableauMode.police,
+      ROLE_PDF.enteteTableauMode.taille,
+    ) * 1.16
     for (const groupe of part.groups) {
-      texte(doc, groupe.label, gx + 1, enteteTop, {
-        police: ROLE_PDF.enteteTableauMode.police,
-        taille: ROLE_PDF.enteteTableauMode.taille,
-        couleur: groupe.color ?? PALETTE_PDF.ink,
+      groupe.labelLines.forEach((ligne, index) => {
+        texte(doc, ligne, gx + 1, enteteTop + index * hauteurLigneMode, {
+          police: ROLE_PDF.enteteTableauMode.police,
+          taille: ROLE_PDF.enteteTableauMode.taille,
+          couleur: groupe.color ?? PALETTE_PDF.ink,
+        })
       })
       gx += groupe.width
     }
@@ -959,29 +1041,41 @@ function dessinerTableau(
   // Sub-header row: over each group, `[territory | Groupe¹ | Rang]`; the flat
   // shape uses the same native header role as its own row-dimension cell.
   const roleEntete = part.layout === 'grouped' ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
+  const hauteurLigneEntete = mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * 1.16
+  const numeroPage = (doc as jsPDF & {
+    internal: { getCurrentPageInfo: () => { pageNumber: number } }
+  }).internal.getCurrentPageInfo().pageNumber
   let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
     let hy = sousEnteteTop
-    for (const ligne of colonne.headerLines) {
-      // Both approved shapes carry the comparison footnote on the compared
-      // column's own label (`Groupe¹` grouped, `Groupe comparé¹` flat).
-      // Only the two approved AEDAR table shapes carry the `¹` footnote; a
-      // plain scalar/bar table keeps its plain compared-group header.
-      const estGroupe = colonne.role !== 'rang'
-        && colonne.column.kind === 'comparison'
-        && part.hasComparison
-        && part.rowHeader !== null
-      // The `¹` footnote belongs to the compared group, never to `Rang`.
-      // R3 prints it inline in the same `Groupe¹` run (the generator clones a
-      // `font:inherit` anchor), so the sub-header keeps one run and one role.
-      texte(doc, estGroupe ? `${ligne}¹` : ligne, cx + 1, hy, {
+    // The `¹` footnote belongs to the compared group cell, once per cell —
+    // never once per wrapped line and never to `Rang`. It is an in-document
+    // link to the page footer, like the approved `comparisonReference()`.
+    const estGroupe = colonne.role !== 'rang'
+      && colonne.column.kind === 'comparison'
+      && part.hasComparison
+      && part.rowHeader !== null
+    colonne.headerLines.forEach((ligne, index) => {
+      const derniere = index === colonne.headerLines.length - 1
+      const avecMarque = estGroupe && derniere
+      texte(doc, avecMarque ? `${ligne}¹` : ligne, cx + 1, hy, {
         police: roleEntete.police,
         taille: roleEntete.taille,
         couleur: PALETTE_PDF.ink,
         align: 'left',
       })
-      hy += 2.4
-    }
+      if (avecMarque) {
+        const largeurLibelle = mesure.largeur(ligne, roleEntete.police, roleEntete.taille)
+        doc.link(
+          cx + 1 + largeurLibelle,
+          hy,
+          mesure.largeur('¹', roleEntete.police, roleEntete.taille) + 0.4,
+          hauteurLigneEntete,
+          { pageNumber: numeroPage, top: PAGE.piedComparaison - mm(3) },
+        )
+      }
+      hy += hauteurLigneEntete
+    })
     cx += colonne.width
   }
   cy = enteteTop + part.headerHeight
@@ -995,8 +1089,10 @@ function dessinerTableau(
   for (let index = 0; index < part.columns.length; index += 1) {
     if (!separateurVertical(part.columns, index)) continue
     const ruleX = x + part.rowLabelWidth + part.columns.slice(0, index).reduce((sum, colonne) => sum + colonne.width, 0)
-    setStroke(doc, PALETTE_PDF.muted, 0.45)
-    doc.setLineWidth(mm(0.2))
+    // Native group separator: `border-left: 1px solid var(--editorial-muted)`
+    // on the spanning group header and the territory cell of each next group.
+    setStroke(doc, PALETTE_PDF.muted)
+    doc.setLineWidth(mm(ptDepuisCssPx(1)))
     doc.line(ruleX, enteteTop, ruleX, cy + hauteurLignes)
   }
   // Rows: complete cells, all relationships retained.
@@ -1311,7 +1407,18 @@ export async function composerCahierPdf(
         }
       } else if (bloc.kind === 'table') {
         const start = cy
-        dessinerTableau(doc, mesure, bloc.part, bloc.rows, PAGE.corpsX, cy, PAGE.largeurCorps, bloc.continued)
+        for (const cellule of bloc.cells) {
+          dessinerTableau(
+            doc,
+            mesure,
+            cellule.part,
+            cellule.rows,
+            cellule.x,
+            cy,
+            cellule.width,
+            cellule.continued,
+          )
+        }
         cy = start + bloc.height
       } else {
         const align = bloc.role === 'tables-heading' ? 'center' : 'left'

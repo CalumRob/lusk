@@ -252,21 +252,35 @@ or starts an acquisition.
   choose the one its family ships (`desktop.js:appendTimeRampTables` /
   `appendSandboxTables`):
   * **flat (A)**: `aedar-ramps`. Rows are `cut × mode`; the columns are
-    `Temps | Mode | territory | Groupe¹ | Rang`. The mode is a row dimension, so
-    a flat table always has the same five columns and never column-splits.
+    `Temps | Mode | territory | Groupe comparé¹ | Rang`. The mode is a row
+    dimension, so a flat table always has the same five columns and never
+    column-splits. The approved generator lays the two access panels in one
+    grid — `grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px`
+    (`desktop.js:197`) — so the composer pairs both tables on the same baseline
+    at the measured page scale (two equal half-columns and the 24 px gap). Only
+    a table whose measured minimum width cannot fit a half-column keeps the
+    full content width: that is an honest measured layout decision, never a
+    clipped number or an unconditional stack.
   * **grouped (B)**: any figure with a legend-key axis (`aedar-equipment-explorer`
     volume ramp and distribution). Rows are the panel's x-axis categories
     (`Temps` or `Statistique` row-dimension header); columns are grouped by the
     visible legend key, each group carrying `[territory | Groupe¹ | Rang]` and
     its series colour. A grouped table splits only at complete group boundaries
     and a too-tall table only at complete rows, with repeated title/header.
-  The `¹` footnote marks the compared **`Groupe`** cell, never `Rang`; the rank
-  value stays the producer-served display and is never recomputed. Numbers are
-  never truncated
+  The `¹` footnote marks the compared **`Groupe`** cell once per cell (the flat
+  shape prints the full `Groupe comparé¹`, the grouped shape its approved
+  `Groupe¹`), never `Rang` and never once per wrapped line. It is an actual
+  in-document link to the page footer (`comparisonReference()` destination), not
+  a decorative glyph. The rank value stays the producer-served display and is
+  never recomputed. Numbers are never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
-  territory table header may wrap twice then ellipsize; group names never are.
-  `Indisponible` becomes `Indisp.` only when measured width requires it, and the
-  explanation is emitted once under the tables. A comparison column is an
+  territory table header may wrap twice then ellipsize; group names never are
+  (they wrap at their measured `colSpan` width and the group header height
+  grows). `Indisponible` becomes `Indisp.` only when measured width requires it,
+  and the explanation is emitted once under the tables. The PDF paints the
+  approved caption clone only: no `Unité :` line and no figure-description note
+  (the unit stays on the figure's own axis title and the description in the
+  figure's accessible reading). A comparison column is an
   explicit owner-published slot: when it carries no served value/rank it stays
   visible as unavailable, but no subtitle, footer, legend entry or `¹` marker
   claims comparative proof.
@@ -278,17 +292,24 @@ or starts an acquisition.
   only paints the resulting primitives.
 - `cahierPdfFigures.ts` paints those shared primitives (SVG marks + selectable
   jsPDF text) from the frozen #1022 projections/native models. It does not own
-  a second axis/geometry/colour policy. The two AEDAR families read the screen
-  SVG's own 640×300 viewBox and margins (top 22 / right 68 / bottom 62 / left 64)
-  and map that box to the panel width; SVG strokes stay in native units
+  a second axis/geometry/colour policy. The native AEDAR frame is declared once
+  in `cahierFigureNativeGeometry.ts` (`CAHIER_AEDAR_FIGURE_GEOMETRY`, the
+  640×300 viewBox with margins top 22 / right 68 / bottom 62 / left 64) and is
+  imported by `AccessRampFigureCahier.vue`, `CahierGroupedVerticalBarChart.vue`
+  and the painter. The left rail is **measured**, not fixed: the painter applies
+  the same `deriveCahierFigureGeometry` rule as
+  `useMeasuredCahierFigureGeometry` (16 px title lane + longest rendered y label
+  + 8 px gap, capped by the native minimum plot width) using the embedded
+  face's real advances, then keeps the right/top/bottom margins and scales the
+  plot from the derived left margin. SVG strokes stay in native units
   (`CAHIER_FIGURE_STROKE` 2.5 / 1.5 / 1 px) and the local figure transform
   scales them once. Axis titles take the `.type-figure-label` uppercase role,
-  the ramp paints paths only (no invented point markers), grouped bars composite
-  their native `fill-opacity: .78` onto the single paper ground, and the
-  explorer panel titles carry the figcaption's second line
-  (`typequLabel`). Native titles, units, legends, ranks and owner-observed
-  comparison layers are preserved; no title parsing and no PDF-only
-  significant-figure/rounding policy.
+  the ramp paints paths only (no invented point markers), grouped bars carry the
+  native `fill-opacity: .78` as a real shape alpha (so the grid beneath shows
+  through, never a paper-composited opaque colour), and the explorer panel
+  titles carry the figcaption's second line (`typequLabel`). Native titles,
+  units, legends, ranks and owner-observed comparison layers are preserved; no
+  title parsing and no PDF-only significant-figure/rounding policy.
 - `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
   centered page title, focal territory link, red rule, comparison subtitle,
   figures, value tables, notes, `Source(s) :` bottom-right, page-local

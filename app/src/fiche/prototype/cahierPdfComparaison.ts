@@ -16,6 +16,13 @@ import type { MesureTexte } from './cahierPdfMesure'
 
 export const PREFIXE_GROUPE_COMPARE = 'Groupe comparé :'
 
+/**
+ * The prefix run the approved mockup actually paints (`comparisonHeadingMockup.js:34`):
+ * its trailing space belongs to the prefix span's own face/size, so the visible
+ * gap is a real glyph advance, not a measured allowance invented by the PDF.
+ */
+export const PREFIXE_GROUPE_COMPARE_ESPACE = `${PREFIXE_GROUPE_COMPARE} `
+
 export type StrategieSousTitreComparaison =
   | 'preset-epci'
   | 'preset-bretagne'
@@ -43,8 +50,6 @@ export interface OptionsMesureSousTitre {
   readonly police: string
   readonly taillePt: number
   readonly espacementPt?: number
-  /** Gap between the normal prefix and the uppercase names on the first line. */
-  readonly espacePrefixeMm?: number
   readonly policePrefixe: string
   readonly taillePrefixePt: number
 }
@@ -144,12 +149,14 @@ function plierCandidat(
     police,
     taillePt,
     espacementPt = 0,
-    espacePrefixeMm = 1.4,
     policePrefixe,
     taillePrefixePt,
   } = options
-  const largeurPrefixe = mesure.largeur(PREFIXE_GROUPE_COMPARE, policePrefixe, taillePrefixePt)
-    + espacePrefixeMm
+  const largeurPrefixe = mesure.largeur(
+    PREFIXE_GROUPE_COMPARE_ESPACE,
+    policePrefixe,
+    taillePrefixePt,
+  )
   const lignes: RunSousTitre[][] = []
   let motsLigne: string[] = []
   let largeurLigne = 0
@@ -161,7 +168,7 @@ function plierCandidat(
     if (lignes.length === 0) {
       if (mesure.largeur(texte, police, taillePt, espacementPt) > largeurPremiere) depassement = true
       lignes.push([
-        { kind: 'prefix', texte: PREFIXE_GROUPE_COMPARE },
+        { kind: 'prefix', texte: PREFIXE_GROUPE_COMPARE_ESPACE },
         { kind: 'names', texte },
       ])
     } else {
@@ -283,8 +290,10 @@ export function sousTitreComparaison(
 /** Plain-text form used by tests and PDF text extraction. */
 export function texteSousTitre(sousTitre: SousTitreComparaison): string {
   return sousTitre.lignes
-    .map((ligne) => ligne.map((run) => run.texte).join(' '))
+    .map((ligne) => ligne.map((run) => run.texte).join(''))
     .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 /** Measured height of the laid-out subtitle. */

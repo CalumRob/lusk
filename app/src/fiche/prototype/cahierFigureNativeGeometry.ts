@@ -10,6 +10,7 @@
  */
 import {
   cahierIntegerYAxisScale,
+  deriveCahierFigureGeometry,
   valeursGraduationPourDomaine,
 } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureGeometry, CahierFigureAxisTick, CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
@@ -34,6 +35,32 @@ export interface RampScale {
   readonly minimum: number
   readonly maximum: number
   readonly ticks: readonly number[]
+}
+
+/**
+ * Native plot frame of the two AEDAR figure families: the screen SVG's own
+ * viewBox and margins (`AccessRampFigureCahier.vue`, shared by
+ * `CahierGroupedVerticalBarChart.vue`). The mounted figures and the PDF painter
+ * both read this one declaration; the y rail is then measured by the browser
+ * (or by the embedded PDF face) through `deriveAedarFigureGeometry`.
+ */
+export const CAHIER_AEDAR_FIGURE_GEOMETRY = {
+  width: 640,
+  height: 300,
+  margin: { top: 22, right: 68, bottom: 62, left: 64 },
+} as const satisfies CahierFigureGeometry
+
+/**
+ * Apply the native rail rule to an AEDAR frame. `renderedWidth` and
+ * `longestLabelWidth` are measured in the same unit; the returned left margin
+ * is in native user units, exactly like the mounted figures.
+ */
+export function deriveAedarFigureGeometry(
+  base: CahierFigureGeometry,
+  renderedWidth: number,
+  longestLabelWidth: number,
+): CahierFigureGeometry {
+  return deriveCahierFigureGeometry(base, renderedWidth, longestLabelWidth)
 }
 
 export interface CurveScale {

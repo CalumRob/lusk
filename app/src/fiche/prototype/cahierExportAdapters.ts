@@ -9,6 +9,7 @@
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import {
   TABLEAU_GROUPE_LABEL,
+  TABLEAU_MODE_LABEL,
   TABLEAU_STATISTIQUE_LABEL,
   TABLEAU_TEMPS_LABEL,
 } from '@/fiche/content/cahierTableauWording'
@@ -22,7 +23,7 @@ import type {
 import type { ComparisonRank, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { aedarTimeModeColor } from './aedarTimeModeColors'
 import type {
   CahierExportCapture,
   CahierExportRequest,
@@ -466,7 +467,7 @@ function rampTable(options: {
     // Shape A keeps the mode as a row dimension, so the column set is fixed
     // (5 columns) whatever the number of visible modes.
     const columns: CahierTableColumn[] = [
-      { key: 'mode', label: 'Mode', unit: null, kind: 'raw', seriesKey: null },
+      { key: 'mode', label: TABLEAU_MODE_LABEL, unit: null, kind: 'raw', seriesKey: null },
       { key: 'territory', label: territoryName, unit, kind: 'focal', seriesKey: null },
       ...(comparisonDisplayed
         ? [{ key: 'groupe', label: GROUPE_COMPARE_LABEL, unit, kind: 'comparison' as const, seriesKey: null }]
@@ -486,7 +487,7 @@ function rampTable(options: {
               display: entry.label,
               unit: null,
               raw: true,
-              color: AEDAR_TIME_MODE_COLORS[entry.key] ?? null,
+              color: aedarTimeModeColor(entry.key),
             }),
             cell({
               columnKey: 'territory',
@@ -526,7 +527,7 @@ function rampTable(options: {
       kind: 'focal' as const,
       seriesKey: entry.key,
       groupLabel: entry.label,
-      groupColor: AEDAR_TIME_MODE_COLORS[entry.key] ?? null,
+      groupColor: aedarTimeModeColor(entry.key),
     })),
     ...(comparisonDisplayed
       ? series.map((entry) => ({
@@ -536,7 +537,7 @@ function rampTable(options: {
         kind: 'comparison' as const,
         seriesKey: entry.key,
         groupLabel: entry.label,
-        groupColor: AEDAR_TIME_MODE_COLORS[entry.key] ?? null,
+        groupColor: aedarTimeModeColor(entry.key),
       }))
       : []),
   ]
@@ -942,8 +943,14 @@ export function projectExplorer(
   // its focal value, compared group and served rank adjacent. The previous
   // model (rows = modes, columns = deciles) was the exact transpose.
   const territoryName = capture.identity.territory.name
-  const distributionSeries = distFigure.series
-    .filter((series) => !series.comparisonFor && !quantile.hiddenSeriesKeys.includes(series.key))
+  // Approved `appendSandboxTables`: `orderedBars` follows the visible ramp
+  // series order, then any remaining visible legend key. The two tables of the
+  // same panel therefore read their groups in the same order.
+  const ordreSeries = new Map(volumeSeries.map((series, index) => [series.key, index]))
+  const distributionSeries = [...distFigure.series
+    .filter((series) => !series.comparisonFor && !quantile.hiddenSeriesKeys.includes(series.key))]
+    .sort((a, b) => (ordreSeries.get(a.key) ?? Number.MAX_SAFE_INTEGER)
+      - (ordreSeries.get(b.key) ?? Number.MAX_SAFE_INTEGER))
   const distributionColumns: CahierTableColumn[] = distributionSeries.flatMap((series) => [
     {
       key: `mode:${series.key}`,
@@ -1000,7 +1007,9 @@ export function projectExplorer(
     rowHeader: TABLEAU_STATISTIQUE_LABEL,
     columns: distributionColumns,
     rows: distributionRows,
-    notes: [distFigure.description],
+    // The approved table is the figcaption clone only; the figure's accessible
+    // description stays in `accessibleLabel`, not as a PDF-only table note.
+    notes: [],
     unit: model.distributionValueUnit,
   }
   const volumeTable = rampTable({
