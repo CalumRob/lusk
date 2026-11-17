@@ -926,6 +926,8 @@ describe('tableaux PDF — colonnes, nombres et en-têtes', () => {
       title: 'Grand tableau',
       columns,
       rows,
+      layout: 'flat',
+      columnSeparators: 'none',
       notes: [],
       unit: 'u',
     }, { mesure, largeurDisponible: 120, nomTerritoire: null })
@@ -965,6 +967,8 @@ describe('tableaux PDF — colonnes, nombres et en-têtes', () => {
       title: 'Nombre',
       columns,
       rows,
+      layout: 'flat',
+      columnSeparators: 'none',
       notes: [],
       unit: 'u',
     }, { mesure, largeurDisponible: 40, nomTerritoire: null })).toThrow(/aucun nombre n’est tronqué/i)
@@ -998,6 +1002,8 @@ describe('tableaux PDF — colonnes, nombres et en-têtes', () => {
       title: 'Tableau',
       columns,
       rows,
+      layout: 'flat',
+      columnSeparators: 'none',
       notes: [],
       unit: null,
     }, {

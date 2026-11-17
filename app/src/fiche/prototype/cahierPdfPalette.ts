@@ -63,6 +63,15 @@ export const PALETTE_PDF = {
   modeCar: couleurPdf('--cahier-mode-car'),
   modeWalk: couleurPdf(AEDAR_TIME_MODE_COLORS.walk),
   modeBikeLts2: couleurPdf(AEDAR_TIME_MODE_COLORS.bike_lts2),
+  /**
+   * `.mobilite-share-track` complement ground:
+   * `color-mix(in srgb, var(--cahier-default) 18%, var(--paper))`.
+   */
+  shareTrackGround: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 18%, var(--paper))'),
+  /** A populated share track's 1 px border: the same mix at 22 %. */
+  shareTrackBorder: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent)'),
+  /** The empty track's dashed 1 px border: the same mix at 40 %. */
+  shareTrackEmptyBorder: couleurPdf('color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 40%, transparent)'),
 } as const
 
 export type PdfPaletteKey = keyof typeof PALETTE_PDF

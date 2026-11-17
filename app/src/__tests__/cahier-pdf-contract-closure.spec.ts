@@ -9,13 +9,12 @@
  * and the explorer's captured horizon caption.
  */
 import { describe, expect, it } from 'vitest'
-import { jsPDF } from 'jspdf'
 
-import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
-import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
+import { composerCahierPdf, PAIRE_TABLEAUX_PT, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
 import { ROLE_PDF, LARGEUR_CORPS_PT, PAGE_APPROUVEE, ptDepuisCssPx } from '@/fiche/prototype/cahierPdfGrammaire'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
-import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
+import { CAHIER_FIGURE_ROW, figureRowLayout } from '@/fiche/prototype/cahierFigureNativeGeometry'
+import { figureRowGeometry } from '@/fiche/prototype/cahierPdfFigures'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
@@ -24,6 +23,7 @@ import {
   chargeurPoliceTest,
   cheminsPdf,
   lirePdf,
+  mesurePdfTest,
   occurrences,
   type LecturePdf,
 } from './helpers/cahierPdfRuntime'
@@ -36,7 +36,7 @@ import {
   captureWaffleDense,
 } from './helpers/cahierPdfFixtures'
 
-const PAIRE_PT = (LARGEUR_CORPS_PT - ptDepuisCssPx(24)) / 2
+const PAIRE_PT = PAIRE_TABLEAUX_PT.largeur
 
 function options() {
   return {
@@ -55,36 +55,6 @@ async function generer(capture: CahierExportCapture, modes?: readonly string[]):
   return lirePdf((await composerCahierPdf(projection.request, options())).blob)
 }
 
-async function mesureMm(): Promise<MesureTexte> {
-  const doc = await documentPolices()
-  return {
-    largeur: (texte, police, taille, espacement = 0) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      doc.setCharSpace(espacement * 25.4 / 72)
-      const width = doc.getTextWidth(texte)
-      doc.setCharSpace(0)
-      return width
-    },
-    hauteurLigne: (_police, taille) => taille * 25.4 / 72,
-    espace: (police, taille) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      return doc.getTextWidth(' ')
-    },
-  }
-}
-
-async function documentPolices(): Promise<jsPDF> {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const signal = new AbortController().signal
-  for (const face of POLICES_PDF) {
-    doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
-    doc.addFont(face.file, face.id, 'normal')
-  }
-  return doc
-}
-
 async function parties(capture: CahierExportCapture) {
   const request = (() => {
     const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
@@ -92,7 +62,7 @@ async function parties(capture: CahierExportCapture) {
     if (projection.status !== 'ready') throw new Error(projection.reason)
     return projection.request
   })()
-  const mesure = await mesureMm()
+  const mesure = await mesurePdfTest()
   const parts = projeterRequeteExportFigures(request).flatMap((projection) => projection.tables.flatMap(
     (table) => construireTableauxPdf(table, {
       mesure,
@@ -236,7 +206,11 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
       .filter((projection) => projection.family === 'mobilite-bars')
     expect(bars).toHaveLength(2)
     for (const projection of bars) {
-      expect(projection.row).toMatchObject({ columns: 2, gapPx: 56 })
+      expect(projection.row).toMatchObject({
+        key: 'mobilite-paired',
+        columns: CAHIER_FIGURE_ROW.columns,
+        viewportPx: CAHIER_FIGURE_ROW.desktopViewportPx,
+      })
     }
     const lecture = await generer(capture)
     const titre1 = lecture.textes.find((item) => item.str === 'Stationnement vélo et voiture')!
@@ -245,11 +219,15 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     expect(titre2).toBeTruthy()
     // Same baseline: the two source columns share one figure row.
     expect(Math.abs(titre1.y - titre2.y)).toBeLessThan(0.02)
-    const gapPt = ptDepuisCssPx(56)
-    const largeurColonne = (LARGEUR_CORPS_PT - gapPt) / 2
+    // The gap is the source clamp at the captured viewport, converted with the
+    // figure's own page scaling — never a transplanted physical distance.
+    const { gap, panelWidth: largeur } = figureRowGeometry(
+      LARGEUR_CORPS_PT * 25.4 / 72,
+      figureRowLayout(CAHIER_FIGURE_ROW.desktopViewportPx),
+    )
     const x1 = titre1.x + titre1.largeur / 2
     const x2 = titre2.x + titre2.largeur / 2
-    expect(x2 - x1).toBeCloseTo(largeurColonne + gapPt, 1)
+    expect(x2 - x1).toBeCloseTo((largeur + gap) * 72 / 25.4, 1)
   })
 
   it('marque ¹ une fois par cellule comparée servie, même sans en-tête de ligne', async () => {
@@ -358,7 +336,8 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     // inter-letter applications of the canonical `-0.01em` owner tracking.
     // The browser measurement in `.../wordmark/browser-measure.json` confirms
     // the same shaped origins; no per-letter correction is applied here.
-    const doc = await documentPolices()
+    const { doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+
     doc.setFont(ROLE_PDF.marqueMot.police, 'normal')
     doc.setFontSize(ROLE_PDF.marqueMot.taille)
     const avancesPt = Array.from('lusk')

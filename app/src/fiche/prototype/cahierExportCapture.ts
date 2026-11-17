@@ -40,6 +40,7 @@ import type {
   TextBlock,
 } from '@/fiche/content/themeContent'
 import type { Territoire } from '@/payload/types'
+import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 
 /** One to three selectable series may be kept for a readable PDF table (PRD #1014). */
 export const CAHIER_EXPORT_MAX_MODES = 3
@@ -341,15 +342,17 @@ export interface CahierExportPublication {
 
 /**
  * Native sibling row of two figures (the stationnement/ravitaillement pair).
- * `columns` and `gapPx` are the source layout facts, not a per-section PDF
- * template: the composer pairs the captured siblings and only falls back to a
- * full-width stack on real measured overflow.
+ *
+ * The capture records *which* native row grammar the source renders and the
+ * host width it is read at; the gap itself is not copied. `figureRowLayout`
+ * resolves the source `clamp()` at that viewport, so a change to
+ * `.mobilite-paired` reaches the PDF through its owner instead of a literal.
  */
 export interface CahierCaptureFigureRow {
   readonly key: string
   readonly columns: number
-  /** Source CSS column gap, at the approved desktop reading scale. */
-  readonly gapPx: number
+  /** The desktop host width the export reproduces (`CAHIER_FIGURE_ROW`). */
+  readonly viewportPx: number
 }
 
 interface CahierCaptureFigureBase {
@@ -1328,10 +1331,14 @@ function captureFigures(options: {
       return evidence.columns.map((column) => ({
         family: 'mobilite-bars' as const,
         slot: column.key,
-        // `CahierMobiliteSection.vue`: two equal columns with
-        // `column-gap: clamp(24px, 4vw, 56px)`; the approved desktop width
-        // resolves the upper 56 px bound.
-        row: { key: 'mobilite-paired', columns: 2, gapPx: 56 },
+        // `CahierMobiliteSection.vue` `.mobilite-paired`: two equal columns with
+        // `column-gap: clamp(24px, 4vw, 56px)`. The row declares the grammar and
+        // the desktop viewport; `figureRowLayout` owns the resolved gap.
+        row: {
+          key: 'mobilite-paired',
+          columns: CAHIER_FIGURE_ROW.columns,
+          viewportPx: CAHIER_FIGURE_ROW.desktopViewportPx,
+        },
         model: { figure: column.bars, ratio: column.ratio },
       }))
     case 'mobilite-share':

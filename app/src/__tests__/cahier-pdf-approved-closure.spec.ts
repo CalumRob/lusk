@@ -4,10 +4,8 @@
  * output of the composer.
  */
 import { describe, expect, it } from 'vitest'
-import { jsPDF } from 'jspdf'
 
-import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
-import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
+import { composerCahierPdf, PAIRE_TABLEAUX_PT } from '@/fiche/prototype/cahierPdfComposer'
 import {
   LARGEUR_CORPS_PT,
   PAGE_APPROUVEE,
@@ -16,7 +14,6 @@ import {
   ptDepuisCssPx,
 } from '@/fiche/prototype/cahierPdfGrammaire'
 import { construireTableauxPdf, CahierPdfTableLayoutError } from '@/fiche/prototype/cahierPdfTableau'
-import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
@@ -26,6 +23,7 @@ import {
   cheminsPdf,
   epaisseursTraitPdf,
   lirePdf,
+  mesurePdfTest,
   occurrences,
   type LecturePdf,
 } from './helpers/cahierPdfRuntime'
@@ -39,7 +37,7 @@ import {
 const ptMm = (pt: number) => pt * 25.4 / 72
 const CORPS_PT = LARGEUR_CORPS_PT
 const CORPS_X_PT = PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT
-const PAIRE_PT = (CORPS_PT - ptDepuisCssPx(24)) / 2
+const PAIRE_PT = PAIRE_TABLEAUX_PT.largeur
 const GAP_PT = ptDepuisCssPx(24)
 
 function options() {
@@ -58,31 +56,6 @@ async function generer(capture: CahierExportCapture, modes?: readonly string[]):
   if (projection.status !== 'ready') throw new Error(projection.reason)
   const artifact = await composerCahierPdf(projection.request, options())
   return lirePdf(artifact.blob)
-}
-
-async function mesureMm(): Promise<MesureTexte> {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const signal = new AbortController().signal
-  for (const face of POLICES_PDF) {
-    doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
-    doc.addFont(face.file, face.id, 'normal')
-  }
-  return {
-    largeur: (texte, police, taille, espacement = 0) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      doc.setCharSpace(espacement * 25.4 / 72)
-      const width = doc.getTextWidth(texte)
-      doc.setCharSpace(0)
-      return width
-    },
-    hauteurLigne: (_police, taille) => taille * 25.4 / 72,
-    espace: (police, taille) => {
-      doc.setFont(police, 'normal')
-      doc.setFontSize(taille)
-      return doc.getTextWidth(' ')
-    },
-  }
 }
 
 describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes', () => {
@@ -129,7 +102,7 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
   })
 
   it('choisit une continuation mesurée plutôt que de réduire un nombre dans une demi-colonne', async () => {
-    const mesure = await mesureMm()
+    const mesure = await mesurePdfTest()
     const capture = capturePdfFixture('aedar-access')
     const projection = projeterRequeteExport(capture, capture.capabilities.selectableSeries
       .slice(0, 3).map((serie) => serie.id))
@@ -250,11 +223,13 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
   })
 
   it('mesure les en-têtes de groupe longs et augmente la hauteur, sans débordement', async () => {
-    const mesure = await mesureMm()
+    const mesure = await mesurePdfTest()
     const parts = construireTableauxPdf({
       key: 'large-group',
       title: 'Tableau groupé',
       rowHeader: 'Statistique',
+      layout: 'grouped',
+      columnSeparators: 'group',
       columns: [
         { key: 'a', label: 'Territoire', unit: null, kind: 'focal', seriesKey: 'a', groupLabel: 'Transports en commun et marche', groupColor: '#a94562' },
         { key: 'b', label: 'Groupe comparé', unit: null, kind: 'comparison', seriesKey: 'a', groupLabel: 'Transports en commun et marche', groupColor: '#a94562' },

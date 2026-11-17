@@ -41,26 +41,33 @@ export const RANG_ABSENT = '—'
 
 /**
  * One owned box model for the table caption/header, consumed by the composer's
- * pagination measurement and by the painter. The values are the approved
- * source's own boxes (caption `line-height:1.18`; header cell `padding:6px 4px`;
- * section rhythm 12 px after the caption; `(suite)` line on a continuation),
- * not a second height policy.
+ * pagination measurement and by the painter.
+ *
+ * Provenance is mixed on purpose, and each value says which it is:
+ * - a **conversion** of the approved source's own CSS box (the `th` padding);
+ * - a **measured** advance read on R1–R3, because the embedded face's line box
+ *   is not the browser's (the caption gap, the header/row advances).
+ *
+ * A cited CSS value is the source *role*, never a claim that a millimetre value
+ * equals its direct conversion: `apresTitreMm` is the measured caption→header
+ * gap on the approved artifacts, not the source's 8 px caption margin (which
+ * would be 1.48 mm), and `interligneEntete` is the measured advance over the
+ * face's own 1.2 em box — not the CSS `line-height: 1.35`.
  */
 export const ESPACE_TABLEAU = {
-  /** `desktop.js` table `th` vertical padding (`padding:6px 4px`). */
+  /** `desktop.js` table `th` vertical padding (`padding:6px 4px`) — converted. */
   remplissageEnteteMm: mmDepuisCssPx(6),
-  /** Caption `line-height` measured on the approved caption (15 px role). */
+  /** Approved caption line-height (`line-height: 1.18`). */
   interligneTitre: 1.18,
-  /** Painter's measured caption → header gap (`desktop.js` caption margin 8 px). */
+  /** Measured caption → header gap on R1–R3 (1.2 mm, ~3.4 px). */
   apresTitreMm: 1.2,
   /** `(suite)` line box on a continued page part. */
   suiteMm: 2.8,
   /** Row-label/value top inset inside a row (1 mm measured). */
   ligneInsetMm: 1,
-  /** `th` line-height on the approved tables (14 px mode role, 1.35) is
-   * converted to the PDF line box once; both the header measurement and the
-   * painter use these boxes. */
+  /** Measured header advance over the embedded face's 1.2 em line box. */
   interligneEntete: 1.16,
+  /** Measured row-text advance over the same box. */
   interligneLigne: 1.12,
   /** Row box bottom padding measured on the approved table rows. */
   remplissageLigneMm: 1.8,
@@ -269,9 +276,8 @@ export function construireTableauxPdf(
   options: OptionsTableauPdf,
 ): readonly TableauPdfPart[] {
   const { mesure, largeurDisponible, nomTerritoire } = options
-  /** Explicit approved shape: adapters declare it; no key/label inference. */
+  /** Explicit approved shape: adapters declare it; the PDF never infers it. */
   const grouped = table.layout === 'grouped'
-    || (table.layout === undefined && table.columns.some((column) => column.groupLabel != null))
   /** Approved flat shape A: the generator's fixed `colgroup` percentages. */
   const colgroupFixe = table.colgroup === 'access-approved'
   /** Any series/legend-key grouping means a split may only cut whole groups. */
@@ -502,7 +508,7 @@ export function construireTableauxPdf(
     const naturelTotal = groupe.reduce((sum, item) => sum + item.natural, largeurLibelle)
     const marge = Math.max(0, largeurDisponible - naturelTotal)
     const bonus = groupe.length ? marge / groupe.length : 0
-    const politiqueSeparateur = table.columnSeparators ?? (grouped ? 'group' : 'none')
+    const politiqueSeparateur = table.columnSeparators
     const colonnes: ColonneTableauPdf[] = groupe.map((item, index) => {
       const width = item.natural + bonus
       const separatorBefore = politiqueSeparateur === 'legend-key'

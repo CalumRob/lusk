@@ -58,6 +58,43 @@ export const CAHIER_MOBILITE_BARS_GEOMETRY = {
 } as const satisfies CahierFigureGeometry
 
 /**
+ * Native paired-figure row of `CahierMobiliteSection.vue` (`.mobilite-paired`):
+ * `grid-template-columns: repeat(2, minmax(0, 1fr))` and
+ * `column-gap: clamp(24px, 4vw, 56px)`.
+ *
+ * The export reproduces the *desktop* reading layout, never the reader's own
+ * window: `desktopViewportPx` is the host width the approved desktop artifacts
+ * (and the bounded browser harness) are read at, so the responsive gap is
+ * resolved once, from the source clamp, at that named viewport. The screen SFC
+ * and this object are kept identical by `cahier-figure-row-grammar.spec.ts`.
+ */
+export const CAHIER_FIGURE_ROW = {
+  columns: 2,
+  gap: { minimumPx: 24, viewportVw: 4, maximumPx: 56 },
+  desktopViewportPx: 1440,
+} as const
+
+export interface FigureRowLayout {
+  readonly columns: number
+  readonly viewportPx: number
+  /** The source clamp resolved at `viewportPx`, in screen CSS pixels. */
+  readonly gapPx: number
+}
+
+/** Resolve the native paired-row gap from its own clamp at a host width. */
+export function figureRowLayout(viewportPx: number = CAHIER_FIGURE_ROW.desktopViewportPx): FigureRowLayout {
+  const { columns, gap } = CAHIER_FIGURE_ROW
+  const resolved = (gap.viewportVw * viewportPx) / 100
+  return {
+    columns,
+    viewportPx,
+    gapPx: Math.min(gap.maximumPx, Math.max(gap.minimumPx, resolved)),
+  }
+}
+
+
+
+/**
  * Apply the native rail rule to an AEDAR frame. `renderedWidth` and
  * `longestLabelWidth` are measured in the same unit; the returned left margin
  * is in native user units, exactly like the mounted figures.

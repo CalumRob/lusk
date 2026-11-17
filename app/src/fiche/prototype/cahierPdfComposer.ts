@@ -20,6 +20,7 @@ import type { CahierPdfArtifact, CahierPdfGenerator } from './cahierPdfExportCon
 import type { CahierFigureProjection } from './cahierExportAdapters'
 import { projeterRequeteExportFigures } from './cahierExportAdapters'
 import type {
+  CahierCaptureFigure,
   CahierCaptureSource,
   CahierExportCapture,
   CahierExportRequest,
@@ -46,12 +47,16 @@ import {
 } from './cahierPdfFonts'
 import {
   dessinerFigurePdf,
+  figureRowGeometry,
   hauteurFigurePdf,
   CahierPdfAssetError,
   type ChargeurImagePdf,
+  type OptionsFigurePdfLiaison,
 } from './cahierPdfFigures'
+import { figureRowLayout } from './cahierFigureNativeGeometry'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
+import type { MobiliteRaccordementEvidence } from '@/fiche/content/themeContent'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import {
   EXPLICATION_INDISPONIBLE,
@@ -135,6 +140,12 @@ const ESPACE = {
 const PAIRE_TABLEAUX = {
   gap: mm(ptDepuisCssPx(24)),
   largeur: (mm(LARGEUR_CORPS_PT) - mm(ptDepuisCssPx(24))) / 2,
+} as const
+
+/** The same approved two-column grid in points, for the contract tests. */
+export const PAIRE_TABLEAUX_PT = {
+  gap: ptDepuisCssPx(24),
+  largeur: (LARGEUR_CORPS_PT - ptDepuisCssPx(24)) / 2,
 } as const
 
 const TAILLE = {
@@ -539,6 +550,41 @@ function tableColumnsComparison(projection: Extract<CahierFigureProjection, { fa
     .map((column) => column.key))
 }
 
+/**
+ * The one option set of a projection. The pagination measurement
+ * (`hauteurFigurePdf`) and the painter (`dessinerFigurePdf`) both receive this
+ * exact object, so a new figure input cannot reach only one of them.
+ */
+export function optionsFigurePdf(
+  request: CahierExportRequest,
+  projection: CahierFigureProjection,
+): OptionsFigurePdfLiaison {
+  const capture = request.capture
+  const parSlot = <F extends CahierCaptureFigure['family']>(family: F) => capture.figures.find(
+    (figure): figure is Extract<CahierCaptureFigure, { family: F }> => (
+      figure.family === family && figure.slot === projection.slot),
+  )
+  const bars = parSlot('mobilite-bars')
+  const curve = parSlot('mobilite-curve')
+  const explorer = parSlot('aedar-equipment-explorer')
+  return {
+    comparisonProof: preuveFigureComparative(projection, capture),
+    ...(explorer
+      ? {
+        distributionTitle: explorer.model.distributionFigureTitle,
+        distributionUnit: explorer.model.distributionValueUnit,
+        explorerTypequLabel: explorer.effective.typequLabel,
+      }
+      : {}),
+    ...(bars ? { modeleBars: bars.model.figure } : {}),
+    // The captured curve model is the same published model the painter reads
+    // (axis, points, trajectory, comparison); the capture narrows it to its own
+    // structural projection, so this one widening is stated here, not repeated
+    // at every painter call site.
+    ...(curve ? { modeleCourbe: curve.model as unknown as MobiliteRaccordementEvidence } : {}),
+  }
+}
+
 function construirePages(
   request: CahierExportRequest,
   mesure: MesureTexte,
@@ -546,21 +592,6 @@ function construirePages(
   const capture = request.capture
   const projections = projeterRequeteExportFigures(request)
   const sousTitre = construireSousTitre(capture, mesure)
-  const titresDistribution = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'aedar-equipment-explorer')
-      .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
-  )
-  const libellesTypequ = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'aedar-equipment-explorer')
-      .map((figure) => [figure.slot, figure.effective.typequLabel]),
-  )
-  const modelesBars = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'mobilite-bars')
-      .map((figure) => [figure.slot, figure.model.figure]),
-  )
   const identityHeight = hauteurIdentite(capture, sousTitre, mesure)
   const sourcesLines = capture.sources.map((source) => plierTexte(
     `Source(s) : ${sourcesTexte(source)}`,
@@ -584,23 +615,7 @@ function construirePages(
 
   const blocks: BlocPdf[] = []
   const messagesVus = new Set<string>()
-  const optionsFigure = (projection: CahierFigureProjection) => ({
-    comparisonProof: preuveFigureComparative(projection, capture),
-    ...(titresDistribution.has(projection.slot)
-      ? { distributionTitle: titresDistribution.get(projection.slot) }
-      : {}),
-    ...(libellesTypequ.has(projection.slot)
-      ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
-      : {}),
-    ...(modelesBars.has(projection.slot)
-      ? { modeleBars: modelesBars.get(projection.slot) }
-      : {}),
-  })
-  const rowBySlot = new Map(
-    capture.figures
-      .filter((figure) => figure.row)
-      .map((figure) => [figure.slot, figure.row!] as const),
-  )
+  const optionsFigure = (projection: CahierFigureProjection) => optionsFigurePdf(request, projection)
   let premierBloc = true
   const pousserFigure = (projection: CahierFigureProjection) => {
     blocks.push({
@@ -626,14 +641,16 @@ function construirePages(
   }
   for (let index = 0; index < projections.length; index += 1) {
     const projection = projections[index]!
-    const row = rowBySlot.get(projection.slot)
+    // The projection's own row is the single source: no second lookup table.
+    const row = projection.row ?? null
     const peers = row && row.columns > 1
       ? projections.slice(index, index + row.columns)
-        .filter((candidate) => rowBySlot.get(candidate.slot)?.key === row.key)
+        .filter((candidate) => candidate.row?.key === row.key)
       : []
     if (row && row.columns > 1 && peers.length === row.columns) {
-      const gap = mm(ptDepuisCssPx(row.gapPx))
-      const largeur = (PAGE.largeurCorps - gap * (row.columns - 1)) / row.columns
+      const layout = figureRowGeometry(PAGE.largeurCorps, figureRowLayout(row.viewportPx))
+      const gap = layout.gap
+      const largeur = layout.panelWidth
       const cells = peers.map((peer, cellIndex) => ({
         projection: peer,
         x: PAGE.corpsX + cellIndex * (largeur + gap),
@@ -1319,11 +1336,26 @@ async function creerChargeurImageParDefaut(): Promise<ChargeurImagePdf> {
 }
 
 /**
+ * Production text measurement over the registered faces, without composing a
+ * document. The suite measures table cells and figure heights through this
+ * seam, so no test can assert a different line box than the painter uses.
+ */
+export async function mesurePdfProduction(options: {
+  readonly chargerPolice?: ChargeurPolicePdf
+  readonly signal?: AbortSignal
+} = {}): Promise<{ readonly doc: jsPDF; readonly mesure: MesureTexte }> {
+  const { jsPDF: JsPdf } = await import('jspdf')
+  const doc = new JsPdf({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+  const signal = options.signal ?? new AbortController().signal
+  await enregistrerPolices(doc, options.chargerPolice ?? chargerPolicePdf, signal)
+  return { doc, mesure: new MesureJsPdf(doc) }
+}
+
+/**
  * Public generation seam. Lazy-imports jsPDF/svg2pdf only when a file is
  * actually requested; the app's initial bundle does not carry them.
  */
-export async function composerCahierPdf(
-  request: CahierExportRequest,
+export async function composerCahierPdf(  request: CahierExportRequest,
   options: OptionsCompositionCahierPdf,
 ): Promise<CahierPdfArtifact> {
   const { signal } = options
@@ -1381,42 +1413,16 @@ export async function composerCahierPdf(
   const urlAccueil = options.urlAccueil ?? (globalThis.location ? new URL('/', globalThis.location.origin).href : null)
   const urlPublique = options.urlPublique
     ?? urlParDefaut(capture, `section-${capture.identity.sectionKey}`)
-  const modelesBars = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'mobilite-bars')
-      .map((figure) => [figure.slot, figure.model.figure]),
-  )
-  const modelesCourbes = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'mobilite-curve')
-      .map((figure) => [figure.slot, figure.model]),
-  )
-  const titresDistribution = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'aedar-equipment-explorer')
-      .map((figure) => [figure.slot, figure.model.distributionFigureTitle]),
-  )
-  const unitesDistribution = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'aedar-equipment-explorer')
-      .map((figure) => [figure.slot, figure.model.distributionValueUnit]),
-  )
-  const libellesTypequ = new Map(
-    capture.figures
-      .filter((figure) => figure.family === 'aedar-equipment-explorer')
-      .map((figure) => [figure.slot, figure.effective.typequLabel]),
-  )
   const dessinerFigure = async (
     projection: CahierFigureProjection,
     x: number,
     y: number,
     width: number,
   ): Promise<void> => {
-    const modele = modelesBars.get(projection.slot)
-    const modeleCourbe = modelesCourbes.get(projection.slot)
-    const distributionTitle = titresDistribution.get(projection.slot)
     try {
+      // The same option object the pagination measured with (no second maps).
       await dessinerFigurePdf({
+        ...optionsFigurePdf(request, projection),
         doc,
         mesure,
         x,
@@ -1424,16 +1430,6 @@ export async function composerCahierPdf(
         width,
         signal,
         chargerImage,
-        comparisonProof: preuveFigureComparative(projection, capture),
-        ...(modele ? { modeleBars: modele } : {}),
-        ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
-        ...(distributionTitle ? { distributionTitle } : {}),
-        ...(libellesTypequ.has(projection.slot)
-          ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
-          : {}),
-        ...(unitesDistribution.get(projection.slot)
-          ? { distributionUnit: unitesDistribution.get(projection.slot) }
-          : {}),
       }, projection)
     } catch (error) {
       if (error instanceof CahierPdfAssetError) {

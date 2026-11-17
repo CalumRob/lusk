@@ -24,6 +24,7 @@ import {
 } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
+import type { ComparisonScopeKind } from '@/fiche/content/territoryFacts'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
 import { cahierExportFixture, sectionOf } from './cahierExportFixtures'
 import type { CahierExportFixture } from './cahierExportFixtures'
@@ -426,9 +427,22 @@ function profilSynthetique(
  * `stationnement-ravitaillement` capture whose compared cells carry served
  * references. The approval PDF set uses this fixture for the barred header /
  * table grammar instead of the synthetic map-block fixture.
+ *
+ * The compared scope is the capture's own resolved comparison group (the focal
+ * commune compares with its EPCI), never a second scope chosen by the fixture,
+ * and the served ordinal is the focal value's position inside that declared
+ * pair. The values are synthetic fixture values on the published model; nothing
+ * here is real producer data.
  */
 export function captureBarresStationnement(): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('stationnement-ravitaillement'))
+  const group = capture.comparison.group as { scopeKind: ComparisonScopeKind | null; label: string | null } | null
+  if (!group?.scopeKind || !group.label) {
+    throw new Error('Fixture PDF : le groupe de comparaison natif est requis pour les barres stationnement.')
+  }
+  const scope = { kind: group.scopeKind, label: group.label }
+  /** The declared EPCI cohort: the focal commune and its one peer commune. */
+  const paire = { size: 2, facteurPair: 0.76 }
   const synthetic = [12.4, 8.1]
   let index = 0
   for (const figure of capture.figures.filter((candidate: any) => candidate.family === 'mobilite-bars')) {
@@ -436,13 +450,17 @@ export function captureBarresStationnement(): CahierExportCapture {
       const unit = figure.model.figure.unit
       const focal = synthetic[index % synthetic.length]!
       index += 1
+      const pair = Math.round(focal * paire.facteurPair * 100) / 100
+      // The focal value leads the declared peer: a served 1er/2, and the mean of
+      // the same two values is the compared reference.
+      const reference = Math.round(((focal + pair) / 2) * 100) / 100
       category.value.fact.value = focal
       category.value.fact.unit = unit
       category.value.fact.comparison = {
         direction: 'neutral',
-        scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-        rank: null,
-        reference: { value: Math.round(focal * 88) / 100, unit },
+        scope,
+        rank: { position: focal >= pair ? 1 : 2, size: paire.size, ties: null },
+        reference: { value: reference, unit },
       }
     }
   }

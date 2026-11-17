@@ -17,7 +17,7 @@ it('une modification des jetons éditoriaux source change les couleurs du vrai f
   const beforeColours = await couleursRemplissage(new Uint8Array(await before.blob.arrayBuffer()))
   expect(beforeColours).not.toContain('#ff0000')
   source.css = css.replace(/(--editorial-paper:\s*)#[\da-f]{6}/i, '$1#ff0000')
-    .replace(/(--editorial-paper-deep:\s*)#[\da-f]{6}/i, '$1#00ff00')
+    .replace(/(--editorial-muted:\s*)#[\da-f]{6}/i, '$1#00ff00')
     .replace(/(--brand-500:\s*)#[\da-f]{6}/i, '$1#0000ff')
   vi.resetModules()
   vi.doMock('@/styles/tokens.css?raw', () => ({ default: source.css }))
@@ -28,7 +28,9 @@ it('une modification des jetons éditoriaux source change les couleurs du vrai f
   expect(afterColours).toContain('#00ff00')
   expect(afterColours).toContain('#0000ff')
   const { PALETTE_PDF, couleurPdf } = await import('@/fiche/prototype/cahierPdfPalette')
-  expect(PALETTE_PDF.paperDeep).toBe('#00ff00')
+  // The shared Cahier alias resolves to the mutated editorial token, so the
+  // share track's own ground/border follow the source too.
+  expect(PALETTE_PDF.editorialMuted).toBe('#00ff00')
   expect(couleurPdf('var(--paper)')).toBe('#ff0000')
   expect(() => couleurPdf('var(--not-a-real-role)')).toThrow()
 })

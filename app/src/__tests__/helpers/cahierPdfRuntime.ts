@@ -15,6 +15,7 @@ import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 
 import type { ChargeurPolicePdf, PdfFontFace } from '@/fiche/prototype/cahierPdfFonts'
 import type { ChargeurImagePdf } from '@/fiche/prototype/cahierPdfFigures'
+import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture, CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'
 import { capturePdfFixture, PDF_FIXTURE_SECTION_KEYS } from './cahierPdfFixtures'
@@ -41,6 +42,17 @@ export const chargeurImageTest: ChargeurImagePdf = async () => ({
   width: 2,
   height: 2,
 })
+
+/**
+ * The production measurement seam (`MesureJsPdf`) over the committed faces.
+ * Tests measure table/figure boxes with the painter's own class, never with a
+ * second millimetre helper and never with a fake line height.
+ */
+export async function mesurePdfTest(): Promise<MesureTexte> {
+  const { mesurePdfProduction } = await import('@/fiche/prototype/cahierPdfComposer')
+  const { mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+  return mesure
+}
 
 export function requetePour(
   key: PdfFixtureSectionKey,
@@ -204,6 +216,8 @@ export interface CheminPdf {
   readonly kind: 'fill' | 'stroke'
   readonly colour: string | null
   readonly largeur: number | null
+  /** Active dash pattern at paint time (`[] 0 d` is solid). */
+  readonly tirets: string | null
   readonly x: number
   readonly y: number
   readonly width: number
@@ -249,6 +263,7 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
     let stroke: string | null = null
     let fill: string | null = null
     let largeur: number | null = null
+    let tirets: string | null = null
     let points: [number, number][] = []
     let kind: 'fill' | 'stroke' | null = null
     const ajouter = (values: number[]) => {
@@ -257,6 +272,11 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
     for (const brut of lignes) {
       const ligne = brut.trim()
       if (!ligne) continue
+      const motif = /^\[([^\]]*)\] (-?(?:\d+(?:\.\d*)?|\.\d+)) d$/.exec(ligne)
+      if (motif) {
+        tirets = motif[1]!.trim() ? motif[1]!.trim().split(/\s+/).map(String).join(' ') : ''
+        continue
+      }
       const rgbStroke = /^([\d.]+) ([\d.]+) ([\d.]+) RG$/.exec(ligne)
       if (rgbStroke) {
         stroke = `#${composante(rgbStroke[1]!)}${composante(rgbStroke[2]!)}${composante(rgbStroke[3]!)}`
@@ -309,6 +329,7 @@ export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonl
           kind,
           colour: kind === 'stroke' ? stroke : fill,
           largeur,
+          tirets,
           x,
           // The content stream is bottom-origin; expose the reader's top-origin
           // y so a margin/frame assertion reads like the approved page box.

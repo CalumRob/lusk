@@ -124,18 +124,17 @@ export interface CahierFigureTable {
   readonly rowHeader?: string | null
   /**
    * Explicit approved shape declared by the adapter. The PDF never infers the
-   * shape from a column key or a label. `flat` paints one header row; `grouped`
-   * paints the legend-key row above the sub-header. Absent means the historical
-   * groupLabel-derived shape (kept only for tests/older call sites).
+   * shape from a column key or a label: `flat` paints one header row, `grouped`
+   * paints the legend-key row above the sub-header.
    */
-  readonly layout?: 'flat' | 'grouped'
+  readonly layout: 'flat' | 'grouped'
   /**
    * Approved fixed `colgroup` of shape A (access ramps, `desktop.js:215`):
    * `14/32/18/18/18 %` with comparison, `18/46/36 %` without.
    */
   readonly colgroup?: 'access-approved'
   /** Vertical-rule policy: legend-key groups, one key per column, or none. */
-  readonly columnSeparators?: 'group' | 'legend-key' | 'none'
+  readonly columnSeparators: 'group' | 'legend-key' | 'none'
   readonly columns: readonly CahierTableColumn[]
   readonly rows: readonly CahierTableRow[]
   readonly notes: readonly string[]
@@ -161,8 +160,12 @@ export interface CahierFigureProjectionBase {
   readonly slot: string
   readonly title: string
   readonly accessibleLabel: string
-  /** Present when the source renders this figure in a native sibling row. */
-  readonly row?: CahierCaptureFigureRow
+  /**
+   * The native sibling row this figure belongs to, stamped from the capture at
+   * projection time; `null` when the source renders the figure alone. This is
+   * the only source the composer reads for a paired row.
+   */
+  readonly row?: CahierCaptureFigureRow | null
   /** All numeric tables of the figure, in the screen's reading order. */
   readonly tables: readonly CahierFigureTable[]
   readonly comparisonDisplayed: boolean
@@ -1539,10 +1542,11 @@ export function projeterRequeteExportFigures(
   request: CahierExportRequest,
 ): readonly CahierFigureProjection[] {
   const capture = request.capture
-  return capture.figures.map((figure) => {
-    const projection = projeterFigureExport(capture, figure, request)
-    return (figure.row ? { ...projection, row: figure.row } : projection) as CahierFigureProjection
-  })
+  return capture.figures.map((figure) => ({
+    ...projeterFigureExport(capture, figure, request),
+    // The capture's own row declaration is the single source of the pairing.
+    row: figure.row ?? null,
+  }))
 }
 
 /** Convenience for tests/consumers that hold a capture without mode projection. */

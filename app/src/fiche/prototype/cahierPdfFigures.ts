@@ -37,6 +37,7 @@ import {
   visibleCurveTicks,
   waffleGridPosition,
 } from './cahierFigureNativeGeometry'
+import type { FigureRowLayout } from './cahierFigureNativeGeometry'
 import type { CahierFigureProjection } from './cahierExportAdapters'
 import type {
   CahierBarsProjection,
@@ -65,6 +66,7 @@ import { CAHIER_TRAVEL_TIME_LABEL } from '@/fiche/content/cahierFigureWording'
 import {
   ROLE_PDF,
   RYTHME_PX,
+  mmDepuisCssPx,
   mmDepuisPt,
   ptDepuisCssPx,
   rythmePt,
@@ -88,14 +90,12 @@ export type ChargeurImagePdf = (
   options: { readonly signal: AbortSignal },
 ) => Promise<ImagePdf>
 
-export interface OptionsFigurePdf {
-  readonly doc: jsPDF
-  readonly mesure: MesureTexte
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly signal: AbortSignal
-  readonly chargerImage: ChargeurImagePdf
+/**
+ * Everything a figure needs from its capture to be measured or painted. One
+ * object per projection: the height measurement and the painter receive the
+ * same instance, so a new option can never reach one side only.
+ */
+export interface OptionsFigurePdfLiaison {
   /** Native bars model for a `mobilite-bars` projection, from the same capture. */
   readonly modeleBars?: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>['model']['figure']
   /** Native explorer title, never parsed from the combined projection title. */
@@ -108,6 +108,16 @@ export interface OptionsFigurePdf {
   readonly modeleCourbe?: MobiliteRaccordementEvidence
   /** Owner-observed served comparative proof for this figure (not capability). */
   readonly comparisonProof?: boolean
+}
+
+export interface OptionsFigurePdf extends OptionsFigurePdfLiaison {
+  readonly doc: jsPDF
+  readonly mesure: MesureTexte
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly signal: AbortSignal
+  readonly chargerImage: ChargeurImagePdf
 }
 
 const TAILLE = {
@@ -554,6 +564,37 @@ const GEOMETRIE_NATIVE_AEDAR = CAHIER_AEDAR_FIGURE_GEOMETRY
 const DECALAGE_ETIQUETTE_X = 8
 
 /**
+ * One side of the native paired row, inside the PDF's own content box.
+ *
+ * The figure keeps its native viewBox scaled to its column, so one screen CSS
+ * pixel of the row is `panelWidth / figureWidthPx` millimetres — the same page
+ * scaling the figure itself receives. The source gap is converted with that
+ * scale (never transplanted as a fixed physical distance), and the two columns
+ * keep the native 640×300 aspect at whatever desktop viewport the capture
+ * declares.
+ */
+export function figureRowGeometry(
+  largeurDisponible: number,
+  layout: FigureRowLayout,
+): {
+  readonly columns: number
+  readonly panelWidth: number
+  readonly gap: number
+  /** One column's width expressed back in screen CSS px (document column). */
+  readonly figureWidthPx: number
+} {
+  const { columns, gapPx } = layout
+  const contenuPx = largeurDisponible / mmDepuisCssPx(1)
+  const figureWidthPx = (contenuPx - gapPx * (columns - 1)) / columns
+  if (!(figureWidthPx > 0)) {
+    throw new Error('Largeur de colonne native nulle : la rangée appairée ne peut pas être peinte.')
+  }
+  const ratio = gapPx / figureWidthPx
+  const panelWidth = largeurDisponible / (columns + (columns - 1) * ratio)
+  return { columns, panelWidth, gap: panelWidth * ratio, figureWidthPx }
+}
+
+/**
  * Measured gap between two side-by-side AEDAR panels. The painter's single
  * source for panel width, consumed by the native-paint geometry test.
  */
@@ -572,8 +613,10 @@ function hauteurPanneauAedar(largeurPanneau: number): number {
  * of a per-document fixed height, so a half-width stationnement column and a
  * full-width networks plate keep the same plot proportions.
  */
-function geometrieBarresMobilite(largeur: number): CahierFigureGeometry {
-  const base = CAHIER_MOBILITE_BARS_GEOMETRY
+function geometrieBarresMobilite(
+  largeur: number,
+  base: CahierFigureGeometry = CAHIER_MOBILITE_BARS_GEOMETRY,
+): CahierFigureGeometry {
   const echelle = largeur / base.width
   return {
     width: largeur,
@@ -585,6 +628,37 @@ function geometrieBarresMobilite(largeur: number): CahierFigureGeometry {
       left: base.margin.left * echelle,
     },
   }
+}
+
+/**
+ * The native bars frame with the same measured y rail the mounted component
+ * derives (`useMeasuredCahierFigureGeometry` → `deriveCahierFigureGeometry`):
+ * title lane + longest rendered tick label + label gap, in native user units,
+ * from the embedded face's real label widths. No painter-only padding and no
+ * fixed 68 px margin, so a long served number cannot leave the figure.
+ */
+function geometrieBarresMesuree(
+  largeur: number,
+  labels: readonly string[],
+  mesure: MesureTexte,
+): CahierFigureGeometry {
+  const largeurLabel = Math.max(0, ...labels.map((label) => mesure.largeur(
+    label,
+    ROLE_PDF.tick.police,
+    TAILLE.tick,
+    TAILLE.tick * ROLE_PDF.tick.espacementEm,
+  )))
+  // The native rule counts the lane and the gap in rendered CSS px; convert the
+  // measured label back to native user units at the panel's own page scaling.
+  const labelUser = largeurLabel * CAHIER_MOBILITE_BARS_GEOMETRY.width / largeur
+  return geometrieBarresMobilite(
+    largeur,
+    deriveAedarFigureGeometry(
+      CAHIER_MOBILITE_BARS_GEOMETRY,
+      CAHIER_MOBILITE_BARS_GEOMETRY.width,
+      labelUser,
+    ),
+  )
 }
 
 /**
@@ -721,7 +795,10 @@ function dessinerAxes(
   const tickSpace = ROLE_PDF.tick.taille * ROLE_PDF.tick.espacementEm
   for (const tick of yTicks) {
     if (tick.label === null) continue
-    textePdf(doc, tick.label, x + plotLeft - 1.4, y + tick.position - 2, {
+    // The label's right edge sits on the measured rail itself (the native
+    // `CahierFigureAxisLabels` rule); a painter-only inset would silently widen
+    // the margin the figure was measured with.
+    textePdf(doc, tick.label, x + plotLeft, y + tick.position - 2, {
       police: ROLE_PDF.tick.police,
       taille: TAILLE.tick,
       couleur: PALETTE_PDF.editorialMuted,
@@ -1019,7 +1096,12 @@ async function dessinerBarres(
   const comparisonAligned = modele.categories.some((category) => category.value.fact.comparison?.reference?.value != null)
     && Boolean(options.comparisonProof)
   const scale = mobiliteBarScale(modele, comparisonAligned)
-  const nativeGeometry = geometrieBarresMobilite(width)
+  // The native rail is measured from the very labels this painter draws.
+  const nativeGeometry = geometrieBarresMesuree(
+    width,
+    mobiliteBarYTicks(scale, CAHIER_MOBILITE_BARS_GEOMETRY).map((tick) => tick.label ?? ''),
+    mesure,
+  )
   const bar = mobiliteBarGeometry(nativeGeometry, modele.categories.length, scale, comparisonAligned ? 2 : 1)
   const plotBottom = nativeGeometry.height - nativeGeometry.margin.bottom
   const svg = svgCanvas(width, nativeGeometry.height)
@@ -1091,6 +1173,15 @@ async function dessinerBarres(
 const APRES_HORIZON_MM = 2
 
 /**
+ * The horizon caption's own line advance. One helper: both the painter and the
+ * pagination measurement read the same text metrics, so a caption can never be
+ * measured with one box and painted with another.
+ */
+function hauteurHorizonExplorer(mesure: MesureTexte): number {
+  return mesure.hauteurLigne(ROLE_PDF.axe.police, TAILLE.axe) * 1.18 + APRES_HORIZON_MM
+}
+
+/**
  * Selected-horizon caption of the equipment explorer. It states the captured
  * horizon (`projection.horizonMinutes`) independently of the x-axis ticks; the
  * label is the mounted `CahierTravelTimeLabel` wording and the value is the
@@ -1123,7 +1214,7 @@ function dessinerHorizonExplorer(
     taille: TAILLE.axe,
     couleur: PALETTE_PDF.ink,
   })
-  return mesure.hauteurLigne(ROLE_PDF.axe.police, TAILLE.axe) * 1.18 + APRES_HORIZON_MM
+  return hauteurHorizonExplorer(mesure)
 }
 
 async function dessinerBarresGroupees(
@@ -1337,43 +1428,54 @@ async function dessinerPart(
   const trackHeight = 5
   const trackX = x + 32
   const trackW = width - 40
-  const drawTrack = (label: string, value: number | null, color: string, yy: number, dashed = false) => {
+  /**
+   * Native `.mobilite-share-track__track` state grammar: a populated row keeps
+   * its 1 px solid border; only an empty row is dashed, with the state text
+   * centred inside the frame. The border widths are the source CSS pixel at the
+   * document scale, never a painter-only hairline.
+   */
+  const drawTrack = (label: string, value: number | null, color: string, yy: number) => {
     textePdf(doc, label, x, yy + 0.6, {
       police: POLICE_PDF.body,
       taille: TAILLE.legende,
       couleur: PALETTE_PDF.ink,
     })
-    setFill(doc, PALETTE_PDF.paperDeep)
-    doc.rect(trackX, yy, trackW, trackHeight, 'F')
-    const pct = shareFillPercent(value, projection.unit)
-    if (value !== null) {
-      setFill(doc, color)
-      doc.rect(trackX, yy, trackW * (pct / 100), trackHeight, 'F')
-      textePdf(doc, label === 'Groupe comparé' ? (projection.comparisonDisplay ?? 'Indisponible') : projection.display, trackX + trackW + 1.5, yy + 0.6, {
-        police: POLICE_PDF.metaMedium,
-        taille: TAILLE.legende,
-        couleur: PALETTE_PDF.ink,
-      })
-    } else {
-      textePdf(doc, 'Indisponible', trackX + 1.5, yy + 1.2, {
+    if (value === null) {
+      doc.setLineDashPattern([mmDepuisCssPx(3), mmDepuisCssPx(3)], 0)
+      doc.setLineWidth(mmDepuisCssPx(1))
+      setStroke(doc, PALETTE_PDF.shareTrackEmptyBorder)
+      doc.rect(trackX, yy, trackW, trackHeight, 'S')
+      doc.setLineDashPattern([], 0)
+      textePdf(doc, 'Indisponible', trackX + trackW / 2, yy + trackHeight / 2, {
         police: POLICE_PDF.meta,
         taille: TAILLE.legende,
         couleur: PALETTE_PDF.muted,
+        align: 'center',
+        baseline: 'middle',
       })
+      resetOpacity(doc)
+      return
     }
-    if (dashed) {
-      doc.setLineDashPattern([1, 1], 0)
-      setStroke(doc, PALETTE_PDF.brand200)
-      doc.setLineWidth(0.25)
-      doc.rect(trackX, yy, trackW, trackHeight, 'S')
-      doc.setLineDashPattern([], 0)
-    }
+    setFill(doc, PALETTE_PDF.shareTrackGround)
+    doc.rect(trackX, yy, trackW, trackHeight, 'F')
+    const pct = shareFillPercent(value, projection.unit)
+    setFill(doc, color)
+    doc.rect(trackX, yy, trackW * (pct / 100), trackHeight, 'F')
     resetOpacity(doc)
+    doc.setLineWidth(mmDepuisCssPx(1))
+    setStroke(doc, PALETTE_PDF.shareTrackBorder)
+    doc.rect(trackX, yy, trackW, trackHeight, 'S')
+    resetOpacity(doc)
+    textePdf(doc, label === 'Groupe comparé' ? (projection.comparisonDisplay ?? 'Indisponible') : projection.display, trackX + trackW + 1.5, yy + 0.6, {
+      police: POLICE_PDF.metaMedium,
+      taille: TAILLE.legende,
+      couleur: PALETTE_PDF.ink,
+    })
   }
   drawTrack(projection.territoryName, projection.value, PALETTE_PDF.brand500, cy)
   cy += 9
   if (options.comparisonProof) {
-    drawTrack('Groupe comparé', projection.comparisonValue, PALETTE_PDF.brand200, cy, true)
+    drawTrack('Groupe comparé', projection.comparisonValue, PALETTE_PDF.brand200, cy)
     cy += 9
   }
   if (projection.stateMessage) {
@@ -1574,7 +1676,7 @@ export function hauteurFigurePdf(
   projection: CahierFigureProjection,
   width: number,
   mesure: MesureTexte,
-  options?: Pick<OptionsFigurePdf, 'comparisonProof' | 'distributionTitle' | 'modeleBars' | 'explorerTypequLabel'>,
+  options?: OptionsFigurePdfLiaison,
 ): number {
   const titre = hauteurTitre(projection, width, mesure)
   const gapLegende = LEGENDE_APRES_PLOT
@@ -1603,9 +1705,7 @@ export function hauteurFigurePdf(
         plierTexte(projection.volume.title, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
         plierTexte(rightTitle, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
       ) + subtitleLines
-      const horizon = projection.horizonMinutes === null
-        ? 0
-        : mesure.hauteurLigne(ROLE_PDF.axe.police, TAILLE.axe) * 1.18 + APRES_HORIZON_MM
+      const horizon = projection.horizonMinutes === null ? 0 : hauteurHorizonExplorer(mesure)
       const legend = hauteurLegende(mesure, [
         ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(aedarTimeModeColor(serie.key)) })),
         ...(options?.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, dash: true }] : []),

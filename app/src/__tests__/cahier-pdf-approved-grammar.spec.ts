@@ -290,6 +290,8 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
       key: 'narrow',
       title: 'Tableau étroit',
       rowHeader: 'Statistique',
+      layout: 'flat',
+      columnSeparators: 'none',
       columns: [
         { key: 'a', label: 'A', unit: null, kind: 'focal', seriesKey: null },
         { key: 'b', label: 'B', unit: null, kind: 'focal', seriesKey: null },
