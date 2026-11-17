@@ -320,6 +320,67 @@ exercises the default fetch/createImageBitmap/canvas path, including typed asset
 failure (missing and undecodable bytes) and abort. No fixture script ships in
 production.
 
+### Approved document grammar (owner rejection correction)
+
+`cahierPdfGrammaire.ts` is the one owner of the document's reading scale and role
+metrics. It separates the **source grammar** (colour/family/weight/tracking and
+the 24 / 20 / 12 / 10 / 8 px rhythm of the approved generator) from the
+**physical reading scale** of the approved A4 projection: the 32 pt page insets
+give a 531.28 pt content box for the desktop column, i.e. 0.5258083073 pt per
+CSS px (page heading 38.4 px → 20.19 pt, figure title 15 px → 7.89 pt, table
+value 13 px → 6.84 pt, tick 11 px → 5.78 pt, source 10 px → 5.26 pt; the footer
+is the generator's explicit 7 pt). The comparison names are the owner-fixed
+exception: PRD #1014 approved **18 px CSS = 13.5 pt**, and the composer never
+derives them from the uniform reading scale (the prototype's 0.5258 render
+emitted 9.46 pt, which the owner rejected as shrinking).
+
+The same correction binds the other owner roles: focal identity and comparison
+names use `--editorial-muted` at weight 400 and the `0.08em` overline tracking;
+the header territory uses `--accent-primary`; the wordmark is the real
+`LuskBrand` role (600 italic, 1.375 rem, −0.01em, `--text-primary`) with the
+ermine at `1.18em` of the word (no fixed millimetre mark); legends are one
+centred row per figure in `--text-caption` (metadata face, muted) with the owner
+mark geometry (18 × 3 px line, 8 × 8 px square/dot, 2 px dash, 14 px tick),
+never one pack per panel; figures use the native surface/grid grammar (theme
+24 % surface edge, theme 17 % grid on both axes where the native figure draws
+them, `--cahier-theme-strong` axis); table captions use `--brand-700`; the
+approved page box is 32 / 72 / 46 pt with the header rule at 51 pt (the live
+`.page-heading` border), and the rejected full-height red notebook rule is not
+painted. The section surface is the `cahier--sans-grille .concept-group` border
+around the whole exported section (identity, comparison subtitle, figures,
+tables and sources), repeated on continuations.
+
+A compared-group column now carries an explicit **`Rang`** column with the
+producer-served display (`formatServedRank`, `=1er/43` for ties) or the approved
+em dash when the producer served none; the rank is never a second micro-line
+under the value and is never recomputed. Column groups keep focal, comparison
+and rank adjacent, including when a wide table is split into coherent column
+groups. The 24 px heading / 20 px stacked-table / 12 px and 8 px caption rhythm
+is emitted as measured block gaps, so a continuation is chosen instead of
+shrinking the document.
+
+`cahier-pdf-fidelity.spec.ts` asserts this contract on real PDFs: the embedded
+role metrics and tracking advance of the focal identity, the wordmark/page-title
+ratio, the shared comparison baseline and 13.5 pt owner size, the one-line
+centred legend and its 18 × 3 px mark, the four-edge section surface with no
+full-height red margin rule, the source table gaps, the explicit served rank
+column, and compact vs measured-continuation documents. Fixtures
+`captureRampeRangs` / `captureExplorerRangs` / `captureExplorerRangsDense` are
+synthetic producer-shaped contracts (values, ranks and source clocks are fixed
+in the fixture), not production data.
+
+The reference gate (`E:/Temp/opencode/1024-parent-review/prototype-rejection/`)
+runs against the owner-approved ARTIFACTS R1–R3, never against a previous
+composer output; its owner colours are resolved from today's `tokens.css`. Three
+assumptions are tightened/documented in the evidence copy rather than hidden:
+the full-height-rule check targets the red margin role (a neutral section
+surface is not that chrome), the continuation table gap is compared within one
+page, and the frame/legend ranges cover the approved 723.9 pt content box and
+the curve's native two-label legend. The owner-approved references still report
+49 checks, 0 failed. Residual gate gaps are the families absent from R1–R3: the
+share track has no plotted axes by owner design (its two grid checks cannot
+apply), and the curve legend is not named after travel modes.
+
 `cahier-pdf-native-paint.spec.ts` checks the emitted SVG at the public native
 painter/serialization seam: literal null-gap subpath counts on both curves,
 hidden bar-slot centering, unequal ramp-panel maxima, transitive `comparisonFor`
