@@ -172,9 +172,14 @@ publish <- function(payload, cible = "public/data", backend = "static") {
       "classe_densite_libelle_insee",
       "classe_densite_libelle_public"
     )
-    if (all(champs_densite %in% names(payload$territoires))) {
+    champs_littoral <- c("littoral_code", "littoral_classement_source")
+    if (all(champs_densite %in% names(payload$territoires)) ||
+        all(champs_littoral %in% names(payload$territoires))) {
+      # #1041 : le sidecar reste le contrat UNIQUE de la référence
+      # territoriale. La source littorale n'y est déclarée que si la référence
+      # publiée porte réellement la classification (transition explicite).
       ecrire_json_si_modifie(
-        metadata_classes_densite(),
+        metadata_reference_territoriale(payload$territoires),
         file.path(cible, "territoires-metadata.json"),
         dataframe = "rows", na = "null", digits = 17, pretty = TRUE,
         auto_unbox = TRUE

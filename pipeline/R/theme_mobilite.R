@@ -738,7 +738,8 @@ APERCU_MOBILITE <- tibble::tibble(
 # snapshot porté — la mesure signature de l'analyse d'accessibilité).
 construire_territoires_mobilite <- function(base_epci, analytiques,
                                             noms_epci_geo_api = NULL,
-                                            classes_densite = NULL) {
+                                            classes_densite = NULL,
+                                            classes_littoral = NULL) {
   poids <- analytiques$mobilite_communes %>%
     dplyr::select(commune, nb_buildings)
   communes <- base_epci %>%
@@ -753,10 +754,11 @@ construire_territoires_mobilite <- function(base_epci, analytiques,
     poids = "nb_buildings",
     noms_epci_geo_api = noms_epci_geo_api
   )
-  if (!is.null(classes_densite)) {
-    territoires <- publier_classes_densite(territoires, classes_densite)
-  }
-  territoires
+  appliquer_classifications_communales(
+    territoires,
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
+  )
 }
 
 # aligner_indicateur_mobilite ---------------------------------------------------
@@ -1441,12 +1443,14 @@ validations_mobilite <- list(
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_mobilite <- function(analytiques, base_epci, vintages,
                                          noms_epci_geo_api = NULL,
-                                         classes_densite = NULL) {
+                                         classes_densite = NULL,
+                                         classes_littoral = NULL) {
   territoires <- construire_territoires_mobilite(
     base_epci,
     analytiques,
     noms_epci_geo_api = noms_epci_geo_api,
-    classes_densite = classes_densite
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
   )
 
   payload <- list(
@@ -1487,7 +1491,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                                                              "processed", "mobilite"),
                              raccordement = NULL,
                              noms_epci_geo_api = NULL,
-                             classes_densite = NULL) {
+                             classes_densite = NULL,
+                             classes_littoral = NULL) {
   if (is.null(vintages)) vintages <- vintages_mobilite()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -1504,7 +1509,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
     base_epci,
     vintages,
     noms_epci_geo_api = noms_epci_geo_api,
-    classes_densite = classes_densite
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
   )
   publish(payload, sortie)
   payload

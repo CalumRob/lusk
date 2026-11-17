@@ -47,6 +47,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # sans trace est un échec perdu.
   manifest_telechargement <- dplyr::bind_rows(
     MANIFEST_CLASSES_DENSITE,
+    MANIFEST_CLASSES_LITTORAL,
     theme$manifest
   )
   statuts <- tryCatch(
@@ -76,6 +77,28 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   }
   classes_densite <- if (file.exists(chemin_classes_densite)) {
     lire_classes_densite(chemin_classes_densite)
+  } else {
+    NULL
+  }
+
+  # #1041 : la liste littorale DREAL est une AUTRE entrée partagée du
+  # référentiel territorial. Même garde que la grille de densité : un run de
+  # production ne peut pas publier une référence sans classification, tandis
+  # qu'un seam de test qui remplace download_sources garde son comportement
+  # historique borné.
+  chemin_classes_littoral <- file.path(cache, CLASSES_LITTORAL_FICHIER)
+  source_classes_littoral <- is.data.frame(statuts) &&
+    "id" %in% names(statuts) &&
+    any(statuts$id %in% MANIFEST_CLASSES_LITTORAL$id[[1L]])
+  if (source_classes_littoral && !file.exists(chemin_classes_littoral)) {
+    stop(
+      "Liste littorale DREAL absente après téléchargement : ",
+      chemin_classes_littoral,
+      call. = FALSE
+    )
+  }
+  classes_littoral <- if (file.exists(chemin_classes_littoral)) {
+    lire_classes_littoral(chemin_classes_littoral)
   } else {
     NULL
   }
@@ -122,6 +145,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     if ("classes_densite" %in% names(formals(theme$publier))) {
       args_publier$classes_densite <- classes_densite
     }
+    if ("classes_littoral" %in% names(formals(theme$publier))) {
+      args_publier$classes_littoral <- classes_littoral
+    }
     payload <- do.call(theme$publier, args_publier)
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
@@ -135,6 +161,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     }
     if ("classes_densite" %in% names(formals(compute_payload))) {
       args_compute$classes_densite <- classes_densite
+    }
+    if ("classes_littoral" %in% names(formals(compute_payload))) {
+      args_compute$classes_littoral <- classes_littoral
     }
     payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)

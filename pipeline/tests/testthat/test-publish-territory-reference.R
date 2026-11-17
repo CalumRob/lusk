@@ -5,10 +5,52 @@ test_that("territory reference is projected from retained canonical territory fa
     classe_densite_libelle_public=c("Dense", "Rural"), stringsAsFactors=FALSE)
   projection <- project_territory_reference(canonical)
   expect_identical(names(projection$rows), c("territory_id", "territory_type", "name",
-    "department_id", "epci_id", "density_class_code", "density_class_label"))
+    "department_id", "epci_id", "density_class_code", "density_class_label",
+    "littoral_code", "littoral_classement_source"))
   expect_identical(projection$rows$territory_id, c("29001", "29002"))
   expect_true(nzchar(projection$content_version))
   expect_error(project_territory_reference(canonical[c(1, 1), ]), "duplicate identities")
+})
+
+test_that("l'adapter PostgreSQL écrit les neuf colonnes de la référence", {
+  source <- paste(deparse(territory_reference_postgres_adapter), collapse = "\n")
+  for (colonne in c("territory_id", "territory_type", "name", "department_id",
+                    "epci_id", "density_class_code", "density_class_label",
+                    "littoral_code", "littoral_classement_source")) {
+    expect_match(source, colonne, fixed = TRUE)
+    if (colonne != "territory_id") {
+      expect_match(source, paste0(colonne, "=EXCLUDED.", colonne),
+                   fixed = TRUE)
+    }
+  }
+  expect_match(source, "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", fixed = TRUE)
+})
+
+test_that("littoral projection is all-or-nothing and rejects non-commune codes", {
+  complete <- data.frame(code=c("29001", "29002"), type="commune",
+    nom=c("Alpha", "Beta"), departement="29", epci="200000001",
+    littoral_code=c("C", "NC"),
+    littoral_classement_source=c("Mer", NA_character_), stringsAsFactors=FALSE)
+  projection <- project_territory_reference(complete)
+  expect_identical(projection$rows$littoral_code, c("C", "NC"))
+  expect_identical(projection$rows$littoral_classement_source,
+                   c("Mer", NA_character_))
+
+  partial <- complete
+  partial$littoral_code[[2L]] <- NA_character_
+  expect_error(project_territory_reference(partial), "incomplete")
+
+  non_commune <- rbind(
+    complete[1L, , drop=FALSE],
+    data.frame(code="200000001", type="epci", nom="EPCI", departement="29",
+               epci=NA_character_, littoral_code="C",
+               littoral_classement_source="Mer", stringsAsFactors=FALSE)
+  )
+  expect_error(project_territory_reference(non_commune), "non-commune")
+
+  inconnu <- complete
+  inconnu$littoral_code[[1L]] <- "X"
+  expect_error(project_territory_reference(inconnu), "unknown littoral code")
 })
 
 test_that("reference publishing uses the owner protocol without legacy serving dependencies", {

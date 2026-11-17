@@ -3339,3 +3339,29 @@ test_that("calculer_offre_cyclable_communes : un input corrompu s'arrête bruyam
     fixture_offre_cyclable_binning(),
     tibble::tibble(commune = "22001")), "population")
 })
+
+# #1041 : le builder territorial de la Mobilité conserve la classification
+# littorale publiée par le seam partagé, sans dépendre d'un autre thème.
+test_that("construire_territoires_mobilite conserve la classification littorale", {
+  snap <- fixture_snapshot_analytique_mobilite()
+  poids <- tibble::tibble(commune = snap$commune, nb_buildings = snap$nb_buildings)
+  source <- tibble::tibble(
+    Code_insee = "22001", Commune = "Commune A1", Dpt = "22",
+    Classement = "Mer"
+  )
+
+  territoires <- construire_territoires_mobilite(
+    base_epci_mini_analytique(),
+    list(mobilite_communes = poids),
+    classes_littoral = source
+  )
+
+  expect_true(all(c("littoral_code", "littoral_classement_source") %in%
+                    names(territoires)))
+  expect_identical(
+    territoires$littoral_code[territoires$code == "22001"], "C"
+  )
+  expect_true(all(territoires$littoral_code[territoires$type == "commune"] %in%
+                    c("C", "NC")))
+  expect_true(all(is.na(territoires$littoral_code[territoires$type != "commune"])))
+})

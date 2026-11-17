@@ -72,6 +72,11 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
                     "metadata_programmes", "projection_programmes",
                     "rapport_programmes") %in% noms))
 
+  # les entrées partagées de la référence territoriale : densité ET littoral
+  expect_true(all(c("sources_classes_densite", "fichier_classes_densite",
+                    "classes_densite", "sources_classes_littoral",
+                    "fichier_classes_littoral", "classes_littoral") %in% noms))
+
   # les artefacts partagés du run
   expect_true("fusion_vintages" %in% noms)
   expect_true("scalar_serving_artifacts" %in% noms)
@@ -186,13 +191,19 @@ test_that("les étapes de données d'un thème ne dépendent jamais de celles d'
   # preuve). Un changement de compute d'un thème ne peut donc pas invalider
   # les étapes de données d'un autre.
   prefixe_donnees <- "^(sources|fichiers|brut|vintages_table|payload|metadata)_"
-  cibles_donnees <- aretes$from[grepl(prefixe_donnees, aretes$from)]
+  # Le graphe targets porte aussi les FONCTIONS/objets appelés (leurs noms
+  # peuvent partager le préfixe metadata_*). La preuve porte sur les cibles de
+  # DONNÉES : on ne compare que les sommets `stem` — jamais un nœud fonction.
+  cibles_stem <- reseau$vertices$name[reseau$vertices$type == "stem"]
+  cibles_donnees <- intersect(
+    aretes$from[grepl(prefixe_donnees, aretes$from)], cibles_stem
+  )
   for (t in cibles_donnees) {
     theme_t <- sub(prefixe_donnees, "", t)
     voisins <- unique(c(aretes$to[aretes$from == t], aretes$from[aretes$to == t]))
     for (v in voisins) {
       if (v %in% partages) next
-      if (grepl(prefixe_donnees, v)) {
+      if (grepl(prefixe_donnees, v) && v %in% cibles_stem) {
         expect_identical(sub(prefixe_donnees, "", v), theme_t,
                          info = paste("target de données", t,
                                       "relié à un autre thème :", v))

@@ -352,3 +352,65 @@ test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
   expect_equal(ecrit$mode, "cron")
   expect_equal(ecrit$cible, "public/data")
 })
+
+# #1041 : le run télécharge et lit la liste littorale comme une entrée partagée
+# de la référence, puis la transmet au compute du thème (jamais un run
+# Milieux préalable).
+test_that("run_pipeline transmet la classification littorale au compute", {
+  cache <- tempfile("cache-littoral-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  file.create(file.path(cache, CLASSES_DENSITE_FICHIER))
+  vu <- new.env(parent = emptyenv())
+  statuts <- tibble::tibble(
+    id = c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+           MANIFEST_CLASSES_LITTORAL$id[[1L]],
+           MANIFEST_DEMOGRAPHIE$id[[1L]]),
+    mode = "cron", status = "frais"
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_brut = function(cache) load_fixture(),
+    lire_classes_densite = function(chemin) tibble::tibble(
+      CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
+      LIBDENS7 = c("Grands centres urbains", "Centres urbains intermédiaires")
+    ),
+    compute_payload = function(data, theme = NULL, vintages = NULL,
+                               noms_epci_geo_api = NULL, classes_densite = NULL,
+                               classes_littoral = NULL) {
+      vu$classes_littoral <- classes_littoral
+      list(indicateurs = tibble::tibble(), histoires = tibble::tibble(),
+           territoires = tibble::tibble(), apercu = tibble::tibble())
+    },
+    publish = function(payload, cible, backend = "static") invisible(payload),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) invisible(NULL),
+    publier_theme_metadata = function(...) invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    ecrire_rapport_run = function(...) invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL), .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL), .package = "jsonlite"
+  )
+
+  sortie <- tempfile("sortie-littoral-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  run_pipeline(cache = cache, sortie = sortie, noms_epci_geo_api = NULL)
+
+  expect_s3_class(vu$classes_littoral, "tbl_df")
+  expect_equal(nrow(vu$classes_littoral), 263L)
+  expect_true(all(c("Code_insee", "Classement") %in%
+                    names(vu$classes_littoral)))
+})
