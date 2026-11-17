@@ -50,7 +50,9 @@ const fixture = JSON.parse(readFileSync(
 const composerSource = readFileSync(
   resolve(appDir, 'src/fiche/prototype/cahierPdfComposer.ts'),
   'utf8',
-)
+// The repo is checked out with the platform's line endings (`core.autocrlf`);
+// this source witness must read the same text on every host.
+).replace(/\r\n/gu, '\n')
 
 function dessinerMarqueSource(): string {
   const match = /async function dessinerMarque\([\s\S]*?\n}\n/.exec(composerSource)

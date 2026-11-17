@@ -43,6 +43,12 @@ import { lirePoliceTtf } from './helpers/cahierPdfFontProbe'
 const DOSSIER = resolve(process.cwd(), 'src/__tests__/fixtures/lusk-lockup')
 const ECHELLE = 720
 const TOLERANCE_EM = 0.02
+/**
+ * The ermine's width ÷ height is a pure aspect: it has no `em` unit. Comparing
+ * it with the length tolerance is a units error (the measured screen-vs-PDF
+ * aspect delta is 0.01023, dimensionless), so it gets its own bound and label.
+ */
+const TOLERANCE_ASPECT = 0.02
 const SEUIL_ENCRE = 24
 
 interface Png {
@@ -249,17 +255,22 @@ describe('#1024 — lockup réel écran vs PDF : deux rasters indépendants, enc
   })
 
   it('mesure la même encre relative sur le header réel et le PDF, à 0,02 em près', () => {
+    // Lengths and offsets are em-relative distances on the 720 px/em rasters.
     const ecarts: Array<[string, number]> = [
       ['hauteur d’encre du mot', relatifEcran.hauteurMotEm - relatifPdf.hauteurMotEm],
       ['hauteur d’encre de l’hermine', relatifEcran.hauteurErmineEm - relatifPdf.hauteurErmineEm],
       ['écart ascendant → haut de l’hermine', relatifEcran.ecartHautEm - relatifPdf.ecartHautEm],
       ['bas du mot → bas de l’hermine', relatifEcran.basEcartEm - relatifPdf.basEcartEm],
       ['écart d’encre horizontal', relatifEcran.ecartHorizontalEm - relatifPdf.ecartHorizontalEm],
-      ['proportions de l’hermine', relatifEcran.ratioErmine - relatifPdf.ratioErmine],
     ]
     for (const [nom, ecart] of ecarts) {
       expect(Math.abs(ecart), `${nom} : ${ecart} em`).toBeLessThanOrEqual(TOLERANCE_EM)
     }
+    // The ermine's proportions are a ratio, not an em length: same bound, own
+    // unit. The measured screen-vs-PDF aspect delta is 0.01023 (dimensionless).
+    const aspect = relatifEcran.ratioErmine - relatifPdf.ratioErmine
+    expect(Math.abs(aspect), `proportions de l’hermine : ${aspect} (sans dimension)`)
+      .toBeLessThanOrEqual(TOLERANCE_ASPECT)
     // The withdrawn claim was a 0.076 em ermine lift; it would fail the top-gap
     // check by nearly 4× the tolerance.
     expect(Math.abs(relatifEcran.ecartHautEm - relatifPdf.ecartHautEm)).toBeLessThan(0.05)
