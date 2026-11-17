@@ -24,7 +24,7 @@ import type {
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte, tronquerParMesure } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf } from './cahierPdfPalette'
-import { ROLE_PDF } from './cahierPdfGrammaire'
+import { ROLE_PDF, mmDepuisCssPx } from './cahierPdfGrammaire'
 
 export const TAILLE_TABLEAU = {
   titre: ROLE_PDF.titreTableau.taille,
@@ -39,6 +39,33 @@ export const INDISPONIBLE_ABREGEE = 'Indisp.'
 export const EXPLICATION_INDISPONIBLE = 'Indisp. : valeur indisponible.'
 export const RANG_ABSENT = '—'
 
+/**
+ * One owned box model for the table caption/header, consumed by the composer's
+ * pagination measurement and by the painter. The values are the approved
+ * source's own boxes (caption `line-height:1.18`; header cell `padding:6px 4px`;
+ * section rhythm 12 px after the caption; `(suite)` line on a continuation),
+ * not a second height policy.
+ */
+export const ESPACE_TABLEAU = {
+  /** `desktop.js` table `th` vertical padding (`padding:6px 4px`). */
+  remplissageEnteteMm: mmDepuisCssPx(6),
+  /** Caption `line-height` measured on the approved caption (15 px role). */
+  interligneTitre: 1.18,
+  /** Painter's measured caption → header gap (`desktop.js` caption margin 8 px). */
+  apresTitreMm: 1.2,
+  /** `(suite)` line box on a continued page part. */
+  suiteMm: 2.8,
+  /** Row-label/value top inset inside a row (1 mm measured). */
+  ligneInsetMm: 1,
+  /** `th` line-height on the approved tables (14 px mode role, 1.35) is
+   * converted to the PDF line box once; both the header measurement and the
+   * painter use these boxes. */
+  interligneEntete: 1.16,
+  interligneLigne: 1.12,
+  /** Row box bottom padding measured on the approved table rows. */
+  remplissageLigneMm: 1.8,
+} as const
+
 export type RoleColonneTableauPdf = 'valeur' | 'rang'
 
 export interface ColonneTableauPdf {
@@ -49,6 +76,8 @@ export interface ColonneTableauPdf {
   readonly role: RoleColonneTableauPdf
   /** Mode/column group: focal, comparison and rank of one mode stay together. */
   readonly groupe: string
+  /** Starts a vertical rule block (mode group or legend-key boundary). */
+  readonly separatorBefore: boolean
   readonly width: number
   readonly headerLines: readonly string[]
   readonly headerHeight: number
@@ -87,7 +116,6 @@ export interface TableauPdfPart {
   /** Legend-key header row height (0 for the flat shape). */
   readonly groupHeaderHeight: number
   readonly headerHeight: number
-  readonly unit: string | null
   readonly notes: readonly string[]
   readonly hasComparison: boolean
   readonly abbreviatedUnavailable: boolean
@@ -157,11 +185,17 @@ export class CahierPdfTableLayoutError extends Error {
   }
 }
 
-/** Approved flat (shape A) `colgroup` widths, `desktop.js:215`, in percent. */
+/**
+ * Approved flat (shape A) `colgroup` widths, `desktop.js:215`, in percent.
+ * With comparison: `14 / 32 / 18 / 18 / 18` (label, mode, territory, Groupe,
+ * Rang). Without comparison: `18 / 46 / 36` (label, mode, territory) — the
+ * reachable three-column state, not the five-column one.
+ */
 const COLGROUP_ACCES = {
   avecComparaison: [32, 18, 18, 18] as const,
   sansComparaison: [46, 36] as const,
-  libelle: 14,
+  libelleAvecComparaison: 14,
+  libelleSansComparaison: 18,
 } as const
 
 /** The explicit `Rang` column that follows one compared-group column. */
@@ -235,10 +269,11 @@ export function construireTableauxPdf(
   options: OptionsTableauPdf,
 ): readonly TableauPdfPart[] {
   const { mesure, largeurDisponible, nomTerritoire } = options
-  /** Approved shape B renders a coloured legend-key header row. */
-  const grouped = table.columns.some((column) => column.groupLabel != null)
+  /** Explicit approved shape: adapters declare it; no key/label inference. */
+  const grouped = table.layout === 'grouped'
+    || (table.layout === undefined && table.columns.some((column) => column.groupLabel != null))
   /** Approved flat shape A: the generator's fixed `colgroup` percentages. */
-  const colgroupFixe = !grouped && table.columns[0]?.key === 'mode'
+  const colgroupFixe = table.colgroup === 'access-approved'
   /** Any series/legend-key grouping means a split may only cut whole groups. */
   const groupable = table.columns.some((column) => (
     column.groupLabel != null || column.seriesKey !== null
@@ -264,7 +299,6 @@ export function construireTableauxPdf(
       rowLabelWidth: largeurDisponible,
       groupHeaderHeight: 0,
       headerHeight: 0,
-      unit: table.unit,
       notes: table.notes,
       hasComparison: false,
       abbreviatedUnavailable: false,
@@ -281,6 +315,7 @@ export function construireTableauxPdf(
     comparisonKeys.has(cell.columnKey) && (cell.value !== null || cell.rankDisplay !== null)
   )))
 
+  const avecComparaison = table.columns.some((column) => column.kind === 'comparison')
   const largeurLibelle = !colgroupFixe
     ? Math.min(
       36,
@@ -293,7 +328,9 @@ export function construireTableauxPdf(
         ) + 4),
       ),
     )
-    : largeurDisponible * COLGROUP_ACCES.libelle / 100
+    : largeurDisponible * (
+      avecComparaison ? COLGROUP_ACCES.libelleAvecComparaison : COLGROUP_ACCES.libelleSansComparaison
+    ) / 100
 
   // The flat approved shape (A) prints its single header row in the mode role;
   // the grouped shape (B) keeps the smaller legend-role sub-header.
@@ -383,7 +420,6 @@ export function construireTableauxPdf(
   // (`desktop.js:215`), not a proportional natural-width fit: `Temps` 14 %,
   // then the visible columns; the served numbers must still fit their cell.
   if (colgroupFixe) {
-    const disponibles = largeurDisponible - largeurLibelle
     const ratios = affichage.length === 4
       ? COLGROUP_ACCES.avecComparaison
       : COLGROUP_ACCES.sansComparaison
@@ -391,7 +427,9 @@ export function construireTableauxPdf(
       throw new CahierPdfTableLayoutError('La forme plate n’a pas le nombre de colonnes approuvé.')
     }
     affichage.forEach((item, index) => {
-      item.natural = disponibles * ratios[index]! / 100
+      // The approved percentages are shares of the whole table width, the
+      // label column included (`desktop.js:215`), never of the remaining box.
+      item.natural = largeurDisponible * ratios[index]! / 100
       if (item.numerique > item.natural - 2) {
         throw new CahierPdfTableLayoutError(
           `La valeur de la colonne « ${item.column.label} » ne tient pas dans la largeur mesurée du tableau ; aucun nombre n’est réduit.`,
@@ -464,8 +502,14 @@ export function construireTableauxPdf(
     const naturelTotal = groupe.reduce((sum, item) => sum + item.natural, largeurLibelle)
     const marge = Math.max(0, largeurDisponible - naturelTotal)
     const bonus = groupe.length ? marge / groupe.length : 0
-    const colonnes: ColonneTableauPdf[] = groupe.map((item) => {
+    const politiqueSeparateur = table.columnSeparators ?? (grouped ? 'group' : 'none')
+    const colonnes: ColonneTableauPdf[] = groupe.map((item, index) => {
       const width = item.natural + bonus
+      const separatorBefore = politiqueSeparateur === 'legend-key'
+        ? index > 0
+        : politiqueSeparateur === 'group'
+          ? index > 0 && groupe[index - 1]!.groupe !== item.groupe
+          : false
       if (item.role === 'rang') {
         const headerLines = [item.column.label]
         return {
@@ -473,12 +517,13 @@ export function construireTableauxPdf(
           column: item.column,
           role: 'rang',
           groupe: item.groupe,
+          separatorBefore,
           width,
           headerLines,
           headerHeight: mesure.hauteurLigne(
             roleEntete.police,
             roleEntete.taille,
-          ) * 1.16 + 1.8,
+          ) * ESPACE_TABLEAU.interligneEntete + ESPACE_TABLEAU.remplissageEnteteMm,
         }
       }
       const headerLines = mesurerEntete(item.column, width, mesure, nomTerritoire, roleEntete)
@@ -487,11 +532,12 @@ export function construireTableauxPdf(
         column: item.column,
         role: 'valeur',
         groupe: item.groupe,
+        separatorBefore,
         width,
         headerLines,
         headerHeight: headerLines.length * (
-          mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * 1.16
-        ) + 1.8,
+          mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * ESPACE_TABLEAU.interligneEntete
+        ) + ESPACE_TABLEAU.remplissageEnteteMm,
       }
     })
     let abrege = false
@@ -547,13 +593,14 @@ export function construireTableauxPdf(
         label: row.label,
         labelLines,
         cells,
-        height: hauteurCellule * hauteurLigneTexte * 1.12 + 1.8,
+        height: hauteurCellule * hauteurLigneTexte * ESPACE_TABLEAU.interligneLigne
+          + ESPACE_TABLEAU.remplissageLigneMm,
       }
     })
     const hauteurLigneMode = mesure.hauteurLigne(
       ROLE_PDF.enteteTableauMode.police,
       ROLE_PDF.enteteTableauMode.taille,
-    ) * 1.16
+    ) * ESPACE_TABLEAU.interligneEntete
     const groups: GroupeEnteteTableauPdf[] = []
     for (const colonne of colonnes) {
       const dernier = groups[groups.length - 1]
@@ -571,20 +618,24 @@ export function construireTableauxPdf(
       }
     }
     // The group header is measured with the embedded face and wrapped to its
-    // own colSpan width, like the native `th` (no unmeasured overflow).
+    // own colSpan width, like the native `th` (no unmeasured overflow). A flat
+    // table has no legend-key row: its band is exactly zero, never an empty
+    // mode line folded into `headerHeight`.
     let groupeHeaderHeight = 0
-    for (let index = 0; index < groups.length; index += 1) {
-      const groupe = groups[index]!
-      const labelLines = plierTexte(groupe.label, mesure, {
-        police: ROLE_PDF.enteteTableauMode.police,
-        taillePt: ROLE_PDF.enteteTableauMode.taille,
-        largeurMax: Math.max(3, groupe.width - 2),
-        casserMotsLongs: true,
-      }).map((ligne) => ligne.texte)
-      groups[index] = { ...groupe, labelLines }
-      groupeHeaderHeight = Math.max(groupeHeaderHeight, labelLines.length * hauteurLigneMode)
+    if (grouped) {
+      for (let index = 0; index < groups.length; index += 1) {
+        const groupe = groups[index]!
+        const labelLines = plierTexte(groupe.label, mesure, {
+          police: ROLE_PDF.enteteTableauMode.police,
+          taillePt: ROLE_PDF.enteteTableauMode.taille,
+          largeurMax: Math.max(3, groupe.width - 2),
+          casserMotsLongs: true,
+        }).map((ligne) => ligne.texte)
+        groups[index] = { ...groupe, labelLines }
+        groupeHeaderHeight = Math.max(groupeHeaderHeight, labelLines.length * hauteurLigneMode)
+      }
+      groupeHeaderHeight += 1.6
     }
-    if (grouped) groupeHeaderHeight += 1.6
     const headerHeight = groupeHeaderHeight
       + Math.max(...colonnes.map((colonne) => colonne.headerHeight), 4)
     const hasComparison = comparatifProuve && options.ownerDisplayed !== false
@@ -616,9 +667,8 @@ export function construireTableauxPdf(
       naturalWidth,
       colgroupFixe,
       rowLabelWidth: largeurLibelle,
-      groupHeaderHeight: grouped ? groupeHeaderHeight : 0,
+      groupHeaderHeight: groupeHeaderHeight,
       headerHeight,
-      unit: table.unit,
       notes: table.notes,
       hasComparison,
       abbreviatedUnavailable: abrege,
@@ -634,13 +684,29 @@ function colonneLargeur(
   return colonnes.find((colonne) => colonne.key === key)?.width ?? 10
 }
 
-/** Fixed vertical rules only between mode/column groups. */
+/** Vertical rule policy is a declared shape fact, never inferred from a key. */
 export function separateurVertical(
   columns: readonly ColonneTableauPdf[],
   index: number,
 ): boolean {
   if (index <= 0) return false
-  return columns[index]!.groupe !== columns[index - 1]!.groupe
+  return columns[index]!.separatorBefore
+}
+
+/**
+ * One owned caption/header height, shared by the composer's pagination and the
+ * painter. `suite` is the painter's `(suite)` line box on a continuation.
+ */
+export function hauteurEnteteTableau(
+  part: TableauPdfPart,
+  mesure: MesureTexte,
+  continued: boolean,
+): number {
+  const hauteurTitre = part.titleLines.length
+    * mesure.hauteurLigne(ROLE_PDF.titreTableau.police, ROLE_PDF.titreTableau.taille)
+    * ESPACE_TABLEAU.interligneTitre
+  return hauteurTitre + part.headerHeight + ESPACE_TABLEAU.apresTitreMm
+    + (continued ? ESPACE_TABLEAU.suiteMm : 0)
 }
 
 export const COULEURS_TABLEAU_PDF = {

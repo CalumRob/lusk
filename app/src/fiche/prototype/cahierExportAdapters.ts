@@ -116,10 +116,25 @@ export interface CahierFigureTable {
   /** Native figcaption's second line (the selected equipment type), when any. */
   readonly subtitle?: string | null
   /**
-   * Row-dimension header of the approved table shapes (`Temps`, `Statistique`).
-   * Absent for a plain scalar table that has no row dimension.
+   * Row-dimension header of the approved table shapes (`Temps`, `Statistique`,
+   * or the panel's own x-axis title for compared bars). Absent for a plain
+   * scalar table that has no row dimension.
    */
   readonly rowHeader?: string | null
+  /**
+   * Explicit approved shape declared by the adapter. The PDF never infers the
+   * shape from a column key or a label. `flat` paints one header row; `grouped`
+   * paints the legend-key row above the sub-header. Absent means the historical
+   * groupLabel-derived shape (kept only for tests/older call sites).
+   */
+  readonly layout?: 'flat' | 'grouped'
+  /**
+   * Approved fixed `colgroup` of shape A (access ramps, `desktop.js:215`):
+   * `14/32/18/18/18 %` with comparison, `18/46/36 %` without.
+   */
+  readonly colgroup?: 'access-approved'
+  /** Vertical-rule policy: legend-key groups, one key per column, or none. */
+  readonly columnSeparators?: 'group' | 'legend-key' | 'none'
   readonly columns: readonly CahierTableColumn[]
   readonly rows: readonly CahierTableRow[]
   readonly notes: readonly string[]
@@ -517,6 +532,9 @@ function rampTable(options: {
       rows,
       notes: [],
       unit,
+      layout: 'flat',
+      colgroup: 'access-approved',
+      columnSeparators: 'none',
     }
   }
   const columns: CahierTableColumn[] = [
@@ -580,6 +598,8 @@ function rampTable(options: {
     rows,
     notes: [],
     unit,
+    layout: 'grouped',
+    columnSeparators: 'group',
   }
 }
 
@@ -736,6 +756,8 @@ export function projectOverview(
     rows,
     notes: [],
     unit: null,
+    layout: 'flat',
+    columnSeparators: 'none',
   }
   return {
     family: 'aedar-car-overview',
@@ -831,6 +853,10 @@ export function projectProfile(
       rows,
       notes: [reading.summary],
       unit: '%',
+      // One legend key per value column: approved shape B's vertical mode
+      // separators (#1014 §5) apply even though this plate has no group header.
+      layout: 'flat',
+      columnSeparators: 'legend-key',
     }],
     comparisonDisplayed: false,
     unavailable: reading.profile?.status === 'complete'
@@ -1011,6 +1037,8 @@ export function projectExplorer(
     // description stays in `accessibleLabel`, not as a PDF-only table note.
     notes: [],
     unit: model.distributionValueUnit,
+    layout: 'grouped',
+    columnSeparators: 'group',
   }
   const volumeTable = rampTable({
     key: 'volume',
@@ -1054,11 +1082,25 @@ export function projectExplorer(
   }
 }
 
+/**
+ * Row label of a compared-bars table. The category and the tooltip reading are
+ * distinct presentation facts, but a total row repeats the category name; the
+ * joined caption must not read `Réseau piéton — Réseau piéton`.
+ */
+function rowLabelFor(
+  category: { readonly label: string },
+  reading: { readonly label: string; readonly raw: boolean },
+): string {
+  const base = reading.label === category.label
+    ? reading.label
+    : `${category.label} — ${reading.label}`
+  return `${base}${reading.raw ? ' (valeur brute)' : ''}`
+}
+
 export function projectBars(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>,
-): CahierBarsProjection {
-  const evidence = figure.model.figure
+): CahierBarsProjection {  const evidence = figure.model.figure
   // The section owner's exact predicate, never an inference from the
   // capture absence enum: no control and explicit empty are distinct facts.
   const comparisonNone = capture.comparison.none === true
@@ -1101,7 +1143,7 @@ export function projectBars(
       }
       rows.push({
         key: reading.key,
-        label: `${category.label} — ${reading.label}${reading.raw ? ' (valeur brute)' : ''}`,
+        label: rowLabelFor(category, reading),
         cells,
       })
     }
@@ -1181,7 +1223,16 @@ export function projectBars(
     })
   }
   const columns: CahierTableColumn[] = [
-    { key: 'focal', label: evidence.xAxisTitle, unit: evidence.unit, kind: 'focal', seriesKey: null },
+    // The value column is the focal territory, never the axis dimension: the
+    // x-axis title names the row dimension and is painted above the row
+    // labels (`rowHeader`), exactly like the approved grouped table.
+    {
+      key: 'focal',
+      label: capture.identity.territory.name,
+      unit: evidence.unit,
+      kind: 'focal',
+      seriesKey: null,
+    },
     ...(showComparison || ratio?.comparisonDisplayed
       ? [{
         key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: evidence.unit, kind: 'comparison' as const, seriesKey: null,
@@ -1200,10 +1251,13 @@ export function projectBars(
     tables: [{
       key: figure.slot,
       title: evidence.figureTitle,
+      rowHeader: evidence.xAxisTitle,
       columns,
       rows,
       notes,
       unit: evidence.unit,
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: showComparison || (ratio?.comparisonDisplayed ?? false),
     unavailable: [
@@ -1297,6 +1351,8 @@ export function projectShare(
       rows,
       notes,
       unit: mobiliteShareDisplayUnit(evidence),
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: displayed,
     unavailable: [
@@ -1406,6 +1462,8 @@ export function projectCurve(
         ...(comparisonStateText ? [comparisonStateText] : []),
       ],
       unit,
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: displayed,
     unavailable,

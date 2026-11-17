@@ -55,8 +55,10 @@ import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import {
   EXPLICATION_INDISPONIBLE,
+  ESPACE_TABLEAU,
   CahierPdfTableLayoutError,
   construireTableauxPdf,
+  hauteurEnteteTableau,
   separateurVertical,
   type LigneTableauPdf,
   type TableauPdfPart,
@@ -411,20 +413,6 @@ function hauteurTexteSimple(
     * mesure.hauteurLigne(police, taille) * 1.18
 }
 
-/**
- * Measured height of one table cell's caption + header before its first row.
- * `suite` is the painter's `(suite)` line box on a continuation.
- */
-function hauteurEnteteTableau(part: TableauPdfPart, continued: boolean): number {
-  const hauteurTitre = part.titleLines.length
-    * mesureTitreTableauHaut()
-  return hauteurTitre + part.headerHeight + 2 + (continued ? 2.8 : 0)
-}
-
-function mesureTitreTableauHaut(): number {
-  return ROLE_PDF.titreTableau.taille * 0.3528 * 1.2 * 1.18
-}
-
 function construireSousTitre(
   capture: CahierExportCapture,
   mesure: MesureTexte,
@@ -730,7 +718,7 @@ function construirePages(
       let first = true
       while (cells.some((cell) => cell.rows.length)) {
         const gapAvant = first ? bloc.gapAvant : 0
-        const entetes = cells.map((cell) => hauteurEnteteTableau(cell.part, !first || cell.continued))
+        const entetes = cells.map((cell) => hauteurEnteteTableau(cell.part, mesure, !first || cell.continued))
         const hauteurEntete = Math.max(...entetes)
         const premiereHauteur = Math.max(...cells.map((cell) => cell.rows[0]?.height ?? 0))
         if (page.remaining < gapAvant + hauteurEntete + premiereHauteur) {
@@ -777,7 +765,7 @@ function construirePages(
       const suite = blocks[blockIndex + 1]
       if (suite?.kind === 'table' && page.blocks.length) {
         const hauteurEntete = Math.max(...suite.cells.map((cell) => (
-          hauteurEnteteTableau(cell.part, cell.continued)
+          hauteurEnteteTableau(cell.part, mesure, cell.continued)
         )))
         const premiere = Math.max(...suite.cells.map((cell) => cell.rows[0]?.height ?? 0))
         if (page.remaining < bloc.gapAvant + bloc.height + suite.gapAvant + hauteurEntete + premiere) {
@@ -988,7 +976,8 @@ function dessinerTableau(
       couleur: PALETTE_PDF.brand700,
       align: 'center',
     })
-    cy += mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux) * 1.18
+    cy += mesure.hauteurLigne(ROLE_PDF.titreTableau.police, TAILLE.titreTableaux)
+      * ESPACE_TABLEAU.interligneTitre
   }
   if (continued) {
     texte(doc, '(suite)', x + width / 2, cy, {
@@ -997,9 +986,9 @@ function dessinerTableau(
       couleur: PALETTE_PDF.muted,
       align: 'center',
     })
-    cy += 2.8
+    cy += ESPACE_TABLEAU.suiteMm
   } else {
-    cy += 1.2
+    cy += ESPACE_TABLEAU.apresTitreMm
   }
   const enteteTop = cy
   const sousEnteteTop = enteteTop + part.groupHeaderHeight
@@ -1023,7 +1012,7 @@ function dessinerTableau(
     const hauteurLigneMode = mesure.hauteurLigne(
       ROLE_PDF.enteteTableauMode.police,
       ROLE_PDF.enteteTableauMode.taille,
-    ) * 1.16
+    ) * ESPACE_TABLEAU.interligneEntete
     for (const groupe of part.groups) {
       groupe.labelLines.forEach((ligne, index) => {
         texte(doc, ligne, gx + 1, enteteTop + index * hauteurLigneMode, {
@@ -1041,7 +1030,8 @@ function dessinerTableau(
   // Sub-header row: over each group, `[territory | Groupe¹ | Rang]`; the flat
   // shape uses the same native header role as its own row-dimension cell.
   const roleEntete = part.layout === 'grouped' ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
-  const hauteurLigneEntete = mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * 1.16
+  const hauteurLigneEntete = mesure.hauteurLigne(roleEntete.police, roleEntete.taille)
+    * ESPACE_TABLEAU.interligneEntete
   const numeroPage = (doc as jsPDF & {
     internal: { getCurrentPageInfo: () => { pageNumber: number } }
   }).internal.getCurrentPageInfo().pageNumber
@@ -1054,7 +1044,6 @@ function dessinerTableau(
     const estGroupe = colonne.role !== 'rang'
       && colonne.column.kind === 'comparison'
       && part.hasComparison
-      && part.rowHeader !== null
     colonne.headerLines.forEach((ligne, index) => {
       const derniere = index === colonne.headerLines.length - 1
       const avecMarque = estGroupe && derniere
@@ -1104,7 +1093,7 @@ function dessinerTableau(
     let cellX = x
     let rh = 0
     row.labelLines.forEach((ligne, index) => {
-      texte(doc, ligne, cellX + 1, cy + 1 + index * 2.5, {
+      texte(doc, ligne, cellX + 1, cy + ESPACE_TABLEAU.ligneInsetMm + index * 2.5, {
         police: ROLE_PDF.libelleTableau.police,
         taille: ROLE_PDF.libelleTableau.taille,
         couleur: PALETTE_PDF.ink,
@@ -1116,7 +1105,7 @@ function dessinerTableau(
       const colonne = part.columns[index]!
       const cellule = row.cells[index]!
       if (colonne.role === 'rang') {
-        texte(doc, cellule.display, cellX + 1, cy + 1, {
+        texte(doc, cellule.display, cellX + 1, cy + ESPACE_TABLEAU.ligneInsetMm, {
           police: ROLE_PDF.valeurTableau.police,
           taille: ROLE_PDF.valeurTableau.taille,
           couleur: PALETTE_PDF.ink,
@@ -1138,7 +1127,7 @@ function dessinerTableau(
       })
       const couleurCellule = cellule.cell.color ? couleurPdf(cellule.cell.color) : PALETTE_PDF.ink
       lignes.forEach((ligne, ligneIndex) => {
-        texte(doc, ligne.texte, cellX + 1, cy + 1 + ligneIndex * 2.5, {
+        texte(doc, ligne.texte, cellX + 1, cy + ESPACE_TABLEAU.ligneInsetMm + ligneIndex * 2.5, {
           police: roleCellule.police,
           taille: roleCellule.taille,
           couleur: couleurCellule,

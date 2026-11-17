@@ -12,6 +12,7 @@ import {
   cahierFigureStrokeVars,
   groupedBarGeometry,
   groupedBarScale,
+  groupedBarTickLabel,
   groupedBarTicks,
 } from './cahierFigureNativeGeometry'
 import {
@@ -34,8 +35,7 @@ const plotElement = ref<HTMLElement | null>(null)
 const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
 function formatAxisTick(value: number): string {
-  return props.figure.formatAxisTick?.(value)
-    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+  return groupedBarTickLabel(props.figure, value)
 }
 
 const categoryCount = computed(() => props.figure.categories.length)

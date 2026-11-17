@@ -507,6 +507,18 @@ export function groupedBarGeometry(
   }
 }
 
+/**
+ * One formatter owner for the grouped-bar y labels: the mounted chart and the
+ * PDF painter both measure and paint the exact same string.
+ */
+export function groupedBarTickLabel(
+  figure: CahierGroupedVerticalBarFigureData,
+  value: number,
+): string {
+  return figure.formatAxisTick?.(value)
+    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+}
+
 export function groupedBarTicks(
   figure: CahierGroupedVerticalBarFigureData,
   geometry: CahierFigureGeometry,

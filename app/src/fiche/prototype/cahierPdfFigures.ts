@@ -28,6 +28,7 @@ import {
   mobiliteBarYTicks,
   groupedBarGeometry,
   groupedBarScale,
+  groupedBarTickLabel,
   groupedBarTicks,
   rampGeometry,
   rampPaths,
@@ -59,6 +60,7 @@ import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import { POLICE_PDF } from './cahierPdfFonts'
+import { CAHIER_TRAVEL_TIME_LABEL } from '@/fiche/content/cahierFigureWording'
 import {
   ROLE_PDF,
   RYTHME_PX,
@@ -550,6 +552,15 @@ const GEOMETRIE_NATIVE_AEDAR = CAHIER_AEDAR_FIGURE_GEOMETRY
 /** Native label offset of the AEDAR figures (`CahierFigureAxisLabels`, 8 px). */
 const DECALAGE_ETIQUETTE_X = 8
 
+/**
+ * Measured gap between two side-by-side AEDAR panels. The painter's single
+ * source for panel width, consumed by the native-paint geometry test.
+ */
+export const GAP_PANNEAUX_FIGURE_MM = 6
+
+/** Native x-axis title baseline: plot bottom + this role offset (`-0.6`). */
+export const AXE_TITRE_BAS_MM = 0.6
+
 function hauteurPanneauAedar(largeurPanneau: number): number {
   return largeurPanneau * GEOMETRIE_NATIVE_AEDAR.height / GEOMETRIE_NATIVE_AEDAR.width
 }
@@ -634,7 +645,7 @@ function dessinerAxesAedar(
   const titreX = xTitle.toLocaleUpperCase('fr-FR')
   textePdf(doc, titreX, x + u(native.margin.left) + (
     u(native.width - native.margin.left - native.margin.right) / 2
-  ), y + u(native.height) - 0.6, {
+  ), y + u(native.height) - AXE_TITRE_BAS_MM, {
     police: ROLE_PDF.axe.police,
     taille: TAILLE.axe,
     couleur: PALETTE_PDF.editorialMuted,
@@ -767,7 +778,7 @@ async function dessinerRampes(
 ): Promise<number> {
   const { doc, x, y, width, mesure } = options
   const nombre = Math.max(1, projection.ramps.length)
-  const gap = 6
+  const gap = GAP_PANNEAUX_FIGURE_MM
   const panelWidth = (width - gap * (nombre - 1)) / nombre
   const panelHeight = hauteurPanneauAedar(panelWidth)
   const panelTitles = projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
@@ -1054,15 +1065,56 @@ async function dessinerBarres(
   return bas - y
 }
 
+/** Gap between the selected-horizon caption and the panel titles. */
+const APRES_HORIZON_MM = 2
+
+/**
+ * Selected-horizon caption of the equipment explorer. It states the captured
+ * horizon (`projection.horizonMinutes`) independently of the x-axis ticks; the
+ * label is the mounted `CahierTravelTimeLabel` wording and the value is the
+ * capture's own served horizon, never a recomputation or a fixed `15`.
+ */
+function dessinerHorizonExplorer(
+  doc: jsPDF,
+  mesure: MesureTexte,
+  horizonMinutes: number | null,
+  x: number,
+  y: number,
+  width: number,
+): number {
+  if (horizonMinutes === null) return 0
+  const label = CAHIER_TRAVEL_TIME_LABEL.toLocaleUpperCase('fr-FR')
+  const value = `${horizonMinutes} min`
+  const tracking = TAILLE.axe * ROLE_PDF.axe.espacementEm
+  const labelWidth = mesure.largeur(label, ROLE_PDF.axe.police, TAILLE.axe, tracking)
+  const valueWidth = mesure.largeur(value, POLICE_PDF.bodyStrong, TAILLE.axe)
+  const gap = mmDepuisPt(rythmePt(8))
+  const start = x + width / 2 - (labelWidth + gap + valueWidth) / 2
+  textePdf(doc, label, start, y, {
+    police: ROLE_PDF.axe.police,
+    taille: TAILLE.axe,
+    couleur: PALETTE_PDF.editorialMuted,
+    espacement: tracking,
+  })
+  textePdf(doc, value, start + labelWidth + gap, y, {
+    police: POLICE_PDF.bodyStrong,
+    taille: TAILLE.axe,
+    couleur: PALETTE_PDF.ink,
+  })
+  return mesure.hauteurLigne(ROLE_PDF.axe.police, TAILLE.axe) * 1.18 + APRES_HORIZON_MM
+}
+
 async function dessinerBarresGroupees(
   options: OptionsFigurePdf,
   projection: CahierExplorerProjection,
 ): Promise<number> {
   const { doc, x, y, width, mesure } = options
-  const gap = 6
+  const gap = GAP_PANNEAUX_FIGURE_MM
   const panelWidth = (width - gap) / 2
   const panelHeight = hauteurPanneauAedar(panelWidth)
   const subtitle = options.explorerTypequLabel ?? null
+  const horizonHeight = dessinerHorizonExplorer(doc, mesure, projection.horizonMinutes, x, y, width)
+  const panelsY = y + horizonHeight
   const plierTitre = (title: string) => plierTexte(title, mesure, {
     police: ROLE_PDF.sousTitreFigure.police,
     taillePt: TAILLE.sousTitre,
@@ -1078,8 +1130,8 @@ async function dessinerBarresGroupees(
   const rightTitle = avecSousTitre(plierTitre(
     options.distributionTitle ?? projection.distribution.figure.xAxisTitle,
   ))
-  const dessinerTitres = (lines: readonly string[], originX: number): number => {
-    let cy = y
+  const dessinerTitres = (lines: readonly string[], originX: number, originY: number): number => {
+    let cy = originY
     for (const line of lines) {
       textePdf(doc, line, originX + panelWidth / 2, cy, {
         police: ROLE_PDF.sousTitreFigure.police,
@@ -1098,11 +1150,10 @@ async function dessinerBarresGroupees(
     titleLines: readonly string[],
     unit: string,
   ) => {
-    const cy = dessinerTitres(titleLines, originX)
+    const cy = dessinerTitres(titleLines, originX, panelsY)
     const visible = visibleGroupedBarSeries(figure, hidden)
     const scale = groupedBarScaleFromFigure(visible)
-    const tickLabels = scale.ticks.map((value) => figure.formatAxisTick?.(value)
-      ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value))
+    const tickLabels = scale.ticks.map((value) => groupedBarTickLabel(figure, value))
     const native = geometrieAedarMesuree(panelWidth, tickLabels, mesure)
     const plotBottom = native.height - native.margin.bottom
     const plotRight = native.width - native.margin.right
@@ -1149,7 +1200,7 @@ async function dessinerBarresGroupees(
     return cy + 2 + panelHeight
   }
   const leftBottom = await (async () => {
-    const cy = dessinerTitres(leftTitle, x)
+    const cy = dessinerTitres(leftTitle, x, panelsY)
     const values = projection.volume.series.flatMap((serie) =>
       serie.points.flatMap((point) => [point.value, point.referenceValue]))
     const scale = cahierIntegerYAxisScale(values)
@@ -1251,8 +1302,7 @@ function groupedBarTicksFromFigure(
   scale: ReturnType<typeof groupedBarScale>,
 ) {
   return groupedBarTicks(figure, geometry, bar, scale, (value) =>
-    figure.formatAxisTick?.(value)
-    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value))
+    groupedBarTickLabel(figure, value))
 }
 
 async function dessinerPart(
@@ -1508,7 +1558,7 @@ export function hauteurFigurePdf(
   const gapLegende = LEGENDE_APRES_PLOT
   switch (projection.family) {
     case 'aedar-ramps': {
-      const gap = 6
+      const gap = GAP_PANNEAUX_FIGURE_MM
       const nominal = Math.max(1, projection.ramps.length)
       const panelWidth = (width - gap * (nominal - 1)) / nominal
       const titles = Math.max(...projection.ramps.map((ramp) => plierTexte(ramp.title, mesure, {
@@ -1519,7 +1569,7 @@ export function hauteurFigurePdf(
         + 2 + hauteurPanneauAedar(panelWidth) + gapLegende + legend
     }
     case 'aedar-equipment-explorer': {
-      const gap = 6
+      const gap = GAP_PANNEAUX_FIGURE_MM
       const panelWidth = (width - gap) / 2
       const rightTitle = options?.distributionTitle ?? projection.distribution.figure.xAxisTitle
       const subtitleLines = options?.explorerTypequLabel
@@ -1531,11 +1581,14 @@ export function hauteurFigurePdf(
         plierTexte(projection.volume.title, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
         plierTexte(rightTitle, mesure, { police: ROLE_PDF.sousTitreFigure.police, taillePt: TAILLE.sousTitre, largeurMax: panelWidth, casserMotsLongs: true }).length,
       ) + subtitleLines
+      const horizon = projection.horizonMinutes === null
+        ? 0
+        : mesure.hauteurLigne(ROLE_PDF.axe.police, TAILLE.axe) * 1.18 + APRES_HORIZON_MM
       const legend = hauteurLegende(mesure, [
         ...projection.volume.series.map((serie) => ({ label: serie.label, color: couleurSerie(aedarTimeModeColor(serie.key)) })),
         ...(options?.comparisonProof ? [{ label: 'Groupe comparé', color: PALETTE_PDF.editorialMuted, dash: true }] : []),
       ], width)
-      return titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
+      return horizon + titles * mesure.hauteurLigne(ROLE_PDF.sousTitreFigure.police, TAILLE.sousTitre) * 1.18
         + 2 + hauteurPanneauAedar(panelWidth) + gapLegende + legend
     }
     case 'aedar-car-overview': {

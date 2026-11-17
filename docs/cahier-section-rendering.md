@@ -251,27 +251,47 @@ or starts an acquisition.
   transposed model. The approved generator has two shapes, and the adapter must
   choose the one its family ships (`desktop.js:appendTimeRampTables` /
   `appendSandboxTables`):
-  * **flat (A)**: `aedar-ramps`. Rows are `cut × mode`; the columns are
-    `Temps | Mode | territory | Groupe comparé ¹ | Rang`. The mode is a row
-    dimension, so a flat table always has the same five columns and never
-    column-splits. The approved generator lays the two access panels in one
-    grid — `grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px`
+  * **flat (A)**: `aedar-ramps` and the equipment profile. For the ramps, rows
+    are `cut × mode`; with a displayed comparison the columns are
+    `Temps | Mode | territory | Groupe comparé ¹ | Rang`, and without one the
+    reachable three-column state is `Temps | Mode | territory`. The approved
+    generator's fixed `colgroup` (`desktop.js:215`) is therefore
+    `18 / 46 / 36 %` without comparison and `14 / 32 / 18 / 18 / 18 %` with it.
+    The mode is a row dimension, so a flat access table always has that same
+    fixed column set and never column-splits. The approved generator lays the
+    two access panels in one grid —
+    `grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px`
     (`desktop.js:197`) — so the composer pairs both tables on the same baseline
     at the measured page scale (two equal half-columns and the 24 px gap). Only
     a table whose measured minimum width cannot fit a half-column keeps the
     full content width: that is an honest measured layout decision, never a
-    clipped number or an unconditional stack.
+    clipped number or an unconditional stack. The profile plate keeps one
+    legend key per value column, so its flat header has no legend row but keeps
+    a vertical rule at each legend-key boundary (#1014 §5).
   * **grouped (B)**: any figure with a legend-key axis (`aedar-equipment-explorer`
     volume ramp and distribution). Rows are the panel's x-axis categories
     (`Temps` or `Statistique` row-dimension header); columns are grouped by the
     visible legend key, each group carrying `[territory | Groupe¹ | Rang]` and
     its series colour. A grouped table splits only at complete group boundaries
     and a too-tall table only at complete rows, with repeated title/header.
-  The `¹` footnote marks the compared **`Groupe`** cell once per cell (the flat
-  shape prints the full `Groupe comparé ¹`, the grouped shape its approved
-  `Groupe¹`), never `Rang` and never once per wrapped line. It is an actual
-  in-document link to the page footer (`comparisonReference()` destination), not
-  a decorative glyph. The rank value stays the producer-served display and is
+    The tallied-bars plate is flat too: its row dimension is the producer's own
+    x-axis title (the actual category dimension, e.g. `Type de stationnement`),
+    painted above the row labels, while the value column names the focal
+    territory. The axis title never becomes the value-column header.
+  The caption/header box has **one owner** (`ESPACE_TABLEAU` in
+  `cahierPdfTableau.ts`, consumed by both the composer's pagination and the
+  painter). A flat table's legend-key band is exactly zero — never an empty
+  mode line folded into `headerHeight`; the measured R1 gap from the last
+  header baseline to the first row is 16.24 pt (the painter's equivalent is
+  16.2 pt).
+  The `¹` footnote marks the compared **`Groupe`** cell once per served cell
+  (the flat shape prints the full `Groupe comparé ¹`, the grouped shape its
+  approved `Groupe¹`), never `Rang` and never once per wrapped line. The mark
+  and its in-document footer link follow the served proof only: a table with
+  no row dimension (coverage share, scalar overview, compared bars) still
+  carries its one mark per compared cell. It is an actual in-document link to
+  the page footer (`comparisonReference()` destination), not a decorative
+  glyph. The rank value stays the producer-served display and is
   never recomputed. Numbers are never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are
@@ -307,7 +327,11 @@ or starts an acquisition.
   the ramp paints paths only (no invented point markers), grouped bars carry the
   native `fill-opacity: .78` as a real shape alpha (so the grid beneath shows
   through, never a paper-composited opaque colour), and the explorer panel
-  titles carry the figcaption's second line (`typequLabel`). Native titles,
+  titles carry the figcaption's second line (`typequLabel`). The equipment
+  explorer also paints its **captured** selected horizon under the identity
+  (`Temps de trajet` + `${horizonMinutes} min`), independently of the x-axis
+  ticks and never recomputed from them; the label comes from the mounted
+  `CahierTravelTimeLabel` wording (`cahierFigureWording.ts`). Native titles,
   units, legends, ranks and owner-observed comparison layers are preserved; no
   title parsing and no PDF-only significant-figure/rounding policy.
 - `cahierPdfComposer.ts` owns the A4 document: paper/ground, brand home link,
