@@ -73,4 +73,3 @@ const styleErmine = computed(() => {
   flex-shrink: 0;
 }
 </style>
-

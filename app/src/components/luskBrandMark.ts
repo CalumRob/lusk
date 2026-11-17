@@ -128,4 +128,3 @@ export function sommetErmineEm(): number {
     - MARQUE_LUSK_LOCKUP.ecartEncreMotErmineEm
     + MARQUE_LUSK_LOCKUP.encreHautErmineBoiteEm
 }
-
