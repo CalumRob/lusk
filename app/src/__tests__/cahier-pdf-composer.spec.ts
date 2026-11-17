@@ -113,7 +113,9 @@ describe('compositeur PDF Cahier — matrice des neuf sections', () => {
         expect(format.width).toBeCloseTo(595.28, 1)
         expect(format.height).toBeCloseTo(841.89, 1)
       }
-      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
+      // The document embeds only the faces its roles use (putOnlyUsedFonts);
+      // a short section legitimately uses five of the six role faces.
+      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(5)
       verifierDansPage(lecture)
       verifierCollisions(lecture)
       await verifierAlphaTexte(lecture.octets)
@@ -158,12 +160,24 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     // subtitle/footer must therefore be absent (no comparative proof).
     expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
     // Row/cell relationship: every cell stays under its mode column in order.
-    const ligne = lecture.lignes.find((candidate) => candidate.page === 1
-      && candidate.texte === '5 min 5 5 5 Indisponible Indisponible Indisponible')
-    expect(ligne?.texte).toBe('5 min 5 5 5 Indisponible Indisponible Indisponible')
-    const autre = lecture.lignes.find((candidate) => candidate.page === 1
-      && candidate.texte === '20 min 5 5 5 Indisponible Indisponible Indisponible')
-    expect(autre?.texte).toBe('20 min 5 5 5 Indisponible Indisponible Indisponible')
+    // The line box is one row; a 0.1 pt baseline rounding can split the text
+    // extractor's line grouping, so compare the row's runs by x instead.
+    const rangee = (label: string) => {
+      const ancre = lecture.textes.find((item) => item.page === 1
+        && item.str === label && Math.abs(item.taille - 7.36) < 0.05 && item.y > 300)
+      if (!ancre) return []
+      return lecture.textes
+        .filter((item) => item.page === 1 && Math.abs(item.y - ancre.y) < 1.2)
+        .sort((a, b) => a.x - b.x)
+        .map((item) => item.str)
+        .filter((value) => value.trim().length > 0)
+    }
+    expect(rangee('5 min')).toEqual([
+      '5 min', '5', 'Indisponible', '—', '5', 'Indisponible', '—', '5', 'Indisponible', '—',
+    ])
+    expect(rangee('20 min')).toEqual([
+      '20 min', '5', 'Indisponible', '—', '5', 'Indisponible', '—', '5', 'Indisponible', '—',
+    ])
     // Numbers are never truncated: the native display is intact.
     expect(lecture.texteComplet).not.toContain('Indisp. :')
     // Brand, live identity and source links are real annotations.
@@ -260,7 +274,8 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     for (const valeur of ['Établissements', 'Vélo', 'd’accès', 'Diversité', 'Indisponible']) {
       expect(lecture.texteComplet).toContain(valeur)
     }
-    expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(7)
+    // headline-400, text-400/500/600, fira-code-500, newsreader-600-italic.
+    expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
   })
 
   it('rend les cartes et leur légende native sans lecture de pixels', async () => {
@@ -639,7 +654,8 @@ describe('compositeur PDF Cahier — refus explicites', () => {
         urlAccueil: 'https://lusk.test/',
       })
       const lecture = await lirePdf(artifact.blob)
-      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(7)
+      // headline-400, text-400/500/600, fira-code-500, newsreader-600-italic.
+    expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
     } finally {
       globalThis.fetch = original
     }

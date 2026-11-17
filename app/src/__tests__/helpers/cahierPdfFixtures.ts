@@ -16,6 +16,7 @@ import type {
 } from '@/fiche/prototype/cahierExportCapture'
 import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
+import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { ContentEvidence } from '@/fiche/content/themeContent'
 import type { ControleComparaison } from '@/fiche/comparisonContext'
@@ -397,4 +398,156 @@ export function captureWaffleDense(): CahierExportCapture {
     },
   }))
   return capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
+}
+
+/* ------------------------------------------------------------------ *
+ * Populated comparison ranks (synthetic native contracts, truthfully
+ * labelled: the fixture provides the producer-shaped cells; no value,
+ * rank or eligibility is computed by the PDF)
+ * ------------------------------------------------------------------ */
+
+function servedRank(position: number | null, size = 43, ties: number | null = null) {
+  return position === null ? null : { position, size, ties }
+}
+
+/** The access ramps with producer-served reference values AND ranks. */
+export function captureRampeRangs(): CahierExportCapture {
+  const capture: any = captureRampeDense()
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-ramps')
+  for (const ramp of figure.model.ramps) {
+    ramp.referenceRanks = {
+      car: [1, 2, 1, 3].map((position, index) => servedRank(position, 43, index === 0 ? 2 : null)),
+      bike_lts2: [2, 1, 1, 2].map((position) => servedRank(position, 43)),
+      bike_lts4: [null, null, null, null],
+      transit: [null, null, null, null],
+      walk: [null, null, null, null],
+    }
+  }
+  return capture as CahierExportCapture
+}
+
+/**
+ * The equipment explorer with two value tables (volume ramp + decile
+ * distribution) and producer-shaped comparison cells carrying served ranks.
+ * This is the populated two-tables/continuation fixture.
+ */
+export function captureExplorerRangs(): CahierExportCapture {
+  const capture: any = structuredClone(capturePdfFixture('aedar-equipment-explorer', {
+    publications: [
+      ...readyPublications('aedar-equipment-explorer'),
+      displayedLayer('aedar-comparison-layer', 'distribution'),
+    ],
+  }))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-explorer')
+  const typequ = figure.effective.typequ as string
+  const modes = figure.effective.modes as readonly string[]
+  const statistics = figure.model.distributionStatistics as readonly { key: string }[]
+  const fact = figure.model.facts.find((candidate: any) => candidate.typequ === typequ)
+  if (!fact) throw new Error('Fixture PDF : fait focal introuvable pour les rangs.')
+  // Native focal measures: four horizons × the selected modes (producer-shaped).
+  let focalIndex = 0
+  for (const mode of modes) {
+    for (const horizon of AEDAR_EQUIPMENT_BUCKET_HORIZONS) {
+      fact.measures[`count_${horizon}_${mode}_mean`] = 10 + horizon + (focalIndex % 3)
+      focalIndex += 1
+    }
+  }
+  const source = {
+    typequ,
+    source_id: 'aedar_bretagne',
+    vintage_id: 'test',
+    reference_date: '2026-01-01',
+    publication_date: '2026-09-30',
+    group_coverage_status: 'covered',
+    group_n_addresses: 100,
+    group_n_observed: 100,
+    statistic: 'pooled' as const,
+    direction: 'high' as const,
+  }
+  const cells: Record<string, unknown>[] = []
+  let index = 0
+  for (const mode of modes) {
+    for (const horizon of AEDAR_EQUIPMENT_BUCKET_HORIZONS) {
+      cells.push({
+        ...source,
+        measure: `count_${horizon}_${mode}_mean`,
+        group_value: 10 + horizon,
+        rank: 1 + (index % 3),
+        rank_size: 43,
+        rank_ties: index % 7 === 0 ? 2 : null,
+      })
+      for (const statistic of statistics) {
+        cells.push({
+          ...source,
+          measure: `count_${horizon}_${mode}_${statistic.key}`,
+          group_value: 5 + (index % 20),
+          rank: 1 + ((index + 1) % 5),
+          rank_size: 43,
+          rank_ties: null,
+        })
+      }
+      index += 1
+    }
+  }
+  figure.effective.comparison = {
+    label: capture.comparison.group?.label ?? 'communes de EPCI X',
+    contentVersion: 'reference',
+    referenceContentVersion: 'reference',
+    cells,
+  }
+  // The owner-observed comparison request makes the volume ramp resolve the
+  // same producer cells as the distribution table.
+  figure.model.comparisonRequestLabel = capture.comparison.group?.label ?? 'communes de EPCI X'
+  figure.model.referenceLabel = capture.comparison.group?.label ?? 'communes de EPCI X'
+  return capture as CahierExportCapture
+}
+
+/**
+ * A dense variant of the two-table explorer: 25 published distribution
+ * thresholds (minimum, quantiles, maximum) with served focal values and ranks.
+ * It is the measured-continuation proof for the two value tables; synthetic
+ * like every fixture here, never production data.
+ */
+export function captureExplorerRangsDense(): CahierExportCapture {
+  const capture: any = captureExplorerRangs()
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-explorer')
+  const typequ = figure.effective.typequ as string
+  const fact = figure.model.facts.find((candidate: any) => candidate.typequ === typequ)
+  const source = {
+    typequ,
+    source_id: fact.source_id,
+    vintage_id: fact.vintage_id,
+    reference_date: fact.reference_date,
+    publication_date: fact.publication_date,
+    group_coverage_status: 'covered',
+    group_n_addresses: 100,
+    group_n_observed: 100,
+    statistic: 'pooled' as const,
+    direction: 'high' as const,
+  }
+  const statistics = Array.from({ length: 25 }, (_, index) => ({
+    key: index === 0 ? 'min' : index === 24 ? 'max' : `decile${index}`,
+    label: index === 0 ? 'Minimum' : index === 24 ? 'Maximum' : `Décile ${index}`,
+    axisLabel: index === 0 ? 'Min' : index === 24 ? 'Max' : `D${index}`,
+  }))
+  figure.model.distributionStatistics = statistics
+  const cells = figure.effective.comparison.cells as Record<string, unknown>[]
+  const modes = figure.effective.modes as readonly string[]
+  let index = 0
+  for (const mode of modes) {
+    for (const statistic of statistics) {
+      const measure = `count_15_${mode}_${statistic.key}`
+      fact.measures[measure] = 10 + (index % 47)
+      cells.push({
+        ...source,
+        measure,
+        group_value: 6 + (index % 21),
+        rank: 1 + (index % 7),
+        rank_size: 43,
+        rank_ties: index % 11 === 0 ? 2 : null,
+      })
+      index += 1
+    }
+  }
+  return capture as CahierExportCapture
 }

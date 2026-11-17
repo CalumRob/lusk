@@ -7,6 +7,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { inflateSync } from 'node:zlib'
 
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
@@ -169,6 +170,123 @@ export async function lirePdf(blob: Blob): Promise<LecturePdf> {
 export function lignesContenant(lecture: LecturePdf, value: string): readonly LignePdf[] {
   const needle = normaliser(value)
   return lecture.lignes.filter((ligne) => ligne.texte.includes(needle))
+}
+
+export interface CheminPdf {
+  readonly page: number
+  readonly kind: 'fill' | 'stroke'
+  readonly colour: string | null
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+async function fluxPage(octets: Uint8Array, pageIndex: number): Promise<{ raw: string; height: number }> {
+  const doc = await PDFDocument.load(Uint8Array.from(octets).buffer)
+  const page = doc.getPages()[pageIndex]
+  const height = page.getHeight()
+  const contents = page.node.lookup(PDFName.of('Contents'))
+  const chunks = contents instanceof PDFRawStream
+    ? [contents]
+    : Array.isArray(contents) ? contents as PDFRawStream[] : []
+  let raw = ''
+  for (const chunk of chunks) {
+    const buffer = Buffer.from(chunk.getContents())
+    try {
+      raw += inflateSync(buffer).toString('latin1')
+    } catch {
+      raw += buffer.toString('latin1')
+    }
+  }
+  return { raw, height }
+}
+
+function composante(value: string): string {
+  return Math.max(0, Math.min(255, Math.round(Number(value) * 255))).toString(16).padStart(2, '0')
+}
+
+/**
+ * Paths actually emitted by the PDF, read from the page content streams.
+ * jsPDF writes coordinates in points (its page `cm` maps its internal unit);
+ * a path is collected until its fill/stroke paint operator. Test-only: this is
+ * how the suite checks the approved surface/mark geometry, not the composer's
+ * own layout objects.
+ */
+export async function cheminsPdf(octets: Uint8Array, pages = 1): Promise<readonly CheminPdf[]> {
+  const chemins: CheminPdf[] = []
+  for (let pageIndex = 0; pageIndex < pages; pageIndex += 1) {
+    const { raw, height: hauteurPage } = await fluxPage(octets, pageIndex)
+    const lignes = raw.split('\n')
+    let stroke: string | null = null
+    let fill: string | null = null
+    let points: [number, number][] = []
+    let kind: 'fill' | 'stroke' | null = null
+    const ajouter = (values: number[]) => {
+      if (values.length >= 2) points.push([values[0]!, values[1]!])
+    }
+    for (const brut of lignes) {
+      const ligne = brut.trim()
+      if (!ligne) continue
+      const rgbStroke = /^([\d.]+) ([\d.]+) ([\d.]+) RG$/.exec(ligne)
+      if (rgbStroke) {
+        stroke = `#${composante(rgbStroke[1]!)}${composante(rgbStroke[2]!)}${composante(rgbStroke[3]!)}`
+        continue
+      }
+      const rgbFill = /^([\d.]+) ([\d.]+) ([\d.]+) rg$/.exec(ligne)
+      if (rgbFill) {
+        fill = `#${composante(rgbFill[1]!)}${composante(rgbFill[2]!)}${composante(rgbFill[3]!)}`
+        continue
+      }
+      const nombres = [...ligne.matchAll(/-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]))
+      if (/\bm$/.test(ligne) || /\bl$/.test(ligne)) {
+        ajouter(nombres)
+        continue
+      }
+      if (/\bre$/.test(ligne)) {
+        const [x, y, w, h] = nombres
+        if ([x, y, w, h].every((value) => value !== undefined)) {
+          points.push([x!, y!], [x! + w!, y!], [x!, y! + h!], [x! + w!, y! + h!])
+        }
+        continue
+      }
+      if (/\b[cy]$/.test(ligne)) {
+        for (let index = 0; index + 1 < nombres.length; index += 2) ajouter([nombres[index]!, nombres[index + 1]!])
+        continue
+      }
+      if (ligne === 'S' || ligne === 's') kind = 'stroke'
+      else if (ligne === 'f' || ligne === 'f*' || ligne === 'F') kind = 'fill'
+      else if (ligne === 'W' || ligne === 'W*' || ligne === 'n') {
+        points = []
+        kind = null
+        continue
+      } else {
+        continue
+      }
+      if (points.length) {
+        const xs = points.map(([x]) => x)
+        const ys = points.map(([, y]) => y)
+        const x = Math.min(...xs)
+        const y = Math.min(...ys)
+        const width = Math.max(...xs) - x
+        const height = Math.max(...ys) - y
+        chemins.push({
+          page: pageIndex + 1,
+          kind,
+          colour: kind === 'stroke' ? stroke : fill,
+          x,
+          // The content stream is bottom-origin; expose the reader's top-origin
+          // y so a margin/frame assertion reads like the approved page box.
+          y: hauteurPage - (y + height),
+          width,
+          height,
+        })
+      }
+      points = []
+      kind = null
+    }
+  }
+  return chemins
 }
 
 export function contientTout(lecture: LecturePdf, valeurs: readonly string[]): void {

@@ -251,7 +251,8 @@ describe('sortie native du peintre PDF', () => {
     expect(title.x).toBeCloseTo(312.0945, 2) // panel starts at 108mm, title baseline at 110.1mm
     const tickNumbers = lecture.textes.filter((item) => /^(0|20|40)$/.test(item.str))
     expect(Math.min(...tickNumbers.map((item) => item.x))).toBeGreaterThan(title.x + 3.5)
-    const ticks = lecture.textes.filter((item) => item.str === 'établissements')
+    const ticks = lecture.textes.filter((item) => /établissements/.test(item.str)
+      && Math.abs(item.rotation) < 0.01)
     expect(ticks).toHaveLength(3)
     const middle = (Math.min(...ticks.map((tick) => tick.y)) + Math.max(...ticks.map((tick) => tick.y))) / 2
     expect(Math.abs(title.y + title.largeur / 2 - middle)).toBeLessThan(8)
