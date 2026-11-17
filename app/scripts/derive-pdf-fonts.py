@@ -20,29 +20,48 @@ Run from ``app/``:  python scripts/derive-pdf-fonts.py
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
 
 from fontTools.ttLib import TTFont
+from fontTools.pens.transformPen import TransformPen
+from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.varLib.instancer import instantiateVariableFont
 
 ROOT = Path(__file__).resolve().parent.parent
 PACKAGES = ROOT / "node_modules" / "@fontsource-variable"
 DESTINATION = ROOT / "src" / "assets" / "fonts" / "pdf"
 
-# family, package, source style, weight, PDF id. Only faces the document uses.
+# family, package, source style, weight, PDF id, synthetic oblique.
+# Only faces the document uses.
+#
+# The wordmark is the one face the site itself renders as a synthetic oblique:
+# `app/src/main.ts` loads only `@fontsource-variable/newsreader/index.css`, whose
+# `@font-face` blocks declare `font-style: normal`, while `LuskBrand.vue` asks
+# for `font-style: italic` and `tokens.css` resolves the same family. The
+# browser therefore slants the upright face; it never uses the packaged real
+# italic cut. The approved generator says so explicitly
+# (`prototype-pdf-fonts.py`: "the site currently synthesizes Newsreader italics
+# from its normal face") and the approved artifacts embed the upright 600
+# instance skewed by (1, 0, .25, 1, 0, 0) with `post.italicAngle = -14`.
+# Reproducing the browser's face is a derivation of the same OFL binary, not a
+# second font: advances stay the upright ones (lusk = 1.855 em).
+SYNTHETIC_OBLIQUE = {"skewX": 0.25, "italicAngle": -14}
+
 FACES = [
-    ("Mozilla Headline", "mozilla-headline", "normal", 400, "mozilla-headline-400"),
-    ("Mozilla Headline", "mozilla-headline", "normal", 600, "mozilla-headline-600"),
-    ("Mozilla Text", "mozilla-text", "normal", 400, "mozilla-text-400"),
-    ("Mozilla Text", "mozilla-text", "normal", 500, "mozilla-text-500"),
-    ("Mozilla Text", "mozilla-text", "normal", 600, "mozilla-text-600"),
-    ("Fira Code", "fira-code", "normal", 400, "fira-code-400"),
-    ("Fira Code", "fira-code", "normal", 500, "fira-code-500"),
-    ("Fira Code", "fira-code", "normal", 600, "fira-code-600"),
-    ("Fira Code", "fira-code", "normal", 700, "fira-code-700"),
-    ("Newsreader", "newsreader", "italic", 600, "newsreader-600-italic"),
+    ("Mozilla Headline", "mozilla-headline", "normal", 400, "mozilla-headline-400", None),
+    ("Mozilla Headline", "mozilla-headline", "normal", 600, "mozilla-headline-600", None),
+    ("Mozilla Text", "mozilla-text", "normal", 400, "mozilla-text-400", None),
+    ("Mozilla Text", "mozilla-text", "normal", 500, "mozilla-text-500", None),
+    ("Mozilla Text", "mozilla-text", "normal", 600, "mozilla-text-600", None),
+    ("Fira Code", "fira-code", "normal", 400, "fira-code-400", None),
+    ("Fira Code", "fira-code", "normal", 500, "fira-code-500", None),
+    ("Fira Code", "fira-code", "normal", 600, "fira-code-600", None),
+    ("Fira Code", "fira-code", "normal", 700, "fira-code-700", None),
+    # Displayed italic role, sourced from the upright face the site loads.
+    ("Newsreader", "newsreader", "normal", 600, "newsreader-600-italic", SYNTHETIC_OBLIQUE),
 ]
 
 # The document is French; the Fontsource `latin` subset covers Latin-1, the
@@ -61,9 +80,13 @@ def regular_source(package: str, style: str) -> Path:
 def main() -> None:
     DESTINATION.mkdir(parents=True, exist_ok=True)
     manifest = []
-    for family, package, style, weight, key in FACES:
+    for family, package, style, weight, key, oblique in FACES:
         source = regular_source(package, style)
         font = TTFont(source)
+        # Keep the upstream modification stamp: a re-derivation of an unchanged
+        # face must be byte-identical, or every run would churn the committed
+        # binaries and their manifest hashes.
+        upstream_modified = font["head"].modified
         if "fvar" in font:
             axes = {}
             for axis in font["fvar"].axes:
@@ -76,9 +99,42 @@ def main() -> None:
         if style == "italic" and "Italic" not in font["name"].getDebugName(4):
             # No synthetic oblique: the chosen source is a real italic face.
             raise SystemExit(f"{source} is not an italic face")
+        if oblique is not None:
+            # Match the browser: slant the upright outlines, keep the upright
+            # advances and set the declared italic angle. The skew matrix is the
+            # one the approved generator applies.
+            glyphs = font.getGlyphSet()
+            transformed = {}
+            matrix = (1, 0, oblique["skewX"], 1, 0, 0)
+            for name in font.getGlyphOrder():
+                pen = TTGlyphPen(glyphs)
+                glyphs[name].draw(TransformPen(pen, matrix))
+                transformed[name] = pen.glyph()
+            for name, glyph in transformed.items():
+                font["glyf"][name] = glyph
+            font["post"].italicAngle = oblique["italicAngle"]
+        font["head"].modified = upstream_modified
         font.flavor = None
         target = DESTINATION / f"{key}.ttf"
-        font.save(target)
+        # `head.compile()` stamps the current time on every save. Pin it to the
+        # already-committed stamp (or the upstream one for a new face) so a
+        # re-derivation of an unchanged program is byte-identical instead of
+        # churning every binary and manifest hash.
+        stamp = upstream_modified
+        if target.is_file():
+            stamp = TTFont(target)["head"].modified
+        font["head"].modified = stamp
+        from fontTools.ttLib.tables import _h_e_a_d
+        previous_clock = _h_e_a_d.timestampNow
+        _h_e_a_d.timestampNow = lambda: stamp
+        try:
+            buffer = io.BytesIO()
+            font.save(buffer)
+        finally:
+            _h_e_a_d.timestampNow = previous_clock
+        program = buffer.getvalue()
+        if not target.is_file() or target.read_bytes() != program:
+            target.write_bytes(program)
         payload = target.read_bytes()
         # Verify the actual glyph coverage of the French document copy rather
         # than assuming the subset: refuse a face that lacks a used character.
@@ -109,7 +165,9 @@ def main() -> None:
                 "id": key,
                 "family": family,
                 "weight": weight,
-                "style": style,
+                # The document role is italic; the binary is the synthetic
+                # oblique of the loaded upright face when `derivation` is set.
+                "style": "italic" if oblique is not None else style,
                 "file": f"{key}.ttf",
                 "bytes": len(payload),
                 "sha256": hashlib.sha256(payload).hexdigest(),
@@ -117,6 +175,11 @@ def main() -> None:
                 "sourcePackage": f"@fontsource-variable/{package}",
                 "license": license_path.name,
                 "licenseSpdx": "OFL-1.1",
+                **({"derivation": {
+                    "kind": "synthetic-oblique",
+                    "matrix": [1, 0, oblique["skewX"], 1, 0, 0],
+                    "italicAngle": oblique["italicAngle"],
+                }} if oblique is not None else {}),
             }
         )
         (DESTINATION / f"{key}-LICENSE.txt").write_text(
