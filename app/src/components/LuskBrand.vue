@@ -26,7 +26,9 @@ const styleErmine = computed(() => {
   const em = props.verticale
     ? MARQUE_LUSK_LOCKUP.ermineVerticaleEm
     : MARQUE_LUSK_LOCKUP.ermineEm
-  return { width: `${em}em`, height: `${em}em` }
+  // A custom property, not width/height: host variants (the landing hero uses
+  // 1.3em + a negative margin) keep their own CSS override.
+  return { '--lusk-ermine-em': `${em}em` }
 })
 </script>
 
@@ -67,9 +69,12 @@ const styleErmine = computed(() => {
 }
 
 .lusk-marque__ermine {
-  /* The em-relative box is the shared lockup owner's (`MARQUE_LUSK_LOCKUP`):
-     l'hermine suit la taille du wordmark, jamais une taille fixe — la marque
-     garde ses proportions à toute taille de texte. */
+  /* The em-relative box is the shared lockup owner's (`MARQUE_LUSK_LOCKUP`),
+     injected as `--lusk-ermine-em`: l'hermine suit la taille du wordmark,
+     jamais une taille fixe — la marque garde ses proportions à toute taille
+     de texte. A host may still override width/height directly (hero 1.3em). */
+  width: var(--lusk-ermine-em);
+  height: var(--lusk-ermine-em);
   flex-shrink: 0;
 }
 </style>

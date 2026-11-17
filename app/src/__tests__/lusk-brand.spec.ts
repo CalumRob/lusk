@@ -33,17 +33,19 @@ describe('#204 — l’ermine suit le texte (em, pas de px fixe)', () => {
   it('dimensionne l’ermine horizontale en em — depuis l’owner partagé, jamais une taille fixe', () => {
     expect(MARQUE_LUSK_LOCKUP.ermineEm).toBe(1.18)
     const style = mount(LuskBrand).get('.lusk-marque__ermine').attributes('style')!
-    expect(style).toContain(`width: ${MARQUE_LUSK_LOCKUP.ermineEm}em`)
-    expect(style).toContain(`height: ${MARQUE_LUSK_LOCKUP.ermineEm}em`)
+    expect(style).toContain(`--lusk-ermine-em: ${MARQUE_LUSK_LOCKUP.ermineEm}em`)
     expect(style).not.toMatch(/\d+px/)
+    // The committed SFC consumes the injected property for the box.
+    const css = readFileSync(join(process.cwd(), 'src', 'components', 'LuskBrand.vue'), 'utf-8')
+    expect(css).toMatch(/width:\s*var\(--lusk-ermine-em\)/)
+    expect(css).toMatch(/height:\s*var\(--lusk-ermine-em\)/)
   })
 
   it('dimensionne l’ermine verticale (34 px fixes → em) pour qu’elle réduise avec le texte', () => {
     expect(MARQUE_LUSK_LOCKUP.ermineVerticaleEm).toBe(1.55)
     const style = mount(LuskBrand, { props: { verticale: true } })
       .get('.lusk-marque__ermine').attributes('style')!
-    expect(style).toContain(`width: ${MARQUE_LUSK_LOCKUP.ermineVerticaleEm}em`)
-    expect(style).toContain(`height: ${MARQUE_LUSK_LOCKUP.ermineVerticaleEm}em`)
+    expect(style).toContain(`--lusk-ermine-em: ${MARQUE_LUSK_LOCKUP.ermineVerticaleEm}em`)
     expect(style).not.toMatch(/\d+px/)
   })
 
