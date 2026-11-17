@@ -14,6 +14,7 @@ import { readFile, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
+import vue from '@vitejs/plugin-vue'
 import { chromium } from 'playwright-core'
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
@@ -46,6 +47,7 @@ await mkdir(evidenceDir, { recursive: true })
 await build({
   root: appDir,
   configFile: false,
+  plugins: [vue()],
   resolve: { alias: { '@': path.join(appDir, 'src') } },
   build: {
     outDir: distDir,
@@ -134,6 +136,7 @@ try {
   await page.goto(`http://127.0.0.1:${port}/${probe.replaceAll('\\', '/')}`, { waitUntil: 'networkidle' })
   await page.waitForFunction(() => typeof window.genererCahierPdf === 'function')
   const sourceColours = await page.evaluate(() => window.auditerCahierCouleurs())
+  const strokeGrammar = await page.evaluate(() => window.auditerGrammaireTraitEcran())
 
   const report = []
   for (const key of keys) {
@@ -231,6 +234,7 @@ try {
     cancelDuringDecode,
     cleanup,
     sourceColours,
+    strokeGrammar,
     report,
   }, null, 2))
   if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`)

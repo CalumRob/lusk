@@ -293,17 +293,21 @@ or starts an acquisition.
   actual editorial paper. No live screen or computed-style introspection is used
   by production generation.
 - `components/luskBrandMark.ts` owns the locked ermine geometry and its two
-  canonical brand fills for every runtime consumer: `LuskBrand.vue`, the fiche
-  watermark (`FiligraneFiche.vue`, which keeps the ink and substitutes the active
-  theme anchor for the `accent` role) and the PDF painter. A path or brand-fill
-  edit therefore reaches all three; no consumer carries a path copy.
-  `app/public/favicon.svg` is a separately tracked head-crop derivative checked
-  by `favicon.spec.ts`, not a runtime consumer and not generated here.
+  canonical brand fills (`ink`, `accent`). Its geometry reaches every runtime
+  consumer: `LuskBrand.vue`, the fiche watermark (`FiligraneFiche.vue`) and the
+  PDF painter; no consumer carries a path copy. The canonical fills are the
+  fills of the lockup and of the PDF painter. The watermark shares that geometry
+  and the canonical `ink`, but deliberately draws the `accent` role through the
+  active theme anchor (`--filigrane-accent`): a canonical accent edit therefore
+  does not recolour the watermark, which is its documented variant rather than
+  an unconverted consumer. `app/public/favicon.svg` is a separately tracked
+  head-crop derivative checked by `favicon.spec.ts`, not a runtime consumer and
+  not generated here.
 
 `cahier-pdf-composer.spec.ts` drives real blobs and parses them with pdfjs/pdf-lib:
 the nine-section admission matrix, A4/page/formats/metadata/font embedding,
 literal table cells and ranks, French accents, `Indisp.` with one explanation,
-  comparison subtitle cases, one-page and measured multi-page continuation,
+comparison subtitle cases, one-page and measured multi-page continuation,
 repeated identity/headers/sources, page-local comparison proof, explicit asset/
 font/abort/unsupported-family failures, a corrupted-input fidelity case and an
 independent negative audit that fails on a corrupted number/column/group.
@@ -320,9 +324,17 @@ production.
 painter/serialization seam: literal null-gap subpath counts on both curves,
 hidden bar-slot centering, unequal ramp-panel maxima, transitive `comparisonFor`
 visibility, measured/mobile-anchor tick labels, the shared figure stroke
-grammar (the `CAHIER_FIGURE_STROKE` owner injected into the native SFCs as CSS
-custom properties and converted to mm for grid/axis widths, series width, dash,
-opacity, cap/join and marker metrics), and explicit unknown-colour rejection.
+grammar, and explicit unknown-colour rejection. The `CAHIER_FIGURE_STROKE`
+owner is injected on each affected SFC's own `<svg>` (access ramp, Mobilité
+curve, compared bars, grouped bars) under the `--cahier-figure-stroke-*`
+namespace, and each painted CSS property — grid/axis width, series width,
+comparison width/dash/opacity, cap, join, marker width/dash — is asserted to
+consume its own variable, with a negative corruption/removal test proving the
+contract fails. The namespace is distinct from the legacy 1 CSS px
+`--cahier-figure-axis-width` axis-geometry grammar (`CahierFigureAxes.vue`,
+`cahierFigure.css`), so the two scopes cannot collide when nested; the native
+1.5 px axis stroke is not aliased to the 1 px geometry width. The PDF painter
+converts the identical object to mm.
 The curve axis, ticks and marker come from the native curve projection; there is
 no parallel scale fallback. It uses real embedded font metrics and selectable
 PDF text, not an alternative geometry calculation. `cahier-pdf-source-colours.spec.ts`
@@ -336,8 +348,12 @@ a private strict port, uses the local Playwright Chromium to generate real
 desktop and mobile-host PDFs with the production font/asset loader, and closes
 the server. It is evidence tooling, not an application build and not the
 stopped preview/prototype server. Its output is outside the repository.
-The browser's independent CSS engine is compared with the PDF colour resolver;
-PDF operator streams verify full text alpha on every page and decoded raster
+The browser's independent CSS engine is compared with the PDF colour resolver,
+and the same page mounts the four native stroke consumers to read the computed
+stroke properties, to prove they follow a mutated injected property, and to
+prove the legacy axis-geometry variable does not reach them; these are rendered
+receipts, while the source contract above is the suite gate. PDF operator
+streams verify full text alpha on every page and decoded raster
 dimensions. The bounded raster is a synthetic 2×2 PNG, not live map/data parity.
 Missing URL/invalid bytes return typed `asset` errors; pre-abort and abort after
 decode return `AbortError`, with every created bitmap closed. Desktop/mobile-host
