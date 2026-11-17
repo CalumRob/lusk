@@ -6,6 +6,8 @@
     "pathsSha256": "4de6b1cc493fcb42a2da72f9fc8e8b4bc74f2df132248a33001fe79094368597"
   },
   "fontSizePx": 22,
+  "ermineEm": 1.18,
+  "gapPx": 8,
   "computed": {
     "alignItems": "center",
     "gap": "8px",
