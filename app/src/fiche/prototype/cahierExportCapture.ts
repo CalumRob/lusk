@@ -339,10 +339,25 @@ export interface CahierExportPublication {
   readonly state: CahierExportPublicationState
 }
 
+/**
+ * Native sibling row of two figures (the stationnement/ravitaillement pair).
+ * `columns` and `gapPx` are the source layout facts, not a per-section PDF
+ * template: the composer pairs the captured siblings and only falls back to a
+ * full-width stack on real measured overflow.
+ */
+export interface CahierCaptureFigureRow {
+  readonly key: string
+  readonly columns: number
+  /** Source CSS column gap, at the approved desktop reading scale. */
+  readonly gapPx: number
+}
+
 interface CahierCaptureFigureBase {
   readonly family: CahierCaptureFamily
   /** Stable slot inside the section (the paired terrain column, the sole figure, …). */
   readonly slot: string
+  /** Present when the source renders this figure in a multi-column row. */
+  readonly row?: CahierCaptureFigureRow
 }
 
 export interface CahierCarOverviewFigureCapture extends CahierCaptureFigureBase {
@@ -1311,8 +1326,12 @@ function captureFigures(options: {
       }]
     case 'mobilite-stationnement-ravitaillement':
       return evidence.columns.map((column) => ({
-        family: 'mobilite-bars',
+        family: 'mobilite-bars' as const,
         slot: column.key,
+        // `CahierMobiliteSection.vue`: two equal columns with
+        // `column-gap: clamp(24px, 4vw, 56px)`; the approved desktop width
+        // resolves the upper 56 px bound.
+        row: { key: 'mobilite-paired', columns: 2, gapPx: 56 },
         model: { figure: column.bars, ratio: column.ratio },
       }))
     case 'mobilite-share':

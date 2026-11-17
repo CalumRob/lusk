@@ -22,6 +22,7 @@ import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import {
   CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
+  CAHIER_MOBILITE_BARS_GEOMETRY,
   CSS_PX_EN_MM,
   cahierFigureStrokeVars,
   curveGeometry,
@@ -235,7 +236,14 @@ describe('sortie native du peintre PDF', () => {
     expect(rects).toHaveLength(4)
     const first = rects[0]!
     const centre = Number(first.getAttribute('x')) + Number(first.getAttribute('width')) / 2
-    expect(centre).toBeCloseTo(39, 2) // plot [10,184], three 58mm clusters
+    // Native 640×300 frame scaled to the 186 mm test width: three equal
+    // clusters, first centre at plot left + half a cluster (owner margins).
+    const largeurSvg = 186
+    const geo = CAHIER_MOBILITE_BARS_GEOMETRY
+    const echelle = largeurSvg / geo.width
+    const largeurPlot = (geo.width - geo.margin.left - geo.margin.right) * echelle
+    const centreAttendu = geo.margin.left * echelle + largeurPlot / 6
+    expect(centre).toBeCloseTo(centreAttendu, 2)
   })
 
   it('ne repeint pas la courbe de référence acquise lorsque son propriétaire la masque', async () => {

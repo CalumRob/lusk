@@ -29,6 +29,7 @@ import type {
   CahierExportRequest,
   CahierCaptureFamily,
   CahierCaptureFigure,
+  CahierCaptureFigureRow,
 } from './cahierExportCapture'
 import {
   CAHIER_UNAVAILABLE_LABEL,
@@ -160,6 +161,8 @@ export interface CahierFigureProjectionBase {
   readonly slot: string
   readonly title: string
   readonly accessibleLabel: string
+  /** Present when the source renders this figure in a native sibling row. */
+  readonly row?: CahierCaptureFigureRow
   /** All numeric tables of the figure, in the screen's reading order. */
   readonly tables: readonly CahierFigureTable[]
   readonly comparisonDisplayed: boolean
@@ -1100,7 +1103,8 @@ function rowLabelFor(
 export function projectBars(
   capture: CahierExportCapture,
   figure: Extract<CahierCaptureFigure, { family: 'mobilite-bars' }>,
-): CahierBarsProjection {  const evidence = figure.model.figure
+): CahierBarsProjection {
+  const evidence = figure.model.figure
   // The section owner's exact predicate, never an inference from the
   // capture absence enum: no control and explicit empty are distinct facts.
   const comparisonNone = capture.comparison.none === true
@@ -1535,7 +1539,10 @@ export function projeterRequeteExportFigures(
   request: CahierExportRequest,
 ): readonly CahierFigureProjection[] {
   const capture = request.capture
-  return capture.figures.map((figure) => projeterFigureExport(capture, figure, request))
+  return capture.figures.map((figure) => {
+    const projection = projeterFigureExport(capture, figure, request)
+    return (figure.row ? { ...projection, row: figure.row } : projection) as CahierFigureProjection
+  })
 }
 
 /** Convenience for tests/consumers that hold a capture without mode projection. */

@@ -362,6 +362,24 @@ interface FigureBloc {
   readonly gapAvant: number
 }
 
+interface FigureRowCellPdf {
+  readonly projection: CahierFigureProjection
+  readonly x: number
+  readonly width: number
+}
+
+/**
+ * Native sibling row (the stationnement/ravitaillement pair): two figures on
+ * one baseline, each measured at its own half-column width. The row is atomic;
+ * a real measured overflow falls back to the sequential full-width figures.
+ */
+interface FigureRowBloc {
+  readonly kind: 'figure-row'
+  readonly cells: readonly FigureRowCellPdf[]
+  readonly height: number
+  readonly gapAvant: number
+}
+
 interface CelluleTableauBloc {
   readonly part: TableauPdfPart
   readonly rows: readonly LigneTableauPdf[]
@@ -386,7 +404,7 @@ interface TextBloc {
   readonly gapAvant: number
 }
 
-type BlocPdf = FigureBloc | TableBloc | TextBloc
+type BlocPdf = FigureBloc | FigureRowBloc | TableBloc | TextBloc
 
 interface PagePdf {
   readonly index: number
@@ -566,26 +584,34 @@ function construirePages(
 
   const blocks: BlocPdf[] = []
   const messagesVus = new Set<string>()
+  const optionsFigure = (projection: CahierFigureProjection) => ({
+    comparisonProof: preuveFigureComparative(projection, capture),
+    ...(titresDistribution.has(projection.slot)
+      ? { distributionTitle: titresDistribution.get(projection.slot) }
+      : {}),
+    ...(libellesTypequ.has(projection.slot)
+      ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
+      : {}),
+    ...(modelesBars.has(projection.slot)
+      ? { modeleBars: modelesBars.get(projection.slot) }
+      : {}),
+  })
+  const rowBySlot = new Map(
+    capture.figures
+      .filter((figure) => figure.row)
+      .map((figure) => [figure.slot, figure.row!] as const),
+  )
   let premierBloc = true
-  for (const projection of projections) {
+  const pousserFigure = (projection: CahierFigureProjection) => {
     blocks.push({
       kind: 'figure',
       projection,
       gapAvant: premierBloc ? 0 : ESPACE.entreTableaux,
-      height: hauteurFigurePdf(projection, PAGE.largeurCorps, mesure, {
-        comparisonProof: preuveFigureComparative(projection, capture),
-        ...(titresDistribution.has(projection.slot)
-          ? { distributionTitle: titresDistribution.get(projection.slot) }
-          : {}),
-        ...(libellesTypequ.has(projection.slot)
-          ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
-          : {}),
-        ...(modelesBars.has(projection.slot)
-          ? { modeleBars: modelesBars.get(projection.slot) }
-          : {}),
-      }),
+      height: hauteurFigurePdf(projection, PAGE.largeurCorps, mesure, optionsFigure(projection)),
     })
     premierBloc = false
+  }
+  const pousserIndisponibles = (projection: CahierFigureProjection) => {
     for (const item of projection.unavailable) {
       if (messagesVus.has(item.message)) continue
       messagesVus.add(item.message)
@@ -597,6 +623,44 @@ function construirePages(
         height: hauteurTexteSimple(item.message, mesure, ROLE_PDF.comparaisonPrefixe.police, TAILLE.note, PAGE.largeurCorps) + 1,
       })
     }
+  }
+  for (let index = 0; index < projections.length; index += 1) {
+    const projection = projections[index]!
+    const row = rowBySlot.get(projection.slot)
+    const peers = row && row.columns > 1
+      ? projections.slice(index, index + row.columns)
+        .filter((candidate) => rowBySlot.get(candidate.slot)?.key === row.key)
+      : []
+    if (row && row.columns > 1 && peers.length === row.columns) {
+      const gap = mm(ptDepuisCssPx(row.gapPx))
+      const largeur = (PAGE.largeurCorps - gap * (row.columns - 1)) / row.columns
+      const cells = peers.map((peer, cellIndex) => ({
+        projection: peer,
+        x: PAGE.corpsX + cellIndex * (largeur + gap),
+        width: largeur,
+      }))
+      const hauteur = Math.max(...peers.map((peer) => (
+        hauteurFigurePdf(peer, largeur, mesure, optionsFigure(peer))
+      )))
+      // The source row is atomic. Only a genuinely taller-than-page row falls
+      // back to the measured full-width sequence; no global shrink.
+      if (hauteur <= availableNext) {
+        blocks.push({
+          kind: 'figure-row',
+          cells,
+          height: hauteur,
+          gapAvant: premierBloc ? 0 : ESPACE.entreTableaux,
+        })
+        premierBloc = false
+      } else {
+        for (const peer of peers) pousserFigure(peer)
+      }
+      for (const peer of peers) pousserIndisponibles(peer)
+      index += row.columns - 1
+      continue
+    }
+    pousserFigure(projection)
+    pousserIndisponibles(projection)
   }
 
   const tableGroups: TableauPdfPart[][] = []
@@ -792,6 +856,9 @@ function construirePages(
     ...candidate,
     hasComparisonProof: candidate.blocks.some((bloc) => {
       if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection, capture)
+      if (bloc.kind === 'figure-row') {
+        return bloc.cells.some((cell) => preuveFigureComparative(cell.projection, capture))
+      }
       if (bloc.kind === 'table') return bloc.cells.some((cell) => cell.part.hasComparison)
       return false
     }),
@@ -1339,6 +1406,42 @@ export async function composerCahierPdf(
       .filter((figure) => figure.family === 'aedar-equipment-explorer')
       .map((figure) => [figure.slot, figure.effective.typequLabel]),
   )
+  const dessinerFigure = async (
+    projection: CahierFigureProjection,
+    x: number,
+    y: number,
+    width: number,
+  ): Promise<void> => {
+    const modele = modelesBars.get(projection.slot)
+    const modeleCourbe = modelesCourbes.get(projection.slot)
+    const distributionTitle = titresDistribution.get(projection.slot)
+    try {
+      await dessinerFigurePdf({
+        doc,
+        mesure,
+        x,
+        y,
+        width,
+        signal,
+        chargerImage,
+        comparisonProof: preuveFigureComparative(projection, capture),
+        ...(modele ? { modeleBars: modele } : {}),
+        ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
+        ...(distributionTitle ? { distributionTitle } : {}),
+        ...(libellesTypequ.has(projection.slot)
+          ? { explorerTypequLabel: libellesTypequ.get(projection.slot) }
+          : {}),
+        ...(unitesDistribution.get(projection.slot)
+          ? { distributionUnit: unitesDistribution.get(projection.slot) }
+          : {}),
+      }, projection)
+    } catch (error) {
+      if (error instanceof CahierPdfAssetError) {
+        throw new CahierPdfCompositionError('asset', error.message, error)
+      }
+      throw error
+    }
+  }
   const total = documentPdf.pages.length
   try {
   for (let index = 0; index < documentPdf.pages.length; index += 1) {
@@ -1367,37 +1470,15 @@ export async function composerCahierPdf(
       verifierAbandon(signal)
       cy += bloc.gapAvant
       if (bloc.kind === 'figure') {
-        const modele = modelesBars.get(bloc.projection.slot)
-        const modeleCourbe = modelesCourbes.get(bloc.projection.slot)
-        const distributionTitle = titresDistribution.get(bloc.projection.slot)
-        try {
-          const start = cy
-          await dessinerFigurePdf({
-            doc,
-            mesure,
-            x: PAGE.corpsX,
-            y: cy,
-            width: PAGE.largeurCorps,
-            signal,
-            chargerImage,
-            comparisonProof: preuveFigureComparative(bloc.projection, capture),
-            ...(modele ? { modeleBars: modele } : {}),
-            ...(modeleCourbe ? { modeleCourbe: modeleCourbe as never } : {}),
-            ...(distributionTitle ? { distributionTitle } : {}),
-            ...(libellesTypequ.has(bloc.projection.slot)
-              ? { explorerTypequLabel: libellesTypequ.get(bloc.projection.slot) }
-              : {}),
-            ...(unitesDistribution.get(bloc.projection.slot)
-              ? { distributionUnit: unitesDistribution.get(bloc.projection.slot) }
-              : {}),
-          }, bloc.projection)
-          cy = start + bloc.height
-        } catch (error) {
-          if (error instanceof CahierPdfAssetError) {
-            throw new CahierPdfCompositionError('asset', error.message, error)
-          }
-          throw error
+        const start = cy
+        await dessinerFigure(bloc.projection, PAGE.corpsX, cy, PAGE.largeurCorps)
+        cy = start + bloc.height
+      } else if (bloc.kind === 'figure-row') {
+        const start = cy
+        for (const cell of bloc.cells) {
+          await dessinerFigure(cell.projection, cell.x, cy, cell.width)
         }
+        cy = start + bloc.height
       } else if (bloc.kind === 'table') {
         const start = cy
         for (const cellule of bloc.cells) {

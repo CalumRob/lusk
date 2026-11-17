@@ -12,7 +12,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type {
   CahierFigureAxisTick,
-  CahierFigureGeometry,
   CahierFigureTooltipAnchor,
   CahierTooltipRow,
   FigureLegendEntry,
@@ -39,6 +38,7 @@ import {
 import {
   CAHIER_FIGURE_STROKE,
   cahierFigureStrokeVars,
+  CAHIER_MOBILITE_BARS_GEOMETRY,
   mobiliteBarGeometry,
   mobiliteBarScale,
   mobiliteBarStackedSegments,
@@ -67,11 +67,7 @@ const props = defineProps<{
   ratio?: MobiliteRatioEvidence | null
 }>()
 
-const BASE_FIGURE_GEOMETRY = {
-  width: 640,
-  height: 300,
-  margin: { top: 22, right: 24, bottom: 62, left: 68 },
-} as const satisfies CahierFigureGeometry
+const BASE_FIGURE_GEOMETRY = CAHIER_MOBILITE_BARS_GEOMETRY
 /** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
 const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 const UNAVAILABLE_LABEL = 'Indisponible'

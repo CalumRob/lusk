@@ -292,7 +292,12 @@ or starts an acquisition.
   carries its one mark per compared cell. It is an actual in-document link to
   the page footer (`comparisonReference()` destination), not a decorative
   glyph. The rank value stays the producer-served display and is
-  never recomputed. Numbers are never truncated
+  never recomputed. The coverage-share table (no row dimension, e.g. `Part des
+  bâtiments près d’un arrêt`) carries the same `Groupe comparé ¹ | Rang`
+  presentation: its `Rang` cell is the producer-served ordinal and its scope
+  (e.g. `1er/38` among the EPCI communes), never a value inferred from the
+  percentage or the median; the footer names the same group. Numbers are
+  never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are
   (they wrap at their measured `colSpan` width and the group header height
@@ -340,7 +345,14 @@ or starts an acquisition.
   comparison footer, page numbers and metadata. It reserves sources/footer
   space, measures real block heights, keeps the value heading with its first
   table and starts a continuation only at a measured overflow. No global
-  document shrink is applied.
+  document shrink is applied. A captured `figure.row` (the stationnement /
+  ravitaillement pair) is painted as one atomic side-by-side figure row at the
+  source columns and gap (`CahierMobiliteSection.vue`: two equal columns,
+  `column-gap: clamp(24px,4vw,56px)`), with each figure measured at its own
+  half width; only a genuinely taller-than-page row falls back to the
+  measured full-width sequence. This is figure composition, not a per-section
+  template. Compared-bars plots keep the shared `CAHIER_MOBILITE_BARS_GEOMETRY`
+  640×300 aspect instead of a fixed PDF height.
 - `cahierPdfFonts.ts` embeds the app's actual families. The binaries are
   derived from the installed `@fontsource-variable` packages by
   `scripts/derive-pdf-fonts.py`; `src/assets/fonts/pdf/manifest.json` records the

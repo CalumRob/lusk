@@ -29,6 +29,7 @@ import {
 } from './helpers/cahierPdfRuntime'
 import {
   captureBarresDense,
+  captureBarresStationnement,
   captureExplorerRangs,
   capturePartDense,
   capturePdfFixture,
@@ -55,12 +56,7 @@ async function generer(capture: CahierExportCapture, modes?: readonly string[]):
 }
 
 async function mesureMm(): Promise<MesureTexte> {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  const signal = new AbortController().signal
-  for (const face of POLICES_PDF) {
-    doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
-    doc.addFont(face.file, face.id, 'normal')
-  }
+  const doc = await documentPolices()
   return {
     largeur: (texte, police, taille, espacement = 0) => {
       doc.setFont(police, 'normal')
@@ -77,6 +73,16 @@ async function mesureMm(): Promise<MesureTexte> {
       return doc.getTextWidth(' ')
     },
   }
+}
+
+async function documentPolices(): Promise<jsPDF> {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const signal = new AbortController().signal
+  for (const face of POLICES_PDF) {
+    doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
+    doc.addFont(face.file, face.id, 'normal')
+  }
+  return doc
 }
 
 async function parties(capture: CahierExportCapture) {
@@ -223,6 +229,29 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     expect(lecture.textes.filter((item) => item.str === 'Réseau piéton').length).toBeGreaterThan(0)
   })
 
+  it('place les deux figures stationnement côte à côte, pas l’une sous l’autre', async () => {
+    const capture = captureBarresStationnement()
+    const { request } = await parties(capture)
+    const bars = projeterRequeteExportFigures(request)
+      .filter((projection) => projection.family === 'mobilite-bars')
+    expect(bars).toHaveLength(2)
+    for (const projection of bars) {
+      expect(projection.row).toMatchObject({ columns: 2, gapPx: 56 })
+    }
+    const lecture = await generer(capture)
+    const titre1 = lecture.textes.find((item) => item.str === 'Stationnement vélo et voiture')!
+    const titre2 = lecture.textes.find((item) => item.str === 'Bornes de recharge et station-services')!
+    expect(titre1).toBeTruthy()
+    expect(titre2).toBeTruthy()
+    // Same baseline: the two source columns share one figure row.
+    expect(Math.abs(titre1.y - titre2.y)).toBeLessThan(0.02)
+    const gapPt = ptDepuisCssPx(56)
+    const largeurColonne = (LARGEUR_CORPS_PT - gapPt) / 2
+    const x1 = titre1.x + titre1.largeur / 2
+    const x2 = titre2.x + titre2.largeur / 2
+    expect(x2 - x1).toBeCloseTo(largeurColonne + gapPt, 1)
+  })
+
   it('marque ¹ une fois par cellule comparée servie, même sans en-tête de ligne', async () => {
     // The coverage-share table has no row dimension, but its compared cell is
     // served: the mark/link policy must depend on the proof, not on rowHeader.
@@ -233,6 +262,11 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     const liens = lecture.annotations.filter((annotation) => annotation.dest !== undefined)
     expect(liens).toHaveLength(1)
     expect(occurrences(lecture, '¹ Groupe comparé :')).toBe(1)
+    expect(lecture.texteComplet).toContain('communes de EPCI X')
+    // The served ordinal and its EPCI scope survive the whole path; no
+    // recomputation from the percentage or the median.
+    expect(lecture.textes.filter((item) => item.str === '1er/38')).toHaveLength(1)
+    expect(lecture.texteComplet).toContain('Groupe comparé ¹')
   })
 
   it('peint un séparateur vertical par clé de légende du profil', async () => {
@@ -313,5 +347,23 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     const ligne = lecture.textes.filter((item) => Math.abs(item.y - minimum.y) < 1.6
       && item.x > minimum.x + 2 && item.str.trim().length > 0).sort((a, b) => a.x - b.x)
     expect(ligne[0]!.str).toBe(attendu)
+  })
+
+  it('garde l’avance réelle et le suivi propriétaire du mot-symbole', async () => {
+    const lecture = await generer(capturePdfFixture('aedar-equipment-explorer'))
+    const mot = lecture.textes.find((item) => item.str === 'lusk'
+      && Math.abs(item.taille - ROLE_PDF.marqueMot.taille) < 0.05)
+    expect(mot).toBeTruthy()
+    // The visible run is the embedded face's four advances plus the three
+    // inter-letter applications of the canonical `-0.01em` owner tracking.
+    // The browser measurement in `.../wordmark/browser-measure.json` confirms
+    // the same shaped origins; no per-letter correction is applied here.
+    const doc = await documentPolices()
+    doc.setFont(ROLE_PDF.marqueMot.police, 'normal')
+    doc.setFontSize(ROLE_PDF.marqueMot.taille)
+    const avancesPt = Array.from('lusk')
+      .reduce((total, caractere) => total + doc.getTextWidth(caractere) * 72 / 25.4, 0)
+    const suiviPt = ROLE_PDF.marqueMot.taille * ROLE_PDF.marqueMot.espacementEm
+    expect(mot!.largeur).toBeCloseTo(avancesPt + 3 * suiviPt, 1)
   })
 })

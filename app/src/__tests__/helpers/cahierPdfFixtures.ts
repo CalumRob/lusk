@@ -312,8 +312,10 @@ export function capturePartDense(): CahierExportCapture {
   figure.model.value.fact.unit = '%'
   figure.model.value.fact.comparison = {
     direction: 'neutral',
-    scope: { kind: 'communes-bretagne', label: 'communes bretonnes' },
-    rank: null,
+    // Scope-correct served comparison for the fixture: the focal commune is
+    // ranked among the EPCI communes, not among all Breton communes.
+    scope: { kind: 'communes-epci', label: 'communes de EPCI X' },
+    rank: { position: 1, size: 38, ties: null },
     reference: { value: 0.8, unit: '%' },
   }
   figure.model.unit = '%'

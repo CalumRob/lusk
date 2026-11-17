@@ -13,6 +13,7 @@ import type { jsPDF } from 'jspdf'
 import {
   CAHIER_AEDAR_FIGURE_GEOMETRY,
   CAHIER_FIGURE_STROKE,
+  CAHIER_MOBILITE_BARS_GEOMETRY,
   CSS_PX_EN_MM,
   curveGeometry,
   curveSeriesPath,
@@ -566,6 +567,27 @@ function hauteurPanneauAedar(largeurPanneau: number): number {
 }
 
 /**
+ * The compared-bars frame scaled to the measured panel width. The native SFC
+ * uses a 640×300 viewBox with `height:auto`; the PDF keeps that aspect instead
+ * of a per-document fixed height, so a half-width stationnement column and a
+ * full-width networks plate keep the same plot proportions.
+ */
+function geometrieBarresMobilite(largeur: number): CahierFigureGeometry {
+  const base = CAHIER_MOBILITE_BARS_GEOMETRY
+  const echelle = largeur / base.width
+  return {
+    width: largeur,
+    height: base.height * echelle,
+    margin: {
+      top: base.margin.top * echelle,
+      right: base.margin.right * echelle,
+      bottom: base.margin.bottom * echelle,
+      left: base.margin.left * echelle,
+    },
+  }
+}
+
+/**
  * The native y rail measured with the embedded face. `deriveAedarFigureGeometry`
  * is the same rule the browser applies (`useMeasuredCahierFigureGeometry`):
  * title lane + longest rendered label + label gap, in native user units.
@@ -997,7 +1019,7 @@ async function dessinerBarres(
   const comparisonAligned = modele.categories.some((category) => category.value.fact.comparison?.reference?.value != null)
     && Boolean(options.comparisonProof)
   const scale = mobiliteBarScale(modele, comparisonAligned)
-  const nativeGeometry = { width, height: 48, margin: { top: 2, right: 2, bottom: 2, left: 10 } } as const
+  const nativeGeometry = geometrieBarresMobilite(width)
   const bar = mobiliteBarGeometry(nativeGeometry, modele.categories.length, scale, comparisonAligned ? 2 : 1)
   const plotBottom = nativeGeometry.height - nativeGeometry.margin.bottom
   const svg = svgCanvas(width, nativeGeometry.height)
@@ -1613,7 +1635,7 @@ export function hauteurFigurePdf(
           ...(category.segments.length ? [] : [{ label: category.label }]),
         ]), width)
         : 8
-      return titre + 2 + 48 + gapLegende + legend + maps
+      return titre + 2 + geometrieBarresMobilite(width).height + gapLegende + legend + maps
     }
     case 'mobilite-share': {
       const lines = projection.notes.length + (projection.stateMessage ? 1 : 0)

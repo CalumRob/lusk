@@ -50,6 +50,13 @@ export const CAHIER_AEDAR_FIGURE_GEOMETRY = {
   margin: { top: 22, right: 68, bottom: 62, left: 64 },
 } as const satisfies CahierFigureGeometry
 
+/** Native compared-bars frame, shared by `CahierMobiliteComparisonBars` and the PDF. */
+export const CAHIER_MOBILITE_BARS_GEOMETRY = {
+  width: 640,
+  height: 300,
+  margin: { top: 22, right: 24, bottom: 62, left: 68 },
+} as const satisfies CahierFigureGeometry
+
 /**
  * Apply the native rail rule to an AEDAR frame. `renderedWidth` and
  * `longestLabelWidth` are measured in the same unit; the returned left margin
