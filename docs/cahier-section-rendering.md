@@ -296,7 +296,7 @@ or starts an acquisition.
   bâtiments près d’un arrêt`) carries the same `Groupe comparé ¹ | Rang`
   presentation: its `Rang` cell is the producer-served ordinal and its scope
   (e.g. `1er/38` among the EPCI communes), never a value inferred from the
-  percentage or the median; the footer names the same group. Numbers are
+  percentage or the median; the footer names the same group. The share **table** is the rank surface: the user asked for its `Rang` column to be populated, not for a rank badge on the share figure, so the figure keeps the screen's two tracks without one (a populated track keeps its 1 px solid border; only an empty track is dashed, with `Indisponible` centred inside it). Numbers are
   never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are
@@ -326,7 +326,9 @@ or starts an acquisition.
   `useMeasuredCahierFigureGeometry` (16 px title lane + longest rendered y label
   + 8 px gap, capped by the native minimum plot width) using the embedded
   face's real advances, then keeps the right/top/bottom margins and scales the
-  plot from the derived left margin. SVG strokes stay in native units
+  plot from the derived left margin. The compared bars use the same rule, and
+  their y labels sit on that rail (no painter inset). SVG strokes stay in native
+  units
   (`CAHIER_FIGURE_STROKE` 2.5 / 1.5 / 1 px) and the local figure transform
   scales them once. Axis titles take the `.type-figure-label` uppercase role,
   the ramp paints paths only (no invented point markers), grouped bars carry the
@@ -346,13 +348,20 @@ or starts an acquisition.
   space, measures real block heights, keeps the value heading with its first
   table and starts a continuation only at a measured overflow. No global
   document shrink is applied. A captured `figure.row` (the stationnement /
-  ravitaillement pair) is painted as one atomic side-by-side figure row at the
-  source columns and gap (`CahierMobiliteSection.vue`: two equal columns,
-  `column-gap: clamp(24px,4vw,56px)`), with each figure measured at its own
-  half width; only a genuinely taller-than-page row falls back to the
-  measured full-width sequence. This is figure composition, not a per-section
-  template. Compared-bars plots keep the shared `CAHIER_MOBILITE_BARS_GEOMETRY`
-  640×300 aspect instead of a fixed PDF height.
+  ravitaillement pair) is painted as one atomic side-by-side figure row: the
+  capture records the native row grammar and the desktop viewport
+  (`CAHIER_FIGURE_ROW` in `cahierFigureNativeGeometry.ts`), and the composer
+  resolves the source `CahierMobiliteSection.vue` clause
+  `column-gap: clamp(24px, 4vw, 56px)` at that viewport, then converts it with
+  the figure's own page scaling (`figureRowGeometry`). `56 px` is therefore the
+  clamp's **ceiling at the approved 1440 px desktop width**, not the live gap and
+  not a transplanted physical distance; each figure is measured at its own half
+  width and keeps the native 640x300 aspect. Only a genuinely taller-than-page
+  row falls back to the measured full-width sequence. This is figure
+  composition, not a per-section template. Compared-bars plots keep the shared
+  `CAHIER_MOBILITE_BARS_GEOMETRY` 640x300 aspect instead of a fixed PDF height,
+  and their y rail is measured with the same shared rule as the mounted
+  component instead of a fixed margin.
 - `cahierPdfFonts.ts` embeds the app's actual families. The binaries are
   derived from the installed `@fontsource-variable` packages by
   `scripts/derive-pdf-fonts.py`; `src/assets/fonts/pdf/manifest.json` records the
