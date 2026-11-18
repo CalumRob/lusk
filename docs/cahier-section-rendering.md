@@ -271,8 +271,34 @@ residual centred inset is the approved page composition, not a second column.
 `(request: CahierExportRequest, { signal }) => Promise<{ blob, fileName }>`.
 It lazy-imports jsPDF and svg2pdf only when a file is requested and knows no
 action, dialog, route or section key. It consumes the frozen #1021 request and
-the #1022 projections; it never remounts a screen component, reads the live DOM
-or starts an acquisition.
+the #1022 projections; the *screen's live* DOM is never read and no acquisition
+is started. The only mount is the inert, offscreen export host created inside
+`composerCahierPdfNatif` from the frozen snapshot.
+
+**Export surface contract.** `cahierExportSurface.ts` is the single app-owned
+list of screen chrome hidden in that host: section footer, tooltips, the screen
+rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`) and, in the
+document route, standalone evidence sources. Figure titles, captions, axis and
+legend labels, scalar labels and figure-attached reading notes keep their own
+roles and are not hidden. `cahierExportRoutes.ts` shares the route identities
+with the screen router, and the standard figure width and desktop viewport
+constants come from their figure owners.
+
+**Map failure is explicit.** Every declared map is read from bytes frozen in
+the capture and bound to a settled object URL; a declared-but-unloaded or
+undecodable asset fails with a typed `CahierNativePdfError` whose reason maps to
+a controller-compatible `CahierPdfCompositionError.code` (`asset` for maps,
+`incomplete-capture` for unsettled observations, `layout` for unbreakable
+content, `serialization` for a missing rendered section). A retry uses the same
+frozen bytes and never re-contacts the owner.
+
+**Retired painter — precise follow-up.** `cahierPdfFigures.ts` and the five
+painter-geometry specs that still import `optionsFigurePdf` are outside the
+production import graph; `optionsFigurePdf` now lives in a test helper. This
+round stops extending that dead code rather than deleting it: a follow-up
+should remove the module together with those specs once their remaining
+historical assertions are transcribed or formally retired. No new production
+code may import it.
 
 - `cahierPdfComparaison.ts` owns the approved comparison subtitle: exact EPCI
   name, the three Bretagne presets, French sort, measured two-line complete
@@ -549,8 +575,8 @@ ranks; the values are fixture literals, never production data.
 `cahier-pdf-fidelity.spec.ts` asserts this contract on real PDFs: the embedded
 role metrics and tracking advance of the focal identity, the wordmark/page-title
 ratio, the shared comparison baseline and 13.5 pt owner size, the one-line
-centred legend and its 18 × 3 px mark, the four-edge section surface with no
-full-height red margin rule, the source table gaps, the explicit served rank
+centred legend and its 18 × 3 px mark, the absence of a four-edge section card
+and of a full-height red margin rule, the source table gaps, the explicit served rank
 column, and compact vs measured-continuation documents. Fixtures
 `captureRampeRangs` / `captureExplorerRangs` / `captureExplorerRangsDense` are
 synthetic producer-shaped contracts (values, ranks and source clocks are fixed
