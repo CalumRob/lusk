@@ -253,7 +253,7 @@ CREATE TABLE scalar_comparison_publication (
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE scalar_comparison_group (
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     indicator_id text NOT NULL REFERENCES scalar_descriptor(indicator_id),
@@ -294,7 +294,7 @@ CREATE TABLE scalar_comparison_territory (
 CREATE TABLE comparison_source_lineage (
     comparison_family text NOT NULL CHECK (comparison_family IN
       ('scalar','profile','ordered_series','period_detail','aedar')),
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     facet_id text NOT NULL CHECK (length(trim(facet_id)) > 0),
@@ -321,7 +321,7 @@ CREATE TABLE profile_comparison_publication (
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE profile_comparison_group (
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id),
@@ -411,7 +411,7 @@ CREATE TABLE ordered_series_comparison_publication (
  PRIMARY KEY(dataset_id,indicator_id));
 CREATE TABLE ordered_series_comparison_group (
  dataset_id text NOT NULL, indicator_id text NOT NULL,
- comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
+ comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
  group_id text NOT NULL CHECK(length(trim(group_id))>0),
  territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
  axis_value text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','mean')),
@@ -942,7 +942,7 @@ CREATE TABLE observed_collection_comparison_publication (
   territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), lineage_row_count bigint NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0),
   lineage_complete boolean NOT NULL DEFAULT false, published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE observed_collection_comparison_group (
-  indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
+  indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
   group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
   detail_key text NOT NULL, observation_period text NOT NULL CHECK(observation_period ~ '^[0-9]{4}$'),
   statistic text NOT NULL CHECK(statistic='median'), median double precision,

@@ -1,5 +1,45 @@
 # PostgreSQL migration history
 
+## Migration 044 (#1042) — littoral comparison contexts (additive)
+
+`044_littoral_comparison_contexts.sql` widens the closed `comparison_context`
+domain of the four published comparison families and their shared
+`comparison_source_lineage` table from
+`('density_class','epci','bretagne','same_level')` to
+`('density_class','epci','bretagne','same_level','littoral')`. `group_id` is
+`'C'`/`'NC'` and `territory_type` is `'commune'` for that context. The DDL only
+replaces the existing context CHECK on each of the five tables (located through
+`pg_constraint`/`pg_get_constraintdef`, so it works on named or auto-named
+constraints); no row, column, table, trigger or grant changes. Existing
+density/EPCI/Bretagne/same_level generations stay readable and writable, and a
+replay of the migration is a no-op. `api/schema.sql` carries the widened domain
+for fresh installs.
+
+**Operator ordering:** apply 044 **after** the pack
+`030 -> 039 -> 033 -> 034 -> 035`. Migration 039 validates the exact pre-044
+four-value CHECK definitions on an upgrade; widening before it would break that
+replay contract. 044 must not run before 039/033/034/035 on a serving schema.
+Fast contract: `api/tests/test_littoral_comparison_migration_contract.py`.
+The non-retained guarded rehearsal
+`api/tests/integration/test_littoral_comparison_migration.py` upgrades a
+synthetic pre-044 install, proves old generations survive, accepts both
+littoral cohorts, and compares the migrated structure with a fresh schema; it
+needs the documented `lusk_it_contract` DSNs, dedicated roles, private passfile,
+mutex and cleanup opt-in, and skips without them.
+
+**Coordinated-refresh rollout dependency (#1044 runbook).** The enriched
+territory-reference publication (migration 043) changes the projected reference
+content version, which invalidates every comparison generation bound to
+`territory_reference`. Code merges authorize no serving DDL, publication or
+deployment. In ONE operator window the owner must: apply the additive
+migrations; republish the reference with the complete C/NC crosswalk; republish
+ALL comparison families (scalar, declared profile, ordered series, observed
+collections) so their markers bind to the new reference and carry the littoral
+context; regenerate AEDAR references/ranks (#1043); rebuild the API and redeploy
+the app (#1044). A partial rollout leaves comparison markers stale and the API
+fails closed with a named reason rather than borrowing a density/Bretagne
+cohort. No worker applied any serving migration or publication.
+
 Migration 043 (#1041) is purely additive: it adds `littoral_code` and
 `littoral_classement_source` to `territory_reference`, with a closed CHECK
 (commune-only, C ⇒ Mer/Estuaire, NC ⇒ no source classement, NULL allowed for
