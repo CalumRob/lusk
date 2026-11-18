@@ -540,11 +540,17 @@ export function libellePorteeMembres(
 }
 
 /**
- * #1044 — identify the preset behind a SERVED explicit-selection echo. The
- * caller must compare the exact returned membership against the focal's own
- * cohorts (built from the served density/littoral code and reference EPCI), so
- * a wrong scope, a wrong class, a stale clock or a partial member set can never
- * borrow a preset's public name. Null = no honest match; fail closed.
+ * #1044 — identify the preset behind a SERVED explicit-selection echo by
+ * comparing its exact typed membership against the focal's own reference-
+ * derived cohorts (EPCI, served C/NC littoral class, Bretagne, density class).
+ * A partial/foreign/whole-Bretagne member set therefore cannot borrow a more
+ * specific preset's public name. Null = no honest match; fail closed.
+ *
+ * This function receives NO publication clock or content version: it validates
+ * membership only. Clock/version safety lives at the acquisition seams that
+ * bind every read to its publication identity (`readSemanticOutcomes` coherence
+ * and `validerReponseComparaisonTheme`), and at the API's repeatable-read
+ * snapshot — a stale response is rejected there before it reaches this helper.
  */
 export function modePourSelectionServie(
   selection: readonly { territory_type: string; territory_id: string }[],

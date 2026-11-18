@@ -48,7 +48,11 @@ const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
   if (intent.kind === 'fixed_comparison' && !control.value.libelleActif) return null
   const label = intent.kind === 'selected_comparison'
     ? 'Moyenne de la sélection' : `Moyenne — ${control.value.libelleActif}`
-  return { intent, label }
+  // #1044 — bind the fixed littoral read to the focal's SERVED class so the
+  // client can reject a wrong-class group echo (never a regional fallback).
+  const expectedLittoralCode = intent.kind === 'fixed_comparison' && intent.context === 'littoral'
+    ? control.value.focal.littoral_code : undefined
+  return { intent, label, expectedLittoralCode }
 })
 
 /**
