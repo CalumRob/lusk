@@ -1,7 +1,7 @@
 # Matérialisation scalaire CIBLÉE par indicateur (#989) -------------------------
 # La génération canonique complète matérialise l'artefact scalaire d'un thème
 # depuis le payload EN MÉMOIRE du thème. Pour Mobilité ce payload vient d'un
-# builder monolithique (OSM, OCS-GE, GTFS, bâtiments) : reconstruire trois
+# builder monolithique (OSM, OCS-GE, GTFS, adresses) : reconstruire trois
 # scalaires d'approvisionnement légers ne justifie pas de rejouer tout le
 # thème. Ce fichier ajoute un contrat de producteur ENREGISTRÉ, ciblé par
 # indicateur : un périmètre nomme le thème, ses indicateurs enregistrés et les
@@ -29,8 +29,7 @@ scalar_scope_registry <- function() {
     mobilite = list(
       indicators = c("stations_service", "stations_service_1000",
                      "bornes_recharge_1000", "bornes_ev_par_station_service"),
-      sources = c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
-                  "stationnement-velo"),
+      sources = c("bpe_b316", "bornes-recharges", "stationnement-velo"),
       produce = produire_ravitaillement_mobilite
     )
   )
@@ -310,9 +309,14 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
   }
   base_epci <- lire_epci(file.path(cache, "extracted",
                                    "EPCI_au_01-01-2025.xlsx"))
-  snapshot <- normaliser_snapshot_mobilite(lire_snapshot_mobilite(
-    fichier("mobilite_snapshot")))
-  mobilite_communes <- snapshot[c("commune", "nb_buildings")]
+  # Le poids du thème est le nombre d'adresses du spine AEDAR (le
+  # dénominateur de l'offre TC), lu directement dans le cache (#1048).
+  adresses <- normaliser_adresses_residentielles(
+    lire_adresses_residentielles(file.path(cache, AEDAR_ADDRESS_ORIGIN_FILE)))
+  mobilite_communes <- sf::st_drop_geometry(adresses) %>%
+    dplyr::group_by(commune = code_commune_insee) %>%
+    dplyr::summarise(n_adresses = dplyr::n(), .groups = "drop") %>%
+    dplyr::arrange(commune)
   velo <- calculer_stationnement_velo_communes(
     normaliser_stationnement_velo(lire_stationnement_velo(
       fichier("stationnement-velo"))))

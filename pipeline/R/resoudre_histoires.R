@@ -83,10 +83,8 @@ valider_histoires_resolues <- function(histoires, theme) {
     stop("Payload invalide : thème « ", theme,
          " » sans registre de stories résolues.", call. = FALSE)
   }
-  if (nrow(histoires) == 0) {
-    stop("Payload invalide : aucune histoire résolue pour le thème « ", theme,
-         " ».", call. = FALSE)
-  }
+  # Un thème sans lecture (issue #1048 : Mobilité, comme Programmes) publie
+  # une table d'histoires VIDE — ce n'est pas une corruption.
   manquants <- setdiff(c("territoire", "type", "theme", "groupe",
                          "story_key", "salience_reason"), names(histoires))
   if (length(manquants) > 0) {

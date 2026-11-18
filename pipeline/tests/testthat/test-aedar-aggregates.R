@@ -459,6 +459,33 @@ test_that("AEDAR comparison inputs load registered sparse modes and configured o
     "All six registered")
 })
 
+test_that("AEDAR comparison inputs resolve the registered address-origin spine when no path is configured", {
+  dir <- tempfile("aedar-spine-default-"); dir.create(dir)
+  modes <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES, function(mode) {
+    x <- as.data.frame(as.list(stats::setNames(rep(1,4), AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+    x$code_insee <- "22001"; x$cle_interop_adr <- "addr-1"; x$TYPEQU <- "A104"; x
+  }), AEDAR_ADDRESS_SOURCE_MODES)
+  paths <- stats::setNames(vapply(names(modes), function(mode) {
+    path <- file.path(dir,paste0(mode,".parquet")); nanoparquet::write_parquet(modes[[mode]],path); path
+  }, character(1)), names(modes))
+  nanoparquet::write_parquet(
+    data.frame(address_id="addr-1",code_insee="22001",lon=1,lat=2),
+    file.path(dir,AEDAR_ADDRESS_ORIGIN_FILE))
+  previous <- Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS", unset=NA_character_)
+  Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+  on.exit({
+    if (is.na(previous)) Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+    else Sys.setenv(LUSK_AEDAR_ADDRESS_ORIGINS=previous)
+  }, add=TRUE)
+  loaded <- read_aedar_comparison_inputs(paths,origins_path=NULL,raw_dir=dir,verify_hashes=FALSE)
+  expect_equal(nrow(loaded$address_origins),1)
+  expect_equal(loaded$address_origins$commune,"22001")
+  empty <- tempfile("aedar-spine-empty-")
+  expect_error(
+    read_aedar_comparison_inputs(paths,origins_path=NULL,raw_dir=empty,verify_hashes=FALSE),
+    "aedar-address-origins-2026v1[.]parquet")
+})
+
 test_that("AEDAR density projection covers all 235 TYPEQU and all 312 measure results", {
   address_origins<-data.frame(address_id=c("a","b"),commune=c("1","2"),stringsAsFactors=FALSE)
   membership<-data.frame(territory_type="commune",territory_id="1",member_commune=c("1","2"),context="densite")

@@ -531,7 +531,12 @@ verifier_chomage_economie_reel <- function(donnees) {
 # plancher gate D (min 2 salariés) TOUTES comptées, 1196 retenues, des LQ
 # continues, finies, positives.
 verifier_lq_flores_reel <- function(donnees) {
-  verifier_egale(nrow(donnees$flores_a88), 48821L,
+  # 2026-11-18 : la livraison Flores rechargée le 2026-08-27 en géographie 2026
+  # diffuse des zéros EXPLICITES pour les cellules vides (la livraison 2025 les
+  # omettait) — 209 148 lignes A88 / 872 652 A38, contre 48 821 / 109 413. Les
+  # artefacts aval sont inchangés : 22 616 et 16 019 cellules de LQ, les mêmes
+  # six communes sous le plancher, 1 196 communes retenues.
+  verifier_egale(nrow(donnees$flores_a88), 209148L,
                  "Flores A88 — le compte réel des lignes")
   verifier_egale(dplyr::n_distinct(donnees$flores_a88$commune), 1202L,
                  "Flores A88 — les 1202 communes")
@@ -551,7 +556,7 @@ verifier_lq_flores_reel <- function(donnees) {
   verifier_vrai(any(res$lq$lq < 1) && any(res$lq$lq > 1),
                 "Flores A88", "des LQ toutes égales à 1")
 
-  verifier_egale(nrow(donnees$flores_a38), 109413L,
+  verifier_egale(nrow(donnees$flores_a38), 872652L,
                  "Flores A38 — le compte réel des lignes")
   verifier_egale(dplyr::n_distinct(donnees$flores_a38$commune), 1202L,
                  "Flores A38 — les 1202 communes")
@@ -643,11 +648,22 @@ verifier_forme_lq_a17 <- function(lq, verrou,
 # l'artefact épinglé. TOUT autre code exclu (une sous-classe post-2008 absente
 # de la correspondance épinglée, un code corrompu) échoue bruyamment ici.
 verifier_exclusions_a17 <- function(exclusions, verrou) {
-  verifier_egale(sort(unique(exclusions$activity_code)), "00.00Z",
-                 paste(verrou, "— les codes exclus du mapping A17"))
-  verifier_egale(sum(exclusions$n[exclusions$activity_code == "00.00Z"]), 1L,
-                 paste(verrou,
-                       "— l'inconnue 00.00Z ne porte qu'un seul établissement"))
+  # 2026-11-18 : la coupe SIRENE 2026-10 ne porte plus AUCUN code hors
+  # correspondance (« 00.00Z » a disparu de l'export). La règle est donc
+  # « aucun code inconnu » — un ensemble vide est le meilleur cas, pas une
+  # anomalie ; « 00.00Z » reste le seul code toléré, et il ne porte alors qu'un
+  # établissement. Tout autre code (sous-classe post-2008 absente de
+  # l'artefact épinglé, code corrompu) échoue toujours bruyamment.
+  codes <- sort(unique(exclusions$activity_code))
+  inconnus <- setdiff(codes, "00.00Z")
+  verifier_vrai(length(inconnus) == 0L, verrou,
+                paste("un code exclu hors « 00.00Z » :",
+                      paste(inconnus, collapse = ", ")))
+  if ("00.00Z" %in% codes) {
+    verifier_egale(sum(exclusions$n[exclusions$activity_code == "00.00Z"]), 1L,
+                   paste(verrou,
+                         "— l'inconnue 00.00Z ne porte qu'un seul établissement"))
+  }
   verifier_vrai(all(grepl("naf2_na17_2008", exclusions$motif)),
                 verrou, "un motif hors artefact épinglé naf2_na17_2008")
   invisible(TRUE)
@@ -683,7 +699,9 @@ verifier_forme_sidecar_m <- function(m, lq, verrou) {
 verifier_lq_economie_reel <- function(donnees) {
   snapshot <- donnees$sirene_snapshot
 
-  verifier_egale(nrow(snapshot), 181481L, "LQ Économie — le compte réel du snapshot")
+  # 2026-11-18 : la coupe SIRENE régionale est passée au millésime 2026-10
+  # (dernier traitement observé 2026-09-30) — 182 247 établissements actifs.
+  verifier_egale(nrow(snapshot), 182247L, "LQ Économie — le compte réel du snapshot")
   verifier_egale(dplyr::n_distinct(snapshot$commune), 1202L,
                  "LQ Économie — les 1202 communes")
 
@@ -813,7 +831,7 @@ verifier_rangs_economie_reel <- function(donnees, base_epci) {
 # sortie analytique du run — pas de course avec publie_economie).
 verifier_economie_e2e_reel <- function(donnees, base_epci) {
   comptes_normalises <- c(
-    sirene_snapshot = 181481L, flores_a38 = 109413L, flores_a88 = 48821L,
+    sirene_snapshot = 182247L, flores_a38 = 872652L, flores_a88 = 209148L,
     rp_emploi = 7212L, rp_chomage = 1202L * 3L
   )
   for (nom in names(comptes_normalises)) {
@@ -990,31 +1008,19 @@ verifier_ravitaillement_mobilite <- function(offre, donnees, base, analytiques) 
 }
 
 # verifier_mobilite_e2e_reel ----------------------------------------------------
-# Verrou des blocs convertis de test-analytics-mobilite-e2e.R (+ le bloc
-# résolu de test-resoudre-histoires.R) : le chaînon analytique FLAGSHIP sur
-# les sources réelles — le snapshot porté aux comptes verrouillés (1 200
-# communes × 2 061 colonnes), les artefacts analytiques (les comptes du run
-# 2026-08-06, l'EPCI Brest Métropole recalculé depuis les parties (y compris
-# les moyennes d'accès), la
-# saillance aux seuils réels), le sous-bloc « L'offre de mobilité
-# alternative » (issue #140), la figure « L'offre cyclable » (issue #231) et
-# les Stories résolues (une lecture par territoire, la saillance vélo qui
-# remplace le défaut). `donnees` est le BRUT du thème (construire_donnees_
-# mobilite — le snapshot ET les sources du sous-bloc normalisées y sont) ;
-# `base_epci` est le chemin du référentiel partagé extrait (fichier_epci_
+# Verrou des blocs convertis de test-analytics-mobilite-e2e.R : le chaînon
+# retenu (#1048) sur les sources réelles — l'étage demande/réseaux, le
+# sous-bloc « L'offre de mobilité alternative » (issue #140), la figure
+# « L'offre cyclable » (issue #231) et le raccordement. Le snapshot porté,
+# la couche bâtiments et les Stories ont été retirés. Les verrous de VALEUR
+# d'Offre TC sont re-dérivés au republish (slice 4). `donnees` est le BRUT du
+# thème (construire_donnees_mobilite — le spine d'adresses et les sources du
+# sous-bloc normalisées y sont) ; `base_epci` est le chemin du référentiel
 # extrait) ; les artefacts analytiques sont écrits dans un répertoire
 # TEMPORAIRE (jamais la sortie analytique du run — pas de course avec
 # publie_mobilite) ; `raccordement` est l'artefact calculé et épinglé par le
 # graphe, jamais un re-routage lancé par le verrou.
 verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
-  snapshot <- donnees$mobilite_snapshot
-  verifier_egale(nrow(snapshot), 1200L,
-                 "Mobilité e2e — les 1200 communes du snapshot porté")
-  verifier_egale(ncol(snapshot), 2061L,
-                 "Mobilité e2e — les 2061 colonnes du fichier de production")
-  verifier_egale(sum(snapshot$nb_buildings), 1223578L,
-                 "Mobilité e2e — le total réel des bâtiments analysés")
-
   # BPE25 is an equipment-row source, normalized to one aggregate count per
   # commune.  Keep this at the real-data seam: a successful run must prove that
   # the B316 source was actually carried into the normalized theme input.
@@ -1039,103 +1045,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   analytiques <- construire_analytiques_mobilite(donnees, base,
                                                  sortie = sortie_analytiques)
   analytiques$raccordement <- lire_raccordement(raccordement)
-
-  # les comptes par niveau des parts d'isolation (issue #138) : 5 clés × le
-  # nombre de territoires du niveau — jamais une moyenne de parts
-  iso <- analytiques$isolation_territoires
-  verifier_egale(nrow(iso), 6330L, "Mobilité e2e — les parts d'isolation")
-  verifier_egale(nrow(analytiques$nb_buildings_territoires), 1266L,
-                 "Mobilité e2e — la « Taille » aux quatre niveaux")
-  verifier_egale(nrow(analytiques$mobilite_communes), 1200L,
-                 "Mobilité e2e — la table communale de la Taille")
-  verifier_egale(nrow(analytiques$div_loss_territoires), 1266L,
-                 "Mobilité e2e — div_loss_t/b")
-  verifier_egale(nrow(analytiques$saillance_territoires), 1266L,
-                 "Mobilité e2e — la saillance")
-  verifier_egale(nrow(analytiques$densite_territoires), 1266L,
-                 "Mobilité e2e — la signature de densité")
-  verifier_egale(nrow(analytiques$nuage_territoires), 1266L,
-                 "Mobilité e2e — le nuage même-échelle")
-  verifier_egale(nrow(analytiques$isolation_rangs), 6340L,
-                 "Mobilité e2e — les rangs d'isolation alignés")
-
-  # div_loss_t/b : AUCUN delta négatif à aucun niveau (la neutralité modale
-  # sur la base d'abord) ; l'EPCI Brest Métropole est RECALCULÉ depuis les
-  # parties (le bloc _epci du fichier y est absent — un trou du portage)
-  div <- analytiques$div_loss_territoires
-  verifier_vrai(all(div$delta >= 0),
-                "Mobilité e2e", "un delta négatif (la neutralité modale cassée)")
-  brest <- div[div$code == "242900314", ]
-  verifier_egale(brest$div_loss_t, 8L, "Mobilité e2e — Brest div_loss_t")
-  verifier_egale(brest$div_loss_b, 1L, "Mobilité e2e — Brest div_loss_b")
-  verifier_egale(brest$delta, 7L, "Mobilité e2e — Brest delta")
-   verifier_egale(round(brest$pct_iso_full_t, 4), 0.0219,
-                  "Mobilité e2e — Brest pct_iso_full_t")
-
-   # les moyennes du résumé : le bloc `_epci` du snapshot est absent pour Brest,
-   # mais les huit communes membres portent toutes les moyennes communales ; le
-   # chaînon les reconstruit par bâtiments, puis la publication les classe avec
-   # les 61 EPCI bretons.
-   moyennes <- analytiques$moyennes_acces_territoires
-   brest_moyennes <- moyennes[moyennes$code == "242900314", ]
-   verifier_egale(sum(!is.na(brest_moyennes$value)), 6L,
-                  "Mobilité e2e — Brest les six moyennes d'accès")
-   verifier_egale(
-     round(brest_moyennes$value[match(CLES_MOYENNES_ACCES_MOBILITE,
-                                      brest_moyennes$key)], 4),
-     c(2306.4642, 795.0217, 324.3828, 51.7752, 42.0271, 35.1481),
-     "Mobilité e2e — les moyennes d'accès reconstruites de Brest"
-   )
-
-   # la saillance : seuils verrouillés sur la distribution réelle (q75 = 4,
-  # q90 = 10) et les comptes de classification par niveau
-  delta_communes <- div$delta[type_territoire_mobilite(div$code) == "commune"]
-  verifier_egale(SEUIL_DELTA_REEL_VELO, 4L, "Mobilité e2e — le seuil du quartile")
-  verifier_egale(SEUIL_SAILLANCE_VELO, 10L, "Mobilité e2e — le seuil de saillance")
-  verifier_egale(unname(quantile(delta_communes, c(0.75, 0.9))), c(4, 10),
-                 "Mobilité e2e — les quantiles réels du delta")
-  verifier_egale(sum(delta_communes >= SEUIL_DELTA_REEL_VELO), 343L,
-                 "Mobilité e2e — les communes notables")
-  verifier_egale(sum(delta_communes >= SEUIL_SAILLANCE_VELO), 130L,
-                 "Mobilité e2e — les communes saillantes")
-  sai <- analytiques$saillance_territoires
-  verifier_egale(sum(sai$classification == "saillant" &
-                       type_territoire_mobilite(sai$code) == "commune"), 130L,
-                 "Mobilité e2e — les communes saillantes classées")
-  verifier_egale(sum(sai$classification == "saillant" &
-                       type_territoire_mobilite(sai$code) == "epci"), 9L,
-                 "Mobilité e2e — les EPCIs saillants")
-
-  # le nuage même-échelle : le nuage de la région = toutes ses communes
-  nu <- analytiques$nuage_territoires
-  verifier_egale(nu$nuage_n[nu$code == "53"], 1200L,
-                 "Mobilité e2e — le nuage de la région")
-  verifier_egale(nu$nuage_median[nu$code == "53"], 36L,
-                 "Mobilité e2e — la médiane du nuage de la région")
-
-  # les rangs d'isolation : alignés sur la référence — les 2 communes hors
-  # snapshot portent NA, jamais une ligne manquante. Le schéma porte la
-  # TAILLE de chaque groupe (rang_*_n — ADR-0015, #310) ; rang_dep est VIDE
-  # partout (plus aucun groupe de comparaison départemental — la colonne
-  # reste dans le contrat, NA) et une commune avec EPCI n'a pas de rang
-  # régional (le repli régional n'est que pour les communes SANS EPCI —
-  # ADR-0021, #380)
-  rangs <- analytiques$isolation_rangs
-  verifier_egale(names(rangs),
-                 c("code", "key", "rang_epci", "rang_epci_n",
-                   "rang_dep", "rang_dep_n", "rang_reg", "rang_reg_n"),
-                 "Mobilité e2e — le schéma des rangs d'isolation")
-  verifier_egale(length(unique(rangs$code)), 1268L,
-                 "Mobilité e2e — les rangs d'isolation alignés")
-  verifier_vrai(all(is.na(rangs$rang_epci[rangs$code %in% c("29083", "29084")])),
-                "Mobilité e2e", "une île hors snapshot avec un rang EPCI")
-  verifier_vrai(all(is.na(rangs$rang_dep)),
-                "Mobilité e2e", "un rang départemental porté (rang_dep vide par design)")
-  rennes_rangs <- rangs[rangs$code == "35238", ]
-  verifier_vrai(all(!is.na(rennes_rangs$rang_epci)),
-                "Mobilité e2e", "le rang EPCI de Rennes manquant")
-  verifier_vrai(all(is.na(rennes_rangs$rang_reg)),
-                "Mobilité e2e", "un rang régional pour une commune avec EPCI")
 
   # l'étage demande/réseaux (issue #139) : les parts voitures/ménage et les
   # longueurs/densités des réseaux aux comptes verrouillés. Depuis l'issue
@@ -1198,8 +1107,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   # 1 909 stations, 707 communes)
   verifier_egale(nrow(donnees$korrigo), 27543L,
                  "Mobilité e2e — les arrêts GTFS korrigo")
-  verifier_egale(nrow(donnees$batiments_residentiels), 1235417L,
-                 "Mobilité e2e — les bâtiments résidentiels")
   verifier_egale(nrow(donnees$bornes_recharges), 9900L,
                  "Mobilité e2e — les points de charge")
   verifier_egale(nrow(donnees$stationnement_velo), 4808L,
@@ -1241,17 +1148,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_vrai(is.na(lire_offre("29083", "bornes_ev_par_station_service")),
                 "Mobilité e2e",
                 "un ratio EV/fuel publié sans station-service (dénominateur nul)")
-  verifier_egale(round(lire_offre("35238", "offre_tc"), 4), 0.9957,
-                 "Mobilité e2e — l'offre TC de Rennes (la vraie part des bâtiments)")
-  # Korrigo (GTFS) est une source VIVANTE re-téléchargée par la restauration
-  # du cache (issue #380) : verrous de VALEUR relatifs à l'époque du cache
-  # (parts au 4ᵉ décimale, re-baselinés)
-  verifier_egale(round(lire_offre("53", "offre_tc"), 4), 0.5731,
-                 "Mobilité e2e — l'offre TC de la région")
-  verifier_egale(round(lire_offre("242900314", "offre_tc"), 4), 0.9412,
-                 "Mobilité e2e — l'offre TC de Brest Métropole")
-  verifier_egale(round(lire_offre("29", "offre_tc"), 4), 0.6761,
-                 "Mobilité e2e — l'offre TC du Finistère")
   # Les bornes (IRVE) sont une source VIVANTE (issue #380) : verrous de
   # VALEUR relatifs à l'époque du cache (comptes exacts, re-baselinés)
   verifier_egale(lire_offre("53", "bornes_recharge"), 1909L,
@@ -1304,15 +1200,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_vrai(all(!is.na(v_cyclable) & v_cyclable >= 0),
                 "Mobilité e2e", "une longueur cyclable négative")
 
-  # la couche communale de l'offre TC porte la VRAIE part des bâtiments :
-  # Rennes 20 314 bâtiments proches sur 20 401
-  offre_communes <- analytiques$offre_tc_communes
-  rennes_tc <- offre_communes[offre_communes$commune == "35238", ]
-  verifier_egale(rennes_tc$n_batiments, 20401L,
-                 "Mobilité e2e — les bâtiments de Rennes")
-  verifier_egale(rennes_tc$n_proches, 20314L,
-                 "Mobilité e2e — les bâtiments proches d'un arrêt à Rennes")
-
   # la couche communale de l'offre cyclable : UNE ligne par commune de
   # l'univers population, 437 communes à zéro (un fait, jamais une ligne
   # manquante)
@@ -1337,10 +1224,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
    # dans le contrat, NA). Le payload porte la taille target-scoped des
    # bâtiments ainsi que les faits de Mobilité, et voitures_menage porte ses
    # trois parts (1268 territoires × 3).
-   verifier_egale(sum(payload$indicateurs$key == "nb_buildings" &
-                        !is.na(payload$indicateurs$value)),
-                  nrow(analytiques$nb_buildings_territoires),
-                  "Mobilité e2e — la taille des bâtiments publiée")
   verifier_egale(sum(payload$indicateurs$key == "voitures_menage"), 3804L,
                  "Mobilité e2e — les trois parts voitures du payload")
   lire_ind <- function(territoire, key, detail) {
@@ -1358,34 +1241,6 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   sein_sans <- lire_ind("29083", "voitures_menage", "sans_voiture")
   verifier_vrai(is.na(sein_sans$rang_dep),
                 "Mobilité e2e", "un rang départemental porté (rang_dep vide par design)")
-  rennes_iso <- lire_ind("35238", "iso_banque", NA)
-  verifier_vrai(!is.na(rennes_iso$rang_epci),
-                "Mobilité e2e", "le rang EPCI de l'iso_banque de Rennes manquant")
-  verifier_vrai(all(is.na(c(rennes_iso$rang_dep, rennes_iso$rang_reg))),
-                "Mobilité e2e", "un rang dep/reg pour l'iso_banque de Rennes")
-
-  h <- payload$histoires
-  verifier_egale(nrow(h), 1266L, "Mobilité e2e — une lecture par territoire")
-  verifier_egale(sum(h$story_key == "vingt-minutes-sans-voiture"), 1127L,
-                 "Mobilité e2e — le défaut vingt-minutes-sans-voiture")
-  verifier_egale(sum(h$story_key == "ce-que-le-velo-preserve"), 139L,
-                 "Mobilité e2e — la saillance ce-que-le-velo-preserve")
-  verifier_vrai(all(h$salience_reason[h$story_key == "ce-que-le-velo-preserve"] ==
-                      "delta-velo-saillant"),
-                "Mobilité e2e", "une raison de saillance incohérente")
-  verifier_vrai(all(h$salience_reason[h$story_key == "vingt-minutes-sans-voiture"] ==
-                      "defaut"),
-                "Mobilité e2e", "une raison de défaut incohérente")
-  verifier_egale(h$div_loss_t[h$territoire == "53"], 29L,
-                 "Mobilité e2e — la Story de la région (div_loss_t)")
-  verifier_egale(h$delta[h$territoire == "53"], 7L,
-                 "Mobilité e2e — la Story de la région (delta)")
-  verifier_vrai(all(h$delta[h$story_key == "ce-que-le-velo-preserve"] >=
-                      SEUIL_SAILLANCE_VELO),
-                "Mobilité e2e", "une lecture saillante sous le seuil")
-  verifier_egale(h$pct_iso_full_t[h$type == "region"], 0.1,
-                 "Mobilité e2e — le story depth de la région")
-
   invisible(TRUE)
 }
 

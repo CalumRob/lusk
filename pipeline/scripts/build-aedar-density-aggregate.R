@@ -7,8 +7,10 @@ if(length(args)>0L&&(length(args)!=2L||args[[1L]]!="--output"))
 
 raw_dir<-Sys.getenv("LUSK_AEDAR_RAW_DIR",unset=file.path("data","raw"))
 origins_path<-Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS",unset="")
-if(!nzchar(origins_path))
-  stop("Set LUSK_AEDAR_ADDRESS_ORIGINS to the complete address-origin Parquet",call.=FALSE)
+if(!nzchar(origins_path)) origins_path<-file.path(raw_dir,AEDAR_ADDRESS_ORIGIN_FILE)
+if(!file.exists(origins_path))
+  stop("Registered AEDAR address-origin spine is missing: ",origins_path,
+    " (set LUSK_AEDAR_ADDRESS_ORIGINS to override)",call.=FALSE)
 output_path<-if(length(args)) args[[2L]] else Sys.getenv("LUSK_AEDAR_DENSITY_OUTPUT",unset=file.path(raw_dir,"aedar_density_aggregate.parquet"))
 resources<-AEDAR_SOURCE_RESOURCES[AEDAR_SOURCE_RESOURCES$kind=="address",,drop=FALSE]
 mode_paths<-stats::setNames(file.path(raw_dir,resources$filename),resources$mode)

@@ -84,18 +84,23 @@ test_that("vintages_economie : chaque source porte SA référence et SA publicat
 
   # SIRENE : millésime 2026-04, référence = dernier jour du mois PRÉCÉDENT
   # (l'image du répertoire à fin mars), publication = la mise en ligne ODS
-  expect_equal(v$version[v$id == "sirene_snapshot"], "2026-04")
-  expect_equal(v$date_reference[v$id == "sirene_snapshot"], "2026-03-31")
-  expect_equal(v$date_publication[v$id == "sirene_snapshot"], "2026-05-01")
+  expect_equal(v$version[v$id == "sirene_snapshot"], "2026-10")
+  expect_equal(v$date_reference[v$id == "sirene_snapshot"], "2026-09-30")
+  expect_equal(v$date_publication[v$id == "sirene_snapshot"], "2026-11-18")
 
-  # Flores A38/A88 : millésime 2024 (fin d'année), parution 31/03/2026 — les
+  # Flores A38/A88 : millésime 2024 (fin d'année), rechargées le 27/08/2026 — les
   # deux nomenclatures partagent le vintage de la SOURCE Flores, pas celui de
   # SIRENE ni du RP
   for (id in c("flores_a38", "flores_a88")) {
     expect_equal(v$version[v$id == id], "2024", info = id)
     expect_equal(v$date_reference[v$id == id], "2024-12-31", info = id)
-    expect_equal(v$date_publication[v$id == id], "2026-03-31", info = id)
+    expect_equal(v$date_publication[v$id == id], "2026-08-27", info = id)
   }
+
+  # Le canon de métadonnées du producteur porte la même date de publication.
+  flores_record <- theme_economie()$metadata()$source_records$flores_a88
+  expect_identical(flores_record$freshness, "27 août 2026")
+  expect_identical(flores_record$vintages[[1L]]$datePublication, "2026-08-27")
 
   # RP Emploi : millésime 2023 (au 1er janvier), publié avec la vague RP 2023
   expect_equal(v$version[v$id == "rp_emploi"], "2023")
@@ -127,7 +132,7 @@ test_that("vintages_economie : les dates ne sont JAMAIS alignées entre sources"
   expect_true(dplyr::n_distinct(v$date_reference) >= 3)
 
   # chaque version est celle de SA source (millésimes 2023 / 2024 / 2026-04)
-  expect_true(all(v$version %in% c("2023", "2024", "2026-04")))
+  expect_true(all(v$version %in% c("2023", "2024", "2026-10")))
 })
 
 test_that("construire_donnees_economie : assemble les tables des quatre sources", {

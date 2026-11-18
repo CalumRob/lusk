@@ -16,6 +16,11 @@ AEDAR_AGGREGATE_LEVEL_COLUMNS <- list(
   epci=c("epci_code","code_region","TYPEQU","nom_epci","LIB_TYPEQU","n_addresses","n_observed","coverage_status"),
   departement=c("code_departement","code_region","TYPEQU","nom_departement","LIB_TYPEQU","n_addresses","n_observed","coverage_status"),
   region=c("code_region","TYPEQU","nom_region","LIB_TYPEQU","n_addresses","n_observed","coverage_status"))
+# Registered local address-origin spine: the complete residential-address
+# universe (address_id, code_insee, lon, lat) that the public sparse address
+# resources never carry. It is a separate pinned input, resolved by name in the
+# raw cache unless LUSK_AEDAR_ADDRESS_ORIGINS points elsewhere.
+AEDAR_ADDRESS_ORIGIN_FILE <- "aedar-address-origins-2026v1.parquet"
 AEDAR_TYPEQU_REGISTRY_FILE <- "aedar-typequ-2025.csv"
 AEDAR_TYPEQU_REGISTRY_COUNT <- 235L
 # Minimal code/label extract of the official INSEE TYPEQU_2025.csv. Upstream
@@ -637,8 +642,14 @@ aedar_address_identity <- function(code_insee,address_key) paste(as.character(co
 
 read_aedar_comparison_inputs <- function(mode_paths=NULL,origins_path=Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS"),
     raw_dir=file.path("data","raw"),verify_hashes=TRUE) {
-  if(length(origins_path)!=1L||is.na(origins_path)||!nzchar(origins_path)||!file.exists(origins_path))
+  configured <- length(origins_path)==1L && !is.na(origins_path) && nzchar(origins_path)
+  if(!configured) origins_path <- file.path(raw_dir,AEDAR_ADDRESS_ORIGIN_FILE)
+  if(configured && !file.exists(origins_path))
     stop("Set LUSK_AEDAR_ADDRESS_ORIGINS to the complete address-origin Parquet",call.=FALSE)
+  if(!file.exists(origins_path))
+    stop(paste0("Complete address-origin Parquet is missing: ",origins_path,
+      ". Place the registered ",AEDAR_ADDRESS_ORIGIN_FILE,
+      " in the raw cache or set LUSK_AEDAR_ADDRESS_ORIGINS."),call.=FALSE)
   resources<-AEDAR_SOURCE_RESOURCES[AEDAR_SOURCE_RESOURCES$kind=="address",,drop=FALSE]
   if(is.null(mode_paths)) {
     paths<-download_aedar_sources(raw_dir,resources)

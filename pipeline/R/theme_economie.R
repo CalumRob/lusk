@@ -31,7 +31,7 @@
 # fragments par source, issue #13) — une ligne par source, jamais de doublon de
 # cache. Chaque source garde son vintage : SIRENE 2026-04 (référence
 # 2026-03-31, publication 2026-05-01), Flores A38/A88 2024 (référence
-# 2024-12-31, publication 2026-03-31), RP Emploi 2023 (référence 2023-01-01,
+# 2024-12-31, rechargement géographie 2026 publié 2026-08-27), RP Emploi 2023 (référence 2023-01-01,
 # publication 2026-06-30), RP Chômage 2023 (référence 2023-01-01, publication
 # 2026-07-15). Le référentiel partagé « epci » n'est PAS une source Économie :
 # la base des EPCI bretonne est la ressource transversale que les
