@@ -1234,11 +1234,12 @@ if (selection_complete) {
 
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le
 # run COMPLET — LUSK_THEMES vide, le cron) les verrous du thème Programmes.
-# Le référentiel partagé extrait (fichier_epci_extrait) n'est câblé qu'une
-# fois, et seulement si un verrou du run le lit (la sentinelle "epci" de SES
-# args — la REGISTRE) OU si la chaîne du raccordement d'un thème en dépend
-# (le trait `raccordement` — issue #486 : ses niveaux agrégés lisent
-# l'EPCI_au_01-01-2025.xlsx extrait).
+# Le référentiel partagé extrait (fichier_epci_extrait) est câblé UNE fois.
+# Depuis #1056 la référence canonique le lit TOUJOURS (besoin_epci = TRUE ci-
+# dessous) ; un verrou « données réelles » (la sentinelle "epci" de SES args —
+# la REGISTRE) ou la chaîne du raccordement d'un thème (le trait `raccordement`,
+# issue #486 : ses niveaux agrégés lisent l'EPCI_au_01-01-2025.xlsx extrait)
+# le demandaient déjà.
 verifications <- list()
 # #1056 : la référence canonique (toujours publiée) lit la base EPCI extraite —
 # le target est donc câblé pour TOUT run, pas seulement quand un verrou ou le
