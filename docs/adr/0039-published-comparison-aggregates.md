@@ -109,8 +109,14 @@ rank law exactly: same-status peers, reference plus direction-aware
 `rank`/`rank_size`/`rank_ties` REQUIRED as for the density preset, no rankless
 path, no borrowed group statistic and no default-context change. This extends
 the fixed-context enumeration here and in ADR-0041 by this one context.
-Implemented for the non-AEDAR families by #1042; the AEDAR extension is pending
-#1043.
+Implemented for the non-AEDAR families by #1042; the AEDAR extension was
+implemented by #1043 as a THIRD fixed context: the `littoral` C/NC pooled
+reference is projected from the already-pooled littoral artifact (never by
+averaging commune summaries or repeating TYPEQU aggregation in fixed requests),
+published as a SIBLING of the density summary with its own key and counters,
+and resolved with direction-aware request-time ranks over same-status peers
+for aggregate and per-cell facets. No peer/rank rows are published and the
+default context is unchanged.
 
 ## Decision
 

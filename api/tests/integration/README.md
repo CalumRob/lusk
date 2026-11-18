@@ -402,6 +402,34 @@ python -m pytest api/tests/integration/test_littoral_reference_migration.py -q
 python -m pytest api/tests/integration/test_littoral_reference_publisher.py -q
 ```
 
+### AEDAR littoral sibling migration proof (#1043)
+
+The focused, non-retained migration rehearsal
+`api/tests/integration/test_aedar_littoral_migration.py` applies a fresh
+`api/schema.sql` in an own random `it_littoral_aedar_*` schema and proves: an
+existing complete pre-extension AEDAR generation (zero littoral groups and
+counters) still commits; an incomplete littoral generation is rejected with a
+named reason; a complete C/NC generation commits in the SIBLING summary table
+with density counters still correct and no C/NC inserted into the density
+summary; and replaying migration 045 on a current schema leaves the AEDAR
+catalog structurally unchanged with both widened CHECKs present. It holds the
+shared mutex for the whole process, verifies both dedicated roles and the exact
+`lusk_it_contract` database before any DDL, and drops only its own schemas in
+`finally`. Without the guarded `LUSK_TEST_*` DSNs it skips.
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:PYTHONPATH = '.'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+python -m pytest api/tests/integration/test_aedar_littoral_migration.py -q
+```
+
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration

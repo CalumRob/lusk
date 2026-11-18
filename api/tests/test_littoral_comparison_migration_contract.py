@@ -29,12 +29,13 @@ WIDENED_TABLES = (
 )
 
 
-def test_044_is_the_next_free_migration_number():
+def test_044_and_045_are_the_next_free_migration_numbers():
     numbers = sorted(int(path.name.split("_", 1)[0])
                      for path in MIGRATIONS.glob("[0-9]*.sql"))
     assert 43 in numbers
     assert 44 in numbers, "the littoral comparison migration must be 044"
-    assert not any(number > 44 for number in numbers), numbers
+    assert 45 in numbers, "the AEDAR littoral sibling migration must be 045"
+    assert not any(number > 45 for number in numbers), numbers
 
 
 def test_schema_and_migration_widen_the_same_five_context_checks():
