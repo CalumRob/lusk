@@ -134,17 +134,35 @@ test_that("membership omits littoral for an unclassified transition reference an
   expect_error(comparison_context_membership(misclassified, "commune"), "non-commune|littoral")
 })
 
-test_that("membership refuses a declared-but-empty or half-declared classification", {
-  # #1041 projector semantics: columns ABSENT = legacy transition (allowed),
-  # but a classification the producer DECLARED and then emptied, or declared
-  # with only one column, is a named failure — never a silent "no littoral
-  # context" publication. The projector's post-hash flag carries the declaration.
-  empty <- littoral_reference()
+test_that("a present-but-all-NA classification is the density-equivalent honest absence", {
+  # #1054: the transient declaration marker is gone. A reference whose
+  # classification columns are present but entirely empty — including one read
+  # back from SQL where no in-memory marker could survive — behaves like density:
+  # no littoral context, no silent NC, no borrowed group, every existing context
+  # byte-identical to the same reference with the columns absent.
+  enriched <- project_territory_reference(data.frame(
+    code = c("c1", "c2", "r1"), type = c("commune", "commune", "region"),
+    nom = c("A", "B", "Bretagne"), departement = c("22", "29", NA_character_),
+    epci = c("e1", "e2", NA_character_),
+    classe_densite_code = c("A", "B", NA_character_),
+    littoral_code = c("C", "NC", NA_character_),
+    littoral_classement_source = c("Mer", NA_character_, NA_character_),
+    stringsAsFactors = FALSE))
+  empty <- enriched$rows
   empty$littoral_code[] <- NA_character_
   empty$littoral_classement_source[] <- NA_character_
-  attr(empty, "littoral_declared") <- TRUE
-  expect_error(comparison_context_membership(empty, "commune"), "present but empty")
+  absent <- empty
+  absent$littoral_code <- NULL
+  absent$littoral_classement_source <- NULL
 
+  membership <- comparison_context_membership(empty, "commune")
+  expect_false("littoral" %in% membership$comparison_context)
+  expect_setequal(unique(membership$comparison_context),
+    c("density_class", "epci", "bretagne"))
+  expect_identical(membership, comparison_context_membership(absent, "commune"))
+})
+
+test_that("membership refuses half-declared littoral columns", {
   half <- littoral_reference()
   half$littoral_classement_source <- NULL
   expect_error(comparison_context_membership(half, "commune"), "declared together")
@@ -154,16 +172,15 @@ test_that("membership refuses a declared-but-empty or half-declared classificati
   expect_error(comparison_context_membership(half_code, "commune"), "declared together")
 })
 
-test_that("projected all-NA rows without declaration stay the legacy transition", {
-  # The projector always emits both columns; a legacy transition therefore
-  # arrives with all-NA values and littoral_declared=FALSE. It must publish no
-  # littoral context while every existing context stays byte-identical.
+test_that("projected transition rows with absent columns stay the density-equivalent legacy transition", {
+  # The projector always emits both classification columns; a legacy transition
+  # therefore arrives with all-NA values. It must publish no littoral context
+  # while every existing context stays byte-identical.
   legacy <- project_territory_reference(data.frame(
     code = c("c1", "c2", "r1"), type = c("commune", "commune", "region"),
     nom = c("A", "B", "Bretagne"), departement = c("22", "29", NA_character_),
     epci = c("e1", "e2", NA_character_),
     classe_densite_code = c("A", "B", NA_character_), stringsAsFactors = FALSE))
-  expect_false(isTRUE(attr(legacy$rows, "littoral_declared")))
   expect_true(all(is.na(legacy$rows$littoral_code)))
   membership <- comparison_context_membership(legacy$rows, "commune")
   expect_false("littoral" %in% membership$comparison_context)
