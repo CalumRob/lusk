@@ -44,10 +44,14 @@ test_that("le périmètre régional publié reflète le résolveur canonique", {
 
 test_that("les directions d'accès servies viennent du registre R, pas d'un défaut API (#569)", {
   meta <- lire_theme_metadata("mobilite")
-  expect_setequal(names(meta$indicator_directions), names(CLES_ACCES_MOBILITE))
+  # Les 15 clés `share_*` ne sont plus définies dans le producteur (#1048) : le
+  # catalogue épinglé (slice 2) en reste la source pendant la transition.
+  cles <- names(meta$indicator_directions)
+  expect_length(cles, 15L)
+  expect_true(all(grepl("^share_", cles)))
   expect_identical(
-    unlist(meta$indicator_directions[names(CLES_ACCES_MOBILITE)], use.names = FALSE),
-    unlist(DIRECTIONS_MOBILITE[names(CLES_ACCES_MOBILITE)], use.names = FALSE)
+    unlist(meta$indicator_directions[cles], use.names = FALSE),
+    unlist(DIRECTIONS_MOBILITE[cles], use.names = FALSE)
   )
   meta$indicator_directions$share_health_t <- "low"
   expect_error(

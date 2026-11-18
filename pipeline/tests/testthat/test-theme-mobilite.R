@@ -2125,3 +2125,38 @@ test_that("compute_histoires_mobilite : le thème ne porte plus de lecture (#104
   resolu <- resoudre_histoires(vide, "mobilite")
   expect_equal(nrow(resolu), 0L)
 })
+
+test_that("validations_mobilite : les corruptions des validateurs survivants échouent bruyamment", {
+  fx <- fixture_indicateurs_mobilite()
+  territoires <- territoires_fixture_indicateurs_mobilite()
+  fabriquer_payload <- function() list(
+    indicateurs = construire_indicateurs_mobilite(fx, territoires,
+                                                  vintages_mobilite()),
+    histoires = resoudre_histoires(compute_histoires_mobilite(fx,
+      vintages_mobilite()), "mobilite"),
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, list())
+  )
+  valider <- function(payload) validate_payload(
+    payload, indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(), validations = validations_mobilite,
+    apercu = APERCU_MOBILITE)
+
+  # un payload sain passe la validation générique + les validations du thème
+  expect_no_error(valider(fabriquer_payload()))
+
+  # une part de surface routière > 1 est une corruption (aire intersectée)
+  payload <- fabriquer_payload()
+  payload$indicateurs$value[
+    payload$indicateurs$key == "surface_reseaux_routiers" &
+      payload$indicateurs$territoire == "22001"] <- 1.5
+  expect_error(valider(payload), "surface routière")
+
+  # une longueur d'offre cyclable négative est une corruption
+  payload <- fabriquer_payload()
+  payload$indicateurs$value[
+    payload$indicateurs$key == "offre_cyclable" &
+      payload$indicateurs$detail == "protege_longueur" &
+      payload$indicateurs$territoire == "22001"] <- -1
+  expect_error(valider(payload), "offre cyclable")
+})

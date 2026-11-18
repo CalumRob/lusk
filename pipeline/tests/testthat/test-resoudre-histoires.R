@@ -225,3 +225,18 @@ test_that("la validation accepte les histoires résolues valides", {
   p <- compute_payload(load_fixture())
   expect_no_error(valider_histoires_resolues(p$histoires, "demographie"))
 })
+
+test_that("garde #312 : une table d'histoires vide échoue sauf pour les thèmes SANS lecture déclarés", {
+  vide <- data.frame(territoire = character(), type = character(),
+                     theme = character(), stringsAsFactors = FALSE)
+  # Démographie et Habitat déclarent une lecture : le vide est une corruption.
+  for (theme in c("demographie", "habitat")) {
+    expect_error(valider_histoires_resolues(vide, theme), "aucune histoire",
+                 info = theme)
+  }
+  # L'exemption est une propriété DÉCLARÉE du thème, pas un nom en dur.
+  expect_true("mobilite" %in% THEMES_SANS_LECTURE)
+  expect_true("programmes" %in% THEMES_SANS_LECTURE)
+  expect_silent(valider_histoires_resolues(vide, "mobilite"))
+  expect_silent(valider_histoires_resolues(vide, "programmes"))
+})

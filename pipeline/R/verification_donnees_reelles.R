@@ -1148,6 +1148,27 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_vrai(is.na(lire_offre("29083", "bornes_ev_par_station_service")),
                 "Mobilité e2e",
                 "un ratio EV/fuel publié sans station-service (dénominateur nul)")
+
+  # Offre TC (#1048) — verrous STRUCTURELS. Le dénominateur est le nombre
+  # d'adresses résidentielles du spine AEDAR. Les verrous de VALEUR exacts
+  # (Rennes 0,9957 · région 0,5731 · Brest 0,9412 · Finistère 0,6761) reviennent
+  # en slice 4, quand `data/raw` permet de les re-dériver sur le nouveau
+  # dénominateur : ne pas les réécrire à la main ici.
+  tc_communes <- analytiques$offre_tc_communes
+  verifier_egale(nrow(tc_communes), 1200L,
+                 "Mobilité e2e — les 1 200 communes de l'offre TC par adresse")
+  verifier_egale(sum(!is.na(tc_communes$part_proche)), 1200L,
+                 "Mobilité e2e — aucune part d'offre TC manquante par commune")
+  verifier_vrai(all(tc_communes$n_adresses > 0L), "Mobilité e2e",
+                "un dénominateur d'adresses résidentielles non positif")
+  tc_valeurs <- offre$value[offre$key == "offre_tc"]
+  verifier_egale(length(tc_valeurs), nrow(base) + n_epci + n_dep + 1L,
+                 "Mobilité e2e — l'offre TC aux quatre niveaux")
+  verifier_vrai(all(!is.na(tc_valeurs)), "Mobilité e2e",
+                "une part d'offre TC absente du payload")
+  verifier_vrai(all(tc_valeurs >= 0 & tc_valeurs <= 1), "Mobilité e2e",
+                "une part d'offre TC hors [0, 1]")
+
   # Les bornes (IRVE) sont une source VIVANTE (issue #380) : verrous de
   # VALEUR relatifs à l'époque du cache (comptes exacts, re-baselinés)
   verifier_egale(lire_offre("53", "bornes_recharge"), 1909L,

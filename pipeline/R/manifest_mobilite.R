@@ -283,7 +283,7 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 #     663d7db62ba6751333240d5aaee9142c74f3e8b9f654601bea35d13f8aa74969,
 #     feed_version « 80335 », validité 2025-12-14 → 2034-01-20, 32 agences).
 #     CE PIN EST PARTAGÉ : il alimente aussi l'indicateur offre_tc (part des
-#     bâtiments près d'un arrêt) — son PREMIER PASSAGE À LA FRAÎCHEUR y
+#     adresses près d'un arrêt) — son PREMIER PASSAGE À LA FRAÎCHEUR y
 #     déplacera les valeurs publiées (les arrêts bougent avec les réseaux) ;
 #     les verrous données réelles de l'offre TC (Rennes 0,9957 · Ille-et-
 #     Vilaine 0,5731 · EPCI 0,9412 · Finistère 0,6761) devront être réétablis
@@ -316,7 +316,7 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
     "périmé laissait douze réseaux sombres sur septembre, la leçon de la ",
     "porte de présence). CE PIN EST PARTAGÉ avec l'indicateur offre_tc : son ",
     "PREMIER PASSAGE À LA FRAÎCHEUR déplacera les valeurs publiées de cette ",
-    "part des bâtiments près d'un arrêt — les verrous données réelles ",
+    "part des adresses près d'un arrêt — les verrous données réelles ",
     "(Rennes 0,9957 · 35 : 0,5731 · EPCI 0,9412 · 29 : 0,6761) seront ",
     "rétablis sur le premier run frais, le déplacement documenté ici, jamais ",
     "tu. Réseaux sombres documentés du millésime : Coralie Concarneau et ",
@@ -621,7 +621,7 @@ MANIFEST_MOBILITE_DILA_BDL <- tibble::tribble(
 # par le jeu Geovelo (amenagements_cyclables) ; depuis l'issue #485 (le
 # raccordement), les DEUX sources ferroviaires/géocodage de la fondation
 # données : sncf_voyageurs (le rail national, TGV inclus) et dila_bdl (les
-# points mairie). QUATORZE lignes, quatorze ids uniques, chaque source garde SON
+# points mairie). QUINZE lignes, quinze ids uniques, chaque source garde SON
 # vintage. Validé par verifier_contrat_manifest_mobilite.
 MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_RP_LOGEMENT,

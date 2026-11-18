@@ -60,3 +60,29 @@ test_that("lire_adresses_residentielles : lit le parquet du cache et refuse un f
     "absente du cache"
   )
 })
+
+test_that("normaliser_adresses_residentielles : les quatre gardes portées de l'ancienne couche bâtiments", {
+  # Port des cas retirés avec normaliser_batiments_residentiels (issue #1048) :
+  # la population d'adresses doit s'arrêter bruyamment sur la même corruption
+  # de forme, jamais publier une géométrie ou un dénominateur invalide.
+  fx <- fixture_adresses()
+
+  # 1. une colonne requise manquante nomme la colonne fautive
+  expect_error(
+    normaliser_adresses_residentielles(fx[c("address_id", "code_insee")]),
+    "lon|manquante"
+  )
+  # 2. un fichier vide est une corruption
+  expect_error(
+    normaliser_adresses_residentielles(fx[0L, ]),
+    "aucune ligne"
+  )
+  # 3. un code commune hors format COG est une corruption
+  cog <- fx; cog$code_insee[[1L]] <- "ABC"
+  expect_error(normaliser_adresses_residentielles(cog), "COG")
+  # 4. une coordonnée absente ou non finie est une corruption
+  coord <- fx; coord$lat[[1L]] <- NA_real_
+  expect_error(normaliser_adresses_residentielles(coord), "coordonn")
+  non_fini <- fx; non_fini$lon[[2L]] <- "Inf"
+  expect_error(normaliser_adresses_residentielles(non_fini), "coordonn")
+})
