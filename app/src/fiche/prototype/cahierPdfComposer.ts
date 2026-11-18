@@ -1465,8 +1465,18 @@ export async function composerCahierPdf(request: CahierExportRequest,
   // The one shared path: mount the native section body offscreen from the
   // frozen inputs and paint its browser-resolved boxes. Tables, running
   // furniture and pagination below remain the document grammar's owners.
-  const { composerCahierPdfNatif } = await import('./cahierNativePdf')
-  return composerCahierPdfNatif(request, options)
+  try {
+    const { composerCahierPdfNatif } = await import('./cahierNativePdf')
+    return await composerCahierPdfNatif(request, options)
+  } catch (error) {
+    // The controller only relies on `CahierPdfCompositionError.code`; keep that
+    // contract when the shared native path refuses a request.
+    const { CahierNativePdfError, codeErreurNativePdf } = await import('./cahierNativePdf')
+    if (error instanceof CahierNativePdfError) {
+      throw new CahierPdfCompositionError(codeErreurNativePdf(error.reason), error.message, error)
+    }
+    throw error
+  }
 }
 
 /** Browser-stage entry, not called by the existing generator. */

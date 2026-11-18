@@ -255,6 +255,8 @@ export interface CahierCaptureMapItem {
   readonly unavailable: boolean
   /** The actual inline figure asset URL from the owner's existing path contract. */
   readonly inlineUrl: string | null
+  /** Settled owner bytes frozen at capture time; the PDF never re-fetches the owner. */
+  readonly bytes?: ArrayBuffer
 }
 
 export interface CahierCaptureMaps {
@@ -519,6 +521,7 @@ export type CahierCaptureFigure =
   | CahierCurveFigureCapture
 
 export interface CahierExportCapture {
+  readonly nativeRender?: import('./cahierNativeRenderContext').CahierNativeRenderInput
   readonly identity: CahierCaptureIdentity
   readonly generation: CahierCaptureGeneration
   readonly readiness: CahierCaptureReadiness
@@ -530,6 +533,7 @@ export interface CahierExportCapture {
 }
 
 export interface CahierSectionCaptureInput {
+  readonly nativeRender?: import('./cahierNativeRenderContext').CahierNativeRenderInput
   readonly section: ContentSection
   readonly unit: { readonly key: string; readonly label: string }
   readonly territory: TerritoryIdentity
@@ -595,6 +599,8 @@ export function cahierCaptureFamily(kind: ContentEvidence['kind']): CahierCaptur
 function deepPlain<T>(value: T): T {
   if (value === null || typeof value !== 'object') return value
   if (Array.isArray(value)) return value.map((item) => deepPlain(item)) as unknown as T
+  if (value instanceof ArrayBuffer) return value.slice(0) as unknown as T
+  if (ArrayBuffer.isView(value)) return value as unknown as T
   if (value instanceof Date) return new Date(value.getTime()) as unknown as T
   if (value instanceof Map) {
     const entries = [...value.entries()].map(([key, item]) => [deepPlain(key), deepPlain(item)] as const)
@@ -635,6 +641,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
     ? (input.referenceStatus ?? 'unobserved')
     : null
   const capture: CahierExportCapture = {
+    ...(input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
     identity: {
       sectionKey: section.key,
       evidenceKind: evidence?.kind ?? null,

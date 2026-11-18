@@ -1,0 +1,98 @@
+/**
+ * Replacement assertions for the retired painter-geometry specs. Each check
+ * exercises the same behaviour through the shared native path or the pure
+ * production helpers the composer uses (no second painter).
+ */
+import { describe, expect, it } from 'vitest'
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
+import { enregistrerPolices, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
+import { CAHIER_SHARE_COLOUR } from '@/fiche/prototype/cahierColorRoles'
+import { PALETTE_PDF, couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
+import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import { chargeurPoliceTest } from './helpers/cahierPdfRuntime'
+import { composerCahierPdfNativedansNavigateur } from './helpers/cahierPdfNativeRuntime'
+
+function requete(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly string[]) {
+  const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
+  const projection = projeterRequeteExport(capture, modes ?? offered.slice(0, 3))
+  if (projection.status !== 'ready') throw new Error(projection.reason)
+  return projection.request
+}
+
+async function generer(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly string[]) {
+  const result = await composerCahierPdfNativedansNavigateur(requete(capture, modes), { signal: new AbortController().signal })
+  return new Uint8Array(await result.blob.arrayBuffer())
+}
+
+async function textOf(bytes: Uint8Array) {
+  const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
+  const page = await pdf.getPage(1)
+  return ((await page.getTextContent()).items as any[]).map((item) => item.str ?? '').join(' ')
+}
+
+describe('Cahier PDF natif — contrats remplacés', () => {
+  it('conserve les accents et les glyphes embarqués', async () => {
+    const text = await textOf(await generer(capturePdfFixture('aedar-access')))
+    expect(text).toContain('COMMUNE A1')
+    expect(text).toContain('DIVERSITÉ DE L’OFFRE')
+    expect(text).not.toMatch(/\ufffd/)
+  })
+
+  it('refuse une carte déclarée non chargée avec une erreur typée', async () => {
+    const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
+    capture.capabilities.maps.items[0].loaded = false
+    capture.capabilities.maps.status = 'unavailable'
+    await expect(generer(capture)).rejects.toMatchObject({ code: 'asset' })
+  })
+
+  it('respecte une annulation avant la génération', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(composerCahierPdfNativedansNavigateur(
+      requete(capturePdfFixture('aedar-access'), ['car']),
+      { signal: controller.signal },
+    )).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('transmet les modes sélectionnés aux sections non-access', async () => {
+    const { modesNatifDepuisCapture } = await import('@/fiche/prototype/cahierNativePdf')
+    const base = capturePdfFixture('aedar-equipment-profile')
+    const profile: any = structuredClone(base)
+    profile.aedar.modes = ['transit', 'bike_lts2']
+    const request = requete(base)
+    expect(modesNatifDepuisCapture(request, profile, false)).toEqual(['transit', 'bike_lts2'])
+    expect(modesNatifDepuisCapture(requete(capturePdfFixture('aedar-access'), ['car', 'walk']), base, true))
+      .toEqual(['car', 'walk'])
+  })
+
+  it('refuse une police tronquée au lieu de la substituer', async () => {
+    const { jsPDF } = await import('jspdf')
+    const doc = new jsPDF({ unit: 'pt' })
+    const invalid = new TextEncoder().encode('not a TrueType font').buffer
+    await expect(enregistrerPolices(doc, async () => invalid,
+      new AbortController().signal)).rejects.toThrow(/Police PDF invalide/)
+  })
+
+  it('rejette une colonne réellement corrompue dans le tableau', async () => {
+    const capture: any = capturePdfFixture('aedar-access')
+    const request = requete(capture, ['car'])
+    const { mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+    const projections = (await import('@/fiche/prototype/cahierExportAdapters')).projeterRequeteExportFigures(request)
+    const table = projections.flatMap((projection: any) => projection.tables)[0]
+    const corrupt = {
+      ...table,
+      rows: table.rows.map((row: any) => ({ ...row,
+        cells: row.cells.map((cell: any, index: number) => index === 1
+          ? { ...cell, display: 'X'.repeat(500) } : cell) })),
+    }
+    expect(() => construireTableauxPdf(corrupt, { mesure, largeurDisponible: 400,
+      nomTerritoire: 'Commune A1', ownerDisplayed: true })).toThrow(/ne tient pas|dépasse|largeur/)
+  })
+
+  it('lit la couleur du propriétaire de partage, pas une copie', () => {
+    expect(couleurPdf(CAHIER_SHARE_COLOUR.fond)).toBe(PALETTE_PDF.shareTrackGround)
+    expect(couleurPdf(CAHIER_SHARE_COLOUR.filet)).toBe(PALETTE_PDF.shareTrackBorder)
+  })
+}, 180000)

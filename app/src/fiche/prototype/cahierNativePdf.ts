@@ -13,18 +13,27 @@ export class CahierNativePdfError extends Error {
   constructor(readonly reason: string, cause?: unknown) { super(reason, { cause }); this.name = 'CahierNativePdfError' }
 }
 
+/** Explicit reason → controller-compatible composition error code mapping. */
+export function codeErreurNativePdf(reason: string): 'incomplete-capture' | 'inconsistent-capture' | 'asset' | 'layout' | 'serialization' {
+  if (/^(map|legend|asset|reference|source|section|comparison|equipment|resource)/.test(reason)) {
+    return /^(asset|map|legend|resource)/.test(reason) ? 'asset' : 'incomplete-capture'
+  }
+  if (/^(unsupported-native|unbreakable|native-width)/.test(reason)) return /unbreakable|native-width/.test(reason) ? 'layout' : 'inconsistent-capture'
+  if (reason === 'missing-rendered-section') return 'serialization'
+  return 'inconsistent-capture'
+}
+
 interface NativePdfOptions {
   readonly signal: AbortSignal
   /** Supplies settled bytes for the exact owner observation; the mount never fetches them. */
   readonly readAsset?: (item: CahierCaptureMapItem, signal: AbortSignal) => Promise<Blob>
 }
 
-/** Default settled-asset reader: the capture's own inline URL, never a fresh owner query. */
+/** Default reader: only the bytes frozen in the capture. No owner re-contact. */
 async function readAssetParDefaut(item: CahierCaptureMapItem, signal: AbortSignal): Promise<Blob> {
-  if (!item.inlineUrl) throw new CahierNativePdfError('asset')
-  const response = await fetch(item.inlineUrl, { signal })
-  if (!response.ok) throw new CahierNativePdfError('asset')
-  return response.blob()
+  signal.throwIfAborted()
+  if (!item.bytes) throw new CahierNativePdfError('asset-unfrozen')
+  return new Blob([item.bytes], { type: 'image/webp' })
 }
 
 export interface CorpsNatifMesure {
@@ -66,6 +75,19 @@ function nativeBreakBlocks(root: HTMLElement, scale: number, maxHeight: number):
   return walk(root)
 }
 
+/** Resolve the frozen ramp-mode selection for every section kind. */
+export function modesNatifDepuisCapture(
+  request: CahierExportRequest,
+  capture: CahierExportRequest['capture'],
+  isAccess: boolean,
+): readonly (typeof AEDAR_RAMP_MODES)[number][] {
+  const selected = new Set(request.modeIds)
+  // Non-access sections (notably the equipment profile/waffle) publish their
+  // selected modes in the AEDAR capture state, not in `request.modeIds`.
+  return isAccess ? AEDAR_RAMP_MODES.filter((id) => selected.has(id))
+    : (capture.aedar?.modes ?? []).filter((id) => AEDAR_RAMP_MODES.includes(id as any))
+}
+
 async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePdfOptions,
   layout: { readonly widthPt: number; readonly document: boolean; readonly maxHeightPt?: number },
   use: (bodies: readonly CorpsNatifMesure[]) => Promise<T>,
@@ -78,12 +100,10 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
   const unit = snapshot?.content.units[0], section = unit?.sections[0]
   if (!snapshot || snapshot.content.units.length !== 1 || unit?.sections.length !== 1
     || section?.key !== capture.identity.sectionKey || !supportsStagedNativeRender(section?.evidence?.kind)) throw new CahierNativePdfError('unsupported-native-input')
-  // Only the access section owns a ramp-mode chooser; every other section's
-  // modeIds select series/equipment, which the native mount reads from the
-  // frozen evidence and never from this presentation context.
-  const selected = new Set(request.modeIds)
+  // Every section gets its real frozen ramp-mode selection: the profile and
+  // waffle figures select modes through the same shared section context.
   const isAccess = section.evidence?.kind === 'aedar-access'
-  const modes = isAccess ? AEDAR_RAMP_MODES.filter((id) => selected.has(id)) : []
+  const modes = modesNatifDepuisCapture(request, capture, isAccess)
   if (isAccess && (!modes.length || modes.length !== request.modeIds.length)) {
     throw new CahierNativePdfError('unsupported-native-modes')
   }
@@ -120,13 +140,16 @@ ${layout.document ? `${scope} .cahier-evidence-source:not(.cahier-map-legend__no
     { path: '/:pathMatch(.*)*', component: inert },
   ] })
   const comparison = { status: capture.comparison.status, error: capture.comparison.error ?? undefined }
+  const declared = capture.capabilities.maps.items.filter((map) => map.declared)
   const app = createApp({ render: () => h(Shell, {
     content: snapshot.content,
     pagination: { currentPage: 1, totalPages: 1, entries: [] },
     layoutVariant: snapshot.layoutVariant,
     presentation: snapshot.presentation,
     aedarAccessEnabled: true,
-    aedarChapterActive: false,
+    // A section that actually has declared maps must not be blanked because the
+    // screen chapter happens to be inactive: the export is the requested view.
+    aedarChapterActive: declared.length > 0,
     aedarStatus: 'ready',
     comparisonStatus: comparison.status === 'unavailable' ? 'idle' : comparison.status,
     comparisonError: comparison.error,
@@ -134,13 +157,14 @@ ${layout.document ? `${scope} .cahier-evidence-source:not(.cahier-map-legend__no
     nativeComparisonError: comparison.error,
   }) })
   const urls: string[] = []
+  let assetObserver: MutationObserver | null = null
   try {
     const maps = capture.capabilities.maps
-    const declared = maps.items.filter((map) => map.declared)
     const readAsset = options.readAsset ?? readAssetParDefaut
     const assets: Record<string, string> = {}
     for (const item of declared) {
-      if (!item.inlineUrl || !item.loaded || item.unavailable) throw new CahierNativePdfError('asset')
+      if (!item.loaded || item.unavailable) throw new CahierNativePdfError('map-unavailable')
+      if (!item.inlineUrl) throw new CahierNativePdfError('asset-unfrozen')
       try {
         const bitmap = await readAsset(item, signal)
         if (!/^image\/(webp|png|jpeg)$/.test(bitmap.type) || !bitmap.size) throw Error('Raster vide ou non pris en charge')
@@ -164,6 +188,21 @@ ${layout.document ? `${scope} .cahier-evidence-source:not(.cahier-map-legend__no
     app.use(router)
     signal.throwIfAborted()
     document.body.append(host)
+    // Wire every declared map to its settled object URL, generically: sections
+    // may reference their owner URL directly instead of the shared carMap prop.
+    assetObserver = new MutationObserver(() => {
+      for (const img of target.querySelectorAll<HTMLImageElement>('img[src]')) {
+        if (img.dataset.cahierNativeAsset) continue
+        const current = img.getAttribute('src') ?? ''
+        const item = declared.find((map) => map.inlineUrl && current.includes(map.inlineUrl))
+        const settled = item && assets[item.id]
+        if (settled) {
+          img.dataset.cahierNativeAsset = 'true'
+          img.src = settled
+        }
+      }
+    })
+    assetObserver.observe(target, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] })
     app.mount(target)
     await nextTick()
     const root = target.querySelector<HTMLElement>(layout.document ? '.concept-group > [data-figure]' : '.concept-group')
@@ -208,6 +247,7 @@ ${layout.document ? `${scope} .cahier-evidence-source:not(.cahier-map-legend__no
     })
     return await use(bodies)
   } finally {
+    assetObserver?.disconnect()
     if (target.isConnected) app.unmount()
     host.remove()
     for (const url of urls) URL.revokeObjectURL(url)
