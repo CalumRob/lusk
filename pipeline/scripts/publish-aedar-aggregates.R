@@ -6,6 +6,7 @@ if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"
 canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
 raw_dir <- Sys.getenv("LUSK_AEDAR_RAW_DIR",file.path("data","raw"))
 density_path <- Sys.getenv("LUSK_AEDAR_DENSITY_AGGREGATE",file.path(raw_dir,"aedar_density_aggregate.parquet"))
+littoral_path <- Sys.getenv("LUSK_AEDAR_LITTORAL_AGGREGATE",file.path(raw_dir,"aedar_littoral_aggregate.parquet"))
 # Operator sequence: --check acquires, validates, and atomically materializes the
 # canonical facts, source Parquets, and TYPEQU metadata. --publish reads only
 # those artifacts, so a
@@ -30,12 +31,22 @@ if (args[[1]]=="--publish") {
   reference <- tryCatch(DBI::dbWithTransaction(reference_connection, {
     DBI::dbExecute(reference_connection,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
     version <- DBI::dbGetQuery(reference_connection,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
-    facts <- DBI::dbGetQuery(reference_connection,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference")
+    facts <- DBI::dbGetQuery(reference_connection,"SELECT territory_type,territory_id,epci_id,density_class_code,littoral_code FROM territory_reference")
     if(nrow(version)!=1L) stop("AEDAR comparison requires one published territory-reference version",call.=FALSE)
     list(version=version$content_version[[1L]],facts=facts)
   }),finally=DBI::dbDisconnect(reference_connection))
+  # The littoral fixed context is produced only from the already-pooled C/NC
+  # artifact against the SAME published classification. A missing artifact is a
+  # valid pre-extension generation (zero littoral groups/summaries), never an
+  # implicit NC or a fallback to another group.
+  littoral_source <- NULL
+  if(file.exists(littoral_path)) {
+    littoral_reference <- read_aedar_littoral_reference(file.path(raw_dir,MANIFEST_CLASSES_LITTORAL[["fichier"]][[1L]]))
+    littoral_source <- read_aedar_littoral_aggregate(littoral_path,littoral_reference)
+  }
   comparison_projection <- project_aedar_comparison_publication(projection,density_source,
-    reference$facts,reference_content_version=reference$version,directory=canonical_dir)
+    reference$facts,reference_content_version=reference$version,directory=canonical_dir,
+    littoral_source=littoral_source)
 }
 if (args[[1]]=="--full-vintage") {
   for (level in AEDAR_AGGREGATE_LEVELS) {
