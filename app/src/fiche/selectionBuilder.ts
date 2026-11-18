@@ -19,7 +19,9 @@ export function membresConstructeur(
     return reference.filter((item) => item.type === focal.type && (
       selection.preset === 'bretagne' ||
       (selection.preset === 'epci' && Boolean(focal.epci) && item.epci === focal.epci) ||
-      (selection.preset === 'densite' && Boolean(focal.classe_densite_code) && item.classe_densite_code === focal.classe_densite_code)
+      (selection.preset === 'densite' && Boolean(focal.classe_densite_code) && item.classe_densite_code === focal.classe_densite_code) ||
+      // #1044 — same-status cohort from the served C/NC class, never geography.
+      (selection.preset === 'littoral' && Boolean(focal.littoral_code) && item.littoral_code === focal.littoral_code)
     )).map(membreTerritoire)
   }
   return [membreTerritoire(focal)]
