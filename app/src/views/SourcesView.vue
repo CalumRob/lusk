@@ -45,6 +45,17 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
           </div>
           <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a>
         </header>
+        <!-- #1044 — definition/coverage/classements are the producer's own
+             facts, served on the source record; render them through this same
+             seam (no new metadata framework, no app-side classification). -->
+        <p v-if="source.definition" class="source-record__definition">{{ source.definition }}</p>
+        <p v-if="source.coverage" class="source-record__coverage">{{ source.coverage }}</p>
+        <p v-if="source.classements?.length" class="source-record__classements">
+          Valeurs sources : {{ source.classements.join(', ') }}
+        </p>
+        <p v-if="source.acquisitionUrl" class="source-record__acquisition">
+          <a :href="source.acquisitionUrl" target="_blank" rel="noopener noreferrer">Voir le flux source</a>
+        </p>
         <p v-if="source.caveat" class="source-record__caveat">{{ source.caveat }}</p>
         <section v-if="source.methodology" class="source-record__methodology" :aria-label="source.methodology.title">
           <h3>{{ source.methodology.title }}</h3>
@@ -125,7 +136,9 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
 .source-record h2 { margin: 0; font: var(--text-h2); }
 .source-record h3 { margin: var(--space-6) 0 var(--space-3); font: var(--text-h3); }
 .source-record__eyebrow { margin: 0 0 var(--space-1); color: var(--text-tertiary); font: var(--text-overline); }
-.source-record__publisher, .source-record__caveat, .source-record__clock { color: var(--text-secondary); }
+.source-record__publisher, .source-record__caveat, .source-record__clock,
+.source-record__definition, .source-record__coverage, .source-record__classements,
+.source-record__acquisition { color: var(--text-secondary); }
 .source-record__vintages, .source-record__consumers { display: grid; gap: var(--space-2); margin: 0; padding-left: var(--space-5); }
 .source-record__methodology p { max-width: 70ch; color: var(--text-secondary); }
 .source-record__methodology table { width: 100%; border-collapse: collapse; text-align: left; }

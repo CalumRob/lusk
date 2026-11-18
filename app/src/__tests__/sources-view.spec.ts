@@ -295,6 +295,10 @@ describe('SourcesView — route dataset-centric', () => {
     expect(texte).toContain('Licence Ouverte 2.0 (lov2)')
     expect(texte).toContain('2023-04-21')
     expect(texte).toContain('Plouvien')
+    expect(texte).toContain('Communes définies par la loi Littoral de 1986') // definition
+    expect(texte).toContain('complément de l') // coverage / NC rule (fixture uses a straight apostrophe)
+    expect(texte).toContain('Valeurs sources : Mer, Estuaire') // served provenance, not a product category
+    expect(fiche.find('a[href*="geobretagne.fr"]').exists()).toBe(true) // acquisition endpoint
     expect(texte.toLowerCase()).toMatch(/garantie juridique|instantan/)
     // La fiche est un consommateur du référentiel, pas un artefact mort.
     expect(texte).toContain('Référentiel territorial')

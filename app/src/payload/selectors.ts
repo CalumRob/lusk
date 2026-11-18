@@ -708,6 +708,11 @@ export interface SourceDatasetRecord {
   vintages: SourceVintageRecord[]
   clocks: SourceClock[]
   caveat: string | null
+  /** #1044 — producer-owned definition/coverage/classements, passed through the existing source-record seam. */
+  definition?: string | null
+  coverage?: string | null
+  classements?: readonly string[]
+  acquisitionUrl?: string | null
   methodology?: SourceRecord['methodology']
   consumers: SourceConsumerRecord[]
   replie: boolean
@@ -793,6 +798,10 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
         vintages: authoredVintages ?? [],
         clocks: metadata?.clocks ?? clocksPourThemes(editorial.themes),
         caveat: metadata?.caveat ?? editorial.caveat ?? null,
+        definition: metadata?.definition ?? null,
+        coverage: metadata?.coverage ?? null,
+        classements: metadata?.classements ?? [],
+        acquisitionUrl: metadata?.acquisition_url ?? null,
         methodology: metadata?.methodology,
         consumers: [],
         replie: true,
@@ -834,6 +843,10 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       vintages: metadata.vintages ?? [],
       clocks: metadata.clocks ?? [],
       caveat: metadata.caveat ?? null,
+      definition: metadata.definition ?? null,
+      coverage: metadata.coverage ?? null,
+      classements: metadata.classements ?? [],
+      acquisitionUrl: metadata.acquisition_url ?? null,
       methodology: metadata.methodology,
       consumers: [],
       replie: true,
