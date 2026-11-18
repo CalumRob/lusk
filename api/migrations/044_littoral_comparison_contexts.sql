@@ -7,10 +7,15 @@ BEGIN;
 -- density/EPCI/Bretagne/same_level generation stays readable and writable.
 --
 -- Operator ordering: apply AFTER the pack 030 -> 039 -> 033 -> 034 -> 035.
--- Migration 039 validates the exact pre-044 four-value CHECK definitions on
--- an upgrade; widening before it would fail its definition replay. Fresh
--- installs take the widened definition directly from schema.sql. The reference
--- version and every comparison generation must be republished together (see
+-- The driver is the upgrade-gap case, not 039's definition check: on an upgrade
+-- the comparison base tables do not exist until 039 creates them (and the
+-- lineage tables until 033/034/035), so 044 has no target to widen if it runs
+-- first; running it after the pack also widens each relation exactly once, in
+-- its final shape. 039's exact validator now accepts BOTH the pre-044 four-value
+-- and the post-044 five-value CHECK (m039_normalize_context), so a widened
+-- fresh/current schema replays 039 cleanly. Fresh installs take the widened
+-- definition directly from schema.sql. The reference version and every
+-- comparison generation must be republished together (see
 -- api/migrations/README.md); applying this DDL alone publishes nothing.
 
 DO $m044$

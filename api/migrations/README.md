@@ -16,9 +16,14 @@ replay of the migration is a no-op. `api/schema.sql` carries the widened domain
 for fresh installs.
 
 **Operator ordering:** apply 044 **after** the pack
-`030 -> 039 -> 033 -> 034 -> 035`. Migration 039 validates the exact pre-044
-four-value CHECK definitions on an upgrade; widening before it would break that
-replay contract. 044 must not run before 039/033/034/035 on a serving schema.
+`030 -> 039 -> 033 -> 034 -> 035`. The driver is the upgrade-gap case: on an
+upgrade the comparison base relations do not exist until 039 creates them (and
+the lineage relations until 033/034/035), so 044 has no target to widen if it
+runs earlier; running it after the pack also widens each relation exactly once
+in its final shape. This is NOT about 039's exact-definition replay: its
+documented `m039_normalize_context` accepts both the four-value and the widened
+CHECK, so a widened fresh/current schema replays 039 cleanly (guarded proof:
+`-k test_migration_039`). Fresh installs take the widened domain from schema.sql.
 Fast contract: `api/tests/test_littoral_comparison_migration_contract.py`.
 The non-retained guarded rehearsal
 `api/tests/integration/test_littoral_comparison_migration.py` upgrades a

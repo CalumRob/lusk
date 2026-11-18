@@ -28,7 +28,8 @@ exactly one declared value per profile axis:
   existing default response or its fast path.
 - An **explicitly requested non-default declared point** resolves the same
   canonical fixed cohort (the context's resolved density class, EPCI, Bretagne
-  or same-level group) and is computed per request from that cohort's committed
+  or same-level group — plus the `littoral` C/NC group added by #1042, see the
+  #1040 amendment in ADR-0039) and is computed per request from that cohort's committed
   published profile cells in the caller's single repeatable-read snapshot. It
   uses the same median, direction-aware `rank`/`rank_size`/`rank_ties`,
   missingness, per-detail unit, denominator semantics and source lineage as an

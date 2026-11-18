@@ -47,6 +47,54 @@ scalar_littoral_fixture <- function(direction = "high") {
   )
 }
 
+# Hand-computed expectations from the shared fixture values, never read back
+# from a producer result: C = {c1:10, c2:0}; NC = {c3:5, c4:5, c5:missing}.
+# The reference statistic is a median (direction-invariant); competition ranks
+# follow the declared direction; ties and rank_size are direction-invariant.
+# Every shared family declares a direction on its comparison descriptor, so
+# none of them has to be excused from the low-direction assertions.
+expected_littoral_cohort <- function(direction) {
+  high <- identical(direction, "high")
+  list(
+    C = list(statistic = 5,
+      rank = c(c1 = if (high) 1L else 2L, c2 = if (high) 2L else 1L),
+      ties = c(c1 = 1L, c2 = 1L), size = c(c1 = 2L, c2 = 2L)),
+    NC = list(statistic = 5,
+      rank = c(c3 = 1L, c4 = 1L), ties = c(c3 = 2L, c4 = 2L),
+      size = c(c3 = 2L, c4 = 2L))
+  )
+}
+
+assert_littoral_family_cohort <- function(groups, territories, statistic_column,
+                                          direction, family) {
+  info <- function(...) paste(family, direction, ...)
+  expected <- expected_littoral_cohort(direction)
+  for (code in c("C", "NC")) {
+    group <- groups[groups$comparison_context == "littoral" & groups$group_id == code, , drop = FALSE]
+    expect_equal(nrow(group), 1L, info = info(code, "group row"))
+    expect_equal(group[[statistic_column]][[1L]], expected[[code]]$statistic,
+      info = info(code, "published reference value"))
+    rows <- territories[territories$comparison_context == "littoral" & territories$group_id == code, , drop = FALSE]
+    expect_setequal(rows$territory_id,
+      c(names(expected[[code]]$rank), if (identical(code, "NC")) "c5" else character()))
+    for (id in names(expected[[code]]$rank)) {
+      row <- rows[rows$territory_id == id, , drop = FALSE]
+      expect_equal(nrow(row), 1L, info = info(code, id, "territory row"))
+      expect_equal(row$rank[[1L]], expected[[code]]$rank[[id]], info = info(code, id, "rank"))
+      expect_equal(row$tie_count[[1L]], expected[[code]]$ties[[id]], info = info(code, id, "tie_count"))
+      expect_equal(row$rank_size[[1L]], expected[[code]]$size[[id]], info = info(code, id, "rank_size"))
+    }
+    if (identical(code, "NC")) {
+      missing_peer <- rows[rows$territory_id == "c5", , drop = FALSE]
+      expect_equal(nrow(missing_peer), 1L, info = info("missing peer row"))
+      expect_false(identical(missing_peer$status[[1L]], "measured"), info = info("missing peer status"))
+      expect_true(is.na(missing_peer$value[[1L]]), info = info("missing peer carries no value"))
+      expect_true(all(is.na(missing_peer[c("rank", "tie_count", "rank_size")])),
+        info = info("missing peer carries no ranks"))
+    }
+  }
+}
+
 test_that("canonical membership inventory publishes exact C and NC cohorts", {
   membership <- comparison_context_membership(littoral_reference(), "commune")
   littoral <- membership[membership$comparison_context == "littoral", , drop = FALSE]
@@ -172,55 +220,60 @@ test_that("scalar comparison publishes C and NC with direction-aware ranks, ties
   expect_equal(low_rows$rank[match("c1", low_rows$territory_id)], 2L)
 })
 
-test_that("declared profile comparison publishes C and NC with the shared rank law", {
-  profile <- list(
-    descriptor = list(indicator_id = "offre_cyclable", levels = "commune",
-      comparison_detail = "velo", comparison_sex = NA_character_, comparison_direction = "high"),
-    facts = data.frame(territory_id = c("c1", "c2", "c3", "c4", "c5"), territory_type = "commune",
-      detail = "velo", sex = "", value = c(10, 0, 5, 5, NA_real_),
-      status = c("measured", "measured", "measured", "measured", "suppressed"))
-  )
-  result <- project_declared_profile_comparisons(list(profile), littoral_reference(), "pv", "rv")
-  expect_setequal(unique(result$groups$group_id[result$groups$comparison_context == "littoral"]), c("C", "NC"))
-  rows <- result$territories[result$territories$comparison_context == "littoral", , drop = FALSE]
-  c_rows <- rows[rows$group_id == "C", ]
-  expect_equal(c_rows$rank[match("c1", c_rows$territory_id)], 1L)
-  expect_equal(c_rows$rank[match("c2", c_rows$territory_id)], 2L)
-  nc_rows <- rows[rows$group_id == "NC", ]
-  expect_true(all(nc_rows$rank[nc_rows$territory_id %in% c("c3", "c4")] == 1L))
-  expect_true(all(nc_rows$tie_count[nc_rows$territory_id %in% c("c3", "c4")] == 2L))
-  expect_true(all(is.na(nc_rows$rank[nc_rows$territory_id == "c5"])))
+test_that("declared profile comparison publishes C and NC reference/ranks/ties in both directions", {
+  for (direction in c("high", "low")) {
+    profile <- list(
+      descriptor = list(indicator_id = "offre_cyclable", levels = "commune",
+        comparison_detail = "velo", comparison_sex = NA_character_,
+        comparison_direction = direction),
+      facts = data.frame(territory_id = c("c1", "c2", "c3", "c4", "c5"), territory_type = "commune",
+        detail = "velo", sex = "", value = c(10, 0, 5, 5, NA_real_),
+        status = c("measured", "measured", "measured", "measured", "suppressed"))
+    )
+    result <- project_declared_profile_comparisons(list(profile), littoral_reference(), "pv", "rv")
+    assert_littoral_family_cohort(result$groups, result$territories, "median", direction, "declared_profile")
+  }
 })
 
-test_that("sparse observed collection comparison publishes C and NC without synthesizing facts", {
-  p <- list(
-    descriptor = list(indicator_id = "subventions_par_domaine", kind = "period_detail",
-      direction = "high", comparison_detail = "domaine", comparison_period = "2025",
-      allowed_levels = "commune"),
-    facts = data.frame(indicator_id = "subventions_par_domaine",
-      territory_id = c("c1", "c2", "c3"), territory_type = "commune",
-      detail_key = "domaine", observation_period = "2025", value = c(100, 200, 50),
-      source_id = "src", vintage_id = "v1", stringsAsFactors = FALSE),
-    vintages = data.frame(source_id = "src", vintage_id = "v1", stringsAsFactors = FALSE),
-    datasets = data.frame(source_id = "src", name = "Source", stringsAsFactors = FALSE)
-  )
-  out <- project_observed_collection_comparisons(p, littoral_reference(), "collection-v1", "reference-v1")
-  expect_setequal(unique(out$groups$group_id[out$groups$comparison_context == "littoral"]), c("C", "NC"))
-  rows <- out$territories[out$territories$comparison_context == "littoral", , drop = FALSE]
-  c_rows <- rows[rows$group_id == "C", ]
-  expect_equal(c_rows$rank[match("c2", c_rows$territory_id)], 1L)
-  expect_equal(c_rows$rank[match("c1", c_rows$territory_id)], 2L)
-  nc_rows <- rows[rows$group_id == "NC", ]
-  expect_equal(nc_rows$rank[nc_rows$territory_id == "c3"], 1L)
-  # c4/c5 are in the NC cohort but have no fact: never a zero, rank unavailable.
-  expect_true(all(nc_rows$value[nc_rows$territory_id %in% c("c4", "c5")] == 0 |
-    nc_rows$status[nc_rows$territory_id %in% c("c4", "c5")] == "not_published"))
+test_that("sparse collection comparison publishes C and NC reference/ranks/ties in both directions", {
+  for (direction in c("high", "low")) {
+    p <- list(
+      descriptor = list(indicator_id = "subventions_par_domaine", kind = "period_detail",
+        direction = direction, comparison_detail = "domaine", comparison_period = "2025",
+        allowed_levels = "commune"),
+      facts = data.frame(indicator_id = "subventions_par_domaine",
+        territory_id = c("c1", "c2", "c3", "c4"), territory_type = "commune",
+        detail_key = "domaine", observation_period = "2025", value = c(10, 0, 5, 5),
+        source_id = "src", vintage_id = "v1", stringsAsFactors = FALSE),
+      vintages = data.frame(source_id = "src", vintage_id = "v1", stringsAsFactors = FALSE),
+      datasets = data.frame(source_id = "src", name = "Source", stringsAsFactors = FALSE)
+    )
+    out <- project_observed_collection_comparisons(p, littoral_reference(), "collection-v1", "reference-v1")
+    assert_littoral_family_cohort(out$groups, out$territories, "median", direction, "observed_collection")
+
+    rows <- out$territories[out$territories$comparison_context == "littoral", , drop = FALSE]
+    c_rows <- rows[rows$group_id == "C", , drop = FALSE]
+    # A genuine finite zero is a measured, rankable observation — never mistaken
+    # for a missing peer.
+    zero <- c_rows[c_rows$territory_id == "c2", , drop = FALSE]
+    expect_equal(zero$value[[1L]], 0)
+    expect_identical(zero$status[[1L]], "measured")
+    expect_false(is.na(zero$rank[[1L]]))
+    expect_equal(zero$rank_size[[1L]], 2L)
+    # c5 is in the NC cohort but has NO fact row at all: it is not_published
+    # with no value and no ranks. A fabricated measured zero would fail both
+    # of these independent assertions.
+    missing_peer <- rows[rows$group_id == "NC" & rows$territory_id == "c5", , drop = FALSE]
+    expect_identical(missing_peer$status[[1L]], "not_published")
+    expect_true(is.na(missing_peer$value[[1L]]))
+    expect_false(isTRUE(missing_peer$value[[1L]] == 0))
+  }
 })
 
-series_littoral_projection <- function() {
+series_littoral_projection <- function(direction = "high") {
   d <- list(dataset_id = "d", indicator_id = "i", axis_kind = "year", axis_values = "2024",
     completeness = "dense_complete", comparison_point = "2024", label = "I", unit = "u",
-    direction = "high", allowed_levels = c("commune", "region"), descriptor_version = "dv1",
+    direction = direction, allowed_levels = c("commune", "region"), descriptor_version = "dv1",
     comparison_levels = "commune")
   points <- data.frame(dataset_id = "d", indicator_id = "i",
     territory_id = c("c1", "c2", "c3", "c4", "c5", "r1"),
@@ -241,19 +294,13 @@ series_littoral_projection <- function() {
     point_provenance = links)
 }
 
-test_that("ordered series comparison publishes C and NC with the shared rank law", {
-  projected <- project_ordered_series_comparisons(series_littoral_projection(),
-    littoral_reference(), "series-v1", "reference-v1")
-  expect_true("littoral" %in% projected$groups$comparison_context)
-  expect_setequal(unique(projected$groups$group_id[projected$groups$comparison_context == "littoral"]),
-    c("C", "NC"))
-  rows <- projected$territories[projected$territories$comparison_context == "littoral", , drop = FALSE]
-  c_rows <- rows[rows$group_id == "C", ]
-  expect_equal(c_rows$rank[match("c1", c_rows$territory_id)], 1L)
-  expect_equal(c_rows$rank[match("c2", c_rows$territory_id)], 2L)
-  nc_rows <- rows[rows$group_id == "NC", ]
-  expect_true(all(nc_rows$rank[nc_rows$territory_id %in% c("c3", "c4")] == 1L))
-  expect_true(all(nc_rows$tie_count[nc_rows$territory_id %in% c("c3", "c4")] == 2L))
+test_that("ordered series comparison publishes C and NC reference/ranks/ties in both directions", {
+  for (direction in c("high", "low")) {
+    projected <- project_ordered_series_comparisons(series_littoral_projection(direction),
+      littoral_reference(), "series-v1", "reference-v1")
+    assert_littoral_family_cohort(projected$groups, projected$territories,
+      "group_value", direction, "ordered_series")
+  }
 })
 
 test_that("ADR-0039 comparison family inventory requires littoral in every shared family", {
