@@ -372,7 +372,7 @@ test_that("owned series validators reject duplicate axes, undeclared roles and m
 })
 
 test_that("conso ENAF projection follows canonical facts and descriptor-selected point", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
   payload$indicateurs <- payload$indicateurs[payload$indicateurs$key != "conso_enaf_annuel" |
     payload$indicateurs$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
@@ -407,7 +407,7 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
 
 test_that("production series input is projected from the canonical Parquet and metadata", {
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
   vintages <- vintages_milieux()
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
   output <- tempfile("series-serving-fixture-")
@@ -634,7 +634,7 @@ test_that("owned-series selectors resolve only their owner and preserve all-chec
 })
 
 test_that("production owned-series reader and check route project both canonical fixture units", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
   habitat <- payload_habitat()
   habitat_vintages <- vintages_habitat()
   sortie <- tempfile("owned-series-canonical-"); dir.create(sortie)
@@ -699,7 +699,7 @@ test_that("production owned-series reader and check route project both canonical
 })
 
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
   bad_axis <- payload
   extra <- bad_axis$indicateurs[bad_axis$indicateurs$key == "conso_enaf_annuel", ][1, , drop=FALSE]
@@ -772,7 +772,7 @@ test_that("registered series publication is atomic, idempotent and rollback-safe
 })
 
 test_that("publishing a validated projection preserves its exact identity and version", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
   payload$indicateurs <- payload$indicateurs[payload$indicateurs$key != "conso_enaf_annuel" |
     payload$indicateurs$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
@@ -841,7 +841,7 @@ test_that("owned raccordement publisher projects its declared serving-only refer
   on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
   nanoparquet::write_parquet(canonical,file.path(sortie,"indicateurs_mobilite.parquet"))
   nanoparquet::write_parquet(vintages,file.path(sortie,"vintages.parquet"))
-  milieux_fixture <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  milieux_fixture <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
   nanoparquet::write_parquet(milieux_fixture$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
   metadata_file <- file.path(sortie,"theme_mobilite.json")
   jsonlite::write_json(metadata,metadata_file,auto_unbox=TRUE)

@@ -193,3 +193,146 @@ test_that("un désaccord squelette/classification échoue fort", {
     "univers|canonique|29083|29084"
   )
 })
+
+# --- Revue #1057, point 1 : la référence est une entrée OBLIGATOIRE ----------
+# Aucun producteur de payload ne doit jamais retomber sur les lignes du thème
+# quand la dimension canonique manque (le vieux référentiel 1 200 communes
+# sans îles, avec une version qui paraît valide, était le bug).
+test_that("chaque producteur de payload échoue fort sans référence canonique", {
+  msg <- "[Rr]éférence territoriale canonique absente"
+
+  expect_error(compute_payload(load_fixture()), msg)
+  expect_error(compute_payload(
+    communes_fixture_milieux_ocsge(), theme = theme_milieux()
+  ), msg)
+  expect_error(
+    construire_payload_economie(
+      fixture_analytiques_economie(), base_epci_economie, vintages_economie()
+    ),
+    msg
+  )
+  expect_error(
+    construire_payload_mobilite(
+      NULL, base_epci_canonique_1056(), vintages_mobilite()
+    ),
+    msg
+  )
+  # Les seams publier valident AVANT toute lecture du cache : un base XLSX
+  # manquant ne peut pas produire une référence de repli silencieuse.
+  expect_error(publier_economie(list()), msg)
+  expect_error(publier_mobilite(list()), msg)
+})
+
+# --- Revue #1057, point 2 : TOUTE voie de publication, même Mobilité --------
+test_that("construire_payload_mobilite publie la même référence canonique", {
+  base <- base_epci_canonique_1056()
+  reference <- reference_territoires_canonique(
+    base, classes_densite_canonique_1056(), littoral_canonique_1056()
+  )
+  pop <- pop_canonique_1056()
+  # Le seul analytique que le squelette Mobilité consomme est le poids-adresse.
+  analytiques <- list(mobilite_communes = tibble::tibble(
+    commune = pop$code_commune, n_adresses = as.numeric(pop$population)
+  ))
+
+  # Les builders lourds de Mobilité sont hors périmètre de cette preuve : on
+  # vérifie UNIQUEMENT que le seam publie la dimension injectée, pas les faits.
+  local_mocked_bindings(
+    construire_indicateurs_mobilite = function(analytiques, territoires,
+                                              vintages, ...) tibble::tibble(),
+    compute_histoires_mobilite = function(analytiques, vintages, ...)
+      tibble::tibble(),
+    resoudre_histoires = function(histoires, theme) histoires,
+    construire_apercu_mobilite = function(territoires) list(),
+    validate_payload = function(...) invisible(NULL),
+    .package = "lusk"
+  )
+
+  p <- construire_payload_mobilite(
+    analytiques, base, vintages_mobilite(),
+    classes_littoral = littoral_canonique_1056(), reference = reference
+  )
+  expect_identical(p$territoires, reference)
+})
+
+test_that("Programmes ne publie AUCUNE référence de territoire", {
+  # Le sixième thème n'a pas de table `territoires` dans son payload (il ne
+  # publie que membres + subventions et lit la référence servie). Le critère
+  # « chaque thème publie la même référence » s'applique donc aux CINQ voies
+  # qui ont un payload de territoires, pas à publier_programmes.
+  expect_false("reference" %in% names(formals(publier_programmes)))
+  # Son assembleur ne construit que membres + subventions (jamais de table
+  # `territoires`) : aucun contrat de référence à verrouiller de son côté.
+  # La preuve est structurelle — publier_programmes n'a pas de payload de
+  # territoires à comparer avec les cinq autres voies.
+  expect_type(publier_programmes, "closure")
+})
+
+# --- Revue #1057, point 3 : pluralité de population de l'EPCI transfrontalier
+test_that("l'EPCI transfrontalier porte le département de pluralité épinglé", {
+  pop <- pop_canonique_1056()
+  codes <- pop$code_commune
+  base <- base_epci_canonique_1056()
+
+  # Un EPCI unique (22 + 29) sur trois communes ; les autres gardent leur EPCI.
+  frontiere <- c("22001", "22002", "29001")
+  base$EPCI[base$CODGEO %in% frontiere] <- "200000009"
+  base$LIBEPCI[base$CODGEO %in% frontiere] <- "EPCI transfrontalier"
+
+  # Population épinglée modifiée : le 29 l'emporte (300 > 100 + 100).
+  pop_pluralite <- pop
+  pop_pluralite$population <- as.numeric(pop_pluralite$population)
+  pop_pluralite$population[match(frontiere, pop_pluralite$code_commune)] <-
+    c(100, 100, 300)
+
+  reference <- reference_territoires_canonique(
+    base, classes_densite_canonique_1056(), littoral_canonique_1056(),
+    population = pop_pluralite
+  )
+  epci_ligne <- reference[reference$territoire == "200000009", , drop = FALSE]
+  expect_equal(nrow(epci_ligne), 1L)
+  expect_identical(epci_ligne$departement, "29")
+
+  # La mesure d'un thème (conso_poids) donnerait l'inverse : la valeur
+  # canonique est bien VERROUILLÉE sur la population, pas sur un poids de fait.
+  squelette_theme <- squelette_territoires(tibble::tibble(
+    code = frontiere,
+    nom = paste0("Commune ", frontiere),
+    departement = c("22", "22", "29"),
+    epci = "200000009",
+    nom_epci = "EPCI transfrontalier",
+    conso_poids = c(500, 500, 100)
+  ), poids = "conso_poids")
+  expect_identical(
+    squelette_theme$departement[squelette_theme$type == "epci"], "22"
+  )
+})
+
+# --- Revue #1057, point 4 : doublon INSEE et non-commune classé -------------
+test_that("un CODGEO dupliqué dans la base INSEE échoue fort", {
+  base <- base_epci_canonique_1056()
+  duplicate <- rbind(base, base[1L, , drop = FALSE])
+  expect_error(
+    squelette_territoires_canonique(duplicate),
+    "dupliqué|doublon"
+  )
+})
+
+test_that("une classification portée par un non-commune échoue fort", {
+  territoires <- tibble::tibble(
+    code = c("22001", "200000001", "22"),
+    type = c("commune", "epci", "departement"),
+    nom = c("A", "EPCI X", "Côtes-d'Armor"),
+    departement = c("22", "22", "22"),
+    epci = c("200000001", NA_character_, NA_character_)
+  )
+  crosswalk <- tibble::tibble(
+    code_commune = c("22001", "200000001"),
+    littoral_code = c("C", "NC"),
+    littoral_classement_source = c("Mer", NA_character_)
+  )
+  expect_error(
+    publier_classes_littoral(territoires, crosswalk),
+    "non-commune"
+  )
+})

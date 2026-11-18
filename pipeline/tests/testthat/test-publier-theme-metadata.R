@@ -78,7 +78,7 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
 
   # 1) le payload producteur passe par publish ; seules les ressources
   # partagées retenues sont sérialisées, les faits restent en mémoire.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   publish(payload, cible)
   expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
   expect_false(file.exists(file.path(cible, "histoires_demographie.json")))

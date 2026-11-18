@@ -868,6 +868,7 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
                                          classes_densite = NULL,
                                          classes_littoral = NULL,
                                          reference = NULL) {
+  reference <- exiger_reference_territoires(reference, "construire_payload_mobilite")
   territoires <- construire_territoires_mobilite(
     base_epci,
     analytiques,
@@ -883,13 +884,8 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     # tire, jamais le pool dans le payload (ADR-0002)
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
-    # #1056 : la référence est la dimension canonique injectée par le run,
-    # jamais le miroir des faits de ce thème (îles incluses dans tous les cas).
-    territoires = if (is.null(reference)) {
-      reference_territoires(territoires)
-    } else {
-      reference
-    },
+    # #1056 : la dimension canonique exigée à l'entrée, sans repli.
+    territoires = reference,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 
@@ -923,6 +919,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                              classes_densite = NULL,
                              classes_littoral = NULL,
                               reference = NULL) {
+  # #1057 : valider AVANT toute lecture du cache.
+  reference <- exiger_reference_territoires(reference, "publier_mobilite")
   if (is.null(vintages)) vintages <- vintages_mobilite()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))

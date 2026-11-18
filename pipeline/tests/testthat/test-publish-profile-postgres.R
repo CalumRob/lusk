@@ -81,7 +81,7 @@ profile_postgres_fake_adapter <- function(state) {
 # directory, so the fixture seeds the same profile-serving family the pipeline
 # writes: the Demography pyramid and the scalar-backed Habitat profiles.
 seed_declared_profile_postgres_artifacts <- function(root, binding) {
-  fixture <- compute_payload(load_fixture())
+  fixture <- compute_payload_test(load_fixture())
   materialize_theme_profile_artifacts(
     list(indicateurs = fixture$indicateurs, territoires = fixture$territoires),
     lire_theme_metadata("demographie"), NULL, "demographie", root)
@@ -212,7 +212,7 @@ test_that("an injected declared-profile write failure rolls the previous snapsho
     facts <- state$facts
 
     # A changed generation reaches the publisher, and the write fails mid-way.
-    changed <- compute_payload(load_fixture())
+    changed <- compute_payload_test(load_fixture())
     changed$indicateurs$value[which(changed$indicateurs$key == "structure_age")[[1L]]] <-
       changed$indicateurs$value[which(changed$indicateurs$key == "structure_age")[[1L]]] + 0.001
     materialize_theme_profile_artifacts(

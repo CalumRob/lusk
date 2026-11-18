@@ -87,6 +87,16 @@ squelette_territoires_canonique <- function(base_epci, population = NULL,
   if (is.null(population)) population <- lire_population_communes_canonique()
   codes <- codes_communes_canoniques(population)
   presents <- as.character(base_epci$CODGEO)
+  # Un CODGEO dupliqué dans la base INSEE rendrait la jointure ambiguë (le
+  # premier doublon gagnerait silencieusement) : échec bruyant, pas de latence.
+  if (anyDuplicated(presents)) {
+    doublons <- unique(presents[duplicated(presents)])
+    stop(
+      "Univers canonique invalide : CODGEO dupliqué(s) dans la base EPCI : ",
+      paste(sort(doublons), collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
   manquants <- setdiff(codes, presents)
   if (length(manquants) > 0L) {
     stop(
@@ -137,4 +147,60 @@ reference_territoires_canonique <- function(base_epci,
     classes_littoral = classes_littoral
   )
   reference_territoires(squelette)
+}
+
+# exiger_reference_territoires --------------------------------------------------
+# La référence est une entrée OBLIGATOIRE des producteurs de payload (#1057,
+# revue de #1056). Sans elle, un producteur retomberait sur les lignes de son
+# thème — le vieux référentiel 1 200 communes sans îles, avec une version qui
+# paraît valide. Échoue avec un motif NOMMÉ, avant toute lecture du cache.
+exiger_reference_territoires <- function(reference, origine) {
+  champs <- c("territoire", "type", "nom", "departement", "epci")
+  if (!is.data.frame(reference) ||
+      !all(champs %in% names(reference)) ||
+      nrow(reference) == 0L ||
+      anyNA(reference$territoire)) {
+    stop(
+      "Référence territoriale canonique absente ou invalide pour ", origine,
+      " — un producteur de payload doit recevoir la dimension canonique (#1056).",
+      call. = FALSE
+    )
+  }
+  reference
+}
+
+# reference_territoires_canonique_du_cache -------------------------------------
+# Le seam de production : construit la dimension depuis les épingles du cache.
+# Une base INSEE absente est une ERREUR NOMMÉE, jamais un `NULL` qui laisserait
+# un producer publier une référence de repli. Les classifications absentes
+# gardent la forme de transition historique (le lecteur les exige en production
+# via les statuts de téléchargement, voir run_pipeline).
+reference_territoires_canonique_du_cache <- function(cache,
+                                                     noms_epci_geo_api = NULL) {
+  chemin_base <- file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx")
+  if (!file.exists(chemin_base)) {
+    stop(
+      "Référence territoriale canonique absente : base INSEE épinglée introuvable (",
+      chemin_base, ") — la référence ne peut pas être construite (#1056).",
+      call. = FALSE
+    )
+  }
+  chemin_densite <- file.path(cache, CLASSES_DENSITE_FICHIER)
+  chemin_littoral <- file.path(cache, CLASSES_LITTORAL_FICHIER)
+  classes_densite <- if (file.exists(chemin_densite)) {
+    lire_classes_densite(chemin_densite)
+  } else {
+    NULL
+  }
+  classes_littoral <- if (file.exists(chemin_littoral)) {
+    lire_classes_littoral(chemin_littoral)
+  } else {
+    NULL
+  }
+  reference_territoires_canonique(
+    lire_epci(chemin_base),
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral,
+    noms_epci_geo_api = noms_epci_geo_api
+  )
 }

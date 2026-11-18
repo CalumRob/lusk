@@ -152,7 +152,7 @@ test_that("conso_fenetre : les décompositions présentes dans le fixture ne DOU
 #   29003 : 500 -> 700  (29, 2021/2024)
 
 test_that("les quatre lectures re-keyées : une ligne par territoire, le signe pair (Δpopulation × trajectoire)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   expect_equal(nrow(p$histoires), nrow(p$territoires))  # une ligne par territoire
@@ -191,7 +191,7 @@ test_that("les quatre lectures re-keyées : une ligne par territoire, le signe p
 })
 
 test_that("les agrégats : la somme naïve des états, NA propagé, le span pour le transfrontalier", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # EPCI X = 22001 + 22002 : les états somment — M2=800, M3=2000 (1200 + 800) :
@@ -232,7 +232,7 @@ test_that("les agrégats : la somme naïve des états, NA propagé, le span pour
 # Les deux fenêtres nommées (les deux horloges, ADR-0017) ----------------------
 
 test_that("periode_pop et periode_artif : les deux horloges dérivent chacune de SA source, nommées séparément", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # la fenêtre de population : la paire RP de la série (2017-2023), partout
@@ -325,7 +325,7 @@ test_that("indicator state rows carry typed role and source-component lineage", 
 })
 
 test_that("les états : la conversion m² -> ha et l'intensité d'état en m²/habitant", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # 22001 : 1200 m² d'état final -> 0,12 ha (la conversion ÷ 10 000, la même
@@ -367,7 +367,7 @@ test_that("le bracket de population : RP 2017 pour l'état initial, RP 2023 pour
 # L'invariant ratio/delta ------------------------------------------------------
 
 test_that("l'invariant : sign(ratio − 1) = sign(delta) par construction, prouvé sur le fixture", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- p$histoires
   # le ratio n'est défini que là où le dénominateur (M2 par habitant) est
   # positif — les lignes NA (fenêtre incomplète) et à état initial nul sont
@@ -501,7 +501,7 @@ test_that("le classifieur pur : une force NA rend la lecture NA, jamais une lect
 # identique pour le compte et pour le taux.
 
 test_that("le taux annuel pour mille : delta annualisé, normalisé par la population moyenne (INSEE, #306)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # la formule du registre Démographie, exprimée telle quelle sur le fixture :
@@ -560,13 +560,13 @@ test_that("la durée du taux dérive des millésimes de la série — jamais cod
 # Déterminisme et forme du contrat ---------------------------------------------
 
 test_that("déterminisme : même territoire + mêmes données -> même lecture, toujours", {
-  p1 <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
-  p2 <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p1 <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p2 <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   expect_identical(p1$histoires, p2$histoires)
 })
 
 test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-GE, étendu #312)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   expect_named(p$histoires, c(
     "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "periode_pop", "periode_artif",
@@ -596,7 +596,7 @@ test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-G
 })
 
 test_that("chemin rétro-compatible : sans archives OCS-GE, le nouveau schéma est présent, les lectures NA (jamais inventées)", {
-  p <- compute_payload(communes_fixture_milieux(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux(), theme = theme_milieux())
 
   # le schéma du pivot est présent (le contrat de FORME), sans états OCS-GE
   expect_true(all(c("periode_pop", "periode_artif", "delta_population",

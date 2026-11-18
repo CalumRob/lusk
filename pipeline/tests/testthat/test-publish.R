@@ -3,7 +3,7 @@ test_that("publish(backend = 'parquet') écrit les faits Mobilité en parquet, l
   # (indicateurs_<theme> / histoires_<theme>) — l'exception #619. Les cinq
   # autres thèmes passent par les artefacts de service ; leur parquet par-thème
   # est retiré (voir le test dédié plus bas et le contrat de non-dérive).
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   payload$indicateurs$theme <- "mobilite"
   payload$histoires$theme <- "mobilite"
   cible <- tempfile("pub-")
@@ -29,7 +29,7 @@ test_that("publish(backend = 'parquet') écrit les faits Mobilité en parquet, l
 })
 
 test_that("publish(backend = 'parquet') n'écrit PAS les parquets de faits d'un thème retiré (#757)", {
-  payload <- compute_payload(load_fixture()) # Démographie : thème retiré
+  payload <- compute_payload_test(load_fixture()) # Démographie : thème retiré
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -68,7 +68,7 @@ test_that("publish(backend = 'static') conserve les artefacts partagés sans rec
   # Les faits restent dans le payload producteur ; les Parquets de thème des
   # cinq thèmes non-Mobilité ont déjà été retirés (#757), et leurs projections
   # JSON navigateur sont retirées ici. Les artefacts partagés restent publiés.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -87,7 +87,7 @@ test_that("publish(backend = 'static') conserve les artefacts partagés sans rec
 })
 
 test_that("publish ne recrée pas la projection BPE retirée", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   payload$profils_acces_bpe <- tibble::tibble(
     territoire = "22001", type = "commune", profil = "velo-compense",
     profil_libelle = "Le vélo compense", nombre_typequ = 1L,
@@ -109,7 +109,7 @@ test_that("publish ne recrée pas la projection BPE retirée", {
 })
 
 test_that("publish ne recrée ni la grille ni la rampe legacy malgré leur présence dans un payload", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   payload$distribution_acces_batiments <- tibble::tibble(legacy_grid = 1L)
   payload$distribution_acces_batiments_comparaisons <- tibble::tibble(legacy_grid = 1L)
   payload$rampe_acces_batiments <- tibble::tibble(legacy_ramp = 1L)
@@ -136,7 +136,7 @@ test_that("publish ne recrée ni la grille ni la rampe legacy malgré leur prés
 test_that("les artefacts partagés conservés gardent leurs faits exacts", {
   # La non-dérive se vérifie toujours pour les projections partagées retenues.
   # Il n'y a plus de parité de sérialisation JSON pour indicateurs/histoires.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -161,7 +161,7 @@ test_that("les artefacts partagés conservés gardent leurs faits exacts", {
 test_that("le Parquet Mobilité conservé garde les faits canoniques et leurs rangs", {
   # Mobilité reste l'exception explicite (#619) : ses faits sont encore publiés
   # en Parquet. Les projections JSON retirées ne sont pas recréées.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   payload$indicateurs$theme <- "mobilite"
   payload$histoires$theme <- "mobilite"
   cible <- tempfile("pub-")
@@ -188,7 +188,7 @@ test_that("le Parquet Mobilité conservé garde les faits canoniques et leurs ra
 test_that("la publication conserve le référentiel partagé sans projection de faits par thème", {
   # Les faits en mémoire conservent leur identité de thème, tandis que publish
   # n'écrit plus de fichiers numériques indicateurs/histoires.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -213,7 +213,7 @@ test_that("la publication conserve le référentiel partagé sans projection de 
 test_that("un payload d'un autre thème écrit les fichiers JSON de CE thème (parquet retiré, #757)", {
   # Le thème reste une propriété des faits en mémoire. Le writer ne crée plus
   # de projection numérique, quel que soit le thème du payload.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   payload$indicateurs$theme <- "habitat"
   payload$histoires$theme <- "habitat"
   cible <- tempfile("pub-")
@@ -229,7 +229,7 @@ test_that("un payload d'un autre thème écrit les fichiers JSON de CE thème (p
 })
 
 test_that("publish répété conserve les ressources partagées sans créer de faits JSON", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -243,7 +243,7 @@ test_that("publish répété conserve les ressources partagées sans créer de f
 })
 
 test_that("publish conserve un parquet canonique inchangé", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
   publish(payload, cible, backend = "parquet")
@@ -331,7 +331,7 @@ test_that("un thème sans aperçu laisse INTACT l'apercu déjà publié (sentine
 
   # la sentinelle : l'aperçu peuplé qu'un run Démographie aurait publié
   # (parquet canonique + relique JSON périmée depuis #894)
-  apercu_demo <- compute_payload(load_fixture())$apercu
+  apercu_demo <- compute_payload_test(load_fixture())$apercu
   jsonlite::write_json(apercu_demo, file.path(cible, "apercu.json"),
                        dataframe = "rows", na = "null",
                        digits = 17, pretty = TRUE)
@@ -352,7 +352,7 @@ test_that("un thème sans aperçu laisse INTACT l'apercu déjà publié (sentine
 })
 
 test_that("#894 : un run peuplé écrit apercu.parquet sous la règle non-vide mais JAMAIS apercu.json — la relique reste intacte", {
-  payload <- compute_payload(load_fixture()) # Démographie peuple l'aperçu
+  payload <- compute_payload_test(load_fixture()) # Démographie peuple l'aperçu
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
   dir.create(cible)
@@ -401,11 +401,11 @@ test_that("un thème sans aperçu ne crée jamais les fichiers partagés apercu 
 })
 
 test_that("le backend supabase est un seam documenté, pas câblé", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   expect_error(publish(payload, backend = "supabase"), "supabase")
 })
 
 test_that("un backend inconnu s'arrête bruyamment", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   expect_error(publish(payload, backend = "mongodb"), "n'existe pas")
 })

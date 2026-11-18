@@ -75,7 +75,7 @@ test_that("chaque estampille du payload vient de la source de référence décla
   vintages$date_publication[vintages$id == "dvf_2025_dep22"] <- "2026-02-20"
   vintages$date_publication[vintages$id %in% MANIFEST_HABITAT_DPE$id] <- "2026-03-01"
 
-  p <- compute_payload(load_fixture_habitat(), theme = theme_habitat(),
+  p <- compute_payload_test(load_fixture_habitat(), theme = theme_habitat(),
                        vintages = vintages)
 
   attendus <- tibble::tibble(

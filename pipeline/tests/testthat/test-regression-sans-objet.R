@@ -184,7 +184,7 @@ test_that("Démographie : le payload ne change que par le retrait du fantôme «
   expect_identical(delta, nouveau %>% dplyr::arrange(code))
 
   # le payload post-change (le chemin réel : normalisation + compute + validation)
-  payload <- compute_payload(normalisees, theme = theme_demographie())
+  payload <- compute_payload_test(normalisees, theme = theme_demographie())
 
   # aucune trace de « Sans objet » / « ZZZZZZZZZ » nulle part dans le payload
   expect_false(any(grepl("Sans objet|ZZZZZZZZZ", unlist(payload))))
@@ -232,7 +232,7 @@ test_that("Habitat : le payload ne change que par le retrait du fantôme « Sans
   expect_identical(delta, nouveau %>% dplyr::arrange(code))
 
   # le payload post-change (le chemin réel) — valide, sans trace du fantôme
-  payload <- compute_payload(normalisees, theme = theme_habitat())
+  payload <- compute_payload_test(normalisees, theme = theme_habitat())
 
   expect_false(any(grepl("Sans objet|ZZZZZZZZZ", unlist(payload))))
   for (ile in ILES_BRETAGNE) {

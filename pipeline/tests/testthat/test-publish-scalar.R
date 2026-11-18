@@ -30,7 +30,7 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
 }
 
 test_that("scalar publisher validates registered canonical fixture facts", {
-  canonical <- compute_payload(load_fixture())$indicateurs
+  canonical <- compute_payload_test(load_fixture())$indicateurs
   fixture_fact <- canonical[canonical$key == "densite" & canonical$territoire == "22001", , drop=FALSE]
   expect_equal(nrow(fixture_fact), 1L)
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
@@ -617,7 +617,7 @@ test_that("registered publisher versions independently, retries DB-behind-local,
 })
 
 test_that("fixture publisher projects the complete canonical scalar slice and versions metadata", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_demographie.json"),
                                  simplifyVector=FALSE)
   expected <- payload$indicateurs[payload$indicateurs$key == "densite" &
@@ -688,7 +688,7 @@ test_that("scalar descriptor decoding fails closed on an unrecorded list column"
 })
 
 test_that("scalar serving artifacts round-trip all typed grains as one coherent generation", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_demographie.json"),
                                  simplifyVector=FALSE)
   projection <- project_fixture_scalar(payload, metadata, completeness="dense_complete")

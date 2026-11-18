@@ -729,6 +729,9 @@ compute_payload <- function(data, theme = theme_demographie(),
                             classes_densite = NULL,
                             classes_littoral = NULL,
                             reference = NULL) {
+  # #1057 : entrée OBLIGATOIRE — jamais de repli silencieux sur les faits du
+  # thème (le référentiel 1 200 communes sans îles avec une version valide).
+  reference <- exiger_reference_territoires(reference, "compute_payload")
   territoires <- theme$construire_territoires(data)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
@@ -759,14 +762,8 @@ compute_payload <- function(data, theme = theme_demographie(),
     histoires = resoudre_histoires(theme$compute_histoires(territoires),
                                    theme$theme),
     # #1056 : la référence est une dimension, pas le miroir des faits du thème.
-    # Le run lui injecte la projection canonique construite une fois depuis la
-    # base INSEE épinglée (îles incluses) ; le repli historique garde les seams
-    # de test bornés qui n'en disposent pas.
-    territoires = if (is.null(reference)) {
-      reference_territoires(territoires)
-    } else {
-      reference
-    },
+    # Elle a été exigée à l'entrée : aucune voie de repli n'est possible ici.
+    territoires = reference,
     apercu = assemble_apercu(territoires, theme$construire_apercu(territoires))
   )
 
