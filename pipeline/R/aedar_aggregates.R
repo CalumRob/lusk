@@ -21,6 +21,21 @@ AEDAR_AGGREGATE_LEVEL_COLUMNS <- list(
 # resources never carry. It is a separate pinned input, resolved by name in the
 # raw cache unless LUSK_AEDAR_ADDRESS_ORIGINS points elsewhere.
 AEDAR_ADDRESS_ORIGIN_FILE <- "aedar-address-origins-2026v1.parquet"
+
+# Single resolution seam shared by the density and littoral pool builders and
+# read_aedar_comparison_inputs: an explicit LUSK_AEDAR_ADDRESS_ORIGINS wins,
+# otherwise the registered spine is resolved by name in the raw cache. Both
+# builders use this helper so the precedence can never drift between them.
+aedar_address_origin_path <- function(raw_dir=file.path("data","raw"),
+    configured=Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS",unset="")) {
+  explicit<-length(configured)==1L&&!is.na(configured)&&nzchar(configured)
+  path<-if(explicit) configured else file.path(raw_dir,AEDAR_ADDRESS_ORIGIN_FILE)
+  if(!file.exists(path))
+    stop("Registered AEDAR address-origin spine is missing: ",path,
+      " (set LUSK_AEDAR_ADDRESS_ORIGINS to override)",call.=FALSE)
+  path
+}
+
 AEDAR_TYPEQU_REGISTRY_FILE <- "aedar-typequ-2025.csv"
 AEDAR_TYPEQU_REGISTRY_COUNT <- 235L
 # Minimal code/label extract of the official INSEE TYPEQU_2025.csv. Upstream

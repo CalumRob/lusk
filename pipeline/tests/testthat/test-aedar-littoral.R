@@ -57,6 +57,35 @@ aedar_littoral_pooled_facts <- function() {
   facts
 }
 
+test_that("both AEDAR pool builders resolve the registered address-origin spine identically", {
+  dir <- tempfile("aedar-littoral-spine-"); dir.create(dir)
+  on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  registered <- file.path(dir,AEDAR_ADDRESS_ORIGIN_FILE)
+  override <- file.path(dir,"explicit-origin.parquet")
+  origins <- data.frame(address_id=c("a","b"),code_insee=c("22001","22002"),lon=1:2,lat=1:2)
+  nanoparquet::write_parquet(origins,registered)
+  nanoparquet::write_parquet(origins,override)
+  previous <- Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS",unset=NA_character_)
+  Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+  on.exit({
+    if(is.na(previous)) Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+    else Sys.setenv(LUSK_AEDAR_ADDRESS_ORIGINS=previous)
+  },add=TRUE)
+  # Default: no env var -> the registered file in the raw cache is found.
+  expect_equal(aedar_address_origin_path(dir),registered)
+  # Explicit override always wins over the registered default.
+  Sys.setenv(LUSK_AEDAR_ADDRESS_ORIGINS=override)
+  expect_equal(aedar_address_origin_path(dir),override)
+  Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+  expect_error(aedar_address_origin_path(tempfile("empty-")),AEDAR_ADDRESS_ORIGIN_FILE)
+  # Both builders use that ONE seam, so their precedence cannot drift.
+  pipeline_root <- testthat::test_path("..","..")
+  for(script in c("build-aedar-density-aggregate.R","build-aedar-littoral-aggregate.R")) {
+    text <- paste(readLines(file.path(pipeline_root,"scripts",script),warn=FALSE),collapse="\n")
+    expect_match(text,"origins_path<-aedar_address_origin_path\\(raw_dir\\)")
+  }
+})
+
 test_that("littoral summary projects the pooled law from already-pooled facts", {
   bindings <- aedar_aggregate_reading_bindings()
   source <- aedar_littoral_test_source()
