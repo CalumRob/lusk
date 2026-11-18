@@ -201,7 +201,7 @@ test_that("canonical regional Mobility producers feed complete profiles and supp
     protege_longueur=c(2,8), protege_km_1000=c(2,8/3),
     partage_longueur=c(1,4), partage_km_1000=c(1,4/3), total_longueur=c(3,12))
   offre <- agreger_offre_territoires(
-    data.frame(commune=base$CODGEO,part_proche=c(.2,.8),n_batiments=c(10,30)),
+    data.frame(commune=base$CODGEO,part_proche=c(.2,.8),n_adresses=c(10,30)),
     data.frame(commune=base$CODGEO,nb_bornes=c(0L,1L)), velo, base, cyclable)
   parking <- agreger_stationnement_voiture_territoires(
     data.frame(commune=base$CODGEO,places_voiture=c(10,90)), velo, base)

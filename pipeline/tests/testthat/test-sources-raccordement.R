@@ -132,22 +132,18 @@ test_that("TRIPWIRE — les contrats des nouvelles sources refusent les corrupti
   expect_error(verifier_contrat_mobilite_dila_bdl(faux_dila), "fichier")
 })
 
-test_that("le manifeste concaténé porte les DIX-SEPT sources conservées du thème", {
+
+test_that("le manifeste concaténé porte les QUINZE sources conservées du thème", {
   m <- MANIFEST_MOBILITE
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 17L)
+  expect_equal(nrow(m), 15L)
   expect_equal(nrow(m), length(unique(m$id)))
-  expect_setequal(m$id, c("mobilite_snapshot", "rp_logement_princ",
-                          "osm_reseaux", IDS_OCSGE_RESEAUX,
-                          "amenagements_cyclables",
-                          "communes_limites", "korrigo",
-                          "batiments_residentiels",
-                          "bornes-recharges",
-                          "stationnement-velo", "bpe_b316", "cog_passage",
-                          "sncf_voyageurs", "dila_bdl"))
+  expect_setequal(m$id, c("rp_logement_princ", "osm_reseaux", IDS_OCSGE_RESEAUX,
+                          "amenagements_cyclables", "communes_limites", "korrigo",
+                          "bornes-recharges", "stationnement-velo", "bpe_b316",
+                          "cog_passage", "sncf_voyageurs", "dila_bdl"))
+  expect_false(any(c("mobilite_snapshot", "batiments_residentiels") %in% m$id))
   expect_true(verifier_contrat_manifest_mobilite(m))
-
-  # Amputer la source résidentielle conservée reste un échec bruyant.
-  defectueux <- m[m$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX-SEPT")
+  defectueux <- m[m$id != "korrigo", ]
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "QUINZE")
 })

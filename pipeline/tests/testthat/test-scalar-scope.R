@@ -50,8 +50,7 @@ test_that("le périmètre scalaire est enregistré et strictement validé (#989)
                   c("stations_service", "stations_service_1000",
                     "bornes_recharge_1000", "bornes_ev_par_station_service"))
   expect_setequal(contract$sources,
-                  c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
-                    "stationnement-velo"))
+                  c("bpe_b316", "bornes-recharges", "stationnement-velo"))
 
   parsed <- parse_scalar_scope(
     "mobilite:stations_service,stations_service_1000,bornes_recharge_1000")
@@ -84,7 +83,7 @@ test_that("le bloc ravitaillement extrait est identique au producteur complet (#
   offre_tc <- tibble::tibble(
     commune = base$CODGEO,
     part_proche = c(0.1, 0.2, 0.3, 0.4),
-    n_batiments = c(10L, 20L, 30L, 40L)
+    n_adresses = c(10L, 20L, 30L, 40L)
   )
 
   full <- agreger_offre_territoires(
@@ -125,7 +124,7 @@ test_that("l'assemblage partagé rend la forme complète des lignes ciblées (#9
   base <- base_scalar_scope_fixture()
   poids <- tibble::tibble(
     commune = base$CODGEO,
-    nb_buildings = c(1L, 2L, 3L, 4L)
+    n_adresses = c(1L, 2L, 3L, 4L)
   )
   territoires <- construire_territoires_mobilite(
     base %>% dplyr::transmute(
@@ -175,7 +174,7 @@ test_that("registered refuelling calculations project regional facts and origina
     territoires <- construire_territoires_mobilite(
       base %>% dplyr::mutate(LIBGEO = CODGEO, LIBEPCI = EPCI),
       list(mobilite_communes = tibble::tibble(commune = base$CODGEO,
-                                             nb_buildings = 1L)))
+                                             n_adresses = 1L)))
     units <- c(stations_service = "stations", stations_service_1000 = "stations / 1 000 hab",
                bornes_recharge_1000 = "bornes / 1 000 hab",
                bornes_ev_par_station_service = "bornes / station")
@@ -262,8 +261,7 @@ scope_fake_contract <- function() {
     }))
   }
   list(theme = "mobilite", indicators = ids,
-       sources = c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
-                   "stationnement-velo"),
+       sources = c("bpe_b316", "bornes-recharges", "stationnement-velo"),
        produce = produce)
 }
 
@@ -372,7 +370,6 @@ test_that("la cible du graphe ne dépend que des sources légères du périmètr
   names <- vapply(pieces, function(piece) piece$settings$name, character(1))
   expect_setequal(names, c(
     "sources_scalar_scope",
-    "fichier_scalar_scope_mobilite_snapshot",
     "fichier_scalar_scope_bpe_b316",
     "fichier_scalar_scope_bornes_recharges",
     "fichier_scalar_scope_stationnement_velo",
@@ -388,7 +385,6 @@ test_that("la cible du graphe ne dépend que des sources légères du périmètr
   expect_true(all(c("fichier_scalar_scope_bpe_b316",
                     "fichier_scalar_scope_bornes_recharges",
                     "fichier_scalar_scope_stationnement_velo",
-                    "fichier_scalar_scope_mobilite_snapshot",
                     "fichier_scalar_base",
                     "fichier_scalar_scope_territoires",
                     "fichier_epci_extrait",

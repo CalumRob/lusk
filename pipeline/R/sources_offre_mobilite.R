@@ -5,11 +5,9 @@
 # quatre sources du fragment sous-bloc du manifeste :
 #   - korrigo              : la base GTFS Korrigo (le zip, dont le stops.txt —
 #     les ARRÊTS de la fédération, LA source de l'offre TC) ;
-#   - batiments_residentiels : la couche des bâtiments résidentiels de Bretagne
-#     (BDNB, portée comme le snapshot) — les geom_adresse POINT (EPSG:2154)
-#     avec leur code_commune_insee, la VRAIE matière de la part des bâtiments
-#     près d'un arrêt (la correction de la méthode) et l'identité stable
-#     batiment_groupe_id, utilisée pour joindre l'export d'accessibilité ;
+#   - adresses_residentielles : le spine d'adresses résidentielles AEDAR
+#     (address_id, code_insee, lon, lat) — la population du calcul Offre TC
+#     (décision 2026-11-18) ;
 #   - bornes-recharges     : le fichier consolidé IRVE (une ligne par point de
 #     charge, avec code_insee_commune et id_station_itinerance) ;
 #   - stationnement-velo   : le fichier par commune du hub Ecolab (une ligne
@@ -25,17 +23,17 @@
 #     réseau STAR de Rennes, un constat de qualité de la donnée documenté dans
 #     le manifeste). Le normaliseur lit donc le format GTFS (stop_id,
 #     stop_lat, stop_lon) ;
-#   - la MÉTHODE de l'offre TC est la VRAIE part des bâtiments : la couche
-#     batiments_residentiels porte les géométries des bâtiments (geom_adresse
-#     POINT EPSG:2154) et leur code_commune_insee — la fraction des bâtiments
-#     à moins de 500 m d'un arrêt, jamais un proxy de superficie communale.
+#   - la MÉTHODE de l'offre TC est la VRAIE part des adresses : le spine
+#     AEDAR porte un point par adresse résidentielle (reprojeté EPSG:2154)
+#     et son code_commune_insee — la fraction des adresses à moins de 500 m
+#     d'un arrêt, jamais un proxy de superficie communale.
 # Le vocabulaire (CONTEXT.md) : « L'offre de mobilité alternative », « Offre
 # TC », « Bornes de recharge », « Stationnement vélo ».
 
 # lire_stops_gtfs ---------------------------------------------------------------
 # Le lecteur de la base GTFS Korrigo : l'extraction du stops.txt du zip (le
 # fichier qui porte les ARRÊTS de la fédération — 27 297 arrêts, dont 2 919 du
-# réseau STAR de Rennes). Non testé dans la boucle (comme lire_snapshot_mobilite).
+# réseau STAR de Rennes). Non testé dans la boucle (comme les lecteurs de cache).
 lire_stops_gtfs <- function(chemin) {
   d <- tempfile("korrigo-gtfs-")
   dir.create(d)
@@ -82,90 +80,6 @@ normaliser_stops_gtfs <- function(stops_brut) {
     stop_lon = lon
   ) %>%
     dplyr::arrange(stop_id)
-}
-
-# lire_batiments_residentiels ---------------------------------------------------
-# Le lecteur de la couche bâtiments (batiments_residentiels_bretagne.csv, ~110
-# Mo — la BDNB résidentielle portée). Seules les colonnes du calcul sont lues :
-# le batiment_groupe_id (l'identité), le code_commune_insee et le geom_adresse
-# (WKT POINT en EPSG:2154). Non testé dans la boucle.
-lire_batiments_residentiels <- function(chemin) {
-  readr::read_csv(
-    chemin,
-    col_types = readr::cols(
-      batiment_groupe_id = readr::col_character(),
-      code_commune_insee = readr::col_character(),
-      geom_adresse = readr::col_character(),
-      .default = readr::col_skip()
-    ),
-    show_col_types = FALSE, progress = FALSE
-  )
-}
-
-# normaliser_batiments_residentiels ----------------------------------------------
-# La normalisation pure de la couche bâtiments : le tibble brut vers la table
-# du calcul — un sf POINT en EPSG:2154 (la projection native du fichier) avec
-# code_commune_insee en caractères (jamais deviné numérique). Gardes : les
-# colonnes requises, un fichier non vide, un geom_adresse présent et convertible
-# en POINT (une géométrie non POINT ou mal formée est une corruption), un code
-# commune au format COG (5 chiffres), une identité batiment_groupe_id non vide
-# et unique. Les bâtiments SANS geom_adresse ni code (103 174 lignes du fichier
-# réel) ne sont pas des bâtiments spatialisables — ils tombent (le compte
-# verrouillé : 1 235 417 bâtiments, 1 200 communes). Trié par code puis identité
-# — déterministe.
-normaliser_batiments_residentiels <- function(batiments_brut) {
-  requis <- c("code_commune_insee", "geom_adresse", "batiment_groupe_id")
-  manquantes <- setdiff(requis, names(batiments_brut))
-  if (length(manquantes) > 0) {
-    stop("Couche bâtiments corrompue — colonne(s) requise(s) manquante(s) : ",
-         paste(manquantes, collapse = ", "), ".", call. = FALSE)
-  }
-  if (nrow(batiments_brut) == 0) {
-    stop("Couche bâtiments corrompue — le fichier ne porte aucune ligne.",
-         call. = FALSE)
-  }
-
-  # seuls les bâtiments SPATIALISABLES entrent dans le calcul : un
-  # geom_adresse présent et un code commune présent — les lignes sans géométrie
-  # ni code (la part non géocodée du fichier BDNB) tombent, jamais une NA au
-  # calcul spatial
-  spatialisables <- !is.na(batiments_brut$geom_adresse) &
-    nzchar(batiments_brut$geom_adresse) &
-    !is.na(batiments_brut$code_commune_insee) &
-    nzchar(batiments_brut$code_commune_insee)
-  if (!any(spatialisables)) {
-    stop("Couche bâtiments corrompue — aucun bâtiment spatialisable ",
-         "(geom_adresse + code_commune_insee).", call. = FALSE)
-  }
-  table <- batiments_brut[spatialisables, ]
-
-  if (any(is.na(table$batiment_groupe_id) |
-          !nzchar(table$batiment_groupe_id))) {
-    stop("Couche bâtiments corrompue — un batiment_groupe_id vide.",
-         call. = FALSE)
-  }
-  if (anyDuplicated(table$batiment_groupe_id)) {
-    stop("Couche bâtiments corrompue — des batiment_groupe_id dupliqués.",
-         call. = FALSE)
-  }
-
-  if (any(!grepl("^[0-9]{5}$", table$code_commune_insee))) {
-    stop("Couche bâtiments corrompue — un code_commune_insee hors format COG ",
-         "(5 chiffres).", call. = FALSE)
-  }
-
-  sf_table <- tryCatch(
-    sf::st_as_sf(table, wkt = "geom_adresse", crs = 2154),
-    error = function(e) NULL
-  )
-  if (is.null(sf_table) || !all(sf::st_geometry_type(sf_table) == "POINT")) {
-    stop("Couche bâtiments corrompue — un geom_adresse non POINT ou mal formé.",
-         call. = FALSE)
-  }
-
-  sf_table %>%
-    dplyr::select(batiment_groupe_id, code_commune_insee) %>%
-    dplyr::arrange(code_commune_insee, batiment_groupe_id)
 }
 
 # lire_adresses_residentielles ---------------------------------------------------
@@ -392,23 +306,21 @@ normaliser_stationnement_velo <- function(velo_brut) {
 # L'acte « trouver la donnée » des sources du sous-bloc : chaque source est
 # lue dans le cache (le nom de fichier du manifeste par id — jamais un chemin
 # codé en dur) puis normalisée. Retourne la liste nommée (la forme que
-# construire_donnees_mobilite assemble à mobilite_snapshot) : les arrêts GTFS
-# (korrigo), la couche bâtiments (batiments_residentiels), les bornes IRVE
+# construire_donnees_mobilite assemble) : les arrêts GTFS
+# (korrigo), le spine d'adresses (adresses_residentielles), les bornes IRVE
 # (bornes_recharges) et le hub vélo (stationnement_velo).
 construire_sources_offre_mobilite <- function(cache = "data/raw") {
   fichier <- function(id) {
     MANIFEST_MOBILITE$fichier[MANIFEST_MOBILITE$id == id]
   }
-  batiments <- normaliser_batiments_residentiels(
-    lire_batiments_residentiels(
-      file.path(cache, fichier("batiments_residentiels"))
-      )
+  adresses <- normaliser_adresses_residentielles(
+    lire_adresses_residentielles(file.path(cache, AEDAR_ADDRESS_ORIGIN_FILE))
   )
   list(
     korrigo = normaliser_stops_gtfs(
       lire_stops_gtfs(file.path(cache, fichier("korrigo")))
     ),
-    batiments_residentiels = batiments,
+    adresses_residentielles = adresses,
     bornes_recharges = normaliser_bornes_recharges(
       lire_bornes_recharges(file.path(cache, fichier("bornes-recharges")))
     ),

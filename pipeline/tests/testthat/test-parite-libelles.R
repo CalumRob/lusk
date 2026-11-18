@@ -21,11 +21,22 @@ test_that("indicator_labels du fichier épinglé == la colonne libelle du regist
     libelles_registre <- stats::setNames(registre$libelle, registre$key)
 
     declarees <- unlist(meta$indicator_labels, use.names = TRUE)
-    expect_identical(
-      sort(declarees),
-      sort(libelles_registre),
-      info = paste("indicator_labels != INDICATEURS_", theme, sep = "")
-    )
+    if (identical(theme, "mobilite")) {
+      # Slice 2 retire les 29 pages du catalogue épinglé ; jusque-là le catalogue
+      # est un SUR-ENSEMBLE des 17 clés retenues par le producteur (#1048).
+      expect_true(all(names(libelles_registre) %in% names(declarees)))
+      expect_identical(
+        unname(declarees[names(libelles_registre)]),
+        unname(libelles_registre),
+        info = "indicator_labels != INDICATEURS_mobilite (cles retenues)"
+      )
+    } else {
+      expect_identical(
+        sort(declarees),
+        sort(libelles_registre),
+        info = paste("indicator_labels != INDICATEURS_", theme, sep = "")
+      )
+    }
   }
 })
 
