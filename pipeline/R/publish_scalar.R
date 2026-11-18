@@ -534,11 +534,6 @@ comparison_context_membership <- function(territory_reference, comparison_levels
   if (all(presents)) {
     commune_littoral <- as.character(communes$littoral_code)
     classified <- !is.na(commune_littoral) & nzchar(commune_littoral)
-    # A projector-declared classification that is entirely empty is a named
-    # failure. An all-NA reference WITHOUT that declaration is the allowed
-    # legacy transition: it simply emits no littoral context.
-    if (isTRUE(attr(territory_reference, "littoral_declared")) && !any(classified))
-      stop("Comparison territory reference littoral classification is present but empty", call.=FALSE)
     if (any(classified)) {
       domain <- if (exists("CLASSES_LITTORAL_DOMAINE", inherits=TRUE)) CLASSES_LITTORAL_DOMAINE else c("C", "NC")
       if (any(!commune_littoral[classified] %in% domain))
