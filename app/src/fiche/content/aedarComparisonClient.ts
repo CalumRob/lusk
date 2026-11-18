@@ -9,7 +9,20 @@ import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
   | { kind: 'selected_comparison'; members: readonly MembreSelection[] }
-  | { kind: 'fixed_comparison'; context: 'density_class' | 'epci' | 'bretagne' | 'same_level' }
+  | { kind: 'fixed_comparison'; context: 'density_class' | 'littoral' | 'epci' | 'bretagne' | 'same_level' }
+
+/**
+ * #1044 — exhaustive commune-preset → fixed-context map. The old ternary ended
+ * in `: 'bretagne'`, so ANY unknown commune preset silently became Bretagne.
+ * A Record keyed by the closed PresetComparaison union makes a future preset a
+ * compile error until its real context is declared here.
+ */
+const PRESET_AEDAR_CONTEXT: Record<PresetComparaison, Extract<AedarComparisonIntent, { kind: 'fixed_comparison' }>['context']> = {
+  densite: 'density_class',
+  epci: 'epci',
+  bretagne: 'bretagne',
+  littoral: 'littoral',
+}
 
 /**
  * Resolve one typed AEDAR comparison intent from the resolved Sélection. The
@@ -33,9 +46,7 @@ export function aedarComparisonIntent(options: {
   const preset = selection.etat === 'preset' ? selection.preset : presetDefaut
   if (!preset || territoryType === 'region') return null
   if (territoryType === 'commune') {
-    const context = preset === 'densite' ? 'density_class'
-      : preset === 'epci' ? 'epci' : 'bretagne'
-    return { kind: 'fixed_comparison', context }
+    return { kind: 'fixed_comparison', context: PRESET_AEDAR_CONTEXT[preset] }
   }
   return preset === 'bretagne' ? { kind: 'fixed_comparison', context: 'same_level' } : null
 }

@@ -48,7 +48,7 @@ const props = defineProps<{
 
 // Titres éditoriaux des types ; les portées factuelles restent celles des presets.
 const typeLabels: Record<PresetComparaison, string> = {
-  epci: 'EPCI', bretagne: 'Bretagne', densite: 'Densité INSEE',
+  epci: 'EPCI', bretagne: 'Bretagne', densite: 'Densité INSEE', littoral: 'Littoral',
 }
 const typeActif = computed(() => {
   const selection = props.selection

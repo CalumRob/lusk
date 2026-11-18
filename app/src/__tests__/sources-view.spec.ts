@@ -278,4 +278,26 @@ describe('SourcesView — route dataset-centric', () => {
       .find((item) => item.text().includes('Référence nommée — moyenne des courbes communales évaluées'))!
     expect(reference.text()).toContain(`· ${MENTION_DECLARATION_SANS_PAGE}`)
   })
+
+  it('#1044 rend la source de classification littorale servi (éditeur, licence, millésime, réserve, Plouvien) dans la fiche existsante', async () => {
+    // Aucun nouveau framework de métadonnées : la fiche source est déjà portée
+    // par territoryMetadata.source_records et rendue par le seam Sources.
+    const servie = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'littoral-reference-served.json'), 'utf8'))
+    const littoralPayload: Payload = {
+      ...payload,
+      territoryMetadata: servie.metadata as unknown as Payload['territoryMetadata'],
+    }
+    const wrapper = await monter(chargerAvec(littoralPayload))
+    const fiche = wrapper.find('#source-classe-littorale-communale')
+    expect(fiche.exists()).toBe(true)
+    const texte = fiche.text()
+    expect(texte).toContain('DREAL Bretagne')
+    expect(texte).toContain('Licence Ouverte 2.0 (lov2)')
+    expect(texte).toContain('2023-04-21')
+    expect(texte).toContain('Plouvien')
+    expect(texte.toLowerCase()).toMatch(/garantie juridique|instantan/)
+    // La fiche est un consommateur du référentiel, pas un artefact mort.
+    expect(texte).toContain('Référentiel territorial')
+    expect(fiche.find('a[href*="data.gouv.fr"]').exists()).toBe(true)
+  })
 })

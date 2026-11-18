@@ -231,4 +231,29 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     expect(source).not.toContain('radius-full')
     expect(source).toContain('var(--paper')
   })
+
+  it('#1044 « Littoral » est une entrée de menu sobre : la portée réelle vit dans le nom accessible et la 2e ligne, pas sur la face', async () => {
+    const littoralPresets: readonly PresetComparaisonOption[] = [
+      ...presets,
+      { preset: 'littoral', label: 'communes littorales bretonnes', description: null },
+    ]
+    const wrapper = monter({ etat: 'preset', preset: 'littoral' }, {
+      presets: littoralPresets,
+      libelleActif: 'communes littorales bretonnes',
+    })
+    const bouton = wrapper.get('.bouton-comparaison__declencheur')
+    // Face : identité courte « Littoral », jamais la portée résolue en prose.
+    expect(bouton.find('.bouton-comparaison__type').text()).toBe('Littoral')
+    expect(bouton.text()).not.toContain('communes littorales bretonnes')
+    expect(bouton.attributes('aria-label')).toBe('Comparaison : communes littorales bretonnes')
+    // Le sous-menu nomme le groupe réel sur la seconde ligne de l’option.
+    await bouton.trigger('click')
+    const option = wrapper.findAll('[role="menuitemradio"]').find((item) => item.text().includes('Littoral'))!
+    expect(option.attributes('aria-checked')).toBe('true')
+    expect(option.find('.bouton-comparaison__option-scope').text()).toBe('communes littorales bretonnes')
+    // Navigation clavier inchangée (flèche bas/Home/End/Echap).
+    await bouton.trigger('keydown.esc')
+    expect(wrapper.find('.bouton-comparaison__menu').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

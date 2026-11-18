@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { aedarComparisonIntent } from '@/fiche/content/aedarComparisonClient'
 import type { SelectionComparaison } from '@/fiche/comparisonContext'
 
-const choix = (preset: 'epci' | 'bretagne' | 'densite'): SelectionComparaison => ({ etat: 'preset', preset })
+const choix = (preset: 'epci' | 'bretagne' | 'densite' | 'littoral'): SelectionComparaison => ({ etat: 'preset', preset })
 
 describe('comparaison AEDAR — intention typée selon le niveau focal', () => {
   it.each([
     ['commune', choix('epci'), null, { kind: 'fixed_comparison', context: 'epci' }],
     ['commune', choix('bretagne'), null, { kind: 'fixed_comparison', context: 'bretagne' }],
     ['commune', choix('densite'), null, { kind: 'fixed_comparison', context: 'density_class' }],
+    // #1044 : littoral maps EXPLICITLY to its fixed context, never the legacy
+    // unknown-preset fallthrough to Bretagne.
+    ['commune', choix('littoral'), null, { kind: 'fixed_comparison', context: 'littoral' }],
     ['commune', { etat: 'defaut' }, 'epci', { kind: 'fixed_comparison', context: 'epci' }],
     ['epci', choix('bretagne'), null, { kind: 'fixed_comparison', context: 'same_level' }],
     ['departement', choix('bretagne'), null, { kind: 'fixed_comparison', context: 'same_level' }],
@@ -19,6 +22,9 @@ describe('comparaison AEDAR — intention typée selon le niveau focal', () => {
 
   it('réserve le contexte density_class aux communes et n’invente aucune comparaison pour la Région', () => {
     expect(aedarComparisonIntent({ territoryType: 'epci', selection: choix('densite'), presetDefaut: 'bretagne' })).toBeNull()
+    expect(aedarComparisonIntent({ territoryType: 'epci', selection: choix('littoral'), presetDefaut: 'bretagne' })).toBeNull()
+    expect(aedarComparisonIntent({ territoryType: 'departement', selection: choix('littoral'), presetDefaut: 'bretagne' })).toBeNull()
+    expect(aedarComparisonIntent({ territoryType: 'region', selection: choix('littoral'), presetDefaut: 'bretagne' })).toBeNull()
     expect(aedarComparisonIntent({ territoryType: 'departement', selection: choix('epci'), presetDefaut: 'bretagne' })).toBeNull()
     expect(aedarComparisonIntent({ territoryType: 'region', selection: choix('bretagne'), presetDefaut: 'bretagne' })).toBeNull()
     expect(aedarComparisonIntent({ territoryType: 'region', selection: { etat: 'defaut' }, presetDefaut: null })).toBeNull()

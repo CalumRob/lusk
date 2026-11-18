@@ -383,6 +383,28 @@ describe('SQL Mobilité response to Variant E facts', () => {
     })
     expect(compared.mobility.selectedTrajectoryComparison?.scope.kind).not.toBe('density_class')
   })
+  it('#1044 a littoral cohort is consumed as the explicit selection it is, never a Bretagne/density claim', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22106' },
+      { territory_type: 'commune' as const, territory_id: '22215' },
+    ]
+    const littoralContext: TerritoryComparisonContext = { mode: 'littoral', scope: {
+      kind: 'communes-littoral', label: 'communes littorales bretonnes' }, facts: [], buildingDistribution: null, accessRamp: null }
+    const synthetic = nativeRaccordementReads('22001', 'commune', payload,
+      { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) })
+    const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, littoralContext, selection)
+    expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
+      statistic: 'mean', selectedMemberCount: 3, eligibleCount: 3,
+      scope: { kind: 'selection', territoryIds: ['22001', '22106', '22215'], label: 'communes littorales bretonnes' },
+    })
+    // A wrong echoed member still fails closed for a littoral cohort too.
+    const wrong = structuredClone(synthetic.comparison)
+    wrong.selection[1]!.territory_id = '99999'
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, wrong, littoralContext, selection))
+      .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
+  })
   it('rejects an explicit density selection whose echoed membership or published scope contradicts the request', () => {
     const selection = [
       { territory_type: 'commune' as const, territory_id: '22001' },

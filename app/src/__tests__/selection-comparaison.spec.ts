@@ -36,6 +36,7 @@ import { territoiresFixture } from '@/payload/fixtures'
 function contexte(mode: TerritoryComparisonMode, label: string): TerritoryComparisonContext {
   const kinds: Record<TerritoryComparisonMode, TerritoryComparisonContext['scope']['kind']> = {
     densite: 'communes-densite',
+    littoral: 'communes-littoral',
     epci: 'communes-epci',
     bretagne: 'communes-bretagne',
   }
