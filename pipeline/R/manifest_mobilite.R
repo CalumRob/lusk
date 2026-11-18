@@ -416,6 +416,9 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
 # la publication étant la date du portage. Licence Ouverte 2.0 (Etalab) — la
 # BDNB Open est réutilisable librement sous condition de citation des sources
 # (docs/research/bndb.md §3).
+# Décision propriétaire (2026-11-18) : le calcul Offre TC remplacera à terme la
+# population de bâtiments par des adresses résidentielles. Cette ligne reste
+# nécessaire au calcul courant jusqu'à cette migration.
 #
 # Cette couche porte la correction de la MÉTHODE de l'offre TC : la part des
 # bâtiments près d'un arrêt est désormais la fraction des BÂTIMENTS de la

@@ -168,6 +168,71 @@ normaliser_batiments_residentiels <- function(batiments_brut) {
     dplyr::arrange(code_commune_insee, batiment_groupe_id)
 }
 
+# lire_adresses_residentielles ---------------------------------------------------
+# Le lecteur de la population d'adresses résidentielles (le spine AEDAR :
+# address_id, code_insee, lon, lat). C'est la population qui remplace la couche
+# bâtiments dans le calcul Offre TC (décision propriétaire 2026-11-18) : chaque
+# adresse est un point, et le code commune est son appartenance administrative.
+# Non testé dans la boucle (comme les autres lecteurs de cache).
+lire_adresses_residentielles <- function(chemin) {
+  if (!file.exists(chemin)) {
+    stop("Population d'adresses résidentielles absente du cache (", chemin,
+         ") — le spine AEDAR enregistré est requis par Offre TC.",
+         call. = FALSE)
+  }
+  as.data.frame(nanoparquet::read_parquet(chemin))[
+    c("address_id", "code_insee", "lon", "lat")
+  ]
+}
+
+# normaliser_adresses_residentielles ---------------------------------------------
+# La normalisation PURE du spine d'adresses vers la table du calcul : un sf
+# POINT en EPSG:2154 (le spine porte lon/lat WGS84, reprojetés) avec
+# code_commune_insee en caractères. La projection native du spine est 4326, à la
+# différence de la couche BDNB (déjà en 2154). Gardes : colonnes requises,
+# fichier non vide, identité unique, code commune au format COG (5 chiffres),
+# coordonnées présentes et finies. Trié par code puis identité — déterministe.
+normaliser_adresses_residentielles <- function(brut) {
+  requis <- c("address_id", "code_insee", "lon", "lat")
+  manquantes <- setdiff(requis, names(brut))
+  if (length(manquantes) > 0) {
+    stop("Population d'adresses corrompue — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  if (nrow(brut) == 0) {
+    stop("Population d'adresses corrompue — le fichier ne porte aucune ligne.",
+         call. = FALSE)
+  }
+  if (any(is.na(brut$address_id) | !nzchar(brut$address_id))) {
+    stop("Population d'adresses corrompue — un address_id vide.", call. = FALSE)
+  }
+  if (anyDuplicated(brut$address_id)) {
+    stop("Population d'adresses corrompue — des address_id dupliqués.",
+         call. = FALSE)
+  }
+  code <- as.character(brut$code_insee)
+  if (any(is.na(code) | !grepl("^[0-9]{5}$", code))) {
+    stop("Population d'adresses corrompue — un code_insee hors format COG ",
+         "(5 chiffres).", call. = FALSE)
+  }
+  lon <- as.numeric(brut$lon)
+  lat <- as.numeric(brut$lat)
+  if (any(!is.finite(lon)) || any(!is.finite(lat))) {
+    stop("Population d'adresses corrompue — une coordonnée absente ou non finie.",
+         call. = FALSE)
+  }
+  table <- data.frame(
+    address_id = brut$address_id,
+    code_commune_insee = code,
+    lon = lon,
+    lat = lat,
+    stringsAsFactors = FALSE
+  )
+  sf::st_as_sf(table, coords = c("lon", "lat"), crs = 4326) %>%
+    sf::st_transform(CRS_OFFRE_MOBILITE) %>%
+    dplyr::arrange(code_commune_insee, address_id)
+}
+
 # lire_bornes_recharges ---------------------------------------------------------
 # Le lecteur du fichier réel bornes-recharges.csv (l'export ODS, « ; », tout
 # en caractères — les codes restent textuels). Non testé dans la boucle.
