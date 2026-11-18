@@ -14,6 +14,12 @@ export const CAHIER_EXPORT_SURFACE = {
     // Owner decision: exports carry no explanatory prose.
     '.argument-copy',
     '.page-subtitle',
+    // Screen-only interactive chrome: CTAs, retries and carousel/control affordances.
+    // Legend toggles keep their own roles and remain visible.
+    '.cahier-action-button',
+    '.cahier-comparison-retry',
+    '.cahier-map-gallery-controls',
+    '[data-pdf-confirm]',
   ],
   neutralised: [
     '.concept-group',

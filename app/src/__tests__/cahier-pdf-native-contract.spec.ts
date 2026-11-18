@@ -54,6 +54,29 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(typeof production.creerGenerateurCahierPdf).toBe('function')
   })
 
+  it('paints the dense waffle as many small native tiles, without CTA or fixture host', async () => {
+    const { captureProfilRangsDense } = await import('./helpers/cahierPdfFixtures')
+    const dense: any = captureProfilRangsDense()
+    dense.nativeRender.content.units[0].sections[0].evidence.facts = dense.figures
+      .find((figure: any) => figure.family === 'aedar-equipment-profile').model.facts
+    const projection = projeterRequeteExport(dense, [])
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    const result = await composerCahierPdfNativedansNavigateur(projection.request, {
+      signal: new AbortController().signal, urlAccueil: 'https://lusk.test/',
+    })
+    const bytes = new Uint8Array(await result.blob.arrayBuffer())
+    const { cheminsPdf } = await import('./helpers/cahierPdfRuntime')
+    const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
+    const paths = await cheminsPdf(bytes, pdf.numPages)
+    const tiles = paths.filter((chemin: any) => chemin.kind === 'fill'
+      && chemin.width > 20 && chemin.width < 100 && chemin.height > 20 && chemin.height < 100)
+    expect(tiles.length, 'native waffle tiles').toBeGreaterThanOrEqual(30)
+    const text = await textOf(bytes)
+    expect(text).not.toContain('Parcourir les équipements')
+    expect(text).not.toContain('lusk-pdf-native.test')
+    expect(text).toContain('sur lusk.test')
+  })
+
   it('refuse une carte déclarée non chargée avec une erreur typée', async () => {
     const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
     capture.capabilities.maps.items[0].loaded = false

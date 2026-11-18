@@ -17,7 +17,7 @@ import { capturePdfFixture, captureProfilRangsDense } from './helpers/cahierPdfF
 import { cahierExportFixture, sectionOf } from './helpers/cahierExportFixtures'
 import { composerCahierPdfNativedansNavigateur, rendrePngNatif } from './helpers/cahierPdfNativeRuntime'
 
-const OUT = path.resolve('..', 'evidence-1034-native-switch-review6-continuation-20261118')
+const OUT = path.resolve('..', 'evidence-1034-native-switch-review7-waffle-20261118')
 
 const MODES = ['car', 'transit', 'bike_lts2', 'bike_lts4', 'walk']
 const CUTS = [5, 10, 15, 20, 25, 30]
@@ -210,11 +210,17 @@ describe('native-switch review PDFs (opt-in)', () => {
     }
     // Dense profile: a single native body taller than the useful area must
     // continue across real A4 pages at the fixed scale.
-    const dense = captureProfilRangsDense()
+    const dense = captureProfilRangsDense() as any
+    // The producer-shaped 40-type matrix was added to `figures`; freeze the
+    // SAME matrix into the native snapshot so the mounted waffle has 40 tiles.
+    dense.nativeRender.content.units[0].sections[0].evidence.facts = dense.figures
+      .find((figure: any) => figure.family === 'aedar-equipment-profile').model.facts
     const denseProjection = projeterRequeteExport(dense, [])
     if (denseProjection.status !== 'ready') throw new Error(denseProjection.reason)
     const denseResult = await composerCahierPdfNativedansNavigateur(denseProjection.request, {
       signal: new AbortController().signal,
+      urlAccueil: 'https://lusk.test/',
+      urlPublique: 'https://lusk.test/territoire/commune/22001',
     })
     const denseBytes = new Uint8Array(await denseResult.blob.arrayBuffer())
     writeFileSync(path.join(OUT, 'aedar-equipment-profile-dense.pdf'), denseBytes)

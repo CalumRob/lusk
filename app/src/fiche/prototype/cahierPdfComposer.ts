@@ -15,6 +15,7 @@
 import type { jsPDF } from 'jspdf'
 
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+import { CAHIER_EXPORT_PUBLIC_URL } from './cahierExportUrls'
 
 import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK, sommetErmineEm } from '@/components/luskBrandMark'
 
@@ -312,10 +313,8 @@ export async function enregistrerPolices(
 }
 
 function urlParDefaut(capture: CahierExportCapture, hash: string): string | null {
-  const location = globalThis.location
-  if (!location) return null
-  const url = new URL(`/territoire/${capture.identity.territory.type}/${capture.identity.territory.code}`, location.origin)
-  for (const [key, value] of new URLSearchParams(location.search)) url.searchParams.set(key, value)
+  const url = new URL(`/territoire/${capture.identity.territory.type}/${capture.identity.territory.code}`,
+    CAHIER_EXPORT_PUBLIC_URL)
   url.hash = hash
   return url.href
 }
@@ -1496,7 +1495,7 @@ async function composerDocument(request: CahierExportRequest, options: OptionsCo
   }
   const mesure = new MesureJsPdf(doc)
   const documentPdf = construirePages(request, mesure, nativeBodies)
-  const urlAccueil = options.urlAccueil ?? (globalThis.location ? new URL('/', globalThis.location.origin).href : null)
+  const urlAccueil = options.urlAccueil ?? CAHIER_EXPORT_PUBLIC_URL
   const urlPublique = options.urlPublique
     ?? urlParDefaut(capture, `section-${capture.identity.sectionKey}`)
   const total = documentPdf.pages.length

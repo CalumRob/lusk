@@ -251,9 +251,10 @@ Tables break only between complete measured rows with repeated headers; paired
 figure rows are atomic. A mounted native body is split into break blocks at
 native layout rows (children sharing a rendered top stay together, so paired
 figures remain atomic) and paginated at fixed reading scale — no global shrink,
-no dead second page. Only a single unbreakable element taller than the useful
-area is rejected with `unbreakable-native-content`; the composer maps this to
-an explicit layout error. The mode-bearing AEDAR access section freezes the
+no dead second page. A `figure` is never cut across pages: it moves whole to the
+next page or, if it genuinely exceeds a whole page, is rejected with
+`unbreakable-native-figure` (mapped to a layout error). No figure is silently
+split. The mode-bearing AEDAR access section freezes the
 reader's chooser selection and survives a recoverable failure and retry without
 reacquiring the owner. The mounted browser checks use a labelled technical
 raster and do not establish a production map or visual-approval claim.
@@ -279,12 +280,18 @@ is started. The only mount is the inert, offscreen export host created inside
 
 **Export surface contract.** `cahierExportSurface.ts` is the single app-owned
 list of screen chrome hidden in that host: section footer, tooltips, the screen
-rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`) and, in the
-document route, standalone evidence sources. Figure titles, captions, axis and
+rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`), screen-only
+interactive CTAs/controls (`.cahier-action-button`, retries, carousels) and, in
+the document route, standalone evidence sources. Figure titles, captions, axis and
 legend labels, scalar labels and figure-attached reading notes keep their own
 roles and are not hidden. `cahierExportRoutes.ts` shares the route identities
 with the screen router, and the standard figure width and desktop viewport
 constants come from their figure owners.
+
+**Public strings come from the owner, not the runtime host.** `cahierExportUrls.ts`
+owns the public base URL; the footer invitation and the public link are built
+from it (or an explicitly supplied reviewer URL), never from `location` or from
+the capture, so a preview/test hostname cannot leak into a public PDF.
 
 **Map failure is explicit.** Every declared map is read from bytes frozen in
 the capture and bound to a settled object URL; a declared-but-unloaded or

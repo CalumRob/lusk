@@ -52,6 +52,7 @@ export interface CorpsNatifMesure {
  * taller than the useful area is refused.
  */
 function nativeBreakBlocks(root: HTMLElement, scale: number, maxHeight: number): HTMLElement[][] {
+  const atomic = (element: HTMLElement) => element.matches('figure, [data-cahier-native-figure]')
   const visible = (element: HTMLElement) => {
     const style = getComputedStyle(element)
     const rect = element.getBoundingClientRect()
@@ -64,6 +65,7 @@ function nativeBreakBlocks(root: HTMLElement, scale: number, maxHeight: number):
   }
   const walk = (element: HTMLElement): HTMLElement[][] => {
     if (height([element]) * scale <= maxHeight) return [[element]]
+    if (atomic(element)) throw new CahierNativePdfError('unbreakable-native-figure')
     const children = [...element.children].filter((child): child is HTMLElement => child instanceof HTMLElement && visible(child))
     if (!children.length) throw new CahierNativePdfError('unbreakable-native-content')
     const rows: HTMLElement[][] = []

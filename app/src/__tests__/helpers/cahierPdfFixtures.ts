@@ -660,5 +660,9 @@ export function captureProfilRangsDense(): CahierExportCapture {
   const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-profile')
   const base = figure.model.facts as readonly Record<string, unknown>[]
   figure.model.facts = profilSynthetique(40, base)
+  // The native mount reads the frozen snapshot, not `figures`: keep both in
+  // sync so the waffle really has 40 small tiles in the export.
+  const frozen = capture.nativeRender?.content.units[0]?.sections[0]?.evidence as any
+  if (frozen) frozen.facts = figure.model.facts
   return capture as CahierExportCapture
 }
