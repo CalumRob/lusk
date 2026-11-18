@@ -103,6 +103,25 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     NULL
   }
 
+  # #1056 (option B) : la référence territoriale est une DIMENSION, construite
+  # UNE fois depuis la base INSEE épinglée (1 202 communes, îles incluses) et
+  # les deux classifications, INDÉPENDAMMENT des faits du thème. C'est cette
+  # projection — et non le miroir des lignes du dernier thème — que chaque
+  # thème publie, pour que la référence soit byte-identique d'un run à l'autre.
+  # Les seams de test qui ne déposent pas la base gardent `reference = NULL`
+  # (repli historique borné), comme pour les classifications.
+  chemin_base_epci <- file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx")
+  reference_canonique <- if (file.exists(chemin_base_epci)) {
+    reference_territoires_canonique(
+      lire_epci(chemin_base_epci),
+      classes_densite = classes_densite,
+      classes_littoral = classes_littoral,
+      noms_epci_geo_api = noms_epci_geo_api
+    )
+  } else {
+    NULL
+  }
+
   brut <- theme$construire_donnees(cache = cache)
 
   # Issue #233 : le diagnostic de couverture du thème (lignes + km par
@@ -165,6 +184,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     if ("classes_littoral" %in% names(formals(theme$publier))) {
       args_publier$classes_littoral <- classes_littoral
     }
+    # #1056 : la dimension canonique est injectée dans le seam publier qui la
+    # déclare — la référence ne dépend jamais des faits du thème.
+    if ("reference" %in% names(formals(theme$publier)) &&
+        !is.null(reference_canonique)) {
+      args_publier$reference <- reference_canonique
+    }
     payload <- do.call(theme$publier, args_publier)
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
@@ -188,6 +213,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     }
     if ("classes_littoral" %in% names(formals(compute_payload))) {
       args_compute$classes_littoral <- classes_littoral
+    }
+    # #1056 : la dimension canonique est injectée dans le compute — la
+    # référence publiée est identique pour tous les thèmes.
+    if ("reference" %in% names(formals(compute_payload)) &&
+        !is.null(reference_canonique)) {
+      args_compute$reference <- reference_canonique
     }
     payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)

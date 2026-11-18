@@ -251,18 +251,17 @@ publier_classes_littoral <- function(territoires, crosswalk) {
     territoires$type == "commune"
   ])
   extra <- setdiff(crosswalk$code_commune, communes)
-  if (length(extra) > 0L) {
-    non_communes <- intersect(extra, as.character(territoires[[cle_territoire]]))
-    if (length(non_communes) > 0L) {
-      stop(
-        "Crosswalk littoral invalide : classification littorale pour un territoire non-commune : ",
-        paste(non_communes, collapse = ", "), ".",
-        call. = FALSE
-      )
-    }
+  # #1056 : le crosswalk est construit sur l'univers canonique ENTIER (1 202
+  # codes épinglés), tandis qu'un thème plus étroit ne porte que les communes
+  # qu'il mesure (Milieux : 1 200 — les deux îles absentes de conso-com.csv).
+  # Un code canonique absent du frame est donc LÉGITIME : il ne doit être ni
+  # inventé en fait, ni traité comme une erreur. Seule une classification
+  # portée par un territoire non-commune du frame échoue fort.
+  non_communes <- intersect(extra, as.character(territoires[[cle_territoire]]))
+  if (length(non_communes) > 0L) {
     stop(
-      "Crosswalk littoral invalide : code(s) inconnu(s) de l'univers canonique : ",
-      paste(sort(extra), collapse = ", "), ".",
+      "Crosswalk littoral invalide : classification littorale pour un territoire non-commune : ",
+      paste(non_communes, collapse = ", "), ".",
       call. = FALSE
     )
   }
@@ -312,7 +311,11 @@ appliquer_classifications_communales <- function(territoires,
   }
   if (!is.null(classes_littoral)) {
     crosswalk <- construire_crosswalk_littoral(
-      classes_littoral, codes_communes(territoires)
+      # #1056 : l'univers du crosswalk est le registre communal CANONIQUE
+      # épinglé, jamais les seules communes de la table de faits (un thème
+      # étroit comme Milieux n'a pas les deux îles, mais doit quand même
+      # recevoir ses C/NC par jointure sans rejeter la source DREAL).
+      classes_littoral, codes_communes_canoniques()
     )
     territoires <- publier_classes_littoral(territoires, crosswalk)
   }

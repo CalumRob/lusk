@@ -866,7 +866,8 @@ validations_mobilite <- list(
 construire_payload_mobilite <- function(analytiques, base_epci, vintages,
                                          noms_epci_geo_api = NULL,
                                          classes_densite = NULL,
-                                         classes_littoral = NULL) {
+                                         classes_littoral = NULL,
+                                         reference = NULL) {
   territoires <- construire_territoires_mobilite(
     base_epci,
     analytiques,
@@ -882,7 +883,13 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     # tire, jamais le pool dans le payload (ADR-0002)
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
-    territoires = reference_territoires(territoires),
+    # #1056 : la référence est la dimension canonique injectée par le run,
+    # jamais le miroir des faits de ce thème (îles incluses dans tous les cas).
+    territoires = if (is.null(reference)) {
+      reference_territoires(territoires)
+    } else {
+      reference
+    },
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 
@@ -914,7 +921,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                              raccordement = NULL,
                              noms_epci_geo_api = NULL,
                              classes_densite = NULL,
-                             classes_littoral = NULL) {
+                             classes_littoral = NULL,
+                              reference = NULL) {
   if (is.null(vintages)) vintages <- vintages_mobilite()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -932,7 +940,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
     vintages,
     noms_epci_geo_api = noms_epci_geo_api,
     classes_densite = classes_densite,
-    classes_littoral = classes_littoral
+    classes_littoral = classes_littoral,
+    reference = reference
   )
   publish(payload, sortie)
   payload
