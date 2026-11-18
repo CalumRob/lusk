@@ -87,8 +87,8 @@ a direct reference, `unobserved` means it does but no owner status was supplied,
 and the owner statuses (`ready`, `loading`, `error`, `unavailable`, `idle`) are
 passed through, so a failed AEDAR reference read is never reported as a
 legitimate absence. A ready direct reference can therefore be displayed while
-the aggregate comparison status is idle. Per-figure labels are preserved in
-`statisticLabels`; no first column label becomes section-wide truth. Map/legend
+the aggregate comparison status is idle. Each figure keeps its owner-published
+`comparisonLabel`; no first column label becomes section-wide truth. Map/legend
 state is `unknown` until a map owner publishes, and a declared map is never a
 loaded one. AEDAR sources carry the native source-record identity, licence and
 clocks additively (same display copy); Mobilité generation tokens are explicitly
@@ -232,6 +232,40 @@ occurred, not that a file was written to disk; the cleanup task is not a
 generation timer and never fabricates success.
 
 ## Shared PDF composition (#1024)
+
+**Shared native-body path (wired).** `captureSection` freezes the native inputs
+for every Cahier section kind. `composerCahierPdf` — and therefore the
+`CahierPdfGenerator` seam — now routes exclusively through
+`composerCahierPdfNatif`: it mounts the existing section shell in an inert
+offscreen host from those frozen inputs, and paints browser layout into
+selectable text, vector SVG and clipped raster. Map bytes are bound to the
+owner observation through a settled-asset reader; the mount never acquires
+from the owner. The painter receives no section or figure kind and there is no
+per-section PDF figure template or fallback painter. `rendreCorpsNatifPdf`
+remains the body-only witness used by the browser proofs.
+
+The document grammar is unchanged: the composer still owns the value tables
+(from the shared projections), the repeating identity, sources/links, the
+page-local comparison note, the header/footer and the measured A4 continuation.
+Tables break only between complete measured rows with repeated headers; paired
+figure rows are atomic. A mounted native body is split into break blocks at
+native layout rows (children sharing a rendered top stay together, so paired
+figures remain atomic) and paginated at fixed reading scale — no global shrink,
+no dead second page. Only a single unbreakable element taller than the useful
+area is rejected with `unbreakable-native-content`; the composer maps this to
+an explicit layout error. The mode-bearing AEDAR access section freezes the
+reader's chooser selection and survives a recoverable failure and retry without
+reacquiring the owner. The mounted browser checks use a labelled technical
+raster and do not establish a production map or visual-approval claim.
+
+**Centring decision (#1014 vs prototype).** `desktop.js:606` centres each page's
+content with `top + max(0, (capacity - used) / 2)`, but it also computes one
+global `scale` to fit the tallest section (`desktop.js:587`). #1014/#1024
+require real overflow continuation and forbid shrinking the whole document, so
+the export keeps the fixed scale and the prototype's per-page centring. The
+earlier "dead band" complaint concerned a short section wrapped in a screen
+card; the export shell now hides that card and drops explanatory prose, so the
+residual centred inset is the approved page composition, not a second column.
 
 `cahierPdfComposer.ts` is the narrow public generation seam:
 `(request: CahierExportRequest, { signal }) => Promise<{ blob, fileName }>`.
@@ -461,9 +495,14 @@ never one pack per panel; figures use the native surface/grid grammar (theme
 them, `--cahier-theme-strong` axis); table captions use `--brand-700`; the
 approved page box is 32 / 72 / 46 pt with the header rule at 51 pt (the live
 `.page-heading` border), and the rejected full-height red notebook rule is not
-painted. The section surface is the `cahier--sans-grille .concept-group` border
-around the whole exported section (identity, comparison subtitle, figures,
-tables and sources), repeated on continuations.
+painted. **The export has no section card:** the `cahier--sans-grille
+.concept-group` border/padding/shadow is a screen-only surface and is
+neutralised in the export shell. The approved page furniture is the header rule
+at 51 pt, the repeated identity (and its comparison subtitle) at the top of
+each continuation page, the page-local footnote and the sources — not a
+four-edge frame around the section. This supersedes the earlier statement that
+the surface was repeated on continuations; the owner's observed no-card output
+and the fidelity test are authoritative.
 
 A compared-group column now carries an explicit **`Rang`** column with the
 producer-served display (`formatServedRank`, `=1er/43` for ties) or the approved

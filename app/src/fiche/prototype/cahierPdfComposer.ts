@@ -21,6 +21,7 @@ import type { CahierFigureProjection } from './cahierExportAdapters'
 import { projeterRequeteExportFigures } from './cahierExportAdapters'
 import type {
   CahierCaptureFigure,
+  CahierCaptureMapItem,
   CahierCaptureSource,
   CahierExportCapture,
   CahierExportRequest,
@@ -45,15 +46,6 @@ import {
   chargerPolicePdf,
   type ChargeurPolicePdf,
 } from './cahierPdfFonts'
-import {
-  dessinerFigurePdf,
-  figureRowGeometry,
-  hauteurFigurePdf,
-  CahierPdfAssetError,
-  type ChargeurImagePdf,
-  type OptionsFigurePdfLiaison,
-} from './cahierPdfFigures'
-import { figureRowLayout } from './cahierFigureNativeGeometry'
 import type { MesureTexte } from './cahierPdfMesure'
 import { plierTexte } from './cahierPdfMesure'
 import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
@@ -90,11 +82,17 @@ export type GenerateurCahierPdf = CahierPdfGenerator
 export interface OptionsCompositionCahierPdf {
   readonly signal: AbortSignal
   readonly chargerPolice?: ChargeurPolicePdf
-  readonly chargerImage?: ChargeurImagePdf
+  /** @deprecated Ignored by the native path; captured maps are read as settled bytes. */
+  readonly chargerImage?: (...args: readonly any[]) => any
   /** Live territory/section URL; defaults to the current location when present. */
   readonly urlPublique?: string | null
   /** Home URL for the brand lockup; defaults to the current origin. */
   readonly urlAccueil?: string | null
+  /**
+   * Supplies settled bytes for a captured map asset. The native mount never
+   * acquires from its owner; the default reads the capture's own inline URL.
+   */
+  readonly readAsset?: (item: CahierCaptureMapItem, signal: AbortSignal) => Promise<Blob>
 }
 
 const mm = mmDepuisPt
@@ -279,7 +277,7 @@ function base64(bytes: ArrayBuffer): string {
   return btoa(binary)
 }
 
-async function enregistrerPolices(
+export async function enregistrerPolices(
   doc: jsPDF,
   charger: ChargeurPolicePdf,
   signal: AbortSignal,
@@ -377,29 +375,16 @@ function validerCapture(capture: CahierExportCapture): void {
   }
 }
 
-interface FigureBloc {
-  readonly kind: 'figure'
-  readonly projection: CahierFigureProjection
+/** Staged browser layout, already measured at the fixed figure reading scale. */
+export type CorpsNatifPdf = import('./cahierNativePdf').CorpsNatifMesure
+
+interface NativeFigureBloc {
+  readonly kind: 'native-figure'
+  readonly body: CorpsNatifPdf
   readonly height: number
   readonly gapAvant: number
-}
-
-interface FigureRowCellPdf {
-  readonly projection: CahierFigureProjection
-  readonly x: number
-  readonly width: number
-}
-
-/**
- * Native sibling row (the stationnement/ravitaillement pair): two figures on
- * one baseline, each measured at its own half-column width. The row is atomic;
- * a real measured overflow falls back to the sequential full-width figures.
- */
-interface FigureRowBloc {
-  readonly kind: 'figure-row'
-  readonly cells: readonly FigureRowCellPdf[]
-  readonly height: number
-  readonly gapAvant: number
+  readonly hasProof: boolean
+  readonly proofLabels: readonly string[]
 }
 
 interface CelluleTableauBloc {
@@ -428,7 +413,7 @@ interface TextBloc {
   readonly gapAvant: number
 }
 
-type BlocPdf = FigureBloc | FigureRowBloc | TableBloc | TextBloc
+type BlocPdf = NativeFigureBloc | TableBloc | TextBloc
 
 interface PagePdf {
   readonly index: number
@@ -596,14 +581,14 @@ function tableColumnsComparison(projection: Extract<CahierFigureProjection, { fa
 }
 
 /**
- * The one option set of a projection. The pagination measurement
- * (`hauteurFigurePdf`) and the painter (`dessinerFigurePdf`) both receive this
- * exact object, so a new figure input cannot reach only one of them.
+ * Owner-derived comparison proof and labels of a projection, still consumed by
+ * the footer/table proof predicates. It is not a painter input: figure bodies
+ * come from the native mount.
  */
 export function optionsFigurePdf(
   request: CahierExportRequest,
   projection: CahierFigureProjection,
-): OptionsFigurePdfLiaison {
+) {
   const capture = request.capture
   const parSlot = <F extends CahierCaptureFigure['family']>(family: F) => capture.figures.find(
     (figure): figure is Extract<CahierCaptureFigure, { family: F }> => (
@@ -633,6 +618,7 @@ function assemblerPages(
   request: CahierExportRequest,
   mesure: MesureTexte,
   reserverPiedComparaison: boolean,
+  nativeBodies: readonly CorpsNatifPdf[] = [],
 ): DocumentPdf {
   const capture = request.capture
   const projections = projeterRequeteExportFigures(request)
@@ -651,14 +637,18 @@ function assemblerPages(
   )).flat().map((ligne) => ligne.texte)
   const sourcesHeight = Math.max(4, sourcesLines.length
     * mesure.hauteurLigne(ROLE_PDF.source.police, TAILLE.source) * 1.4) + ESPACE.sourcesHaut
-  // The reserve is the longest note any page could paint: the section's distinct
-  // owner comparison labels, then the group identity every page shares. A page
-  // paints only the labels of the proof blocks it really carries (below), so the
-  // reserve is an upper bound of the painted note, never a smaller guess.
+  // The reserve is the longest note any page could paint. A proof page paints
+  // either the joined owner labels of the proof blocks it carries (below), or —
+  // when none of those blocks publishes a label — the factual group identity
+  // (`lignesPiedComparaison`'s fallback). A mixed section can paint either on a
+  // different page, so take the longer wrap of both layouts; reserving only the
+  // labels would let a longer group note collide with a page's content/sources.
   const labelsSection = [...new Set(projections
     .map((projection) => libelleComparaisonProjection(projection))
     .filter((label): label is string => label !== null))]
-  const piedComparaison = lignesPiedComparaison(labelsSection, capture, mesure)
+  const noteLibelles = lignesPiedComparaison(labelsSection, capture, mesure)
+  const noteGroupe = lignesPiedComparaison([], capture, mesure)
+  const piedComparaison = noteLibelles.length >= noteGroupe.length ? noteLibelles : noteGroupe
   // Reserve the comparison footer's actual wrapped height (not a fixed offset),
   // leaving the approved single-line box at its H-35 baseline and clear of the
   // invitation at H-23. The reserve follows the painter's own predicate: a page
@@ -681,19 +671,18 @@ function assemblerPages(
   const availableNext = disponibles
 
   const blocks: BlocPdf[] = []
-  const messagesVus = new Set<string>()
-  const optionsFigure = (projection: CahierFigureProjection) => optionsFigurePdf(request, projection)
-  let premierBloc = true
-  const pousserFigure = (projection: CahierFigureProjection) => {
-    blocks.push({
-      kind: 'figure',
-      projection,
-      gapAvant: premierBloc ? 0 : ESPACE.entreTableaux,
-      height: hauteurFigurePdf(projection, PAGE.largeurCorps, mesure, optionsFigure(projection)),
-    })
-    premierBloc = false
+  const proved = nativeBodies.length ? projections.filter((projection) => preuveFigureComparative(projection, capture)) : []
+  for (const [index, body] of nativeBodies.entries()) {
+    if (!Number.isFinite(body.heightPt) || body.heightPt <= 0 || mm(body.heightPt) > disponibles
+      || !Number.isFinite(body.widthPt) || body.widthPt <= 0 || body.widthPt > LARGEUR_CORPS_PT + .1) {
+      throw new CahierPdfCompositionError('layout', 'Un bloc natif ne tient pas sur une page à l’échelle fixe.')
+    }
+    blocks.push({ kind: 'native-figure', body, height: mm(body.heightPt), gapAvant: 0,
+      hasProof: index === 0 && proved.length > 0,
+      proofLabels: index === 0 ? proved.flatMap((projection) => libelleComparaisonProjection(projection) ?? []) : [] })
   }
-  const pousserIndisponibles = (projection: CahierFigureProjection) => {
+  const messagesVus = new Set<string>()
+  for (const projection of projections) {
     for (const item of projection.unavailable) {
       if (messagesVus.has(item.message)) continue
       messagesVus.add(item.message)
@@ -705,46 +694,6 @@ function assemblerPages(
         height: hauteurTexteSimple(item.message, mesure, ROLE_PDF.comparaisonPrefixe.police, TAILLE.note, PAGE.largeurCorps) + 1,
       })
     }
-  }
-  for (let index = 0; index < projections.length; index += 1) {
-    const projection = projections[index]!
-    // The projection's own row is the single source: no second lookup table.
-    const row = projection.row ?? null
-    const peers = row && row.columns > 1
-      ? projections.slice(index, index + row.columns)
-        .filter((candidate) => candidate.row?.key === row.key)
-      : []
-    if (row && row.columns > 1 && peers.length === row.columns) {
-      const layout = figureRowGeometry(PAGE.largeurCorps, figureRowLayout(row.viewportPx))
-      const gap = layout.gap
-      const largeur = layout.panelWidth
-      const cells = peers.map((peer, cellIndex) => ({
-        projection: peer,
-        x: PAGE.corpsX + cellIndex * (largeur + gap),
-        width: largeur,
-      }))
-      const hauteur = Math.max(...peers.map((peer) => (
-        hauteurFigurePdf(peer, largeur, mesure, optionsFigure(peer))
-      )))
-      // The source row is atomic. Only a genuinely taller-than-page row falls
-      // back to the measured full-width sequence; no global shrink.
-      if (hauteur <= availableNext) {
-        blocks.push({
-          kind: 'figure-row',
-          cells,
-          height: hauteur,
-          gapAvant: premierBloc ? 0 : ESPACE.entreTableaux,
-        })
-        premierBloc = false
-      } else {
-        for (const peer of peers) pousserFigure(peer)
-      }
-      for (const peer of peers) pousserIndisponibles(peer)
-      index += row.columns - 1
-      continue
-    }
-    pousserFigure(projection)
-    pousserIndisponibles(projection)
   }
 
   const tableGroups: { parts: TableauPdfPart[]; comparisonLabel: string | null }[] = []
@@ -895,13 +844,18 @@ function assemblerPages(
         }
         poserBloc({
           kind: 'table',
-          cells: cells.map((cell) => ({
-            part: cell.part,
+          cells: cells.map((cell) => {
+            const rows = cell.rows.slice(0, n)
+            const hasComparison = cell.part.hasComparison && rows.some((row) => row.cells.some(({ cell: value }, index) =>
+              cell.part.columns[index]?.column.kind === 'comparison' && (value.value !== null || value.rankDisplay !== null)))
+            return {
+            part: nativeBodies.length ? { ...cell.part, hasComparison } : cell.part,
             x: cell.x,
             width: cell.width,
-            rows: cell.rows.slice(0, n),
+            rows,
             continued: !first || cell.continued,
-          })),
+            }
+          }),
           comparisonLabel: bloc.comparisonLabel,
           height: hauteur,
           gapAvant,
@@ -948,12 +902,8 @@ function assemblerPages(
       if (label && !labels.includes(label)) labels.push(label)
     }
     for (const bloc of blocks) {
-      if (bloc.kind === 'figure') {
-        if (preuveFigureComparative(bloc.projection, capture)) add(libelleComparaisonProjection(bloc.projection))
-      } else if (bloc.kind === 'figure-row') {
-        for (const cell of bloc.cells) {
-          if (preuveFigureComparative(cell.projection, capture)) add(libelleComparaisonProjection(cell.projection))
-        }
+      if (bloc.kind === 'native-figure') {
+        for (const label of bloc.proofLabels) add(label)
       } else if (bloc.kind === 'table') {
         if (bloc.cells.some((cell) => cell.part.hasComparison)) add(bloc.comparisonLabel)
       }
@@ -962,10 +912,7 @@ function assemblerPages(
   }
   const pages: PagePdf[] = pagesBrutes.map((candidate) => {
     const hasComparisonProof = candidate.blocks.some((bloc) => {
-      if (bloc.kind === 'figure') return preuveFigureComparative(bloc.projection, capture)
-      if (bloc.kind === 'figure-row') {
-        return bloc.cells.some((cell) => preuveFigureComparative(cell.projection, capture))
-      }
+      if (bloc.kind === 'native-figure') return bloc.hasProof
       if (bloc.kind === 'table') return bloc.cells.some((cell) => cell.part.hasComparison)
       return false
     })
@@ -998,11 +945,12 @@ function assemblerPages(
 function construirePages(
   request: CahierExportRequest,
   mesure: MesureTexte,
+  nativeBodies: readonly CorpsNatifPdf[] = [],
 ): DocumentPdf {
-  const sansReserve = assemblerPages(request, mesure, false)
+  const sansReserve = assemblerPages(request, mesure, false, nativeBodies)
   const preuveComparative = sansReserve.pages.some((page) => page.hasComparisonProof)
   if (!preuveComparative || sansReserve.piedReserve === 0) return sansReserve
-  return assemblerPages(request, mesure, true)
+  return assemblerPages(request, mesure, true, nativeBodies)
 }
 
 /**
@@ -1095,18 +1043,6 @@ async function dessinerEntete(
   setStroke(doc, PALETTE_PDF.marginSoft)
   doc.setLineWidth(mm(ptDepuisCssPx(1)))
   doc.line(PAGE.margeGauche, PAGE.filetEntete, PAGE.width - PAGE.margeDroite, PAGE.filetEntete)
-}
-
-/** The `.cahier--sans-grille .concept-group` surface around the whole section. */
-function dessinerSurfaceSection(doc: jsPDF, haut: number, bas: number): void {
-  setStroke(doc, PALETTE_PDF.figureSurfaceBorder)
-  doc.setLineWidth(mm(ptDepuisCssPx(1)))
-  // Four edges, like the approved border painting: a single closed `re` path is
-  // not a set of measured edges for a reader/tool inspecting the document.
-  doc.line(PAGE.margeGauche, haut, PAGE.margeGauche + PAGE.largeurUtile, haut)
-  doc.line(PAGE.margeGauche, bas, PAGE.margeGauche + PAGE.largeurUtile, bas)
-  doc.line(PAGE.margeGauche, haut, PAGE.margeGauche, bas)
-  doc.line(PAGE.margeGauche + PAGE.largeurUtile, haut, PAGE.margeGauche + PAGE.largeurUtile, bas)
 }
 
 function dessinerIdentite(
@@ -1211,17 +1147,31 @@ function dessinerTableau(
   }
   const enteteTop = cy
   const sousEnteteTop = enteteTop + part.groupHeaderHeight
+  // A header cell's measured text block is centred vertically inside the real
+  // cell, matching the mounted `th` box: a one-line `Rang` is not left pinned to
+  // the top of a cell whose measured height comes from a wrapped `Groupe` label.
+  // The offset is shared by every non-mode header (row dimension and sub-header)
+  // so mixed single-/multi-line columns keep one common centre. The mode-group
+  // labels above keep the approved presentation and are not touched here.
+  const hauteurLigneModeEntete = mesure.hauteurLigne(
+    ROLE_PDF.enteteTableauMode.police,
+    ROLE_PDF.enteteTableauMode.taille,
+  ) * ESPACE_TABLEAU.interligneEntete
+  const centreDans = (hauteurCellule: number, nbLignes: number, hauteurLigne: number) =>
+    (hauteurCellule - nbLignes * hauteurLigne) / 2
   // Row-dimension header (`Temps` / `Statistique`): in the grouped shape it is
-  // the approved `th[colspan=1][rowspan=2]`, bottom-aligned across both header
-  // rows; in the flat shape it is the first column's header.
+  // the approved `th[colspan=1][rowspan=2]` spanning both header rows; in the
+  // flat shape it is the first column's header. It uses the mode role
+  // (`--type-figure-mode`, 7.36 pt), not the smaller sub-header role.
   if (part.rowHeader) {
-    // The native row-dimension `th[colspan][rowspan=2]` uses the mode role
-    // (`--type-figure-mode`, 7.36 pt), not the smaller sub-header role.
-    texte(doc, part.rowHeader, x + 1, part.layout === 'grouped' ? cy + part.headerHeight - 2.4 : sousEnteteTop, {
-      police: ROLE_PDF.enteteTableauMode.police,
-      taille: ROLE_PDF.enteteTableauMode.taille,
-      couleur: PALETTE_PDF.ink,
-    })
+    const hauteurSpannée = part.layout === 'grouped' ? part.groupHeaderHeight + part.headerHeight : part.headerHeight
+    const hautSpanné = part.layout === 'grouped' ? enteteTop : sousEnteteTop
+    texte(doc, part.rowHeader, x + 1,
+      hautSpanné + centreDans(hauteurSpannée, 1, hauteurLigneModeEntete), {
+        police: ROLE_PDF.enteteTableauMode.police,
+        taille: ROLE_PDF.enteteTableauMode.taille,
+        couleur: PALETTE_PDF.ink,
+      })
   }
   if (part.layout === 'grouped') {
     // Legend-key header row: one coloured, spanning cell per mode, exactly like
@@ -1256,7 +1206,8 @@ function dessinerTableau(
   }).internal.getCurrentPageInfo().pageNumber
   let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
-    let hy = sousEnteteTop
+    // Centre this column's whole measured block in the (row-height) cell.
+    let hy = sousEnteteTop + centreDans(part.headerHeight, colonne.headerLines.length, hauteurLigneEntete)
     // The `¹` footnote belongs to the compared group cell, once per cell —
     // never once per wrapped line and never to `Rang`. It is an in-document
     // link to the page footer, like the approved `comparisonReference()`.
@@ -1488,38 +1439,6 @@ function dessinerPied(
   })
 }
 
-async function creerChargeurImageParDefaut(): Promise<ChargeurImagePdf> {
-  return async (url, { signal }) => {
-    const response = await fetch(url, { signal })
-    if (!response.ok) {
-      throw new CahierPdfCompositionError('asset', `Carte introuvable : ${url} (HTTP ${response.status}).`)
-    }
-    const blob = await response.blob()
-    if (typeof createImageBitmap === 'function') {
-      const bitmap = await createImageBitmap(blob)
-      try {
-        verifierAbandon(signal)
-        const canvas = document.createElement('canvas')
-        canvas.width = bitmap.width
-        canvas.height = bitmap.height
-        const context = canvas.getContext('2d')
-        if (!context) throw new CahierPdfCompositionError('asset', `Décodage de la carte impossible : ${url}.`)
-        context.drawImage(bitmap, 0, 0)
-        return { dataUrl: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height }
-      } finally {
-        bitmap.close()
-      }
-    }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(new CahierPdfCompositionError('asset', `Lecture de la carte impossible : ${url}.`))
-      reader.readAsDataURL(blob)
-    })
-    return { dataUrl, width: 0, height: 0 }
-  }
-}
-
 /**
  * Production text measurement over the registered faces, without composing a
  * document. The suite measures table cells and figure heights through this
@@ -1543,6 +1462,21 @@ export async function mesurePdfProduction(options: {
 export async function composerCahierPdf(request: CahierExportRequest,
   options: OptionsCompositionCahierPdf,
 ): Promise<CahierPdfArtifact> {
+  // The one shared path: mount the native section body offscreen from the
+  // frozen inputs and paint its browser-resolved boxes. Tables, running
+  // furniture and pagination below remain the document grammar's owners.
+  const { composerCahierPdfNatif } = await import('./cahierNativePdf')
+  return composerCahierPdfNatif(request, options)
+}
+
+/** Browser-stage entry, not called by the existing generator. */
+export async function composerDocumentAvecCorpsNatif(request: CahierExportRequest, options: OptionsCompositionCahierPdf,
+  bodies: readonly CorpsNatifPdf[]): Promise<CahierPdfArtifact> {
+  return composerDocument(request, options, bodies)
+}
+
+async function composerDocument(request: CahierExportRequest, options: OptionsCompositionCahierPdf,
+  nativeBodies: readonly CorpsNatifPdf[] = []): Promise<CahierPdfArtifact> {
   const { signal } = options
   verifierAbandon(signal)
   const capture = request.capture
@@ -1584,45 +1518,10 @@ export async function composerCahierPdf(request: CahierExportRequest,
     throw new CahierPdfCompositionError('font', 'Les polices embarquées du PDF n’ont pas pu être chargées.', error)
   }
   const mesure = new MesureJsPdf(doc)
-  const documentPdf = construirePages(request, mesure)
-  const chargerImageBase = options.chargerImage ?? await creerChargeurImageParDefaut()
-  const chargerImage: ChargeurImagePdf = async (url, loadOptions) => {
-    try {
-      return await chargerImageBase(url, loadOptions)
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') throw error
-      if (error instanceof CahierPdfCompositionError) throw error
-      throw new CahierPdfCompositionError('asset', `La carte « ${url} » n’a pas pu être lue.`, error)
-    }
-  }
+  const documentPdf = construirePages(request, mesure, nativeBodies)
   const urlAccueil = options.urlAccueil ?? (globalThis.location ? new URL('/', globalThis.location.origin).href : null)
   const urlPublique = options.urlPublique
     ?? urlParDefaut(capture, `section-${capture.identity.sectionKey}`)
-  const dessinerFigure = async (
-    projection: CahierFigureProjection,
-    x: number,
-    y: number,
-    width: number,
-  ): Promise<void> => {
-    try {
-      // The same option object the pagination measured with (no second maps).
-      await dessinerFigurePdf({
-        ...optionsFigurePdf(request, projection),
-        doc,
-        mesure,
-        x,
-        y,
-        width,
-        signal,
-        chargerImage,
-      }, projection)
-    } catch (error) {
-      if (error instanceof CahierPdfAssetError) {
-        throw new CahierPdfCompositionError('asset', error.message, error)
-      }
-      throw error
-    }
-  }
   const total = documentPdf.pages.length
   try {
   for (let index = 0; index < documentPdf.pages.length; index += 1) {
@@ -1632,13 +1531,17 @@ export async function composerCahierPdf(request: CahierExportRequest,
     await dessinerEntete(doc, capture, mesure, urlAccueil, urlPublique, signal)
     const sousTitrePage = page.hasComparisonProof ? documentPdf.sousTitre : null
     const identitePage = hauteurIdentite(capture, sousTitrePage, mesure)
+    // #1014/#1024 centre each page's content in the useful area, as the
+    // approved prototype does (`desktop.js`: `top + (capacity - used) / 2`).
+    // The prototype ALSO globally shrank to fit the tallest section; #1024
+    // forbids that, so scale stays fixed and pagination carries overflow.
+    // No card frame: the screen-only `.cahier--sans-grille .concept-group`
+    // surface is neutralised in the export mount and is not re-drawn here.
     const hauteurContenu = page.blocks.reduce((sum, bloc) => sum + bloc.gapAvant + bloc.height, 0)
     const hauteurSection = 2 * PAGE.paddingSection + identitePage + hauteurContenu + documentPdf.sourcesHeight
     const hauteurUtile = documentPdf.contenuBas - PAGE.contenuHaut
     const inset = Math.max(0, (hauteurUtile - hauteurSection) / 2)
     const frameTop = PAGE.contenuHaut + inset
-    const frameBottom = frameTop + hauteurSection
-    dessinerSurfaceSection(doc, frameTop, frameBottom)
     let cy = dessinerIdentite(
       doc,
       capture,
@@ -1650,16 +1553,9 @@ export async function composerCahierPdf(request: CahierExportRequest,
     for (const bloc of page.blocks) {
       verifierAbandon(signal)
       cy += bloc.gapAvant
-      if (bloc.kind === 'figure') {
-        const start = cy
-        await dessinerFigure(bloc.projection, PAGE.corpsX, cy, PAGE.largeurCorps)
-        cy = start + bloc.height
-      } else if (bloc.kind === 'figure-row') {
-        const start = cy
-        for (const cell of bloc.cells) {
-          await dessinerFigure(cell.projection, cell.x, cy, cell.width)
-        }
-        cy = start + bloc.height
+      if (bloc.kind === 'native-figure') {
+        await bloc.body.paint(doc, PAGE.corpsX + (PAGE.largeurCorps - mm(bloc.body.widthPt)) / 2, cy)
+        cy += bloc.height
       } else if (bloc.kind === 'table') {
         const start = cy
         for (const cellule of bloc.cells) {
