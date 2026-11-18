@@ -284,7 +284,7 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
         },
           error=function(error) stop(stage,": ",conditionMessage(error),call.=FALSE))
         reference <- run_query("read reference",
-          "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+          "SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code FROM territory_reference")
         comparisons <- project_observed_collection_comparisons(
           projection,reference,version,dependency$content_version[[1L]])
         comparison_version <- scalar_content_version(comparisons)
