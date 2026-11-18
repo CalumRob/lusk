@@ -13,11 +13,11 @@ import { describe, expect, it } from 'vitest'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { comparisonLabelFor, raccordementProse } from '@/fiche/content/mobiliteSections'
-import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import { capturePdfFixture, captureProfilRangsDense } from './helpers/cahierPdfFixtures'
 import { cahierExportFixture, sectionOf } from './helpers/cahierExportFixtures'
 import { composerCahierPdfNativedansNavigateur, rendrePngNatif } from './helpers/cahierPdfNativeRuntime'
 
-const OUT = path.resolve('..', 'evidence-1034-native-switch-review5-ranks-20261118')
+const OUT = path.resolve('..', 'evidence-1034-native-switch-review6-continuation-20261118')
 
 const MODES = ['car', 'transit', 'bike_lts2', 'bike_lts4', 'walk']
 const CUTS = [5, 10, 15, 20, 25, 30]
@@ -208,6 +208,26 @@ describe('native-switch review PDFs (opt-in)', () => {
         bytes: bytes.length, modes, populated: 'synthetic native inputs applied as evidence patch' })
       expect(bytes.length).toBeGreaterThan(1000)
     }
+    // Dense profile: a single native body taller than the useful area must
+    // continue across real A4 pages at the fixed scale.
+    const dense = captureProfilRangsDense()
+    const denseProjection = projeterRequeteExport(dense, [])
+    if (denseProjection.status !== 'ready') throw new Error(denseProjection.reason)
+    const denseResult = await composerCahierPdfNativedansNavigateur(denseProjection.request, {
+      signal: new AbortController().signal,
+    })
+    const denseBytes = new Uint8Array(await denseResult.blob.arrayBuffer())
+    writeFileSync(path.join(OUT, 'aedar-equipment-profile-dense.pdf'), denseBytes)
+    const densePdf = await getDocument({ data: Uint8Array.from(denseBytes) }).promise
+    for (let pageNumber = 1; pageNumber <= densePdf.numPages; pageNumber += 1) {
+      writeFileSync(path.join(OUT, `aedar-equipment-profile-dense-p${pageNumber}.png`),
+        await rendrePngNatif(denseBytes, 1.7, pageNumber))
+    }
+    expect(densePdf.numPages).toBeGreaterThanOrEqual(2)
+    manifest.push({ key: 'aedar-equipment-profile-dense', file: 'aedar-equipment-profile-dense.pdf',
+      pages: densePdf.numPages,
+      pngs: Array.from({ length: densePdf.numPages }, (_, i) => `aedar-equipment-profile-dense-p${i + 1}.png`),
+      bytes: denseBytes.length, modes: [], populated: 'synthetic dense profile; continuation at fixed scale' })
     writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify({
       scope: 'Shared native Vue -> DOM-paint path, #1024 switch. Real generated PDF bytes and PNG renders, no preview, no approval.',
       inputs: 'Every served value is a labelled SYNTHETIC review fixture applied to both the native mount and the B projections; none is published data.',

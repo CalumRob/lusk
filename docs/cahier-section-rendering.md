@@ -262,10 +262,12 @@ raster and do not establish a production map or visual-approval claim.
 content with `top + max(0, (capacity - used) / 2)`, but it also computes one
 global `scale` to fit the tallest section (`desktop.js:587`). #1014/#1024
 require real overflow continuation and forbid shrinking the whole document, so
-the export keeps the fixed scale and the prototype's per-page centring. The
-earlier "dead band" complaint concerned a short section wrapped in a screen
-card; the export shell now hides that card and drops explanatory prose, so the
-residual centred inset is the approved page composition, not a second column.
+the export keeps the fixed scale and the prototype's per-page centring, with
+one deliberate divergence: the inset is capped at the approved 48 CSS px band.
+The owner rejected a large empty band above a short section, so a tall inset is
+not "approved centring" even though the prototype produces it. The export shell
+also hides the screen card and drops explanatory prose; the result is a small,
+consistent top band, not a second column or a dead quarter-page.
 
 `cahierPdfComposer.ts` is the narrow public generation seam:
 `(request: CahierExportRequest, { signal }) => Promise<{ blob, fileName }>`.

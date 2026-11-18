@@ -1517,7 +1517,9 @@ async function composerDocument(request: CahierExportRequest, options: OptionsCo
     const hauteurContenu = page.blocks.reduce((sum, bloc) => sum + bloc.gapAvant + bloc.height, 0)
     const hauteurSection = 2 * PAGE.paddingSection + identitePage + hauteurContenu + documentPdf.sourcesHeight
     const hauteurUtile = documentPdf.contenuBas - PAGE.contenuHaut
-    const inset = Math.max(0, (hauteurUtile - hauteurSection) / 2)
+    // Cap the centring inset: the owner rejected a large empty band above a
+    // short section, so only the approved small band is centred.
+    const inset = Math.min(Math.max(0, (hauteurUtile - hauteurSection) / 2), mm(ptDepuisCssPx(48)))
     const frameTop = PAGE.contenuHaut + inset
     let cy = dessinerIdentite(
       doc,
