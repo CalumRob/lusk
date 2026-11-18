@@ -192,6 +192,59 @@ def test_aedar_littoral_trigger_rehearsal_and_schema_parity():
                       AND pg_get_constraintdef(c.oid) LIKE '%%littoral%%'""", (replay,)).fetchone()[0] == 2
             finally:
                 connection.execute(f'DROP SCHEMA IF EXISTS "{replay}" CASCADE')
+
+            # Definition-based location: an AUTO-NAMED pre-extension CHECK is
+            # widened in place (matching merged 044), then replay is a no-op and
+            # a missing definition fails loudly instead of being guessed.
+            widen = "it_littoral_aedar_widen_" + uuid.uuid4().hex[:12]
+            connection.execute(f'CREATE SCHEMA "{widen}"')
+            try:
+                connection.execute(f'SET search_path TO "{widen}"')
+                connection.execute(SCHEMA)
+                connection.execute("ALTER TABLE aedar_comparison_group DROP CONSTRAINT aedar_reference_context_check")
+                connection.execute("ALTER TABLE aedar_comparison_group ADD CHECK(comparison_context IN ('density_class','same_level'))")
+                connection.execute("ALTER TABLE aedar_comparison_group DROP CONSTRAINT aedar_reference_scope_check")
+                connection.execute("""ALTER TABLE aedar_comparison_group ADD CHECK(
+                    (comparison_context='density_class' AND territory_type='commune' AND statistic='pooled') OR
+                    (comparison_context='same_level' AND territory_type IN ('epci','departement') AND statistic='median'))""")
+
+                def check_defs():
+                    return connection.execute("""
+                        SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                        JOIN pg_class r ON r.oid=c.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace
+                        WHERE n.nspname=%s AND r.relname='aedar_comparison_group' AND c.contype='c'
+                          AND pg_get_constraintdef(c.oid) LIKE '%%comparison_context%%'
+                        ORDER BY 1""", (widen,)).fetchall()
+                assert all("littoral" not in d[0] for d in check_defs())
+                # The auto-named constraint is found by definition, not conname.
+                assert not any(c[0] in ("aedar_reference_context_check", "aedar_reference_scope_check")
+                               for c in connection.execute("""SELECT c.conname FROM pg_constraint c
+                                   JOIN pg_class r ON r.oid=c.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace
+                                   WHERE n.nspname=%s AND r.relname='aedar_comparison_group' AND c.contype='c'""",
+                                   (widen,)).fetchall())
+                connection.execute(MIGRATION)
+                widened = check_defs()
+                assert len(widened) == 2 and all("littoral" in d[0] for d in widened)
+                connection.execute(MIGRATION)
+                assert check_defs() == widened  # replay is a structural no-op
+                # Removing the definition makes the next application fail loudly.
+                defs = connection.execute("""SELECT c.conname FROM pg_constraint c
+                    JOIN pg_class r ON r.oid=c.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace
+                    WHERE n.nspname=%s AND r.relname='aedar_comparison_group' AND c.contype='c'
+                      AND pg_get_constraintdef(c.oid) LIKE '%%comparison_context%%'
+                      AND pg_get_constraintdef(c.oid) NOT LIKE '%%territory_type%%'""", (widen,)).fetchall()
+                assert len(defs) == 1
+                connection.execute(f'ALTER TABLE aedar_comparison_group DROP CONSTRAINT "{defs[0][0]}"')
+                connection.execute("BEGIN")
+                try:
+                    connection.execute(MIGRATION)
+                    pytest.fail("migration 045 accepted a missing AEDAR context CHECK")
+                except psycopg.errors.RaiseException as exc:
+                    assert "expected exactly one AEDAR comparison_context CHECK" in str(exc)
+                finally:
+                    connection.execute("ROLLBACK")
+            finally:
+                connection.execute(f'DROP SCHEMA IF EXISTS "{widen}" CASCADE')
     finally:
         try:
             if verified:

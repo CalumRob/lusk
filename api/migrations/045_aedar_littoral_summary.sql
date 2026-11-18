@@ -9,38 +9,52 @@ BEGIN;
 -- density-only PK/count contract, its descriptor and aedar_comparison_territory
 -- (kept empty) are untouched. Applying this DDL alone publishes nothing.
 
--- 1. Widen the closed AEDAR reference context/scope CHECKs in place.
+-- 1. Widen the closed AEDAR reference context/scope CHECKs in place. Like the
+-- merged 044, locate each CHECK by its DEFINITION (not a literal constraint
+-- name) so an auto-named constraint is handled; require exactly one match and
+-- fail loudly otherwise. A replay on an already-widened schema is a no-op.
 DO $m045$
 DECLARE
   con_name text;
   def text;
+  matches integer;
 BEGIN
-  SELECT c.conname, pg_get_constraintdef(c.oid) INTO con_name, def
+  -- The context CHECK is the comparison_context IN (...) predicate; the scope
+  -- CHECK is the one that also mentions territory_type.
+  SELECT count(*), min(c.conname), min(pg_get_constraintdef(c.oid))
+    INTO matches, con_name, def
   FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
   JOIN pg_namespace n ON n.oid=r.relnamespace
   WHERE n.nspname=current_schema() AND r.relname='aedar_comparison_group'
-    AND c.contype='c' AND c.conname='aedar_reference_context_check';
-  IF con_name IS NOT NULL AND def NOT LIKE '%''littoral''%' THEN
-    ALTER TABLE aedar_comparison_group DROP CONSTRAINT aedar_reference_context_check;
-    ALTER TABLE aedar_comparison_group ADD CONSTRAINT aedar_reference_context_check
-      CHECK(comparison_context IN ('density_class','littoral','same_level'));
-  ELSIF con_name IS NULL THEN
-    RAISE EXCEPTION 'migration 045: missing aedar_reference_context_check';
+    AND c.contype='c'
+    AND pg_get_constraintdef(c.oid) LIKE '%comparison_context%'
+    AND pg_get_constraintdef(c.oid) NOT LIKE '%territory_type%';
+  IF matches<>1 THEN
+    RAISE EXCEPTION 'migration 045: expected exactly one AEDAR comparison_context CHECK, found %', matches;
+  END IF;
+  IF def NOT LIKE '%''littoral''%' THEN
+    EXECUTE format('ALTER TABLE aedar_comparison_group DROP CONSTRAINT %I',con_name);
+    EXECUTE format('ALTER TABLE aedar_comparison_group ADD CONSTRAINT %I %s',con_name,
+      'CHECK(comparison_context IN (''density_class'',''littoral'',''same_level''))');
   END IF;
 
-  SELECT c.conname, pg_get_constraintdef(c.oid) INTO con_name, def
+  SELECT count(*), min(c.conname), min(pg_get_constraintdef(c.oid))
+    INTO matches, con_name, def
   FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
   JOIN pg_namespace n ON n.oid=r.relnamespace
   WHERE n.nspname=current_schema() AND r.relname='aedar_comparison_group'
-    AND c.contype='c' AND c.conname='aedar_reference_scope_check';
-  IF con_name IS NOT NULL AND def NOT LIKE '%''littoral''%' THEN
-    ALTER TABLE aedar_comparison_group DROP CONSTRAINT aedar_reference_scope_check;
-    ALTER TABLE aedar_comparison_group ADD CONSTRAINT aedar_reference_scope_check
-      CHECK((comparison_context='density_class' AND territory_type='commune' AND statistic='pooled') OR
-            (comparison_context='littoral' AND territory_type='commune' AND statistic='pooled') OR
-            (comparison_context='same_level' AND territory_type IN ('epci','departement') AND statistic='median'));
-  ELSIF con_name IS NULL THEN
-    RAISE EXCEPTION 'migration 045: missing aedar_reference_scope_check';
+    AND c.contype='c'
+    AND pg_get_constraintdef(c.oid) LIKE '%comparison_context%'
+    AND pg_get_constraintdef(c.oid) LIKE '%territory_type%';
+  IF matches<>1 THEN
+    RAISE EXCEPTION 'migration 045: expected exactly one AEDAR reference scope CHECK, found %', matches;
+  END IF;
+  IF def NOT LIKE '%''littoral''%' THEN
+    EXECUTE format('ALTER TABLE aedar_comparison_group DROP CONSTRAINT %I',con_name);
+    EXECUTE format('ALTER TABLE aedar_comparison_group ADD CONSTRAINT %I %s',con_name,
+      'CHECK((comparison_context=''density_class'' AND territory_type=''commune'' AND statistic=''pooled'') OR '||
+            '(comparison_context=''littoral'' AND territory_type=''commune'' AND statistic=''pooled'') OR '||
+            '(comparison_context=''same_level'' AND territory_type IN (''epci'',''departement'') AND statistic=''median''))');
   END IF;
 END;
 $m045$;

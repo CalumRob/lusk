@@ -20,10 +20,15 @@ def _fn(text):
 def test_migration_045_widens_aedar_reference_checks():
     m = _m045()
     assert "'density_class','littoral','same_level'" in m
-    assert m.count("aedar_reference_context_check") >= 2
-    assert m.count("aedar_reference_scope_check") >= 2
+    # CHECKs are located by definition (like merged 044), not a literal
+    # constraint name, and a missing/ambiguous definition fails loudly.
+    assert "c.conname='aedar_reference_context_check'" not in m
+    assert "c.conname='aedar_reference_scope_check'" not in m
+    assert "pg_get_constraintdef(c.oid) LIKE '%comparison_context%'" in m
+    assert "expected exactly one AEDAR comparison_context CHECK" in m
+    assert "expected exactly one AEDAR reference scope CHECK" in m
     # Scope admits littoral commune/pooled, not a fabricated median group.
-    assert "comparison_context='littoral' AND territory_type='commune' AND statistic='pooled'" in m
+    assert "comparison_context=''littoral'' AND territory_type=''commune'' AND statistic=''pooled''" in m
 
 
 def test_migration_045_adds_sibling_summary_and_counters_only():
