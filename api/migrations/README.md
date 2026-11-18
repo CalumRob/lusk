@@ -1,5 +1,41 @@
 # PostgreSQL migration history
 
+## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
+
+`045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication
+with the third fixed context `littoral` (`group_id` `'C'`/`'NC'`,
+`territory_type` `commune`, `statistic` `pooled`). It widens
+`aedar_reference_context_check` and `aedar_reference_scope_check` in place,
+adds three `littoral_summary_*` counters to `aedar_comparison_publication`,
+and creates the SIBLING relation `aedar_littoral_summary`. No density-only
+PK/count contract, density descriptor, grant on the density table, or
+`aedar_comparison_territory` row is changed: C/NC summaries live in their own
+table and can never collide with the density summary keys. The deferred
+publication validator now accepts an existing complete **pre-extension**
+generation (zero littoral groups and counters) and rejects an incomplete
+littoral generation with a named reason. Replaying 045 on a current schema is
+a structural no-op; fresh installs carry the same contract in `api/schema.sql`.
+Fast contract: `api/tests/test_aedar_littoral_migration_contract.py`.
+The guarded, non-retained rehearsal
+`api/tests/integration/test_aedar_littoral_migration.py` proves on the
+dedicated test database (own random schemas, mutex, runtime identity checks,
+cleanup opt-in) that a pre-extension generation commits, an incomplete
+littoral generation is rejected, a complete C/NC sibling generation commits
+with density counters still correct, and replaying 045 leaves the AEDAR catalog
+unchanged.
+
+**Coordinated operator window (#1043 / #1044).** A code merge publishes
+nothing. In ONE operator window the owner must apply migrations 043, 044 and
+045 (in that order after the earlier pack), republish the enriched
+`territory_reference` with the complete C/NC crosswalk, republish ALL
+comparison families (scalar, declared profile, ordered series, observed
+collections), regenerate AEDAR references and BOTH the density and littoral
+sibling summaries via `scripts/publish-aedar-aggregates.R --check` then the
+gated `--publish` flow, rebuild the API service, and deploy the app (#1044).
+A partial rollout leaves comparison/AEDAR markers stale; the API fails closed
+with a named reason rather than borrowing a density or Bretagne cohort. No
+worker applied serving DDL, publication or deployment.
+
 ## Migration 044 (#1042) — littoral comparison contexts (additive)
 
 `044_littoral_comparison_contexts.sql` widens the closed `comparison_context`

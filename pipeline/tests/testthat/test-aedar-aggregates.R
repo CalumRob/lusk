@@ -117,7 +117,7 @@ test_that("AEDAR projection preserves the complete 2025 TYPEQU registry at all f
 
 test_that("AEDAR fixed comparison inventory is complete and excludes custom groups", {
   expect_equal(AEDAR_FIXED_COMPARISON_SCOPES,
-    list(commune=c("densite", "epci", "bretagne"), epci="epci", departement="departement"))
+    list(commune=c("densite", "littoral", "epci", "bretagne"), epci="epci", departement="departement"))
   expect_false(any(grepl("custom|arbitrary", unlist(AEDAR_FIXED_COMPARISON_SCOPES))))
   adr <- paste(readLines(testthat::test_path("..","..","..","docs","adr",
     "0039-published-comparison-aggregates.md"),warn=FALSE),collapse="\n")

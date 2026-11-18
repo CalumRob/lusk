@@ -22,7 +22,8 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     assert resource.axes == ("typequ", "measure", "context")
     assert resource.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert resource.allowed_levels == ("commune", "epci", "departement", "region")
-    assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
+    assert resource.context_values == (
+        "density_class", "littoral", "epci", "bretagne", "same_level")
     assert summary.resource_kind == "aedar_territory_summary"
     assert summary.intents == ("facts",) and summary.dynamic_axes == ("measure",)
     assert summary.measure_facets == {measure: resource.measure_facets[measure]
@@ -563,7 +564,7 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
             if "SELECT DISTINCT typequ" in sql:
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
-                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1",1,40,40,40,1,235)})()
+                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1",1,40,40,40,1,235,0,0,0,0,0)})()
             if "SELECT territory_id,territory_type,density_class_code,littoral_code FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:("22001","commune",state["density"])})()
             if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference" in sql:
@@ -956,7 +957,8 @@ class _AedarSelectedConnection:
             return _AedarSelectedRows(["marker"], [(
 
                 "cmp-v1", "2026-v1", "aed-v1", "ref-v1", "inputs-v1", {"address_origins": "sha"},
-                1, 0, "reference_only", "aed-v1", "ref-v1", 2, 40, 80, 80, 2, 235)])
+                1, 0, "reference_only", "aed-v1", "ref-v1", 2, 40, 80, 80, 2, 235,
+                0, 0, 0, 0, 0)])
         if "FROM aedar_density_class_summary" in s:
             _, group_id, measures = params
             rows = []
