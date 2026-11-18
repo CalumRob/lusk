@@ -31,9 +31,9 @@ class FixedComparisonConnection:
 
     def execute(self, sql, params=None):
         self.sql.append((sql,params))
-        if "WHERE territory_id=%s" in sql and "density_class_code FROM territory_reference" in sql:
+        if "WHERE territory_id=%s" in sql and "density_class_code" in sql and "territory_reference" in sql:
             return Cursor(row=("c1","commune","d1"))
-        if ("SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference"
+        if ("SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference"
                 in sql):
             return Cursor(rows=[("c1","commune","35","e1","d1"),
                 ("c2","commune","35","e1","d1"),

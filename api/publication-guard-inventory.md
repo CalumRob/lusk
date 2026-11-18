@@ -256,6 +256,7 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_execute_comparison_publication_read` | `—` | Published comparison schema is unavailable |
 | `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published Bretagne comparison identity is unavailable |
 | `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published Bretagne comparison identity is unavailable |
+| `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published littoral classification is unavailable |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Incomplete published series |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Invalid published series axis |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Series publication is unavailable or incompatible |
