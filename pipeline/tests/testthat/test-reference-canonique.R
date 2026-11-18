@@ -142,17 +142,8 @@ test_that("tous les thèmes publient une référence octet-pour-octet identique"
     classes_littoral = littoral_canonique_1056()
   )
 
-  communes_fixture <- pop_canonique_1056()$code_commune[
-    !pop_canonique_1056()$code_commune %in% c("29083", "29084")
-  ]
-  # Un frame « thème » volontairement plus étroit : 1 200 communes.
-  frame <- squelette_territoires_canonique(base)
-  frame <- frame[
-    !(frame$type == "commune" & frame$code %in% c("29083", "29084")),
-    , drop = FALSE
-  ]
-
-  # compute_payload reçoit la référence canonique et la publie telle quelle.
+  # Les DEUX chemins de payload (compute_payload partagé et seam publier d'un
+  # thème) reçoivent la même dimension canonique et la publient telle quelle.
   p1 <- compute_payload(
     load_fixture(), theme = theme_demographie(),
     classes_littoral = littoral_canonique_1056(), reference = reference
@@ -161,10 +152,16 @@ test_that("tous les thèmes publient une référence octet-pour-octet identique"
     communes_fixture_milieux_ocsge(), theme = theme_milieux(),
     classes_littoral = littoral_canonique_1056(), reference = reference
   )
+  # Le thème Économie a son propre assembleur de payload (seam publier).
+  p3 <- construire_payload_economie(
+    fixture_analytiques_economie(), base_epci_economie, vintages_economie(),
+    classes_littoral = littoral_canonique_1056(), reference = reference
+  )
 
   expect_identical(p1$territoires, reference)
   expect_identical(p2$territoires, reference)
-  expect_identical(p1$territoires, p2$territoires)
+  expect_identical(p3$territoires, reference)
+  expect_identical(p1$territoires, p3$territoires)
 })
 
 # Fail closed : un désaccord entre squelette et classification est bruyant.

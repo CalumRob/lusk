@@ -103,13 +103,16 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     NULL
   }
 
+  brut <- theme$construire_donnees(cache = cache)
+
   # #1056 (option B) : la référence territoriale est une DIMENSION, construite
   # UNE fois depuis la base INSEE épinglée (1 202 communes, îles incluses) et
   # les deux classifications, INDÉPENDAMMENT des faits du thème. C'est cette
   # projection — et non le miroir des lignes du dernier thème — que chaque
   # thème publie, pour que la référence soit byte-identique d'un run à l'autre.
-  # Les seams de test qui ne déposent pas la base gardent `reference = NULL`
-  # (repli historique borné), comme pour les classifications.
+  # Construite APRÈS `construire_donnees` : ce sont les builders de thème qui
+  # extraient la base EPCI du cache sur un run neuf. Les seams de test qui ne
+  # déposent pas la base gardent `reference = NULL` (repli historique borné).
   chemin_base_epci <- file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx")
   reference_canonique <- if (file.exists(chemin_base_epci)) {
     reference_territoires_canonique(
@@ -121,8 +124,6 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   } else {
     NULL
   }
-
-  brut <- theme$construire_donnees(cache = cache)
 
   # Issue #233 : le diagnostic de couverture du thème (lignes + km par
   # département, courant vs précédent) quand il le porte — NULL pour les
