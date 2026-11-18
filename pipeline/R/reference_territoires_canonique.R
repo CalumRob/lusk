@@ -74,7 +74,7 @@ codes_communes_canoniques <- function(population = NULL) {
 # l'ordre de l'univers épinglé, avec les vrais noms de la base INSEE et la
 # règle de pluralité départementale pesée par la population épinglée. La base
 # doit couvrir EXACTEMENT l'univers canonique : une commune manquante (les
-# deux îles）ou un code fantôme échoue fort — c'est la garde qui rend la
+# deux îles) ou un code fantôme échoue fort — c'est la garde qui rend la
 # publication fail-closed.
 squelette_territoires_canonique <- function(base_epci, population = NULL,
                                             noms_epci_geo_api = NULL) {
