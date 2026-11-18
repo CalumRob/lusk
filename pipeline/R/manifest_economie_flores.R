@@ -3,25 +3,28 @@
 # contracts, todo 2) : INSEE 8266010 « Nombre d'établissements et effectifs
 # salariés par secteur d'activité et tranche d'effectifs détaillés fin 2024 »
 # (Fichier localisé des rémunérations et de l'emploi salarié — Flores).
-# Vérifié en direct le 2026-08-04 (https://www.insee.fr/fr/statistiques/8266010) :
-#   - A38 : DS_FLORES_A38_2024_CSV_FR.zip (csv, 21 Mo) — 9 tranches d'effectifs.
-#   - A88 : DS_FLORES_A88_2024_CSV_FR.zip (csv, 8 Mo) — SANS tranche d'effectifs
-#     (les fichiers A88 ne sont pas proposés selon la tranche d'effectifs).
+# Vérifié sur la page officielle le 2026-11-18
+# (https://www.insee.fr/fr/statistiques/8266010) : après le rechargement du
+# 2026-08-27, les deux archives se téléchargent via l'API MELodi :
+#   - A38 : DS_FLORES_A38_2024_CSV_FR.zip — 9 tranches d'effectifs.
+#   - A88 : DS_FLORES_A88_2024_CSV_FR.zip — SANS tranche d'effectifs (les
+#     fichiers A88 ne sont pas proposés selon la tranche d'effectifs).
 #   - Mesures (FLORES_MEASURE) : UNIT_LOC (nombre d'établissements) et EMPL3112
 #     (effectifs présents la dernière semaine de décembre).
-#   - Géographie : communale au 1er janvier 2025 (GEO / GEO_OBJECT), tous les
-#     niveaux géographiques du produit.
+#   - Géographie : communale au 1er janvier 2026 (GEO / GEO_OBJECT), tous les
+#     niveaux géographiques du produit. Les 1 202 codes bretons restent présents
+#     dans le référentiel EPCI 2025 épinglé par le pipeline.
 #   - Avertissement INSEE : à l'échelle communale, les données n'ont pas fait
 #     l'objet d'une validation par des experts ; la comparabilité entre
 #     millésimes n'est pas garantie.
-#   - Parution le 31/03/2026 ; données fin 2024.
+#   - Rechargement le 27/08/2026 en géographie 2026 ; données fin 2024.
 #
 # Ce sont des FRAGMENTS de manifeste « par source » (convention vague 2, issue
 # #13) : le manifeste du thème Économie/Emploi concatènera ces deux lignes avec
 # SIRENE (todo 1) et RP Emploi (todo 3). DEUX ids et DEUX caches distincts —
 # jamais une seule ligne « Flores » : chaque nomenclature garde SON contrat.
 # Chaque source garde SON vintage (2024), SA date de référence (fin 2024) et SA
-# date de publication (31/03/2026) — AUCUN alignement de date entre sources,
+# date de publication (27/08/2026) — AUCUN alignement de date entre sources,
 # AUCUNE table de passage vers NAF (la classification native A38/A88 n'est pas
 # un code NAF ; pas de croisement dans cette phase). Mode « cron »
 # (téléchargement direct sans clé), type « fichier » (URL -> fichier, intégrité
@@ -40,18 +43,18 @@ MANIFEST_ECONOMIE_FLORES <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference, ~date_publication, ~licence, ~note, ~mode, ~type, ~classification, ~mesures, ~tranches_effectifs, ~geographie,
   "flores_a38",
   "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
-  "https://www.insee.fr/fr/statistiques/fichier/8266010/DS_FLORES_A38_2024_CSV_FR.zip",
-  "DS_FLORES_A38_2024_CSV_FR.zip", "2024", "2024-12-31", "2026-03-31", "lov2",
-  "Nombre d'établissements (UNIT_LOC) et effectifs salariés (EMPL3112) par secteur d'activité A38 et tranche d'effectifs ; géographie communale au 01/01/2025 ; données communales non validées par des experts (avertissement INSEE)",
+  "https://api.insee.fr/melodi/file/DS_FLORES_A38/DS_FLORES_A38_2024_CSV_FR",
+  "DS_FLORES_A38_2024_CSV_FR.zip", "2024", "2024-12-31", "2026-08-27", "lov2",
+  "Nombre d'établissements (UNIT_LOC) et effectifs salariés (EMPL3112) par secteur d'activité A38 et tranche d'effectifs ; géographie communale au 01/01/2026 ; données communales non validées par des experts (avertissement INSEE)",
   "cron", "fichier",
-  "A38", "etablissements;effectifs_salaries", "9 tranches", "communes",
+  "A38", "etablissements;effectifs_salaries", "9 tranches", "communes (COG 2026)",
   "flores_a88",
   "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
-  "https://www.insee.fr/fr/statistiques/fichier/8266010/DS_FLORES_A88_2024_CSV_FR.zip",
-  "DS_FLORES_A88_2024_CSV_FR.zip", "2024", "2024-12-31", "2026-03-31", "lov2",
-  "Nombre d'établissements (UNIT_LOC) et effectifs salariés (EMPL3112) par secteur d'activité A88 — sans tranche d'effectifs (les fichiers A88 ne sont pas déclinés par tranche) ; géographie communale au 01/01/2025 ; données communales non validées par des experts (avertissement INSEE)",
+  "https://api.insee.fr/melodi/file/DS_FLORES_A88/DS_FLORES_A88_2024_CSV_FR",
+  "DS_FLORES_A88_2024_CSV_FR.zip", "2024", "2024-12-31", "2026-08-27", "lov2",
+  "Nombre d'établissements (UNIT_LOC) et effectifs salariés (EMPL3112) par secteur d'activité A88 — sans tranche d'effectifs (les fichiers A88 ne sont pas déclinés par tranche) ; géographie communale au 01/01/2026 ; données communales non validées par des experts (avertissement INSEE)",
   "cron", "fichier",
-  "A88", "etablissements;effectifs_salaries", "sans tranche", "communes"
+  "A88", "etablissements;effectifs_salaries", "sans tranche", "communes (COG 2026)"
 )
 
 # verifier_contrat_flores -----------------------------------------------------

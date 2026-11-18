@@ -531,7 +531,12 @@ verifier_chomage_economie_reel <- function(donnees) {
 # plancher gate D (min 2 salariés) TOUTES comptées, 1196 retenues, des LQ
 # continues, finies, positives.
 verifier_lq_flores_reel <- function(donnees) {
-  verifier_egale(nrow(donnees$flores_a88), 48821L,
+  # 2026-11-18 : la livraison Flores rechargée le 2026-08-27 en géographie 2026
+  # diffuse des zéros EXPLICITES pour les cellules vides (la livraison 2025 les
+  # omettait) — 209 148 lignes A88 / 872 652 A38, contre 48 821 / 109 413. Les
+  # artefacts aval sont inchangés : 22 616 et 16 019 cellules de LQ, les mêmes
+  # six communes sous le plancher, 1 196 communes retenues.
+  verifier_egale(nrow(donnees$flores_a88), 209148L,
                  "Flores A88 — le compte réel des lignes")
   verifier_egale(dplyr::n_distinct(donnees$flores_a88$commune), 1202L,
                  "Flores A88 — les 1202 communes")
@@ -551,7 +556,7 @@ verifier_lq_flores_reel <- function(donnees) {
   verifier_vrai(any(res$lq$lq < 1) && any(res$lq$lq > 1),
                 "Flores A88", "des LQ toutes égales à 1")
 
-  verifier_egale(nrow(donnees$flores_a38), 109413L,
+  verifier_egale(nrow(donnees$flores_a38), 872652L,
                  "Flores A38 — le compte réel des lignes")
   verifier_egale(dplyr::n_distinct(donnees$flores_a38$commune), 1202L,
                  "Flores A38 — les 1202 communes")
@@ -643,11 +648,22 @@ verifier_forme_lq_a17 <- function(lq, verrou,
 # l'artefact épinglé. TOUT autre code exclu (une sous-classe post-2008 absente
 # de la correspondance épinglée, un code corrompu) échoue bruyamment ici.
 verifier_exclusions_a17 <- function(exclusions, verrou) {
-  verifier_egale(sort(unique(exclusions$activity_code)), "00.00Z",
-                 paste(verrou, "— les codes exclus du mapping A17"))
-  verifier_egale(sum(exclusions$n[exclusions$activity_code == "00.00Z"]), 1L,
-                 paste(verrou,
-                       "— l'inconnue 00.00Z ne porte qu'un seul établissement"))
+  # 2026-11-18 : la coupe SIRENE 2026-10 ne porte plus AUCUN code hors
+  # correspondance (« 00.00Z » a disparu de l'export). La règle est donc
+  # « aucun code inconnu » — un ensemble vide est le meilleur cas, pas une
+  # anomalie ; « 00.00Z » reste le seul code toléré, et il ne porte alors qu'un
+  # établissement. Tout autre code (sous-classe post-2008 absente de
+  # l'artefact épinglé, code corrompu) échoue toujours bruyamment.
+  codes <- sort(unique(exclusions$activity_code))
+  inconnus <- setdiff(codes, "00.00Z")
+  verifier_vrai(length(inconnus) == 0L, verrou,
+                paste("un code exclu hors « 00.00Z » :",
+                      paste(inconnus, collapse = ", ")))
+  if ("00.00Z" %in% codes) {
+    verifier_egale(sum(exclusions$n[exclusions$activity_code == "00.00Z"]), 1L,
+                   paste(verrou,
+                         "— l'inconnue 00.00Z ne porte qu'un seul établissement"))
+  }
   verifier_vrai(all(grepl("naf2_na17_2008", exclusions$motif)),
                 verrou, "un motif hors artefact épinglé naf2_na17_2008")
   invisible(TRUE)
@@ -683,7 +699,9 @@ verifier_forme_sidecar_m <- function(m, lq, verrou) {
 verifier_lq_economie_reel <- function(donnees) {
   snapshot <- donnees$sirene_snapshot
 
-  verifier_egale(nrow(snapshot), 181481L, "LQ Économie — le compte réel du snapshot")
+  # 2026-11-18 : la coupe SIRENE régionale est passée au millésime 2026-10
+  # (dernier traitement observé 2026-09-30) — 182 247 établissements actifs.
+  verifier_egale(nrow(snapshot), 182247L, "LQ Économie — le compte réel du snapshot")
   verifier_egale(dplyr::n_distinct(snapshot$commune), 1202L,
                  "LQ Économie — les 1202 communes")
 
@@ -813,7 +831,7 @@ verifier_rangs_economie_reel <- function(donnees, base_epci) {
 # sortie analytique du run — pas de course avec publie_economie).
 verifier_economie_e2e_reel <- function(donnees, base_epci) {
   comptes_normalises <- c(
-    sirene_snapshot = 181481L, flores_a38 = 109413L, flores_a88 = 48821L,
+    sirene_snapshot = 182247L, flores_a38 = 872652L, flores_a88 = 209148L,
     rp_emploi = 7212L, rp_chomage = 1202L * 3L
   )
   for (nom in names(comptes_normalises)) {

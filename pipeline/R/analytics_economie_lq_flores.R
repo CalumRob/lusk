@@ -117,10 +117,17 @@ agreger_flores_par_activite <- function(flores, grain) {
          "non diffusée) au grain retenu : la commune ne peut pas entrer dans ",
          "le calcul — jamais de suppression silencieuse.", call. = FALSE)
   }
-  if (any(effectifs$value <= 0)) {
-    stop("Analyse LQ Flores — value doit être positive (le grain ne porte que ",
-         "des effectifs observés).", call. = FALSE)
+  if (any(effectifs$value < 0)) {
+    stop("Analyse LQ Flores — un effectif négatif est une corruption.",
+         call. = FALSE)
   }
+  # Le rechargement 2026-08-27 diffuse des zéros EXPLICITES là où la livraison
+  # 2025 omettait la cellule. Un secteur sans effectif n'a pas de LQ : le zéro
+  # est exclu exactement comme la cellule absente qu'il remplace, sinon la LQ
+  # casserait sur une division par zéro et le classement se peuplerait de
+  # spécialisations nulles. La table normalisée, elle, garde le zéro — c'est un
+  # état distinct de la cellule non diffusée.
+  effectifs <- dplyr::filter(effectifs, value != 0)
 
   effectifs %>%
     dplyr::group_by(commune, activity_code) %>%

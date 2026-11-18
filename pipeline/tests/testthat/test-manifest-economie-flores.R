@@ -65,15 +65,15 @@ test_that("le manifeste liste deux sources Flores distinctes (A38 et A88)", {
   expect_true(all(!duplicated(MANIFEST_ECONOMIE_FLORES$id)))
   expect_true(all(!duplicated(MANIFEST_ECONOMIE_FLORES$fichier)))
 
-  # URL officielles du produit INSEE 8266010, en HTTPS
+  # URL officielles MELodi du produit INSEE 8266010, en HTTPS
   expect_true(all(startsWith(MANIFEST_ECONOMIE_FLORES$url, "https://")))
-  expect_match(
+  expect_identical(
     MANIFEST_ECONOMIE_FLORES$url[MANIFEST_ECONOMIE_FLORES$id == "flores_a38"],
-    "8266010/DS_FLORES_A38_2024_CSV_FR\\.zip$"
+    "https://api.insee.fr/melodi/file/DS_FLORES_A38/DS_FLORES_A38_2024_CSV_FR"
   )
-  expect_match(
+  expect_identical(
     MANIFEST_ECONOMIE_FLORES$url[MANIFEST_ECONOMIE_FLORES$id == "flores_a88"],
-    "8266010/DS_FLORES_A88_2024_CSV_FR\\.zip$"
+    "https://api.insee.fr/melodi/file/DS_FLORES_A88/DS_FLORES_A88_2024_CSV_FR"
   )
 })
 
@@ -114,11 +114,12 @@ test_that("chaque contrat déclare classification, mesures, tranches et géograp
 })
 
 test_that("chaque source porte SON vintage, SA licence, sans croisement ni alignement", {
-  # vintage propre à la source : millésime 2024 (données fin 2024), parution
-  # le 31/03/2026 (vérifié en direct le 2026-08-04)
+  # vintage propre à la source : millésime 2024 (données fin 2024), rechargées
+  # le 27/08/2026 dans la géographie communale au 01/01/2026.
   expect_true(all(MANIFEST_ECONOMIE_FLORES$vintage == "2024"))
   expect_true(all(MANIFEST_ECONOMIE_FLORES$date_reference == "2024-12-31"))
-  expect_true(all(MANIFEST_ECONOMIE_FLORES$date_publication == "2026-03-31"))
+  expect_true(all(MANIFEST_ECONOMIE_FLORES$date_publication == "2026-08-27"))
+  expect_true(all(grepl("2026", MANIFEST_ECONOMIE_FLORES$geographie)))
   expect_true(all(MANIFEST_ECONOMIE_FLORES$licence == "lov2"))
   expect_true(all(!is.na(MANIFEST_ECONOMIE_FLORES$note)))
 

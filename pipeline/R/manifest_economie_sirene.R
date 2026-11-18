@@ -68,9 +68,9 @@ URL_SIRENE_REGIONAL <-
 # dans la note. La normalisation AUTO-VÉRIFIE la référence contre le fichier :
 # si le dernier traitement observé parmi les lignes retenues diffère de la
 # date épinglée, le contrat échoue bruyamment (le fichier a le dernier mot).
-VINTAGE_SIRENE_SNAPSHOT <- "2026-04"
-DATE_REFERENCE_SIRENE_SNAPSHOT <- "2026-03-31"
-DATE_PUBLICATION_SIRENE_SNAPSHOT <- "2026-05-01"
+VINTAGE_SIRENE_SNAPSHOT <- "2026-10"
+DATE_REFERENCE_SIRENE_SNAPSHOT <- "2026-09-30"
+DATE_PUBLICATION_SIRENE_SNAPSHOT <- "2026-11-18"
 
 # MANIFEST_ECONOMIE_SIRENE ------------------------------------------------------
 # Les 11 colonnes standard du manifeste (même forme que MANIFEST_DEMOGRAPHIE et
@@ -106,7 +106,7 @@ MANIFEST_ECONOMIE_SIRENE <- tibble::tribble(
   "sirene_snapshot",
   "data.bretagne.bzh — Base SIRENE — Région Bretagne",
   URL_SIRENE_REGIONAL,
-  "sirene_snapshot_2026-04.csv",
+  "sirene_snapshot_2026-10.csv",
   VINTAGE_SIRENE_SNAPSHOT,
   DATE_REFERENCE_SIRENE_SNAPSHOT,
   DATE_PUBLICATION_SIRENE_SNAPSHOT,
@@ -141,7 +141,7 @@ MANIFEST_ECONOMIE_SIRENE <- tibble::tribble(
       "NAF rév. 2 — APET 5 chiffres (732 sous-classes) ; ",
       "nomenclatureactiviteprincipaleetablissement = 'NAFRev2'"
     ),
-    date_extraction = "2026-05-01",
+    date_extraction = "2026-11-18",
     champ_commune = "codecommuneetablissement",
     champ_actif = "etatadministratifetablissement",
     champ_naf = "activiteprincipaleetablissement",
