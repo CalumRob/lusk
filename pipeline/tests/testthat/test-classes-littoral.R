@@ -337,21 +337,23 @@ test_that("la référence servie par R est la fixture consommée par l'app", {
   attendu <- jsonlite::fromJSON(fixture, simplifyVector = FALSE)
 
   territoires <- tibble::tibble(
-    territoire = c("29083", "29209", "22"),
-    type = c("commune", "commune", "departement"),
-    nom = c("Île-de-Sein", "Plouvien", "Finistère"),
-    departement = c("29", "29", "29"),
-    epci = c(NA_character_, NA_character_, NA_character_),
-    classe_densite_code = c("7", "5", NA_character_),
+    territoire = c("29083", "29084", "29209", "22"),
+    type = c("commune", "commune", "commune", "departement"),
+    nom = c("Île-de-Sein", "Île-Molène", "Plouvien", "Finistère"),
+    departement = c("29", "29", "29", "29"),
+    epci = c(NA_character_, NA_character_, NA_character_, NA_character_),
+    classe_densite_code = c("7", "7", "5", NA_character_),
     classe_densite_libelle_insee = c(
-      "Rural à habitat très dispersé", "Bourgs ruraux", NA_character_
+      "Rural à habitat très dispersé", "Rural à habitat très dispersé",
+      "Bourgs ruraux", NA_character_
     ),
     classe_densite_libelle_public = c(
       "communes rurales à habitat très dispersé en Bretagne",
+      "communes rurales à habitat très dispersé en Bretagne",
       "bourgs ruraux bretons", NA_character_
     ),
-    littoral_code = c("C", "NC", NA_character_),
-    littoral_classement_source = c("Mer", NA_character_, NA_character_)
+    littoral_code = c("C", "C", "NC", NA_character_),
+    littoral_classement_source = c("Mer", "Mer", NA_character_, NA_character_)
   )
   obtenu_chemin <- tempfile(fileext = ".json")
   on.exit(unlink(obtenu_chemin), add = TRUE)

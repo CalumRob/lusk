@@ -13,6 +13,18 @@
       "littoral_classement_source": "Mer"
     },
     {
+      "territoire": "29084",
+      "type": "commune",
+      "nom": "Île-Molène",
+      "departement": "29",
+      "epci": null,
+      "classe_densite_code": "7",
+      "classe_densite_libelle_insee": "Rural à habitat très dispersé",
+      "classe_densite_libelle_public": "communes rurales à habitat très dispersé en Bretagne",
+      "littoral_code": "C",
+      "littoral_classement_source": "Mer"
+    },
+    {
       "territoire": "29209",
       "type": "commune",
       "nom": "Plouvien",

@@ -15,7 +15,7 @@ import {
   territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
 import type { TerritoryComparisonContext } from '@/fiche/comparisonContext'
-import { membresConstructeur } from '@/fiche/selectionBuilder'
+import { membresConstructeur, modifierMembres } from '@/fiche/selectionBuilder'
 import { apiComparisonScopeLabel, comparisonScopeLabel, littoralScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { GROUPE_COMPARE_LABEL, groupeCompareAria } from '@/fiche/content/comparisonWording'
 import { comparisonRank } from '@/fiche/content/comparisonRank'
@@ -71,10 +71,12 @@ describe('served C/NC identity — single source of truth for the littoral prese
     expect(nc.some((m) => m.territory_id === focalNC.territoire)).toBe(true)
   })
 
-  it('both islands are C and Plouvien is NC straight from the served reference', () => {
-    // Île-de-Sein 29083 and Île-Molène 29084 are C in the served source; the
-    // fixture carries 29083 and 29209 — the app reads codes, never a coastline.
+  it('both islands read as C and Plouvien as NC straight from the served reference', () => {
+    // The committed served fixture carries 29083, 29084 and 29209 exactly as
+    // published; the app reads codes, never a coastline and never an exception.
     expect(contextesDepuisReference(cibleServie('29083'), SERVE.territoires).littoral?.scope.label)
+      .toBe('communes littorales bretonnes')
+    expect(contextesDepuisReference(cibleServie('29084'), SERVE.territoires).littoral?.scope.label)
       .toBe('communes littorales bretonnes')
     expect(contextesDepuisReference(cibleServie('29209'), SERVE.territoires).littoral?.scope.label)
       .toBe('communes non littorales bretonnes')
@@ -82,18 +84,12 @@ describe('served C/NC identity — single source of truth for the littoral prese
     expect(littoralScopeLabel('NC')).toBe('communes non littorales bretonnes')
   })
 
-  it('the two islands join the C cohort from their served code — no exception, no inference', () => {
-    // 29084 is added exactly as the producer publishes it (C); the app never
-    // derives that status and never applies an island rule of its own.
-    const iles: Territoire[] = [
-      ...SERVE.territoires,
-      { territoire: '29084', type: 'commune', nom: 'Île-Molène', departement: '29', epci: null,
-        littoral_code: 'C', littoral_classement_source: 'Mer' },
-    ]
-    const c = cohortLittoralPourFocal(cibleServie('29083'), iles)!
-    expect(c.map((m) => m.territory_id)).toContain('29083')
-    expect(c.map((m) => m.territory_id)).toContain('29084')
-    expect(c.map((m) => m.territory_id)).not.toContain('29209')
+  it('both islands share the served C cohort and Plouvien stays in NC — no synthetic row, no inference', () => {
+    const c = cohortLittoralPourFocal(cibleServie('29083'), SERVE.territoires)!
+    const nc = cohortLittoralPourFocal(cibleServie('29209'), SERVE.territoires)!
+    expect(c.map((m) => m.territory_id)).toEqual(['29083', '29084'])
+    expect(nc.map((m) => m.territory_id)).toEqual(['29209'])
+    expect(c.some((m) => nc.includes(m))).toBe(false)
   })
 
   it('a missing served classification fails closed — no NC-by-omission, no coastal guess', () => {
@@ -144,6 +140,32 @@ describe('the preset is offered, named and carried symbolically in the URL', () 
     expect(apres.preset).toBe('littoral')
     expect(apres.membres?.map((m) => m.territory_id)).toEqual(['29001', '29002'])
     expect(libelleSelectionComparaison(apres)).toBe('communes non littorales bretonnes')
+  })
+
+  it('round-trips the symbolic token: restore → edit into members → back to the preset without expanded-member URL churn', () => {
+    // 1. A shared URL restores the symbolic preset and builds its exact cohort.
+    const token = serialiserSelection({ etat: 'preset', preset: 'littoral' })!
+    expect(lireSelectionBrute(token)).toEqual({ etat: 'preset', preset: 'littoral' })
+    const restaure = resoudre(focalC, token)
+    const cohortC = membresConstructeur(restaure.selection, focalC, reference)
+    expect(cohortC.map((m) => m.territory_id)).toEqual(['22001', '22002'])
+    expect(serialiserSelection(restaure.selection)).toBe('littoral')
+
+    // 2. Editing the builder turns it into explicit typed members.
+    const edite = modifierMembres(cohortC, { territory_type: 'commune', territory_id: '22001' }, 'retirer')
+    expect(edite.etat).toBe('membres')
+    expect(serialiserSelection(edite)).toBe('commune:22002')
+
+    // 3. Returning to the unchanged preset keeps the symbolic token; choosing
+    // the LARGE inland (NC) cohort still serialises `littoral`, never the
+    // hundreds of expanded `commune:` members.
+    const retour = resoudre(focalNC, 'littoral')
+    expect(retour.membres!.length).toBeGreaterThan(1)
+    expect(serialiserSelection(retour.selection)).toBe('littoral')
+    expect(serialiserSelection(retour.selection)).not.toContain('commune:')
+    const constNC = cohortLittoralPourFocal(focalNC, reference)!
+    expect(modifierMembres(constNC, { territory_type: 'commune', territory_id: '29001' }, 'ajouter').etat)
+      .toBe('membres')
   })
 
   it('a named unresolved littoral preset stays unavailable — no regional substitution', () => {

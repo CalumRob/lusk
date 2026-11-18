@@ -256,4 +256,36 @@ describe('BoutonComparaison — face « Comparaison » du page-heading collant (
     expect(wrapper.find('.bouton-comparaison__menu').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('#1044 tient en largeur mobile : puce Littoral lisible, menu borné à la viewport, cibles tactiles 44px', async () => {
+    const largeurInitiale = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 360, configurable: true })
+    try {
+      const littoralPresets: readonly PresetComparaisonOption[] = [
+        ...presets,
+        { preset: 'littoral', label: 'communes littorales bretonnes', description: null },
+      ]
+      const wrapper = monter({ etat: 'preset', preset: 'littoral' }, {
+        presets: littoralPresets,
+        libelleActif: 'communes littorales bretonnes',
+      })
+      const bouton = wrapper.get('.bouton-comparaison__declencheur')
+      expect(bouton.find('.bouton-comparaison__type').text()).toBe('Littoral')
+      expect(bouton.text()).not.toContain('communes littorales bretonnes')
+      // Le menu s'ouvre et sa portée reste lisible dans une colonne étroite.
+      await bouton.trigger('click')
+      const option = wrapper.findAll('[role="menuitemradio"]').find((item) => item.text().includes('Littoral'))!
+      expect(option.find('.bouton-comparaison__option-scope').text()).toBe('communes littorales bretonnes')
+
+      // Aucune nouvelle surface : le style existant borne le menu à la viewport
+      // et garde des cibles tactiles de 44px au pointeur grossier.
+      const source = readFileSync(join(process.cwd(), 'src/components/fiche/BoutonComparaison.vue'), 'utf8')
+      expect(source).toContain('inline-size: min(20rem, calc(100vw - 2 * var(--space-4)))')
+      expect(source).toContain('@media (pointer: coarse)')
+      expect(source).toMatch(/min-block-size:\s*44px/)
+      wrapper.unmount()
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: largeurInitiale, configurable: true })
+    }
+  })
 })

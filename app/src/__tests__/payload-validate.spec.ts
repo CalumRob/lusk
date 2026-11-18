@@ -201,6 +201,7 @@ describe('contrat de la classification littorale (#1041)', () => {
     const parsed = validerTerritoiresMetadata(document.metadata, 'territoires-metadata.json')
     expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
     expect(territoires.find((t) => t.territoire === '29083')?.littoral_code).toBe('C')
+    expect(territoires.find((t) => t.territoire === '29084')?.littoral_code).toBe('C')
     expect(territoires.find((t) => t.territoire === '29209')?.littoral_code).toBe('NC')
     expect(territoires.find((t) => t.territoire === '22')?.littoral_code).toBeNull()
   })
