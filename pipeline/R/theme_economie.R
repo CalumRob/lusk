@@ -356,15 +356,18 @@ validations_economie <- list(
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_economie <- function(analytiques, base_epci, vintages,
                                         noms_epci_geo_api = NULL,
-                                        classes_densite = NULL) {
+                                        classes_densite = NULL,
+                                        classes_littoral = NULL) {
   territoires <- construire_territoires_economie(base_epci, analytiques)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
                                                 noms_epci_geo_api)
   }
-  if (!is.null(classes_densite)) {
-    territoires <- publier_classes_densite(territoires, classes_densite)
-  }
+  territoires <- appliquer_classifications_communales(
+    territoires,
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
+  )
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(
@@ -401,7 +404,8 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie_analytiques = file.path(dirname(cache),
                                                              "processed", "economie"),
                              noms_epci_geo_api = NULL,
-                             classes_densite = NULL) {
+                             classes_densite = NULL,
+                             classes_littoral = NULL) {
   if (is.null(vintages)) vintages <- vintages_economie()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -413,7 +417,8 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
     base_epci,
     vintages,
     noms_epci_geo_api = noms_epci_geo_api,
-    classes_densite = classes_densite
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
   )
   publish(payload, sortie)
   payload

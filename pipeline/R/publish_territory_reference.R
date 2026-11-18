@@ -10,15 +10,54 @@ project_territory_reference <- function(territories) {
     as.character(territories$classe_densite_code) else rep(NA_character_, nrow(territories))
   density_label <- if ("classe_densite_libelle_public" %in% names(territories))
     as.character(territories$classe_densite_libelle_public) else rep(NA_character_, nrow(territories))
+  champs_littoral <- c("littoral_code", "littoral_classement_source")
+  presents <- champs_littoral %in% names(territories)
+  if (any(presents) && !all(presents))
+    stop("Territory reference littoral fields must be declared together", call.=FALSE)
+  littoral_declare <- all(presents)
+  littoral_code <- if (littoral_declare)
+    as.character(territories$littoral_code) else rep(NA_character_, nrow(territories))
+  littoral_classement <- if (littoral_declare)
+    as.character(territories$littoral_classement_source) else rep(NA_character_, nrow(territories))
   result <- data.frame(territory_id=as.character(territories[[id_column]]),
     territory_type=as.character(territories$type), name=as.character(territories$nom),
     department_id=as.character(territories$departement), epci_id=as.character(territories$epci),
     density_class_code=density_code, density_class_label=density_label,
+    littoral_code=littoral_code, littoral_classement_source=littoral_classement,
     stringsAsFactors=FALSE)
   if (!nrow(result) || anyNA(result[c("territory_id", "territory_type", "name")]) ||
       any(!nzchar(trimws(result$territory_id)) | !nzchar(trimws(result$territory_type)) |
           !nzchar(trimws(result$name))) || anyDuplicated(result$territory_id))
     stop("Canonical territory reference has missing or duplicate identities", call.=FALSE)
+  # #1041 : la classification littorale est TOUTE ou RIEN. Une projection
+  # partielle (quelques lignes classées) ne doit jamais être publiée comme si
+  # l'absence valait NC ; un non-commune classé est une erreur d'identité.
+  # Les colonnes ABSENTES sont la transition historique autorisée ; des
+  # colonnes PRÉSENTES mais entièrement vides sont une référence enrichie
+  # silencieusement vide — refusée, comme côté app.
+  if (littoral_declare) {
+    if (all(is.na(result$littoral_code)))
+      stop("Territory reference littoral classification is present but empty", call.=FALSE)
+    classees <- !is.na(result$littoral_code)
+    communes <- result$territory_type == "commune"
+    if (any(classees & !communes))
+      stop("Territory reference classifies a non-commune as littoral", call.=FALSE)
+    if (any(!classees & communes))
+      stop("Territory reference littoral classification is incomplete", call.=FALSE)
+    if (any(!result$littoral_code[communes] %in% c("C", "NC")))
+      stop("Territory reference has an unknown littoral code", call.=FALSE)
+    # NA-safe : un non-commune n'est jamais "C", et un `NC` valide ne rend pas
+    # la garde inconnue (l'ancien `any(x == "C")` valait NA sur ces lignes).
+    est_c <- classees & result$littoral_code == "C"
+    if (any(est_c & !result$littoral_classement_source %in% c("Mer", "Estuaire")) ||
+        any(!est_c & classees & !is.na(result$littoral_classement_source)))
+      stop("Territory reference has an incoherent littoral source classement", call.=FALSE)
+    # Une source sans classification est un orphelin : le CHECK SQL exige
+    # (code IS NULL AND source IS NULL) pour toute ligne non classée (typiquement
+    # un non-commune, qui n'a jamais de code). Le refuser ici, avant la publication.
+    if (any(!classees & !is.na(result$littoral_classement_source)))
+      stop("Territory reference has an orphan littoral source classement without a littoral code", call.=FALSE)
+  }
   result <- result[order(result$territory_type, result$territory_id), , drop=FALSE]
   rownames(result) <- NULL
   list(rows=result, content_version=scalar_content_version(result))
@@ -34,7 +73,7 @@ territory_reference_postgres_adapter <- function(con) {
     write=function(projection, version, dependency) {
       rows <- projection$rows
       for (i in seq_len(nrow(rows))) {
-        DBI::dbExecute(con, "INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(territory_id) DO UPDATE SET territory_type=EXCLUDED.territory_type,name=EXCLUDED.name,department_id=EXCLUDED.department_id,epci_id=EXCLUDED.epci_id,density_class_code=EXCLUDED.density_class_code,density_class_label=EXCLUDED.density_class_label",
+        DBI::dbExecute(con, "INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label,littoral_code,littoral_classement_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(territory_id) DO UPDATE SET territory_type=EXCLUDED.territory_type,name=EXCLUDED.name,department_id=EXCLUDED.department_id,epci_id=EXCLUDED.epci_id,density_class_code=EXCLUDED.density_class_code,density_class_label=EXCLUDED.density_class_label,littoral_code=EXCLUDED.littoral_code,littoral_classement_source=EXCLUDED.littoral_classement_source",
           params=unname(as.list(rows[i, , drop=FALSE])))
       }
       old_ids <- DBI::dbGetQuery(con, "SELECT territory_id FROM territory_reference")$territory_id
@@ -52,7 +91,8 @@ territory_reference_postgres_adapter <- function(con) {
 publish_territory_reference_projection <- function(projection, db) {
   if (!is.list(projection) || !is.data.frame(projection$rows) ||
       !all(c("territory_id", "territory_type", "name", "department_id", "epci_id",
-             "density_class_code", "density_class_label") %in% names(projection$rows)) ||
+             "density_class_code", "density_class_label",
+             "littoral_code", "littoral_classement_source") %in% names(projection$rows)) ||
       length(projection$content_version) != 1L || is.na(projection$content_version) ||
       !nzchar(projection$content_version))
     stop("Invalid retained territory-reference projection", call.=FALSE)

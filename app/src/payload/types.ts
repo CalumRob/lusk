@@ -64,6 +64,10 @@ export interface Territoire {
   classe_densite_code?: string | null
   classe_densite_libelle_insee?: string | null
   classe_densite_libelle_public?: string | null
+  /** Producer-owned littoral classification (#1041): C / NC, null elsewhere. */
+  littoral_code?: 'C' | 'NC' | null
+  /** The DREAL source's own classement (Mer / Estuaire), provenance for C. */
+  littoral_classement_source?: string | null
 }
 
 /** Narrow factual descriptor copied from the validated native theme API read.
@@ -863,6 +867,14 @@ export interface SourceRecord {
   /** Named clocks are structured facts, never prose concatenated by a view. */
   clocks?: SourceClock[]
   caveat?: string
+  /** The exact source acquisition endpoint, when the file is a service export. */
+  acquisition_url?: string
+  /** The producer's statutory/domain definition of the classification. */
+  definition?: string
+  /** The producer's declared geographic coverage and complement rule. */
+  coverage?: string
+  /** The source's own classification values, preserved as provenance. */
+  classements?: string[]
   /** Structured methodology facts owned by the source record. */
   methodology?: SourceMethodology
 }

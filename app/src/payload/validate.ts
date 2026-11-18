@@ -317,6 +317,15 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
       ligne['classe_densite_libelle_public'] !== undefined
     ),
   )
+  // #1041 — transition explicite : une référence qui ne porte pas le littoral
+  // garde exactement sa forme historique. Dès qu'UNE ligne le porte, toutes
+  // les communes doivent être classées C/NC (aucun NC implicite).
+  const porteLittoral = lignes.some(
+    (ligne) => estObjet(ligne) && (
+      ligne['littoral_code'] !== undefined ||
+      ligne['littoral_classement_source'] !== undefined
+    ),
+  )
 
   const territoires = lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -350,31 +359,48 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
       exiger(epci === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un EPCI`)
     }
 
-    if (!porteClasseDensite) return { territoire, type, nom, departement, epci }
+    const parse: Territoire = { territoire, type, nom, departement, epci }
 
-    const classeCode = ligne['classe_densite_code']
-    const classeInsee = ligne['classe_densite_libelle_insee']
-    const classePublic = ligne['classe_densite_libelle_public']
-    if (type === 'commune') {
-      exiger(estChaineNonVide(classeCode), fichier, ligneIndexee, '« classe_densite_code » doit être renseigné pour une commune')
-      exiger(estChaineNonVide(classeInsee), fichier, ligneIndexee, '« classe_densite_libelle_insee » doit être renseigné pour une commune')
-      exiger(estChaineNonVide(classePublic), fichier, ligneIndexee, '« classe_densite_libelle_public » doit être renseigné pour une commune')
-    } else {
-      exiger(classeCode === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte une classe de densité`)
-      exiger(classeInsee === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé INSEE de densité`)
-      exiger(classePublic === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé public de densité`)
+    if (porteClasseDensite) {
+      const classeCode = ligne['classe_densite_code']
+      const classeInsee = ligne['classe_densite_libelle_insee']
+      const classePublic = ligne['classe_densite_libelle_public']
+      if (type === 'commune') {
+        exiger(estChaineNonVide(classeCode), fichier, ligneIndexee, '« classe_densite_code » doit être renseigné pour une commune')
+        exiger(estChaineNonVide(classeInsee), fichier, ligneIndexee, '« classe_densite_libelle_insee » doit être renseigné pour une commune')
+        exiger(estChaineNonVide(classePublic), fichier, ligneIndexee, '« classe_densite_libelle_public » doit être renseigné pour une commune')
+      } else {
+        exiger(classeCode === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte une classe de densité`)
+        exiger(classeInsee === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé INSEE de densité`)
+        exiger(classePublic === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé public de densité`)
+      }
+      parse.classe_densite_code = classeCode as string | null | undefined
+      parse.classe_densite_libelle_insee = classeInsee as string | null | undefined
+      parse.classe_densite_libelle_public = classePublic as string | null | undefined
     }
 
-    return {
-      territoire,
-      type,
-      nom,
-      departement,
-      epci,
-      classe_densite_code: classeCode as string | null | undefined,
-      classe_densite_libelle_insee: classeInsee as string | null | undefined,
-      classe_densite_libelle_public: classePublic as string | null | undefined,
+    if (porteLittoral) {
+      const littoral = ligne['littoral_code']
+      const classement = ligne['littoral_classement_source']
+      if (type === 'commune') {
+        exiger(littoral === 'C' || littoral === 'NC', fichier, ligneIndexee, '« littoral_code » doit être C ou NC pour une commune')
+        if (littoral === 'C') {
+          // Le domaine source (Mer/Estuaire, ou toute modalité future) est
+          // porté par le registre SERVI ; la ligne exige seulement une valeur
+          // non vide, l'appartenance est vérifiée contre ce registre.
+          exiger(estChaineNonVide(classement), fichier, ligneIndexee, '« littoral_classement_source » doit être renseigné pour une commune littorale')
+        } else {
+          exiger(classement === null, fichier, ligneIndexee, `« ${territoire} » (commune non littorale) porte un classement source`)
+        }
+      } else {
+        exiger(littoral === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte une classification littorale`)
+        exiger(classement === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un classement littoral`)
+      }
+      parse.littoral_code = littoral as 'C' | 'NC' | null | undefined
+      parse.littoral_classement_source = classement as string | null | undefined
     }
+
+    return parse
   })
 
   // Intégrité référentielle de l'échelle (compute.R 5bis) : chaque EPCI porté
@@ -431,6 +457,24 @@ export function validerTerritoiresMetadata(brut: unknown, fichier: string): Terr
     if (id === 'classe_densite_communale') {
       exiger(estChaine(source['sha256']) && /^[0-9a-f]{64}$/.test(source['sha256'] as string), fichier, 0, '« source_records.classe_densite_communale.sha256 » doit être une empreinte SHA-256')
     }
+    if (id === 'classe_littorale_communale') {
+      exiger(estChaine(source['sha256']) && /^[0-9a-f]{64}$/.test(source['sha256'] as string), fichier, 0, '« source_records.classe_littorale_communale.sha256 » doit être une empreinte SHA-256')
+      exiger(estChaineNonVide(source['definition']), fichier, 0, '« source_records.classe_littorale_communale.definition » doit être renseigné')
+      exiger(estChaineNonVide(source['coverage']), fichier, 0, '« source_records.classe_littorale_communale.coverage » doit être renseigné')
+      // Le registre des modalités source est une donnée AMONT : l'app valide
+      // sa forme (chaînes non vides, uniques, non vide) et s'y réfère pour
+      // l'appartenance. Elle ne duplique jamais Mer/Estuaire.
+      const classements = source['classements']
+      exiger(
+        Array.isArray(classements) &&
+          classements.length > 0 &&
+          classements.every((valeur) => estChaineNonVide(valeur)) &&
+          new Set(classements as string[]).size === classements.length,
+        fichier,
+        0,
+        '« source_records.classe_littorale_communale.classements » doit être une liste non vide de modalités uniques',
+      )
+    }
   }
   exiger(Object.keys(sourceRecords).includes('classe_densite_communale'), fichier, 0, 'la source classe_densite_communale doit être déclarée')
 
@@ -461,6 +505,74 @@ export function verifierClassesDensite(
   }
   for (const territoire of territoires.filter((territoire) => territoire.type !== 'commune')) {
     exiger(territoire.classe_densite_code === null, fichier, 0, `un territoire ${territoire.type} porte une classe de densité`)
+  }
+}
+
+/**
+ * #1041 — cross-file guard for the producer-owned littoral classification.
+ * It is ALL or NOTHING: once any commune carries `littoral_code`, every
+ * commune must be C or NC and every non-commune must be null. A missing
+ * classification is never interpreted as NC here, and the provenance record
+ * must exist in the shared territorial metadata.
+ */
+export function verifierClassificationLittorale(
+  territoires: Territoire[],
+  metadata: TerritoryMetadata | null | undefined,
+  fichier = 'territoires.json',
+): void {
+  const publie = territoires.some(
+    (territoire) => territoire.littoral_code !== undefined,
+  )
+  if (!publie) return
+  exiger(
+    metadata !== null && metadata !== undefined &&
+      metadata.source_records['classe_littorale_communale'] !== undefined,
+    fichier,
+    0,
+    'la source classe_littorale_communale est requise lorsque le littoral est publié',
+  )
+  const registre = metadata!.source_records['classe_littorale_communale']!.classements
+  exiger(
+    Array.isArray(registre) &&
+      registre.length > 0 &&
+      registre.every((valeur) => estChaineNonVide(valeur)) &&
+      new Set(registre).size === registre.length,
+    fichier,
+    0,
+    'le registre des classements littoraux servis doit être une liste non vide de modalités uniques',
+  )
+  const classements = new Set(registre as string[])
+  for (const territoire of territoires) {
+    if (territoire.type === 'commune') {
+      exiger(
+        territoire.littoral_code === 'C' || territoire.littoral_code === 'NC',
+        fichier,
+        0,
+        `classification littorale manquante ou inconnue pour « ${territoire.territoire} »`,
+      )
+      if (territoire.littoral_code === 'C') {
+        exiger(
+          classements.has(territoire.littoral_classement_source as string),
+          fichier,
+          0,
+          `classement littoral source incohérent pour « ${territoire.territoire} »`,
+        )
+      } else {
+        exiger(
+          territoire.littoral_classement_source === null,
+          fichier,
+          0,
+          `la commune non littorale « ${territoire.territoire} » porte un classement source`,
+        )
+      }
+    } else {
+      exiger(
+        territoire.littoral_code === null,
+        fichier,
+        0,
+        `un territoire ${territoire.type} porte une classification littorale`,
+      )
+    }
   }
 }
 
@@ -1633,6 +1745,7 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
     ? null
     : validerTerritoiresMetadata(documents.territoiresMetadata, 'territoires-metadata.json')
   verifierClassesDensite(territoires, territoryMetadata)
+  verifierClassificationLittorale(territoires, territoryMetadata)
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
   const histoires = validerHistoires(documents.histoires, 'histoires', territoires)
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')

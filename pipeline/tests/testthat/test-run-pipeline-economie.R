@@ -247,11 +247,17 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
   # vintages des thèmes (des projections pures du manifeste) et l'écriture des
   # fichiers parquet + JSON sont RÉELS : ce qui est testé est ce qui part.
   local_mocked_bindings(
-    download_sources = function(manifest, cache, mode) tibble::tibble(
-      id = manifest$id[manifest$id != MANIFEST_CLASSES_DENSITE$id[[1L]]],
-      mode = manifest$mode[manifest$id != MANIFEST_CLASSES_DENSITE$id[[1L]]],
-      status = "frais"
-    ),
+    download_sources = function(manifest, cache, mode) {
+      # les entrées PARTAGÉES de la référence (densité, littoral) sont hors
+      # manifeste de thème : le seam historique ne les déclare pas.
+      partagees <- c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+                     MANIFEST_CLASSES_LITTORAL$id[[1L]])
+      garde <- !manifest$id %in% partagees
+      tibble::tibble(
+        id = manifest$id[garde], mode = manifest$mode[garde],
+        status = "frais"
+      )
+    },
     construire_donnees_brut = function(cache) load_fixture(),
     construire_donnees_economie = function(cache) list(
       sirene_snapshot = tibble::tibble(x = 1),

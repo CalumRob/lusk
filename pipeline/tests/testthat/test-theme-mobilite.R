@@ -3339,3 +3339,69 @@ test_that("calculer_offre_cyclable_communes : un input corrompu s'arrête bruyam
     fixture_offre_cyclable_binning(),
     tibble::tibble(commune = "22001")), "population")
 })
+
+# #1041 : le builder territorial de la Mobilité conserve la classification
+# littorale publiée par le seam partagé, sans dépendre d'un autre thème.
+test_that("construire_territoires_mobilite conserve la classification littorale", {
+  snap <- fixture_snapshot_analytique_mobilite()
+  poids <- tibble::tibble(commune = snap$commune, nb_buildings = snap$nb_buildings)
+  source <- tibble::tibble(
+    Code_insee = "22001", Commune = "Commune A1", Dpt = "22",
+    Classement = "Mer"
+  )
+  attr(source, "pin_verifie") <- TRUE # fixture bornée : source admise
+
+  territoires <- construire_territoires_mobilite(
+    base_epci_mini_analytique(),
+    list(mobilite_communes = poids),
+    classes_littoral = source
+  )
+
+  expect_true(all(c("littoral_code", "littoral_classement_source") %in%
+                    names(territoires)))
+  expect_identical(
+    territoires$littoral_code[territoires$code == "22001"], "C"
+  )
+  expect_true(all(territoires$littoral_code[territoires$type == "commune"] %in%
+                    c("C", "NC")))
+  expect_true(all(is.na(territoires$littoral_code[territoires$type != "commune"])))
+})
+
+# #1041 : le seam publier_mobilite TRANSMET la classification au payload (le
+# builder réel de la référence), au lieu de l'abandonner en silence.
+test_that("publier_mobilite transmet classes_littoral au payload", {
+  vu <- new.env(parent = emptyenv())
+  source <- tibble::tibble(
+    Code_insee = "22001", Commune = "Commune A1", Dpt = "22",
+    Classement = "Mer"
+  )
+  local_mocked_bindings(
+    lire_epci = function(chemin) base_epci_mini_analytique(),
+    construire_analytiques_mobilite = function(donnees, base_epci, sortie,
+                                               classes_densite = NULL,
+                                               noms_epci_geo_api = NULL) {
+      list(mobilite_communes = tibble::tibble(
+        commune = "22001", nb_buildings = 1
+      ))
+    },
+    lire_artefact_raccordement_national = function() list(),
+    construire_payload_mobilite = function(analytiques, base_epci, vintages,
+                                           noms_epci_geo_api = NULL,
+                                           classes_densite = NULL,
+                                           classes_littoral = NULL) {
+      vu$classes_littoral <- classes_littoral
+      list(indicateurs = tibble::tibble(), histoires = tibble::tibble(),
+           territoires = tibble::tibble(), apercu = tibble::tibble())
+    },
+    publish = function(...) invisible(NULL),
+    .package = "lusk"
+  )
+
+  publier_mobilite(
+    list(), cache = tempdir(), vintages = vintages_mobilite(),
+    sortie = tempfile("sortie-mobilite-littoral-"),
+    classes_littoral = source
+  )
+
+  expect_identical(vu$classes_littoral, source)
+})

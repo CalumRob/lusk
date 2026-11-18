@@ -56,7 +56,10 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
             conn.cursor().executemany("INSERT INTO bpe_profile_class_axis VALUES (%s,%s,%s,%s)", axes)
         refs = [(f"t{i:03}", "commune", f"Territory {i}", None, None, None, None) for i in range(200)]
         refs.append(("t200", "commune", "Move destination", None, None, None, None))
-        conn.cursor().executemany("INSERT INTO territory_reference VALUES (%s,%s,%s,%s,%s,%s,%s)", refs)
+        conn.cursor().executemany("""INSERT INTO territory_reference
+          (territory_id,territory_type,name,department_id,epci_id,
+           density_class_code,density_class_label)
+          VALUES (%s,%s,%s,%s,%s,%s,%s)""", refs)
         facts = [(tid, "commune", key, label, 1, 4, "A001", label, .2, .3, .4)
                  for tid, *_ in refs[:200] for key, label, _, _ in axes]
 

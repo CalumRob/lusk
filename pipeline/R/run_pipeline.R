@@ -47,6 +47,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # sans trace est un échec perdu.
   manifest_telechargement <- dplyr::bind_rows(
     MANIFEST_CLASSES_DENSITE,
+    MANIFEST_CLASSES_LITTORAL,
     theme$manifest
   )
   statuts <- tryCatch(
@@ -80,6 +81,28 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     NULL
   }
 
+  # #1041 : la liste littorale DREAL est une AUTRE entrée partagée du
+  # référentiel territorial. Même garde que la grille de densité : un run de
+  # production ne peut pas publier une référence sans classification, tandis
+  # qu'un seam de test qui remplace download_sources garde son comportement
+  # historique borné.
+  chemin_classes_littoral <- file.path(cache, CLASSES_LITTORAL_FICHIER)
+  source_classes_littoral <- is.data.frame(statuts) &&
+    "id" %in% names(statuts) &&
+    any(statuts$id %in% MANIFEST_CLASSES_LITTORAL$id[[1L]])
+  if (source_classes_littoral && !file.exists(chemin_classes_littoral)) {
+    stop(
+      "Liste littorale DREAL absente après téléchargement : ",
+      chemin_classes_littoral,
+      call. = FALSE
+    )
+  }
+  classes_littoral <- if (file.exists(chemin_classes_littoral)) {
+    lire_classes_littoral(chemin_classes_littoral)
+  } else {
+    NULL
+  }
+
   brut <- theme$construire_donnees(cache = cache)
 
   # Issue #233 : le diagnostic de couverture du thème (lignes + km par
@@ -109,6 +132,23 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # gardent compute_payload + publish, à l'identique (régression
   # byte-identical).
   if (is.function(theme$publier)) {
+    # #1041 : les deux classifications communales voyagent ENSEMBLE dans le
+    # référentiel territorial — la même garde que le graphe targets (_targets.R)
+    # : un seam publier les accepte TOUTES DEUX ou AUCUNE. Un consommateur
+    # intentionnel (publier_programmes, qui lit la référence DÉJÀ enrichie)
+    # n'accepte ni l'une ni l'autre : c'est un câblage licite, pas une dérive.
+    # En revanche un seam qui accepte classes_densite et abandonne
+    # classes_littoral est une perte silencieuse de classification — refusée,
+    # que la source soit présente ou non.
+    accepte_densite <- "classes_densite" %in% names(formals(theme$publier))
+    accepte_littoral <- "classes_littoral" %in% names(formals(theme$publier))
+    if (accepte_littoral != accepte_densite) {
+      stop(
+        "Le seam publier du thème « ", theme$theme,
+        " » doit accepter classes_densite ET classes_littoral, ou aucune des deux",
+        call. = FALSE
+      )
+    }
     args_publier <- list(
       donnees = brut,
       cache = cache,
@@ -122,10 +162,20 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     if ("classes_densite" %in% names(formals(theme$publier))) {
       args_publier$classes_densite <- classes_densite
     }
+    if ("classes_littoral" %in% names(formals(theme$publier))) {
+      args_publier$classes_littoral <- classes_littoral
+    }
     payload <- do.call(theme$publier, args_publier)
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
     # public Geo API, mais le run ne dépend jamais d'un appel réseau.
+    if (!is.null(classes_littoral) &&
+        !"classes_littoral" %in% names(formals(compute_payload))) {
+      stop(
+        "compute_payload n'admet pas classes_littoral alors que la source littorale est présente.",
+        call. = FALSE
+      )
+    }
     args_compute <- list(data = brut, theme = theme, vintages = vintages)
     # Le dispatch sur la signature garde les seams de tests et les extensions
     # historiques compatibles : seul le compute qui déclare l'épingle la lit.
@@ -135,6 +185,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     }
     if ("classes_densite" %in% names(formals(compute_payload))) {
       args_compute$classes_densite <- classes_densite
+    }
+    if ("classes_littoral" %in% names(formals(compute_payload))) {
+      args_compute$classes_littoral <- classes_littoral
     }
     payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)

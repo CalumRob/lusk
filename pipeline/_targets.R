@@ -141,6 +141,31 @@ classes_densite_cible <- tar_target_raw(
 )
 classes_densite_sym <- as.name("classes_densite")
 
+# #1041 : la liste littorale DREAL est la SECONDE entrée partagée du référentiel
+# territorial, indépendante des thèmes. Mêmes garanties que la grille de densité :
+# téléchargée et lue une seule fois, chaque publication de référence en dépend.
+sources_classes_littoral_cible <- tar_target_raw(
+  "sources_classes_littoral",
+  bquote(download_sources(.(MANIFEST_CLASSES_LITTORAL),
+                          cache = .(CACHE_RUN), mode = .(MODE_RUN)))
+)
+fichier_classes_littoral_cible <- tar_target_raw(
+  "fichier_classes_littoral",
+  bquote({
+    sources_classes_littoral
+    file.path(.(CACHE_RUN), CLASSES_LITTORAL_FICHIER)
+  }),
+  format = "file"
+)
+classes_littoral_cible <- tar_target_raw(
+  "classes_littoral",
+  bquote({
+    fichier_classes_littoral
+    lire_classes_littoral(fichier_classes_littoral)
+  })
+)
+classes_littoral_sym <- as.name("classes_littoral")
+
 # attributs_nuls -----------------------------------------------------------------
 # Le corps d'une fonction chargée par parse() porte des attributs de source
 # (srcref, srcfile, wholeSrcref — en surface ET sur les éléments imbriqués)
@@ -246,6 +271,7 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   nom <- theme$theme
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   classes_densite_sym <- as.name("classes_densite")
+  classes_littoral_sym <- as.name("classes_littoral")
   theme_c <- as.name(paste0("theme_", nom))   # le constructeur du descripteur
   theme_descripteur <- bquote(.(theme_c)())
   construire <- symbole_ns(theme$construire_donnees)
@@ -315,9 +341,11 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         bquote({
           .(fichier_epci_geo_api_sym)
           .(classes_densite_sym)
+          .(classes_littoral_sym)
           compute_payload(.(brut), theme = .(theme_descripteur),
                           vintages = .(vintages),
                           classes_densite = .(classes_densite_sym),
+                          classes_littoral = .(classes_littoral_sym),
                           noms_epci_geo_api = lire_noms_epci_geo_api(
                             .(fichier_epci_geo_api_sym)))
         })
@@ -452,19 +480,31 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
   nom <- theme$theme
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   classes_densite_sym <- as.name("classes_densite")
+  classes_littoral_sym <- as.name("classes_littoral")
   if (is.function(theme$publier)) {
     publier_fn <- symbole_ns(theme$publier)
     accepte_noms_epci <- "noms_epci_geo_api" %in% names(formals(theme$publier))
     accepte_classes_densite <- "classes_densite" %in% names(formals(theme$publier))
+    accepte_classes_littoral <- "classes_littoral" %in% names(formals(theme$publier))
+    # Les deux classifications communales voyagent ensemble dans le référentiel
+    # territorial : un seam qui en accepte une doit accepter l'autre. Un jour où
+    # un thème voudrait seulement l'une, le graphe doit le dire explicitement —
+    # jamais passer un argument non déclaré à l'exécution.
+    if (accepte_classes_littoral != accepte_classes_densite) {
+      stop("Un seam publier doit accepter classes_densite ET classes_littoral, ou aucune des deux",
+           call. = FALSE)
+    }
     if (accepte_noms_epci && accepte_classes_densite) {
       command <- bquote(
         {
           .(fichier_epci_geo_api_sym)
           .(classes_densite_sym)
+          .(classes_littoral_sym)
           .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
                         vintages = .(as.name(paste0("vintages_table_", nom))),
                         sortie = .(sortie),
                         classes_densite = .(classes_densite_sym),
+                        classes_littoral = .(classes_littoral_sym),
                         noms_epci_geo_api = lire_noms_epci_geo_api(
                           .(fichier_epci_geo_api_sym)))
         }
@@ -484,10 +524,12 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
       command <- bquote(
         {
           .(classes_densite_sym)
+          .(classes_littoral_sym)
           .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
                         vintages = .(as.name(paste0("vintages_table_", nom))),
                         sortie = .(sortie),
-                        classes_densite = .(classes_densite_sym))
+                        classes_densite = .(classes_densite_sym),
+                        classes_littoral = .(classes_littoral_sym))
         }
       )
     } else {
@@ -1332,6 +1374,9 @@ list(
   sources_classes_densite_cible,
   fichier_classes_densite_cible,
   classes_densite_cible,
+  sources_classes_littoral_cible,
+  fichier_classes_littoral_cible,
+  classes_littoral_cible,
   grappes,
   publies,
   fusion_themes(themes_fusion),

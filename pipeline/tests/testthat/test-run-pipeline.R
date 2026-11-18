@@ -352,3 +352,294 @@ test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
   expect_equal(ecrit$mode, "cron")
   expect_equal(ecrit$cible, "public/data")
 })
+
+# #1041 : le run télécharge et lit la liste littorale comme une entrée partagée
+# de la référence, puis la transmet au compute du thème (jamais un run
+# Milieux préalable).
+test_that("run_pipeline transmet la classification littorale au compute", {
+  cache <- tempfile("cache-littoral-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  file.create(file.path(cache, CLASSES_DENSITE_FICHIER))
+  vu <- new.env(parent = emptyenv())
+  statuts <- tibble::tibble(
+    id = c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+           MANIFEST_CLASSES_LITTORAL$id[[1L]],
+           MANIFEST_DEMOGRAPHIE$id[[1L]]),
+    mode = "cron", status = "frais"
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_brut = function(cache) load_fixture(),
+    lire_classes_densite = function(chemin) tibble::tibble(
+      CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
+      LIBDENS7 = c("Grands centres urbains", "Centres urbains intermédiaires")
+    ),
+    compute_payload = function(data, theme = NULL, vintages = NULL,
+                               noms_epci_geo_api = NULL, classes_densite = NULL,
+                               classes_littoral = NULL) {
+      vu$classes_littoral <- classes_littoral
+      list(indicateurs = tibble::tibble(), histoires = tibble::tibble(),
+           territoires = tibble::tibble(), apercu = tibble::tibble())
+    },
+    publish = function(payload, cible, backend = "static") invisible(payload),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) invisible(NULL),
+    publier_theme_metadata = function(...) invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    ecrire_rapport_run = function(...) invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL), .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL), .package = "jsonlite"
+  )
+
+  sortie <- tempfile("sortie-littoral-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  run_pipeline(cache = cache, sortie = sortie, noms_epci_geo_api = NULL)
+
+  expect_s3_class(vu$classes_littoral, "tbl_df")
+  expect_equal(nrow(vu$classes_littoral), 263L)
+  expect_true(all(c("Code_insee", "Classement") %in%
+                    names(vu$classes_littoral)))
+  expect_true(isTRUE(attr(vu$classes_littoral, "pin_verifie")))
+})
+
+# #1041 : un cache existant n'est jamais lu sans vérifier l'identité épinglée,
+# même quand le téléchargeur de test ne déclare pas cette source.
+test_that("run_pipeline refuse un cache littoral tronqué/altéré", {
+  cache <- tempfile("cache-littoral-altere-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  octets <- readBin(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    "raw", n = file.info(testthat::test_path(
+      "fixtures", "littoral-dreal-bretagne-2023-04-21.csv"))$size
+  )
+  octets[[length(octets)]] <- as.raw(0x58)
+  writeBin(octets, file.path(cache, CLASSES_LITTORAL_FICHIER))
+  file.create(file.path(cache, CLASSES_DENSITE_FICHIER))
+  statuts <- tibble::tibble(
+    id = c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+           MANIFEST_DEMOGRAPHIE$id[[1L]]),
+    mode = "cron", status = "frais"
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_brut = function(cache) load_fixture(),
+    lire_classes_densite = function(chemin) tibble::tibble(
+      CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
+      LIBDENS7 = c("Grands centres urbains", "Centres urbains intermédiaires")
+    ),
+    compute_payload = function(...) stop("le compute ne doit jamais être atteint"),
+    publish = function(...) invisible(NULL),
+    publier_geometrie = function(...) invisible(NULL),
+    publier_theme_metadata = function(...) invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    ecrire_rapport_run = function(...) invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL), .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL), .package = "jsonlite"
+  )
+
+  expect_error(
+    run_pipeline(cache = cache, sortie = tempfile("sortie-alteree-"),
+                 noms_epci_geo_api = NULL),
+    "empreinte|SHA-256"
+  )
+})
+
+# #1041 : si la source littorale est admise, un seam qui ne l'admet pas est une
+# erreur de câblage — jamais un abandon silencieux de la classification.
+test_that("run_pipeline refuse un compute qui n'admet pas classes_littoral", {
+  cache <- tempfile("cache-littoral-compute-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  file.create(file.path(cache, CLASSES_DENSITE_FICHIER))
+  statuts <- tibble::tibble(
+    id = c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+           MANIFEST_CLASSES_LITTORAL$id[[1L]],
+           MANIFEST_DEMOGRAPHIE$id[[1L]]),
+    mode = "cron", status = "frais"
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_brut = function(cache) load_fixture(),
+    lire_classes_densite = function(chemin) tibble::tibble(
+      CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
+      LIBDENS7 = c("Grands centres urbains", "Centres urbains intermédiaires")
+    ),
+    # signature HISTORIQUE : n'admet pas classes_littoral
+    compute_payload = function(data, theme = NULL, vintages = NULL,
+                               noms_epci_geo_api = NULL,
+                               classes_densite = NULL) {
+      stop("le compute ne doit jamais être atteint")
+    },
+    publish = function(...) invisible(NULL),
+    publier_geometrie = function(...) invisible(NULL),
+    publier_theme_metadata = function(...) invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    ecrire_rapport_run = function(...) invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL), .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL), .package = "jsonlite"
+  )
+
+  expect_error(
+    run_pipeline(cache = cache, sortie = tempfile("sortie-compute-"),
+                 noms_epci_geo_api = NULL),
+    "n'admet pas classes_littoral|classes_littoral"
+  )
+})
+
+test_that("run_pipeline refuse un publier de thème qui n'admet pas classes_littoral", {
+  cache <- tempfile("cache-littoral-publier-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  file.create(file.path(cache, CLASSES_DENSITE_FICHIER))
+  statuts <- tibble::tibble(
+    id = c(MANIFEST_CLASSES_DENSITE$id[[1L]],
+           MANIFEST_CLASSES_LITTORAL$id[[1L]],
+           MANIFEST_ECONOMIE$id[[1L]]),
+    mode = "cron", status = "frais"
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    lire_classes_densite = function(chemin) tibble::tibble(
+      CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
+      LIBDENS7 = c("Grands centres urbains", "Centres urbains intermédiaires")
+    ),
+    construire_donnees_economie = function(cache) list(),
+    # signature HISTORIQUE : n'admet pas classes_littoral
+    publier_economie = function(donnees, cache, vintages, sortie,
+                                noms_epci_geo_api = NULL,
+                                classes_densite = NULL) {
+      stop("le publier ne doit jamais être atteint")
+    },
+    publier_geometrie = function(...) invisible(NULL),
+    publier_theme_metadata = function(...) invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    ecrire_rapport_run = function(...) invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL), .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL), .package = "jsonlite"
+  )
+
+  expect_error(
+    run_pipeline(theme = theme_economie(), cache = cache,
+                 sortie = tempfile("sortie-publier-"),
+                 noms_epci_geo_api = NULL),
+    "classes_densite ET classes_littoral, ou aucune des deux"
+  )
+})
+
+# #1041 : publier_programmes consomme la référence DÉJÀ enrichie et accepte
+# intentionnellement NI l'une NI l'autre des classifications communales. La
+# source littorale est téléchargée AVANT le routage : un run Programmes avec le
+# cache épinglé présent doit réussir, pas être refusé comme un câblage fautif.
+# C'est le miroir de la règle targets « les deux ou aucune » (_targets.R) :
+# on rejette le seam qui accepte la densité et abandonne le littoral, pas le
+# consommateur intentionnel qui n'accepte ni l'une ni l'autre.
+test_that("run_pipeline accepte publier_programmes avec la source littorale épinglée en cache (#1041)", {
+  cache <- tempfile("cache-programmes-littoral-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  # La source LITTORALE ÉPINGLÉE est réellement présente dans le cache du run.
+  file.copy(
+    testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv"),
+    file.path(cache, CLASSES_LITTORAL_FICHIER)
+  )
+  # Le téléchargeur de test ne déclare aucune source : aucun fichier de densité
+  # n'est exigé, mais le cache littoral épinglé est bien lu et vérifié.
+  statuts <- tibble::tibble(
+    id = character(), mode = character(), status = character()
+  )
+  # Tables Programmes vides : le seam publier_programmes (RÉEL) est exercé de
+  # bout en bout sans dépendre des lourds fichiers sources du thème.
+  donnees_vides <- list(
+    acv = tibble::tibble(code_commune = character(), nom_commune = character(),
+                         id_acv = character()),
+    pvd = tibble::tibble(code_commune = character(), nom_commune = character(),
+                         id_pvd = character()),
+    crte = tibble::tibble(id_crte = character(), lib_crte = character(),
+                          type_grp_crte = character(), nature_juridique = character(),
+                          siren_epci = character()),
+    territoires_industrie = tibble::tibble(id_ti = character(), lib_ti = character(),
+                                           siren_epci = character(), nom_epci = character()),
+    ort = tibble::tibble(code_commune = character(), statut = character(),
+                         actualisation = character())
+  )
+  conventions_vides <- tibble::tibble(
+    commune = character(), annee = integer(),
+    programme_libl = character(), montant = numeric()
+  )
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts,
+    construire_donnees_programmes = function(cache) donnees_vides,
+    construire_donnees_subventions = function(cache) {
+      list(conventions = conventions_vides)
+    },
+    lire_epci = function(chemin) tibble::tibble(
+      CODGEO = character(), LIBGEO = character(), EPCI = character(),
+      LIBEPCI = character(), DEP = character(), REG = character()
+    ),
+    publier_geometrie = function(...) invisible(NULL),
+    .package = "lusk"
+  )
+
+  sortie <- tempfile("sortie-programmes-littoral-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  payload <- run_pipeline(theme = theme_programmes(), cache = cache,
+                          sortie = sortie)
+
+  # publier_programmes accepte ni classes_densite ni classes_littoral : c'est un
+  # consommateur intentionnel, pas une dérive de câblage. Le run aboutit.
+  expect_named(payload, c("membres", "subventions", "indicateurs"))
+  expect_equal(nrow(payload$membres), 0L)
+  expect_equal(nrow(payload$subventions), 0L)
+})
