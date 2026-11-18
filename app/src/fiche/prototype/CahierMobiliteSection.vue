@@ -36,6 +36,7 @@ import CahierProse from './CahierProse.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierExportPublication } from './cahierExportVenue'
 import { CAHIER_EXPORT_SLOTS } from './cahierExportCapture'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 
 const props = defineProps<{
   section: MobiliteContentSection
@@ -48,6 +49,7 @@ const props = defineProps<{
 }>()
 
 const control = inject(CONTROLE_COMPARAISON_KEY, undefined)
+const nativeRender = useCahierNativeRender()
 
 /**
  * A provided null control means the territory is comparison-ineligible (#768).
@@ -56,7 +58,7 @@ const control = inject(CONTROLE_COMPARAISON_KEY, undefined)
  * absent. An absent provider keeps standalone figure fixtures usable.
  */
 const comparisonIneligible = computed(() => control?.value === null)
-const comparisonNone = computed(() => comparisonIneligible.value || control?.value?.selection.etat === 'vide')
+const comparisonNone = computed(() => nativeRender?.comparisonNone ?? (comparisonIneligible.value || control?.value?.selection.etat === 'vide'))
 
 const effectiveComparison = computed(() => {
   if (props.comparison.status !== 'ready') return props.comparison

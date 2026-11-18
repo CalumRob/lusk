@@ -227,7 +227,21 @@ export function capturePdfFixture(
   const targetSection = evidence === section.evidence
     ? section
     : { ...section, evidence } as unknown as typeof section
+  const ownerUnit = fixture.content.units.find((unit) => unit.sections.some((candidate) => candidate.key === key))!
   const capture = captureCahierSection({
+    nativeRender: {
+      content: {
+        theme: fixture.content.theme,
+        label: fixture.content.label,
+        territory: fixture.content.territory,
+        introduction: [],
+        sourceRegister: [],
+        units: [{ key: ownerUnit.key, label: ownerUnit.label, introduction: [], sections: [targetSection] }],
+      },
+      presentation: 'plain',
+      layoutVariant: 'indexed-sections',
+      sectionIndex: ownerUnit.sections.findIndex((candidate) => candidate.key === key),
+    },
     section: targetSection,
     unit: unitFor(fixture, key),
     territory: fixture.content.territory,

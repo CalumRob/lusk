@@ -11,8 +11,10 @@ import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import CahierProse from './CahierProse.vue'
 import { useAedarSectionContext } from './aedarSectionContext'
 import { useCahierExportPublication } from './cahierExportVenue'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 const props = defineProps<{ evidence: AedarAccessEvidence }>()
 const { selectedModes, comparisonVisible, comparisonEligible } = useAedarSectionContext()
+const native = useCahierNativeRender()
 const modeColors = Object.fromEntries(AEDAR_RAMP_MODES.map((mode) => [mode, AEDAR_TIME_MODE_COLORS[mode]]))
 
 /** A served reference exists for at least one of the modes the reader can see. */
@@ -37,8 +39,9 @@ useCahierExportPublication(() => ({
 function modeLegendEntries(evidence: AedarAccessEvidence): readonly FigureLegendEntry[] {
   const referenceLabel = evidence.comparisonLabel ?? evidence.ramps.find((ramp) => ramp.referenceLabel)?.referenceLabel ?? null
   return [
-    ...AEDAR_RAMP_MODES.map((mode) => ({ key: mode, label: AEDAR_RAMP_MODE_LABELS[mode], marker: 'line' as const })),
-    ...(comparisonEligible.value ? [{ key: 'reference', label: 'Groupe comparé', ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
+    ...AEDAR_RAMP_MODES.filter((mode) => !native || selectedModes.value.includes(mode))
+      .map((mode) => ({ key: mode, label: AEDAR_RAMP_MODE_LABELS[mode], marker: 'line' as const })),
+    ...(comparisonEligible.value && (!native || (comparisonVisible.value && visibleReferenceAvailable.value)) ? [{ key: 'reference', label: 'Groupe comparé', ariaLabel: `Groupe comparé : ${referenceLabel ?? 'Indisponible'}`,
       marker: 'dash', tone: 'peer', persistentToggle: true } as const] : []),
   ]
 }

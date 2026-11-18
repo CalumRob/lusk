@@ -1,5 +1,14 @@
 /**
- * Native-family PDF primitives for the shared Cahier composer (#1024).
+ * LEGACY / TEST-ONLY after the #1024 native switch.
+ *
+ * Nothing in the production import graph reaches this module: figure bodies are
+ * mounted from the native Vue section and painted from browser-resolved boxes
+ * (`cahierNativePdf.ts` / `cahierNativeDomPaint.ts`). The retained per-family
+ * drawing helpers exist solely for the earlier unit specs that still pin their
+ * geometry; they are not a runtime fallback and must not be imported by new
+ * production code. Remove together with those specs when they are retired.
+ *
+ * Native-family PDF primitives for the old shared Cahier composer (#1024).
  *
  * The correction after independent review: this file no longer owns axis
  * domains, tick selection, series geometry, bar geometry, stacked comparison
@@ -64,6 +73,7 @@ import { PALETTE_PDF, couleurPdf, hexVersRgb } from './cahierPdfPalette'
 import { POLICE_PDF } from './cahierPdfFonts'
 import { CAHIER_TRAVEL_TIME_LABEL } from '@/fiche/content/cahierFigureWording'
 import {
+  LARGEUR_FIGURE_STANDARD_PT,
   ROLE_PDF,
   RYTHME_PX,
   mmDepuisCssPx,
@@ -1684,6 +1694,31 @@ async function dessinerCartes(
   return cy - y
 }
 
+/**
+ * The mounted scalar roles (`CahierFigureScalar`, `CahierComparisonValue`,
+ * `CahierRank`) at the approved reading scale. In PDF the rank belongs
+ * exclusively to the value table.
+ */
+const SCALAIRE_PDF = {
+  valeur: ptDepuisCssPx(16), // `--type-figure-value`: 700 / 1rem
+  etiquette: ptDepuisCssPx(12), // `--type-figure-label`: 400 / 0.75rem
+  comparaison: ptDepuisCssPx(11), // `--type-figure-comparison`: 500 / 0.6875rem
+  ecart: ptDepuisCssPx(3), // `.cahier-figure-scalar { gap: 3px }`
+  valeurCouleur: couleurPdf('--color-figure-mode-car'), // tone="c" in the overview
+} as const
+
+function hauteurScalairePdf(
+  scalar: CahierOverviewProjection['scalars'][number],
+  mesure: MesureTexte,
+): number {
+  const valeur = mesure.hauteurLigne(POLICE_PDF.valueStrong, SCALAIRE_PDF.valeur)
+  const etiquette = mesure.hauteurLigne(ROLE_PDF.axe.police, SCALAIRE_PDF.etiquette)
+  const comparaison = mesure.hauteurLigne(POLICE_PDF.metaMedium, SCALAIRE_PDF.comparaison)
+  let hauteur = valeur + SCALAIRE_PDF.ecart + etiquette
+  if (scalar.reference) hauteur += SCALAIRE_PDF.ecart + comparaison
+  return hauteur
+}
+
 async function dessinerApercu(
   options: OptionsFigurePdf,
   projection: CahierOverviewProjection,
@@ -1691,56 +1726,62 @@ async function dessinerApercu(
   const { doc, x, y, width, mesure } = options
   let cy = y
   cy += dessinerTitre(doc, mesure, projection, x, width, cy)
-  const columns = Math.min(2, Math.max(1, projection.scalars.length))
-  const gap = 8
-  const cardW = (width - gap * (columns - 1)) / columns
-  const cardH = 22
-  for (let index = 0; index < projection.scalars.length; index += 1) {
-    const scalar = projection.scalars[index]!
-    const col = index % columns
-    const row = Math.floor(index / columns)
-    const px = x + col * (cardW + gap)
-    const py = cy + row * cardH
-    setFill(doc, PALETTE_PDF.paperDeep)
-    doc.rect(px, py, cardW, cardH - 2, 'F')
-    resetOpacity(doc)
-    textePdf(doc, scalar.label, px + 3, py + 2.5, {
-      police: POLICE_PDF.bodyMedium,
-      taille: TAILLE.sousTitre,
-      couleur: PALETTE_PDF.muted,
-    })
-    textePdf(doc, scalar.display, px + 3, py + 7, {
-      police: POLICE_PDF.valueStrong,
-      taille: TAILLE.valeur,
-      couleur: PALETTE_PDF.ink,
-    })
-    let infoY = py + 15
-    if (scalar.unit) {
-      textePdf(doc, scalar.unit, px + 3, infoY, {
-        police: POLICE_PDF.body,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.muted,
+  const colonnes = Math.min(2, Math.max(1, projection.scalars.length))
+  // `.summary-metrics--paired` is the same 760px standard frame, centred in
+  // its parent: `width: min(100%, 760px); margin-inline: auto`, gap `0 10%`.
+  const grilleLargeur = Math.min(width, mmDepuisPt(LARGEUR_FIGURE_STANDARD_PT))
+  const grilleX = x + (width - grilleLargeur) / 2
+  const ecartColonnes = grilleLargeur * 0.1
+  const celluleLargeur = (grilleLargeur - ecartColonnes * (colonnes - 1)) / colonnes
+  const rangs = Math.ceil(projection.scalars.length / colonnes)
+  for (let rangee = 0; rangee < rangs; rangee += 1) {
+    const cellules = projection.scalars.slice(rangee * colonnes, (rangee + 1) * colonnes)
+    const hauteurRang = Math.max(...cellules.map((scalar) => hauteurScalairePdf(scalar, mesure)))
+    for (const [index, scalar] of cellules.entries()) {
+      const px = grilleX + index * (celluleLargeur + ecartColonnes)
+      const centre = px + celluleLargeur / 2
+      let py = cy
+      textePdf(doc, scalar.display, centre, py, {
+        police: POLICE_PDF.valueStrong,
+        taille: SCALAIRE_PDF.valeur,
+        couleur: SCALAIRE_PDF.valeurCouleur,
+        align: 'center',
       })
-      infoY += 3
-    }
-    if (scalar.reference) {
-      textePdf(doc, `Groupe comparé : ${scalar.reference.display} ${scalar.reference.unit}`.trim(), px + 3, infoY, {
-        police: POLICE_PDF.meta,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.muted,
+      py += mesure.hauteurLigne(POLICE_PDF.valueStrong, SCALAIRE_PDF.valeur) + SCALAIRE_PDF.ecart
+      // `label-role="metric"` in the mounted overview: the shared
+      // `.type-figure-label` role is uppercase with 0.08em tracking.
+      textePdf(doc, scalar.label.toLocaleUpperCase('fr-FR'), centre, py, {
+        police: ROLE_PDF.axe.police,
+        taille: SCALAIRE_PDF.etiquette,
+        couleur: PALETTE_PDF.editorialMuted,
+        align: 'center',
+        espacement: SCALAIRE_PDF.etiquette * ROLE_PDF.axe.espacementEm,
       })
-      infoY += 3
+      py += mesure.hauteurLigne(ROLE_PDF.axe.police, SCALAIRE_PDF.etiquette) + SCALAIRE_PDF.ecart
+      if (scalar.reference) {
+        // `CahierComparisonValue`: `Groupe comparé : <strong>value</strong>`,
+        // centred; the strong value uses `--brand-200` (one value, no unit
+        // repeated — `reference.display` already carries its native unit).
+        const prefixe = 'Groupe comparé : '
+        const valeur = scalar.reference.display
+        const largeurPrefixe = mesure.largeur(prefixe, POLICE_PDF.metaMedium, SCALAIRE_PDF.comparaison)
+        const largeurValeur = mesure.largeur(valeur, POLICE_PDF.valueStrong, SCALAIRE_PDF.comparaison)
+        const depart = px + (celluleLargeur - largeurPrefixe - largeurValeur) / 2
+        textePdf(doc, prefixe, depart, py, {
+          police: POLICE_PDF.metaMedium,
+          taille: SCALAIRE_PDF.comparaison,
+          couleur: PALETTE_PDF.editorialMuted,
+        })
+        textePdf(doc, valeur, depart + largeurPrefixe, py, {
+          police: POLICE_PDF.valueStrong,
+          taille: SCALAIRE_PDF.comparaison,
+          couleur: PALETTE_PDF.brand200,
+        })
+        py += mesure.hauteurLigne(POLICE_PDF.metaMedium, SCALAIRE_PDF.comparaison) + SCALAIRE_PDF.ecart
+      }
     }
-    if (scalar.rank?.display) {
-      textePdf(doc, scalar.rank.display, px + cardW - 3, py + 15, {
-        police: POLICE_PDF.meta,
-        taille: TAILLE.tick,
-        couleur: PALETTE_PDF.brand200,
-        align: 'right',
-      })
-    }
+    cy += hauteurRang
   }
-  cy += Math.ceil(projection.scalars.length / columns) * cardH + 3
   if (projection.maps.status !== 'none') cy += await dessinerCartes(options, projection.maps, cy)
   return cy - y
 }
@@ -1798,9 +1839,12 @@ export function hauteurFigurePdf(
         + 2 + hauteurPanneauAedar(panelWidth) + gapLegende + legend
     }
     case 'aedar-car-overview': {
-      const scalars = Math.ceil(Math.max(1, projection.scalars.length) / 2) * 22
+      // The scalar stack is measured with the same mounted roles the painter
+      // uses, so pagination reserves exactly what it draws.
+      const rangs = Math.ceil(Math.max(1, projection.scalars.length) / 2)
+      const parRang = Math.max(0, ...projection.scalars.map((scalar) => hauteurScalairePdf(scalar, mesure)))
       const maps = hauteurCartesPdf(projection.maps, width)
-      return titre + scalars + maps + 8
+      return titre + rangs * parRang + maps + 8
     }
     case 'aedar-diversity-loss': return titre + hauteurCartesPdf(projection.maps, width) + 8
     case 'aedar-equipment-profile': {

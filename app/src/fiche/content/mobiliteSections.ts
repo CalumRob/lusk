@@ -839,7 +839,7 @@ function percentText(fact: NumericFact): string | null {
  * sentence is emitted only when the published scalar and its marker label are
  * both available; otherwise the remaining prose stays grammatical and silent.
  */
-function raccordementProse(
+export function raccordementProse(
   facts: TerritoryFacts,
   markerValue: ContentFact | null,
   markerLabel: string | null,

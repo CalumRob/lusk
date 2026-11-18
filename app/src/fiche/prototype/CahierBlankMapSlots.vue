@@ -16,6 +16,7 @@ import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 import { useCahierExportPublication } from './cahierExportVenue'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 
 const props = withDefaults(defineProps<{
   territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
@@ -35,6 +36,7 @@ const availableSlots: readonly { key: 'car' | 'bike-lts2' | 'transit'; label: st
   { key: 'transit', label: 'Transports en commun', icon: BusFront, tone: 'foot' },
 ]
 const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || props.modeKeys.includes(slot.key)))
+const nativeRender = useCahierNativeRender()
 const loadedCarMapCodes = ref(new Set<string>())
 const unavailableCarMapCodes = ref(new Set<string>())
 const mapGallery = ref<InstanceType<typeof CahierMapGallery> | null>(null)
@@ -43,7 +45,10 @@ const carMapAlternativeText = computed(() => `${props.title.map((segment) => seg
 const carMapGalleryImages = computed(() => props.horizonMinutes === AEDAR_CAR_MAP_HORIZON_MINUTES
   ? [{ key: 'car', src: aedarCarMapAssetUrl(props.territory.code, 'inspection'), alt: carMapAlternativeText.value }]
   : [])
-const carMapLegend = ref<AedarCarMapLegend | null>(null)
+const acquiredLegend = ref<AedarCarMapLegend | null>(null)
+const carMapLegend = computed(() => nativeRender ? nativeRender.carMap?.legend ?? null : acquiredLegend.value)
+const inlineSrc = computed(() => nativeRender ? nativeRender.carMap?.src : props.active === false
+  ? undefined : aedarCarMapAssetUrl(props.territory.code, 'inline'))
 const legendStatus = ref<'loading' | 'ready' | 'unavailable'>('loading')
 const needsCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(slot.key))
   && !unavailableCarMapCodes.value.has(props.territory.code))
@@ -54,10 +59,11 @@ watch(
   () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value,
     props.active !== false].join('|'),
   async (_, __, onCleanup) => {
+    if (nativeRender) return
     let current = true
     onCleanup(() => { current = false })
     if (!needsCarMapLegend.value) {
-      carMapLegend.value = null
+      acquiredLegend.value = null
       legendStatus.value = 'loading'
       legendIdentity = null
       return
@@ -66,16 +72,16 @@ watch(
     // A different territory/horizon invalidates the settled legend; merely
     // leaving the chapter keeps it, so returning reuses it without a fetch.
     if (legendIdentity !== null && legendIdentity !== identity) {
-      carMapLegend.value = null
+      acquiredLegend.value = null
       legendStatus.value = 'loading'
     }
     if (props.active === false) return
-    if (legendIdentity === identity && carMapLegend.value) { legendStatus.value = 'ready'; return }
-    carMapLegend.value = null
+    if (legendIdentity === identity && acquiredLegend.value) { legendStatus.value = 'ready'; return }
+    acquiredLegend.value = null
     legendStatus.value = 'loading'
     try {
       const legend = await fetchAedarCarMapLegend(props.territory)
-      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready'; legendIdentity = identity }
+      if (current) { acquiredLegend.value = legend; legendStatus.value = 'ready'; legendIdentity = identity }
     } catch {
       if (current) legendStatus.value = 'unavailable'
     }
@@ -141,7 +147,7 @@ function markCarMapUnavailable(code: string): void {
 async function inspectCarMap(): Promise<void> {
   // The pending page-1 surface never opens the gallery before its chapter is
   // requested: that would download the inspection asset for an unrequested page.
-  if (props.active === false) return
+  if (nativeRender || props.active === false) return
   inspectionUnavailable.value = !await mapGallery.value?.open('car')
 }
 
@@ -169,7 +175,7 @@ function markInspectionUnavailable(): void {
           v-if="usesCarMap(slot.key)"
           class="blank-map-slot__viewport"
           :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone})` }"
-          :image-url="props.active === false ? undefined : aedarCarMapAssetUrl(props.territory.code, 'inline')"
+          :image-url="inlineSrc"
           :image-alt="carMapAlternativeText"
           :accessible-name="`Agrandir : ${slot.label} à ${props.territory.name}`"
           :number="String(index + 1).padStart(2, '0')"
@@ -201,8 +207,8 @@ function markInspectionUnavailable(): void {
       <CahierContinuousMapLegend
         class="aedar-car-map-legend"
         :title="carMapLegend!.title"
-        :minimum="carMapLegend!.minimum"
-        :maximum="carMapLegend!.maximum"
+        :minimum="carMapLegend!.minimum ?? undefined"
+        :maximum="carMapLegend!.maximum ?? undefined"
         :colors="carMapLegend!.colors"
         :tick-labels="carMapLegend!.tickLabels"
         :note="carMapLegend!.note"

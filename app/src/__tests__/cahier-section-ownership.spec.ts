@@ -68,6 +68,24 @@ async function render(extra = {}) {
 }
 
 describe('Cahier extracted section ownership (#956)', () => {
+  it('freezes the native presentation inputs at the mounted section venue', async () => {
+    const { wrapper } = await render({ layoutVariant: 'indexed-sections' })
+    const key = 'aedar-car-overview'
+    const first = wrapper.vm.captureSection(key)!
+    expect(first.nativeRender?.content.units[0]?.sections.map(({ key }) => key)).toEqual([key])
+    expect(first.nativeRender?.content.units[0]?.sections[0]?.evidence?.kind).toBe(key)
+    expect(Object.isFrozen(first.nativeRender?.content.units[0]?.sections[0]?.evidence)).toBe(true)
+    expect(first.nativeRender?.layoutVariant).toBe('indexed-sections')
+    const next = contentFor()
+    const overview = next.units[0]!.sections[0]!.evidence
+    if (overview?.kind !== key) throw new Error('Expected overview fixture')
+    overview.scalarFigureTitle = 'Nouveau titre à l’écran'
+    await wrapper.setProps({ content: next })
+    expect(JSON.stringify(first.nativeRender)).not.toContain('Nouveau titre à l’écran')
+    expect(JSON.stringify(wrapper.vm.captureSection(key)?.nativeRender)).toContain('Nouveau titre à l’écran')
+    wrapper.unmount()
+  })
+
   it('synchronizes modes, horizon and comparison visibility across compositions without remounting on evidence updates', async () => {
     const { wrapper } = await render()
     const ramps = wrapper.findAllComponents(AccessRampFigureCahier).filter((ramp) =>

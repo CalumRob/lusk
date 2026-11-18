@@ -52,7 +52,8 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
-import { useCahierExportPublication } from './cahierExportVenue'
+import { useCahierExportPublication, useCahierExportSlot } from './cahierExportVenue'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -77,7 +78,8 @@ const segmentColor = mobiliteBarSegmentColor
 const referenceValue = mobiliteBarReferenceValue
 const ratioValueLabel = mobiliteRatioValueLabel
 
-const comparisonVisible = ref(true)
+const renderSlot = useCahierExportSlot()?.slotPath ?? ''
+const comparisonVisible = ref(useCahierNativeRender()?.barToggles[renderSlot] ?? true)
 // #1021 — this figure owns its comparison visibility and its drawn reference;
 // the capture reads that effective observation, never a default.
 useCahierExportPublication(() => ({

@@ -1,7 +1,9 @@
 import { computed, inject, provide, ref, unref } from 'vue'
 import type { InjectionKey, MaybeRef, Ref } from 'vue'
 import { comparaisonTerritorialeEligible } from '@/fiche/comparisonContext'
-import type { AedarRampMode, ContentSection, ThemeContent, SingleUnitThemeContent } from '@/fiche/content/themeContent'
+import type { AedarRampMode, ContentSection } from '@/fiche/content/themeContent'
+import type { CahierPresentationContent } from './cahierNativeRenderContext'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { CahierComparisonState } from './cahierSectionRenderers'
@@ -21,17 +23,18 @@ export interface AedarSectionContext {
 const AEDAR_SECTION_CONTEXT: InjectionKey<AedarSectionContext> = Symbol('Cahier AEDAR sections')
 
 export function provideAedarSectionContext(
-  content: MaybeRef<ThemeContent | SingleUnitThemeContent>,
+  content: MaybeRef<CahierPresentationContent>,
   chapterActive: Readonly<Ref<boolean>>,
   comparison: Readonly<Ref<CahierComparisonState>>,
 ): AedarSectionContext {
+  const native = useCahierNativeRender()
   const sections = unref(content).units.flatMap((unit) => unit.sections as readonly ContentSection[])
   const initial = sections.map(({ evidence }) => evidence).find((evidence) =>
     evidence?.kind === 'aedar-equipment-profile' || evidence?.kind === 'aedar-equipment-explorer')
   const context: AedarSectionContext = {
-    selectedModes: ref([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES]),
-    comparisonVisible: ref(true),
-    comparisonEligible: computed(() => comparaisonTerritorialeEligible(unref(content).territory)),
+    selectedModes: ref([...(native?.modes ?? AEDAR_DEFAULT_VISIBLE_RAMP_MODES)]),
+    comparisonVisible: ref(native?.comparisonVisible ?? true),
+    comparisonEligible: computed(() => native?.comparisonEligible ?? comparaisonTerritorialeEligible(unref(content).territory)),
     selectedHorizon: ref(initial?.initialHorizonMinutes ?? null),
     chapterActive,
     comparison,

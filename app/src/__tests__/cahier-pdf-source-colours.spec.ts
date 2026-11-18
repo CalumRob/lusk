@@ -6,7 +6,8 @@ import { chargeurPoliceTest, chargeurImageTest, requetePour, couleursRemplissage
 
 const source = vi.hoisted(() => ({ css: '' }))
 
-it('une modification des jetons éditoriaux source change les couleurs du vrai fichier PDF', async () => {
+// RETIRED (#1024 native switch): Pins source-token mutation of hand-built painter literals; native paint resolves CSS colours in the browser.
+it.skip('une modification des jetons éditoriaux source change les couleurs du vrai fichier PDF', async () => {
   const css = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
   source.css = css
   vi.doMock('@/styles/tokens.css?raw', () => ({ default: source.css }))
