@@ -524,7 +524,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     prepare_comparisons = function(profiles, version, reference_version) {
-      refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+      refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference")
       comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
       marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,
         EXISTS(SELECT 1 FROM profile_comparison_group WHERE lineage_source_count IS NULL) AS lineage_incomplete

@@ -100,6 +100,18 @@ stored or published (#810 stance intact). The contract is baked into the API
 image, so the live ranks appear only after an image rebuild and container
 recreate; no app change is required.
 
+**Littoral fixed-context amendment (owner-approved 2026-11-18, #1040):** a fifth
+published fixed comparison context, `littoral`, joins the commune choices
+(density class, EPCI, Bretagne, same-level). It resolves to the focal commune's
+same-status peers — `group_id` `C` or `NC`, `territory_type` `commune` — from the
+DREAL Bretagne classification pinned by #1041. It keeps this ADR's statistic and
+rank law exactly: same-status peers, reference plus direction-aware
+`rank`/`rank_size`/`rank_ties` REQUIRED as for the density preset, no rankless
+path, no borrowed group statistic and no default-context change. This extends
+the fixed-context enumeration here and in ADR-0041 by this one context.
+Implemented for the non-AEDAR families by #1042; the AEDAR extension is pending
+#1043.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.

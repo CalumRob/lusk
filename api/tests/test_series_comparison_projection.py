@@ -71,9 +71,9 @@ class ProjectionConnection:
             source = "old-series" if self.stale == "series" else "series-v1"
             reference = "old-ref" if self.stale == "reference" else "ref-v1"
             return Cursor(row=(AXES, source, reference))
-        if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s" in sql:
+        if "SELECT territory_id,territory_type,density_class_code,littoral_code FROM territory_reference WHERE territory_id=%s" in sql:
             return Cursor(row=("e1", "epci", "d1"))
-        if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+        if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference" in sql:
             return Cursor(rows=[("e1", "epci", "35", None, "d1"), ("e2", "epci", "35", None, "d1"),
                 ("e3", "epci", "22", None, "d1"), ("53", "region", None, None, None),
                 ("c1", "commune", "35", "e1", "d1"), ("c2", "commune", "35", "e1", "d1")])

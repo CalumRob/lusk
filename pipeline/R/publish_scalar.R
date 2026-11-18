@@ -405,7 +405,7 @@ validate_scalar_comparison_projection <- function(projection) {
   lineage <- projection$lineage
   if (any(as.character(lineage$comparison_content_version) != projection$content_version))
     stop("Scalar comparison lineage version is stale", call.=FALSE)
-  contexts <- c("density_class", "epci", "bretagne", "same_level")
+  contexts <- c("density_class", "epci", "bretagne", "same_level", "littoral")
   levels <- c("commune", "epci", "departement")
   if (anyNA(groups[c("comparison_context", "group_id", "territory_type", "indicator_id", "statistic")]) ||
       any(!groups$comparison_context %in% contexts) || any(!groups$territory_type %in% levels) ||
@@ -520,6 +520,39 @@ comparison_context_membership <- function(territory_reference, comparison_levels
   for (territory_type in intersect(c("epci", "departement"), comparison_levels))
     add_group("same_level", region_id, territory_type,
       refs$territory_id[refs$territory_type == territory_type])
+  # #1042: the served C/NC classification travels on the reference. The one
+  # canonical membership inventory emits exactly one same-status cohort per
+  # code, with identical membership across every published family. A reference
+  # that carries no classification at all is the historical transition shape
+  # and publishes no littoral context (existing contexts are byte-identical).
+  # A PARTIAL/invalid classification is a corrupt crosswalk: fail closed rather
+  # than silently treating an absent row as NC or borrowing another cohort.
+  champs_littoral <- c("littoral_code", "littoral_classement_source")
+  presents <- champs_littoral %in% names(refs)
+  if (any(presents) && !all(presents))
+    stop("Comparison territory reference littoral fields must be declared together", call.=FALSE)
+  if (all(presents)) {
+    commune_littoral <- as.character(communes$littoral_code)
+    classified <- !is.na(commune_littoral) & nzchar(commune_littoral)
+    # A projector-declared classification that is entirely empty is a named
+    # failure. An all-NA reference WITHOUT that declaration is the allowed
+    # legacy transition: it simply emits no littoral context.
+    if (isTRUE(attr(territory_reference, "littoral_declared")) && !any(classified))
+      stop("Comparison territory reference littoral classification is present but empty", call.=FALSE)
+    if (any(classified)) {
+      domain <- if (exists("CLASSES_LITTORAL_DOMAINE", inherits=TRUE)) CLASSES_LITTORAL_DOMAINE else c("C", "NC")
+      if (any(!commune_littoral[classified] %in% domain))
+        stop("Comparison territory reference carries an invalid littoral classification", call.=FALSE)
+      if (any(!classified))
+        stop("Comparison territory reference has commune(s) without littoral classification", call.=FALSE)
+      non_commune_littoral <- as.character(refs$littoral_code[refs$territory_type != "commune"])
+      if (any(!is.na(non_commune_littoral)))
+        stop("Comparison territory reference classifies a non-commune as littoral", call.=FALSE)
+      for (group_id in sort(unique(commune_littoral)))
+        add_group("littoral", group_id, "commune",
+          communes$territory_id[commune_littoral == group_id])
+    }
+  }
   membership <- do.call(rbind, members)
   rownames(membership) <- NULL
   membership

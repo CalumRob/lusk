@@ -564,9 +564,9 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
                 return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1",1,40,40,40,1,235)})()
-            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference" in sql:
+            if "SELECT territory_id,territory_type,density_class_code,littoral_code FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:("22001","commune",state["density"])})()
-            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference" in sql:
                 return Rows([("22001","commune","22",state["epci"],state["density"]),("E1","epci","22",None,None),("53","region",None,None,None)])
             if "SELECT t.epci_id,r.territory_id" in sql:
                 return type("Territory",(),{"fetchone":lambda self:(state["epci"],"53") if state["focal_exists"] else None})()
@@ -1079,11 +1079,11 @@ class _AedarSelectedConnection:
                 min(addresses), max(addresses), observed_sum,
                 len({row["statistic"] for row in rows}), min(row["statistic"] for row in rows),
                 len(set(coverages)), min(coverages), n_uncovered)])
-        if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s" in s:
+        if "SELECT territory_id,territory_type,density_class_code,littoral_code FROM territory_reference WHERE territory_id=%s" in s:
             row = next((r for r in self.state["ref_rows"] if r[0] == params[0]), None)
             return _AedarSelectedRows(["territory_id", "territory_type", "density_class_code"],
                 [(row[0], row[1], row[4])] if row else [])
-        if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in s:
+        if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference" in s:
             return _AedarSelectedRows(["territory_id", "territory_type", "department_id",
                 "epci_id", "density_class_code"], [tuple(row) for row in self.state["ref_rows"]])
         if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in s:
