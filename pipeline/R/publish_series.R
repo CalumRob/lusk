@@ -910,7 +910,7 @@ owned_series_postgres_adapter <- function(con) {
         DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
       }
       if (!is.null(d$comparison_levels)) {
-        territory_rows <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code FROM territory_reference")
+        territory_rows <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference")
         comparison <- project_ordered_series_comparisons(projection,territory_rows,version,
           as.character(reference$content_version[[1L]]))
         DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",

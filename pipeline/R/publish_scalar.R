@@ -527,9 +527,18 @@ comparison_context_membership <- function(territory_reference, comparison_levels
   # and publishes no littoral context (existing contexts are byte-identical).
   # A PARTIAL/invalid classification is a corrupt crosswalk: fail closed rather
   # than silently treating an absent row as NC or borrowing another cohort.
-  if ("littoral_code" %in% names(refs)) {
+  champs_littoral <- c("littoral_code", "littoral_classement_source")
+  presents <- champs_littoral %in% names(refs)
+  if (any(presents) && !all(presents))
+    stop("Comparison territory reference littoral fields must be declared together", call.=FALSE)
+  if (all(presents)) {
     commune_littoral <- as.character(communes$littoral_code)
     classified <- !is.na(commune_littoral) & nzchar(commune_littoral)
+    # A projector-declared classification that is entirely empty is a named
+    # failure. An all-NA reference WITHOUT that declaration is the allowed
+    # legacy transition: it simply emits no littoral context.
+    if (isTRUE(attr(territory_reference, "littoral_declared")) && !any(classified))
+      stop("Comparison territory reference littoral classification is present but empty", call.=FALSE)
     if (any(classified)) {
       domain <- if (exists("CLASSES_LITTORAL_DOMAINE", inherits=TRUE)) CLASSES_LITTORAL_DOMAINE else c("C", "NC")
       if (any(!commune_littoral[classified] %in% domain))

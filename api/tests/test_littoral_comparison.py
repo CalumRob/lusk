@@ -106,6 +106,36 @@ def test_missing_or_partial_classification_fails_closed_with_named_reason():
     assert "littoral" in raised.value.detail
 
 
+@pytest.mark.parametrize("focal, peer", [("c1", "c2"), ("c3", "c4")])
+def test_classified_focal_with_unclassified_peer_fails_closed(focal, peer):
+    # The producer rejects a partial crosswalk regardless of which cohort the
+    # focal belongs to. The API must not build a truncated littoral cohort from
+    # the classified subset: any unclassified commune poisons the reference.
+    partial = tuple((r[0], r[1], r[2], r[3], r[4], None if r[0] == peer else r[5])
+                    for r in REFERENCE_ROWS)
+    with pytest.raises(HTTPException) as raised:
+        _recognise(focal=focal, members=(focal,), rows=partial)
+    assert raised.value.status_code == 503
+    assert "littoral" in raised.value.detail
+
+
+@pytest.mark.parametrize("focal, epci_members, epci_id", [
+    ("c1", ("c1", "c4"), "e1"),
+    ("c3", ("c2", "c3"), "e2"),
+])
+def test_fully_unclassified_legacy_reference_keeps_existing_contexts(focal, epci_members, epci_id):
+    # No classification at all is the historical transition shape: it offers
+    # no littoral context but leaves density/EPCI/Bretagne resolution intact.
+    legacy = tuple((r[0], r[1], r[2], r[3], r[4], None) for r in REFERENCE_ROWS)
+    assert _recognise(focal=focal, members=epci_members, rows=legacy) == ("epci", epci_id, "commune")
+    assert _recognise(focal=focal, members=tuple(r[0] for r in REFERENCE_ROWS if r[1] == "commune"),
+                      rows=legacy) == ("bretagne", "r1", "commune")
+    assert sr._fixed_scalar_comparison_context(
+        _Connection(legacy), "commune", focal, None, "commune", epci_members,
+        {"kind": "density_class", "density_class_code": "A"},
+    ) == ("density_class", "A", "commune")
+
+
 def test_comparison_cohort_reads_littoral_classification_without_changing_defaults():
     conn = _Connection()
 
@@ -158,3 +188,52 @@ def test_littoral_fixed_context_reads_published_group_without_peer_facts():
     assert result["median"] == 5.0
     assert result["rank"] == 1 and result["rank_size"] == 2
     assert result["status"] == "available"
+
+
+@pytest.mark.parametrize("absence", ["missing_group", "stale_generation"])
+def test_absent_littoral_publication_fails_closed_without_borrowed_statistics(absence):
+    """A classified reference with no (or stale) littoral publication is 503.
+
+    No density/Bretagne group or focal statistic may be served instead.
+    """
+    descriptors = [("population", "Population", "persons", "high", "population", ["commune"], "d-v1")]
+
+    class AbsentConnection:
+        def __init__(self):
+            self.sql = []
+
+        def execute(self, sql, params=None):
+            self.sql.append((sql, params))
+            if "to_regclass('scalar_comparison_publication')" in sql:
+                return Cursor(("scalar_comparison_publication",))
+            if "FROM scalar_comparison_publication p" in sql:
+                marker = ["comparison-v1", "scalar-v1", "reference-v1", 1, 2,
+                          "scalar-v1", "reference-v1", "reference-v1"]
+                if absence == "stale_generation":
+                    marker[1] = "older-scalar-generation"
+                return Cursor(tuple(marker))
+            if "FROM scalar_comparison_group" in sql:
+                assert params[1] == "littoral" and params[2] == "C"
+                return Cursor(rows=[] if absence == "missing_group" else [
+                    ("population", "median", 5.0, 2, 2, 0, 1, True)])
+            if "FROM scalar_comparison_territory" in sql:
+                return Cursor(rows=[])
+            if "FROM comparison_source_lineage l" in sql:
+                return Cursor(rows=[])
+            raise AssertionError(sql)
+
+    connection = AbsentConnection()
+    with pytest.raises(HTTPException) as raised:
+        sr._published_scalar_comparison_results(
+            connection, descriptors, ("littoral", "C", "commune"),
+            "commune", ("c1", "c2"), "c1",
+        )
+    assert raised.value.status_code == 503
+    assert "scalar comparison" in raised.value.detail.lower()
+    # Every published read was addressed at the littoral context only: no
+    # density/Bretagne group or focal statistic was fetched as a substitute.
+    assert connection.sql
+    for _sql, params in connection.sql:
+        assert "density_class" not in tuple(str(value) for value in (params or ()))
+        assert "bretagne" not in tuple(str(value) for value in (params or ()))
+

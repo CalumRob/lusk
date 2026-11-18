@@ -269,9 +269,15 @@ def _fixed_scalar_comparison_context(conn, territory_type, territory_id, selecti
     littoral_code = focal[2] if len(focal) > 2 else None
     littoral_of = lambda row: row[3] if len(row) > 3 else None
     # A partially classified reference is a corrupt crosswalk (the producer
-    # publishes C/NC all-or-nothing). Fail closed with a named reason instead
-    # of serving an arbitrary set or borrowing a density/Bretagne group.
-    if littoral_code not in ("C", "NC") and any(littoral_of(row) in ("C", "NC") for row in refs):
+    # publishes C/NC all-or-nothing). Fail closed with a named reason whenever
+    # classification is in use and ANY commune lacks it — including a
+    # classified focal with an unclassified peer, whose cohort would otherwise
+    # be silently truncated. A reference with NO classification at all is the
+    # legacy transition shape: it simply offers no littoral context and every
+    # existing resolution below is unchanged. Never borrow a density/Bretagne
+    # group or serve an arbitrary set in the corrupt case.
+    classified_rows = [row for row in refs if littoral_of(row) in ("C", "NC")]
+    if classified_rows and len(classified_rows) != len(refs):
         raise HTTPException(503, "Published littoral classification is unavailable")
     # An exact same-status member set resolves to the published littoral group,
     # with focal inclusion; a foreign status cohort stays an explicit selection.

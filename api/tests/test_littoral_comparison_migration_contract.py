@@ -64,9 +64,14 @@ def test_migration_is_additive_and_does_not_rewrite_history():
     assert "pg_get_constraintdef" in migration
     assert "ADD CONSTRAINT" in migration
 
-    # 039's exact-definition validator and its historical DDL are untouched;
-    # 044 runs only AFTER the 030/039/033/034/035 pack in the operator window.
-    assert "littoral" not in (MIGRATIONS / "039_comparison_base_objects.sql").read_text(encoding="utf-8").lower()
+    # 039 keeps its exact pre-044 four-value expected definitions and accepts
+    # the post-044 form only through one documented, proof-backed normaliser.
+    # It is not silently rewritten to expect the widened domain.
+    m039 = (MIGRATIONS / "039_comparison_base_objects.sql").read_text(encoding="utf-8")
+    assert "m039_normalize_context" in m039
+    assert ("'density_class'::text, 'epci'::text, 'bretagne'::text, 'same_level'::text"
+            in m039)
+    assert "''littoral''::text" in m039  # escaped inside the SQL string literal
     assert "039" in migration or "after" in migration.lower()
 
 

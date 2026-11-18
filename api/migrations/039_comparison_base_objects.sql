@@ -99,6 +99,21 @@ LANGUAGE sql STABLE AS $$
     '\s+', ' ', 'g'))
 $$;
 
+-- #1042 compatibility: additive migration 044 widens the comparison_context
+-- CHECK with 'littoral' on fresh schema.sql and on upgraded schemas where 044
+-- has already run. 039 runs BEFORE 044 on the operator pack, so it must still
+-- accept the exact four-value definition an old relation carries. Strip ONLY
+-- that one domain element from context CHECKs before comparing; every other
+-- constraint is still validated byte for byte by m039_normalize. Both the
+-- accepted shapes are proven by the guarded migration-039 proof.
+CREATE FUNCTION pg_temp.m039_normalize_context(p_definition text)
+RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT CASE WHEN p_definition LIKE '%comparison_context%'
+    THEN regexp_replace(p_definition, ', ''littoral''::text', '', 'g')
+    ELSE p_definition END
+$$;
+
 INSERT INTO pg_temp.m039_expected_defaults(relation, column_name, expression) VALUES
   ('scalar_comparison_publication', 'singleton', 'true'),
   ('scalar_comparison_publication', 'published_at', 'now()'),
@@ -157,9 +172,9 @@ BEGIN
 
     SELECT array_agg(c.contype::text || '|' ||
              CASE WHEN c.convalidated THEN 'validated' ELSE 'not_valid' END || '|' ||
-             pg_temp.m039_normalize(pg_get_constraintdef(c.oid))
+             pg_temp.m039_normalize_context(pg_temp.m039_normalize(pg_get_constraintdef(c.oid)))
              ORDER BY c.contype::text, c.convalidated,
-                      pg_temp.m039_normalize(pg_get_constraintdef(c.oid)))
+                      pg_temp.m039_normalize_context(pg_temp.m039_normalize(pg_get_constraintdef(c.oid))))
     INTO actual_constraints
     FROM pg_constraint c
     JOIN pg_class r ON r.oid = c.conrelid
@@ -170,7 +185,7 @@ BEGIN
       AND NOT (relation_expected.relation = 'ordered_series_comparison_zero_reason'
                AND c.contype = 'f');
 
-    SELECT array_agg(kind || '|validated|' || definition ORDER BY kind, definition)
+    SELECT array_agg(kind || '|validated|' || pg_temp.m039_normalize_context(definition) ORDER BY kind, pg_temp.m039_normalize_context(definition))
     INTO expected_constraints
     FROM pg_temp.m039_expected_constraints
     WHERE relation = relation_expected.relation;
@@ -736,6 +751,7 @@ BEGIN
 END $$;
 
 DROP FUNCTION pg_temp.m039_validate_comparison_contract(text);
+DROP FUNCTION pg_temp.m039_normalize_context(text);
 DROP FUNCTION pg_temp.m039_normalize(text);
 DROP FUNCTION pg_temp.m039_columns(text);
 

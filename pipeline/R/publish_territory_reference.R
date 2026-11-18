@@ -60,7 +60,15 @@ project_territory_reference <- function(territories) {
   }
   result <- result[order(result$territory_type, result$territory_id), , drop=FALSE]
   rownames(result) <- NULL
-  list(rows=result, content_version=scalar_content_version(result))
+  # Le contenu est haché AVANT d'ajouter le drapeau : la version de la
+  # référence reste donc exactement celle de la transition historique.
+  version <- scalar_content_version(result)
+  # Les lignes projetées portent TOUJOURS les deux colonnes (NA/NA pour une
+  # transition sans classification). Ce drapeau distingue cette transition
+  # autorisée d'une référence enrichie déclarée mais vidée : les éditeurs de
+  # comparaisons peuvent refuser cette dernière par un motif nommé.
+  attr(result, "littoral_declared") <- littoral_declare
+  list(rows=result, content_version=version)
 }
 
 territory_reference_postgres_adapter <- function(con) {

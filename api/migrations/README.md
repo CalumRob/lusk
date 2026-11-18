@@ -546,6 +546,16 @@ deployment.
 
 # Migration 039 — restore scalar and ordered-series comparison bases
 
+**#1042 compatibility note (replay-proven, not a silent rewrite):** 039's exact
+constraint validator keeps its four-value `comparison_context` definitions and
+accepts the post-044 five-value form through one documented normaliser
+(`m039_normalize_context`) that strips only the `littoral` element from context
+CHECKs before comparison. Every other constraint is still validated byte for
+byte. This lets an already-widened fresh/current schema replay 039 as a no-op
+while an old four-value relation remains valid. The guarded proof
+`api/tests/integration/test_postgres_publication.py -k test_migration_039`
+passes with the widened `schema.sql` (4 passed).
+
 `039_comparison_base_objects.sql` repairs the retained upgrade gap behind #806:
 fresh installs receive the six scalar and ordered-series comparison base
 relations from `schema.sql`, but no retained migration creates them. Apply it

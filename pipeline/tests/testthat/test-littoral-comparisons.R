@@ -66,9 +66,11 @@ test_that("canonical membership inventory publishes exact C and NC cohorts", {
 })
 
 test_that("membership omits littoral for an unclassified transition reference and fails closed on a partial crosswalk", {
+  # ABSENT classification columns are the legacy transition shape: no littoral
+  # context, every existing context byte-identical.
   transition <- littoral_reference()
-  transition$littoral_code[] <- NA_character_
-  transition$littoral_classement_source[] <- NA_character_
+  transition$littoral_code <- NULL
+  transition$littoral_classement_source <- NULL
   expect_false("littoral" %in% comparison_context_membership(transition, "commune")$comparison_context)
 
   partial <- littoral_reference()
@@ -82,6 +84,43 @@ test_that("membership omits littoral for an unclassified transition reference an
   misclassified <- littoral_reference()
   misclassified$littoral_code[[6]] <- "C"
   expect_error(comparison_context_membership(misclassified, "commune"), "non-commune|littoral")
+})
+
+test_that("membership refuses a declared-but-empty or half-declared classification", {
+  # #1041 projector semantics: columns ABSENT = legacy transition (allowed),
+  # but a classification the producer DECLARED and then emptied, or declared
+  # with only one column, is a named failure — never a silent "no littoral
+  # context" publication. The projector's post-hash flag carries the declaration.
+  empty <- littoral_reference()
+  empty$littoral_code[] <- NA_character_
+  empty$littoral_classement_source[] <- NA_character_
+  attr(empty, "littoral_declared") <- TRUE
+  expect_error(comparison_context_membership(empty, "commune"), "present but empty")
+
+  half <- littoral_reference()
+  half$littoral_classement_source <- NULL
+  expect_error(comparison_context_membership(half, "commune"), "declared together")
+
+  half_code <- littoral_reference()
+  half_code$littoral_code <- NULL
+  expect_error(comparison_context_membership(half_code, "commune"), "declared together")
+})
+
+test_that("projected all-NA rows without declaration stay the legacy transition", {
+  # The projector always emits both columns; a legacy transition therefore
+  # arrives with all-NA values and littoral_declared=FALSE. It must publish no
+  # littoral context while every existing context stays byte-identical.
+  legacy <- project_territory_reference(data.frame(
+    code = c("c1", "c2", "r1"), type = c("commune", "commune", "region"),
+    nom = c("A", "B", "Bretagne"), departement = c("22", "29", NA_character_),
+    epci = c("e1", "e2", NA_character_),
+    classe_densite_code = c("A", "B", NA_character_), stringsAsFactors = FALSE))
+  expect_false(isTRUE(attr(legacy$rows, "littoral_declared")))
+  expect_true(all(is.na(legacy$rows$littoral_code)))
+  membership <- comparison_context_membership(legacy$rows, "commune")
+  expect_false("littoral" %in% membership$comparison_context)
+  expect_setequal(unique(membership$comparison_context),
+    c("density_class", "epci", "bretagne"))
 })
 
 test_that("scalar comparison publishes C and NC with direction-aware ranks, ties, zero and missing peers", {
