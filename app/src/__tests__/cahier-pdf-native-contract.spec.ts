@@ -40,6 +40,20 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(text).not.toMatch(/\ufffd/)
   })
 
+  it('exerce le vrai point d’entrée de production (import paresseux, annulation, code)', async () => {
+    const production = await import('../fiche/prototype/cahierPdfComposer')
+    const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
+    capture.capabilities.maps.items[0].loaded = false
+    capture.capabilities.maps.status = 'unavailable'
+    await expect(production.composerCahierPdf(requete(capture), { signal: new AbortController().signal }))
+      .rejects.toMatchObject({ name: 'CahierPdfCompositionError', code: 'asset' })
+    const controller = new AbortController()
+    controller.abort()
+    await expect(production.composerCahierPdf(requete(capturePdfFixture('aedar-access'), ['car']),
+      { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(typeof production.creerGenerateurCahierPdf).toBe('function')
+  })
+
   it('refuse une carte déclarée non chargée avec une erreur typée', async () => {
     const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
     capture.capabilities.maps.items[0].loaded = false
@@ -89,6 +103,14 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     }
     expect(() => construireTableauxPdf(corrupt, { mesure, largeurDisponible: 400,
       nomTerritoire: 'Commune A1', ownerDisplayed: true })).toThrow(/ne tient pas|dépasse|largeur/)
+  })
+
+  it('utilise la face de corps pour le mobilier de pied, pas la face mono', async () => {
+    const { ROLE_PDF } = await import('@/fiche/prototype/cahierPdfGrammaire')
+    const { POLICE_PDF, POLICES_PDF } = await import('@/fiche/prototype/cahierPdfFonts')
+    expect(ROLE_PDF.pied.police).toBe(POLICE_PDF.body)
+    expect(ROLE_PDF.pied.police).not.toBe(POLICE_PDF.metaMedium)
+    expect(POLICES_PDF.some((face) => face.id === POLICE_PDF.body)).toBe(true)
   })
 
   it('lit la couleur du propriétaire de partage, pas une copie', () => {

@@ -652,6 +652,12 @@ export function verifierCollisions(lecture: LecturePdf, tolerance = 0.35): void 
       const aBottom = a.y + a.taille * 0.75
       for (let otherIndex = index + 1; otherIndex < items.length; otherIndex += 1) {
         const b = items[otherIndex]!
+        // The DOM painter emits wrapped text glyph by glyph; only two adjacent
+        // single-glyph runs on the SAME baseline legitimately share an x origin.
+        // Never suppress a genuine block overlap elsewhere on the page.
+        if (a.str.length === 1 && b.str.length === 1
+          && Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1
+          && Math.abs(a.taille - b.taille) < 0.5) continue
         const bTop = b.y
         const bBottom = b.y + b.taille * 0.75
         const vertical = Math.min(aBottom, bBottom) - Math.max(aTop, bTop)
