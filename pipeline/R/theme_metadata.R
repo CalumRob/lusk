@@ -69,6 +69,18 @@ CLES_HISTOIRES_PAR_THEME <- list(
   programmes = character(0L)
 )
 
+# THEMES_SANS_LECTURE ----------------------------------------------------------
+# Propriété DÉCLARÉE des thèmes qui publient légitimement une table d'histoires
+# VIDE — la garde #312 (une lecture par (territoire, groupe)) ne s'applique qu'aux
+# thèmes qui déclarent une lecture. L'exemption est un registre, PAS un test sur
+# le nom du thème dans valider_histoires_resolues().
+#   - programmes : aucun story depuis l'issue #408 (le registre vide le dit) ;
+#   - mobilite : les deux lectures du snapshot ont été retirées en #1048 ; le
+#     slice 2 (#1048) retirera leurs clés du catalogue épinglé, ce qui permettra
+#     d'aligner CLES_HISTOIRES_PAR_THEME$mobilite sur un vecteur vide et de
+#     retirer Mobilité de ce registre.
+THEMES_SANS_LECTURE <- c("mobilite", "programmes")
+
 # lire_theme_metadata / publier_theme_metadata ---------------------------------
 # Le lecteur du fichier épinglé et le seam de publication vivent dans
 # publier_theme_metadata.R — le contrat (valider_theme_metadata, les registres

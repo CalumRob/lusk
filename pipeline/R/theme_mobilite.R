@@ -121,7 +121,7 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
   "2023–2025", "lov2", "2023-01-01", "2026-07-03"
 )
 
-# VINTAGE_MOBILITE_SNAPSHOT_RETRAITE -------------------------------------------
+# VINTAGE_MOBILITE_SNAPSHOT_RETRAITE — slice 2 (#1048) ---------------------------
 # Le snapshot a été retiré du manifeste et de la chaîne de calcul (#1048). Sa
 # ligne de vintage subsiste TEMPORAIREMENT : le catalogue épinglé
 # (theme_mobilite.json — slice 2) cite encore `mobilite_snapshot` comme source
@@ -366,7 +366,7 @@ APERCU_MOBILITE <- tibble::tibble(
 # La table des territoires du thème : le squelette PARTAGÉ (squelette_territoires,
 # compute.R) — communes/EPCIs/départements/région avec les noms réels de la
 # base des EPCI (lire_epci), la règle de pluralité départementale — avec le
-# POIDS du thème : le nombre de adresses résidentielles du spine par commune (n_adresses du
+# POIDS du thème : le nombre d'adresses résidentielles du spine par commune (n_adresses du
 # snapshot porté — la mesure signature de l'analyse d'accessibilité).
 construire_territoires_mobilite <- function(base_epci, analytiques,
                                             noms_epci_geo_api = NULL,
@@ -762,7 +762,7 @@ validations_mobilite <- list(
   function(payload) {
     tc <- payload$indicateurs$value[payload$indicateurs$key == "offre_tc"]
     if (any(!is.na(tc) & (tc < 0 | tc > 1))) {
-      stop("Payload invalide : une part de bâtiments près d'un arrêt hors [0, 1].",
+      stop("Payload invalide : une part d'adresses près d'un arrêt hors [0, 1].",
            call. = FALSE)
     }
     invisible(payload)
@@ -968,21 +968,21 @@ verifier_descripteur_mobilite <- function(descripteur) {
 }
 
 # DIRECTIONS_MOBILITE ----------------------------------------------------------
-# La désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) — AUCUNE
-# clé ne se repose sur le défaut high-is-good. Les CINQ parts d'isolation de la
-# grille sont low-is-good (le cadrage en privation : moins de bâtiments sans
-# accès, mieux — la machinerie de construire_rangs_isolation les classe low) ;
-# tout le reste est high-is-good, le scalaire classé de chaque clé nommé :
-# la part sans voiture pour voitures_menage, la longueur vélo pour reseaux, la
-# part près d'un arrêt pour offre_tc, les bornes, le stationnement vélo, la
-# longueur protégée/totale pour offre_cyclable. Les LECTURES de la Story
-# (div_loss_t/b — le nombre de types de services qui disparaissent) sont elles
-# aussi déclarées low-is-good : moins de services perdus, mieux — ce sont des
-# valeurs de lecture, jamais des clés du registre. La constante est la SOURCE
-# UNIQUE : le descripteur (theme_mobilite) et la machinerie de rangs
-# (construire_indicateurs_mobilite) la consomment — jamais un appel à
-# theme_mobilite() depuis un builder (le graphe targets ne peut pas suivre le
-# cycle descriptor → builder → descriptor).
+# La désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) : chaque
+# clé CLASSÉE par le producteur déclare SA direction — aucune ne se repose sur
+# le défaut high-is-good. Les clés retenues sont celles des 17 indicateurs
+# publiés ; la constante est la SOURCE UNIQUE du descripteur (theme_mobilite)
+# et de la machinerie de rangs
+# (construire_indicateurs_mobilite) — jamais un appel à theme_mobilite() depuis
+# un builder (le graphe targets ne peut pas suivre le cycle descripteur →
+# builder → descripteur).
+#
+# Les clés `nb_buildings`, `tot_loss_*`, `avg_*`, `iso_*` et `share_*` ci-dessous
+# ne sont PLUS calculées ni publiées depuis #1048. Elles restent déclarées UNIQUEMENT
+# pour la parité avec le catalogue épinglé (theme_mobilite.json — slice 2) :
+# valider_theme_metadata() croise la direction de chaque page encore épinglée et
+# les 15 `indicator_directions`, dont certaines sont `low`. Le slice 2 retire ces
+# pages du catalogue ; les lignes correspondantes partent alors d'ici.
 DIRECTIONS_MOBILITE <- list(
   nb_buildings = "high",
   voitures_menage = "high",
@@ -1006,8 +1006,6 @@ DIRECTIONS_MOBILITE <- list(
   tot_loss_t = "low",
   tot_loss_b = "low",
   offre_cyclable = "high",
-  div_loss_t = "low",
-  div_loss_b = "low",
   raccordement_tc = "high",
   # les deux clés de MATIÈRE DE FIGURE du raccordement (#486) : déclarées
   # pour l'audit directions↔registre (la bijection du contrat), jamais

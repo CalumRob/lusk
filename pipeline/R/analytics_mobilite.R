@@ -5,41 +5,10 @@
 # 2026-11-18), les bornes de recharge, le stationnement vélo/voiture, les
 # densités de ravitaillement et la figure cyclable, agrégés aux quatre niveaux.
 # La chaîne analytique du snapshot porté (accessibilité vingt minutes) a été
-# retirée (issue #1048) ; les constantes CLES_* ci-dessous ne sont conservées
-# que comme vocabulaire de métadonnée, le temps que le catalogue suive (slice 2).
-
-# CLES_ACCES_MOBILITE / CLES_ISOLATION_MOBILITE -------------------------------
-# Les 5 clusters de services de la grille (ADR-0012 point 2), dans les trois
-# modes du snapshot porté. Les clés `share_*` publient le fait direct : la part
-# des bâtiments ayant accès au service. Les clés `iso_*` restent calculées et
-# publiées pendant la transition de l'ancien rendu vers le nouveau contrat :
-# elles sont le miroir 1 − share_* en cadrage de privation, jamais un second
-# calcul analytique.
-CLES_ACCES_MOBILITE <- c(
-  share_food_t = "share_food_t",
-  share_food_b = "share_food_b",
-  share_food_c = "share_food_c",
-  share_health_t = "share_health_t",
-  share_health_b = "share_health_b",
-  share_health_c = "share_health_c",
-  share_admin_t = "share_admin_t",
-  share_admin_b = "share_admin_b",
-  share_admin_c = "share_admin_c",
-  share_school_t = "share_school_t",
-  share_school_b = "share_school_b",
-  share_school_c = "share_school_c",
-  share_bank_t = "share_bank_t",
-  share_bank_b = "share_bank_b",
-  share_bank_c = "share_bank_c"
-)
-
-CLES_ISOLATION_MOBILITE <- c(
-  iso_alimentation = "share_food_t",
-  iso_sante = "share_health_t",
-  iso_administration = "share_admin_t",
-  iso_ecole = "share_school_t",
-  iso_banque = "share_bank_t"
-)
+# retirée (issue #1048) avec ses vocabulaires `share_*` / `iso_*` : aucune
+# constante de la grille d'accès ne vit plus ici. Les directions de rang
+# encore présentes dans DIRECTIONS_MOBILITE ne le sont que pour la parité du
+# catalogue épinglé, jusqu'au slice 2 (#1048).
 
 # DISTANCE_ARRET_M / CRS_OFFRE_MOBILITE ----------------------------------------
 # La DÉCISION DE BUILD verrouillée de l'offre TC (l'item 🔶 du contrat,

@@ -398,8 +398,8 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
   )
   # les valeurs de lecture supplémentaires déclarées (jamais des clés du
   # registre — des lectures de Story rendues avec leur glyph directionnel)
+  # Mobilité ne porte plus de lecture de Story depuis #1048.
   lectures_documentees <- list(
-    mobilite = c("div_loss_t", "div_loss_b"),
     milieux = "trajectoire_artif_par_habitant"
   )
 
