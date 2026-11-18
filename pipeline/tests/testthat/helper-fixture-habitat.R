@@ -59,5 +59,5 @@ load_fixture_habitat <- function() {
 
 # Le payload Habitat du fixture — la valeur par défaut des tests du thème.
 payload_habitat <- function() {
-  compute_payload(load_fixture_habitat(), theme = theme_habitat())
+  compute_payload_test(load_fixture_habitat(), theme = theme_habitat())
 }

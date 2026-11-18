@@ -357,7 +357,9 @@ validations_economie <- list(
 construire_payload_economie <- function(analytiques, base_epci, vintages,
                                         noms_epci_geo_api = NULL,
                                         classes_densite = NULL,
-                                        classes_littoral = NULL) {
+                                        classes_littoral = NULL,
+                                        reference = NULL) {
+  reference <- exiger_reference_territoires(reference, "construire_payload_economie")
   territoires <- construire_territoires_economie(base_epci, analytiques)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
@@ -379,7 +381,8 @@ construire_payload_economie <- function(analytiques, base_epci, vintages,
     # portés par la résolution partagée (resoudre_histoires)
     histoires = resoudre_histoires(
       compute_histoires_economie(analytiques, vintages), "economie"),
-    territoires = reference_territoires(territoires),
+    # #1056 : la dimension canonique exigée à l'entrée, sans repli.
+    territoires = reference,
     apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
   )
 
@@ -405,7 +408,10 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                                                              "processed", "economie"),
                              noms_epci_geo_api = NULL,
                              classes_densite = NULL,
-                             classes_littoral = NULL) {
+                             classes_littoral = NULL,
+                              reference = NULL) {
+  # #1057 : valider AVANT toute lecture du cache.
+  reference <- exiger_reference_territoires(reference, "publier_economie")
   if (is.null(vintages)) vintages <- vintages_economie()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -418,7 +424,8 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
     vintages,
     noms_epci_geo_api = noms_epci_geo_api,
     classes_densite = classes_densite,
-    classes_littoral = classes_littoral
+    classes_littoral = classes_littoral,
+    reference = reference
   )
   publish(payload, sortie)
   payload

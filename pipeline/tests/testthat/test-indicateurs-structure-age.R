@@ -10,7 +10,7 @@ bandes <- c(
 )
 
 test_that("structure par âge : 14 lignes (7 tranches × 2 sexes) par territoire", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   for (code in unique(p$indicateurs$territoire)) {
     v <- valeur_payload(p, code, "structure_age")
     expect_equal(nrow(v), 14, info = code)
@@ -21,7 +21,7 @@ test_that("structure par âge : 14 lignes (7 tranches × 2 sexes) par territoire
 })
 
 test_that("structure par âge : chaque part = effectif sexe / population (communes)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   fx <- load_fixture()
   # le fixture porte les effectifs par sexe pour les communes uniquement
   for (code in fx$code) {
@@ -39,7 +39,7 @@ test_that("structure par âge : chaque part = effectif sexe / population (commun
 })
 
 test_that("structure par âge : les parts somment à 1 pour chaque territoire", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   for (code in unique(p$indicateurs$territoire)) {
     v <- valeur_payload(p, code, "structure_age")
     expect_equal(sum(v$value), 1, info = code)
@@ -47,7 +47,7 @@ test_that("structure par âge : les parts somment à 1 pour chaque territoire", 
 })
 
 test_that("structure par âge : les agrégats somment les tranches (par sexe)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   fx <- load_fixture()
   v <- valeur_payload(p, "200000001", "structure_age")
   # EPCI-X = A1 + D : parts sur 2400 habitants, par sexe
@@ -62,7 +62,7 @@ test_that("structure par âge : les agrégats somment les tranches (par sexe)", 
 })
 
 test_that("structure par âge : le rang scalaire (moins de 20 ans / population) est répliqué sur les 14 lignes", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   v <- valeur_payload(p, "22001", "structure_age")
   # la scalarité est portée par le rang ; identique sur les 14 lignes
   expect_equal(length(unique(v$rang_epci)), 1)
@@ -73,7 +73,7 @@ test_that("structure par âge : le rang porte la part TOTALE des moins de 20 ans
   # et « 15-24 » : il n'est pas la somme de parts publiées, et son classement ne
   # bouge pas quand l'éclatement par sexe change de forme (issue #390).
   fx <- load_fixture()
-  p <- compute_payload(fx)
+  p <- compute_payload_test(fx)
   # 22001 : age_lt20 = 500 sur 2000 habitants = 0.25 ; 22002 : 100 / 400 = 0.25
   # → l'ordre du rang suit ce scalaire, jamais la part « <15 » d'un seul sexe
   attendu <- fx$age_lt20 / fx$population
@@ -101,13 +101,13 @@ test_that("structure par âge : le rang porte la part TOTALE des moins de 20 ans
 contrat <- validations_demographie$contrat_age_sexe
 
 test_that("contrat âge×sexe : le payload du fixture passe la validation du thème", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_no_error(validate_payload(p, validations = validations_demographie))
   expect_no_error(contrat(p))
 })
 
 test_that("contrat âge×sexe : une TRANCHE entièrement absente (ses deux sexes) -> erreur nommée", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # on retire les DEUX lignes de « 55-64 » : les tranches restantes sont encore
   # cohérentes PAR PAIRES (chaque tranche présente a bien F et M) — une attente
   # dérivée de l'observé trouverait ça impeccable. Seule l'attente FIXE voit le
@@ -123,7 +123,7 @@ test_that("contrat âge×sexe : une TRANCHE entièrement absente (ses deux sexes
 })
 
 test_that("contrat âge×sexe : un SEXE manquant sur une tranche -> erreur nommée", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   p$indicateurs <- p$indicateurs[!(p$indicateurs$key == "structure_age" &
                                      p$indicateurs$detail == "<15" &
                                      p$indicateurs$sex == "M"), ]
@@ -134,7 +134,7 @@ test_that("contrat âge×sexe : un SEXE manquant sur une tranche -> erreur nomm�
 })
 
 test_that("contrat âge×sexe : une représentation mixte sexe/NA -> erreur", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   cible <- p$indicateurs$key == "structure_age" &
     p$indicateurs$detail == "<15" & p$indicateurs$sex == "F"
   p$indicateurs$sex[cible] <- NA_character_
@@ -145,7 +145,7 @@ test_that("contrat âge×sexe : une représentation mixte sexe/NA -> erreur", {
 })
 
 test_that("contrat âge×sexe : un sexe INVALIDE (« _T » — le total n'est pas une ligne) -> erreur", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   cible <- p$indicateurs$key == "structure_age" &
     p$indicateurs$detail == "<15" & p$indicateurs$sex == "F"
   p$indicateurs$sex[cible] <- "_T"
@@ -156,7 +156,7 @@ test_that("contrat âge×sexe : un sexe INVALIDE (« _T » — le total n'est pa
 })
 
 test_that("contrat âge×sexe : une paire âge×sexe EN DOUBLE -> erreur", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   ligne <- p$indicateurs[p$indicateurs$key == "structure_age" &
                            p$indicateurs$detail == "<15" &
                            p$indicateurs$sex == "F", ][1, ]
@@ -171,7 +171,7 @@ test_that("contrat âge×sexe : une paire âge×sexe EN DOUBLE -> erreur", {
 })
 
 test_that("contrat âge×sexe : une tranche HORS CONTRAT (« 90+ » n'est pas un étage bonus) -> erreur", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   p$indicateurs$detail[p$indicateurs$key == "structure_age" &
                          p$indicateurs$detail == "80+"] <- "90+"
 
@@ -182,7 +182,7 @@ test_that("contrat âge×sexe : une tranche HORS CONTRAT (« 90+ » n'est pas un
 })
 
 test_that("contrat âge×sexe : la colonne `sex` absente -> erreur (dérive de schéma)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   p$indicateurs$sex <- NULL
 
   expect_error(contrat(p), "colonne `sex`")

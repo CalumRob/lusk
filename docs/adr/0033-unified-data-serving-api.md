@@ -147,6 +147,32 @@ database publication time are distinct. Producer declarations and artifacts
 required by R serving/publishing remain in place: retiring a browser reader is
 not authority to delete its producer input.
 
+## Canonical territory reference as a dimension — 2026-11-18 (#1056)
+
+The compact static territory reference remains the one shared identity,
+navigation and relationship asset of the owner-confirmed boundary amendment,
+and it still comes from the same canonical source as the database. Its
+**production** is no longer a by-product of whichever theme payload ran last.
+It is now a dimension: one canonical skeleton is built from the pinned INSEE
+commune/EPCI base (1,202 Breton communes, both islands included) and the pinned
+commune universe, carrying the same reference fields and public labels as
+before. Every theme publishes that same projection; a theme with narrower facts
+never shrinks it. The DREAL littoral and INSEE density classifications are
+applied to the canonical skeleton rather than to a theme's fact rows: both
+islands are `C` with their source classement, while Milieux keeps its 1,200
+honest fact rows. A missing base or a skeleton/classification disagreement
+fails closed. This is a producer-side publication change, not app-side
+inference and not authority to publish, migrate or deploy.
+
+Within that reference, an EPCI's `département` is attributed by **population
+plurality of the pinned commune register** for every theme: the département
+holding the most population, ties to the smallest département code, under the
+shared skeleton rule. This replaces the former per-theme weights (population,
+logements, `n_adresses`, `n_c`, `conso_poids`) as the source of that published
+value. It can change that one value for a cross-border EPCI; the territory
+universe, all other reference fields, fact rows, indicators and ranks are
+unchanged. A generation-bound comparison refresh stays operator-controlled.
+
 ## Current metadata consumer status — 2026-11-07 (#827)
 
 The served theme browser projection now omits `scalar_contracts`,

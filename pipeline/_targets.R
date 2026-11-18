@@ -166,6 +166,29 @@ classes_littoral_cible <- tar_target_raw(
 )
 classes_littoral_sym <- as.name("classes_littoral")
 
+# #1056 (option B) : la référence des territoires est une DIMENSION construite
+# UNE fois depuis la base INSEE épinglée (1 202 communes, îles incluses), les
+# deux classifications et le canon des noms publics — indépendamment des faits
+# du thème. Chaque publication de payload reçoit CETTE projection, jamais le
+# miroir de ses propres lignes : la référence est byte-identique d'un thème à
+# l'autre, même quand Milieux n'a que 1 200 communes de faits.
+reference_canonique_cible <- tar_target_raw(
+  "reference_canonique",
+  bquote({
+    fichier_epci_extrait
+    fichier_epci_geo_api
+    classes_densite
+    classes_littoral
+    reference_territoires_canonique(
+      lire_epci(fichier_epci_extrait),
+      classes_densite = classes_densite,
+      classes_littoral = classes_littoral,
+      noms_epci_geo_api = lire_noms_epci_geo_api(fichier_epci_geo_api)
+    )
+  })
+)
+reference_canonique_sym <- as.name("reference_canonique")
+
 # attributs_nuls -----------------------------------------------------------------
 # Le corps d'une fonction chargée par parse() porte des attributs de source
 # (srcref, srcfile, wholeSrcref — en surface ET sur les éléments imbriqués)
@@ -272,6 +295,7 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   classes_densite_sym <- as.name("classes_densite")
   classes_littoral_sym <- as.name("classes_littoral")
+  reference_canonique_sym <- as.name("reference_canonique")  # #1056
   theme_c <- as.name(paste0("theme_", nom))   # le constructeur du descripteur
   theme_descripteur <- bquote(.(theme_c)())
   construire <- symbole_ns(theme$construire_donnees)
@@ -347,7 +371,10 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
                           classes_densite = .(classes_densite_sym),
                           classes_littoral = .(classes_littoral_sym),
                           noms_epci_geo_api = lire_noms_epci_geo_api(
-                            .(fichier_epci_geo_api_sym)))
+                            .(fichier_epci_geo_api_sym)),
+                          # #1056 : la référence est la dimension canonique
+                          # partagée, jamais le miroir des faits du thème.
+                          reference = .(reference_canonique_sym))
         })
       )
     ))
@@ -481,11 +508,13 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   classes_densite_sym <- as.name("classes_densite")
   classes_littoral_sym <- as.name("classes_littoral")
+  reference_canonique_sym <- as.name("reference_canonique")
   if (is.function(theme$publier)) {
     publier_fn <- symbole_ns(theme$publier)
     accepte_noms_epci <- "noms_epci_geo_api" %in% names(formals(theme$publier))
     accepte_classes_densite <- "classes_densite" %in% names(formals(theme$publier))
     accepte_classes_littoral <- "classes_littoral" %in% names(formals(theme$publier))
+    accepte_reference <- "reference" %in% names(formals(theme$publier))
     # Les deux classifications communales voyagent ensemble dans le référentiel
     # territorial : un seam qui en accepte une doit accepter l'autre. Un jour où
     # un thème voudrait seulement l'une, le graphe doit le dire explicitement —
@@ -540,6 +569,16 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
                         sortie = .(sortie))
         }
       )
+    }
+    # #1056 : le seam publier reçoit la dimension canonique partagée. On
+    # l'ajoute à l'appel final (quelque soit le branchement de signature ci-
+    # dessus) pour que la référence ne dépende jamais des faits du thème.
+    if (accepte_reference) {
+      appell <- command[[length(command)]]
+      command[[length(command)]] <- as.call(c(
+        as.list(appell),
+        list(reference = reference_canonique_sym)
+      ))
     }
     # LE RACCORDEMENT (issue #486) : le trait du descripteur CHAÎNE la
     # publication derrière la cible de calcul — elle lit une enveloppe fraîche
@@ -1125,18 +1164,30 @@ construire_fichier_epci_extrait <- function(cache = CACHE_RUN) {
     zip_expr <- bquote(file.path(.(cache), .(manifeste_var)$fichier[
       .(manifeste_var)$id == "epci"]))
   } else {
-    zip_expr <- bquote(file.path(.(cache), "epci_au_01-01-2025.zip"))
+    # #1056 : la référence canonique est désormais TOUJOURS publiée. Sur un run
+    # restreint sans thème déclarant la source epci, l'xlsx extrait est déjà
+    # dans le cache (condition préexistante des runs mono-thème) : on le lit
+    # tel quel sans exiger le zip, exactement comme run_pipeline le fait.
+    zip_expr <- bquote(NULL)
   }
   corps <- c(entetes, list(bquote({
     extrait <- file.path(.(cache), "extracted")
-    if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+    cible <- file.path(extrait, "EPCI_au_01-01-2025.xlsx")
     zip_epci <- .(zip_expr)
-    if (!file.exists(zip_epci)) {
-      stop("Le référentiel partagé des EPCI est absent du cache (", zip_epci,
-           ") — les verrous « données réelles » en ont besoin.", call. = FALSE)
+    if (!is.null(zip_epci)) {
+      if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+      if (!file.exists(zip_epci)) {
+        stop("Le référentiel partagé des EPCI est absent du cache (", zip_epci,
+             ") — la référence canonique et les verrous en ont besoin.",
+             call. = FALSE)
+      }
+      suppressWarnings(utils::unzip(zip_epci, exdir = extrait, overwrite = TRUE))
     }
-    suppressWarnings(utils::unzip(zip_epci, exdir = extrait, overwrite = TRUE))
-    file.path(extrait, "EPCI_au_01-01-2025.xlsx")
+    if (!file.exists(cible)) {
+      stop("La base EPCI extraite est absente du cache (", cible,
+           ") — la référence canonique en a besoin.", call. = FALSE)
+    }
+    cible
   })))
   tar_target_raw("fichier_epci_extrait",
                  as.call(c(list(as.name("{")), corps)),
@@ -1183,13 +1234,17 @@ if (selection_complete) {
 
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le
 # run COMPLET — LUSK_THEMES vide, le cron) les verrous du thème Programmes.
-# Le référentiel partagé extrait (fichier_epci_extrait) n'est câblé qu'une
-# fois, et seulement si un verrou du run le lit (la sentinelle "epci" de SES
-# args — la REGISTRE) OU si la chaîne du raccordement d'un thème en dépend
-# (le trait `raccordement` — issue #486 : ses niveaux agrégés lisent
-# l'EPCI_au_01-01-2025.xlsx extrait).
+# Le référentiel partagé extrait (fichier_epci_extrait) est câblé UNE fois.
+# Depuis #1056 la référence canonique le lit TOUJOURS (besoin_epci = TRUE ci-
+# dessous) ; un verrou « données réelles » (la sentinelle "epci" de SES args —
+# la REGISTRE) ou la chaîne du raccordement d'un thème (le trait `raccordement`,
+# issue #486 : ses niveaux agrégés lisent l'EPCI_au_01-01-2025.xlsx extrait)
+# le demandaient déjà.
 verifications <- list()
-besoin_epci <- FALSE
+# #1056 : la référence canonique (toujours publiée) lit la base EPCI extraite —
+# le target est donc câblé pour TOUT run, pas seulement quand un verrou ou le
+# raccordement le demandait.
+besoin_epci <- TRUE
 for (t in THEMES_RUN) {
   verifications <- c(verifications, verifications_theme(t))
   spec <- VERIFICATIONS_RUN[[t$theme]]
@@ -1377,6 +1432,7 @@ list(
   sources_classes_littoral_cible,
   fichier_classes_littoral_cible,
   classes_littoral_cible,
+  reference_canonique_cible,
   grappes,
   publies,
   fusion_themes(themes_fusion),

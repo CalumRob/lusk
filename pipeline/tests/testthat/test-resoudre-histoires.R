@@ -36,7 +36,7 @@ test_that("le registre couvre les cinq thèmes et déclare les groupes de fiche"
 })
 
 test_that("Démographie : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
 
   expect_named(h, c(
@@ -59,7 +59,7 @@ test_that("Démographie : chaque lecture résolue porte son groupe et « defaut 
 })
 
 test_that("Habitat : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(load_fixture_habitat(), theme = theme_habitat())
+  p <- compute_payload_test(load_fixture_habitat(), theme = theme_habitat())
   h <- p$histoires
 
   # issue #370 : la lecture vit dans le sous-groupe « etat-energetique-du-parc »
@@ -71,7 +71,7 @@ test_that("Habitat : chaque lecture résolue porte son groupe et « defaut »", 
 })
 
 test_that("Milieux : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- p$histoires
 
   expect_true(all(h$groupe == "artificialisation"))
@@ -196,7 +196,7 @@ test_that("un thème sans registre échoue FORT", {
 })
 
 test_that("la validation échoue FORT sur une lecture en double (territoire × groupe)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h2 <- dplyr::bind_rows(h, h[1, ])   # 22001 en double
   expect_error(valider_histoires_resolues(h2, "demographie"),
@@ -204,7 +204,7 @@ test_that("la validation échoue FORT sur une lecture en double (territoire × g
 })
 
 test_that("la validation échoue FORT sur une raison de saillance incohérente", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h$salience_reason[1] <- "delta-velo-saillant"   # incohérent pour le défaut
   expect_error(valider_histoires_resolues(h, "demographie"),
@@ -212,7 +212,7 @@ test_that("la validation échoue FORT sur une raison de saillance incohérente",
 })
 
 test_that("la validation échoue FORT sur une story hors registre ou un groupe inconnu", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h$story_key[1] <- "story-fantome"
   expect_error(valider_histoires_resolues(h, "demographie"), "registre")
@@ -222,7 +222,7 @@ test_that("la validation échoue FORT sur une story hors registre ou un groupe i
 })
 
 test_that("la validation accepte les histoires résolues valides", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_no_error(valider_histoires_resolues(p$histoires, "demographie"))
 })
 

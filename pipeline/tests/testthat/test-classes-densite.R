@@ -113,7 +113,7 @@ test_that("la référence de payload conserve les classes et la provenance sépa
       "Rural à habitat très dispersé"
     )
   )
-  payload <- compute_payload(load_fixture(), classes_densite = source)
+  payload <- compute_payload_test(load_fixture(), classes_densite = source)
 
   expect_named(payload$territoires, c(
     "territoire", "type", "nom", "departement", "epci",

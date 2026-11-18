@@ -231,7 +231,7 @@ test_that("la publication refuse un crosswalk incomplet, dupliqué, inconnu ou n
 
 test_that("la référence territoriale conserve le littoral et sa provenance", {
   source <- source_littorale("22001")
-  payload <- compute_payload(load_fixture(), classes_littoral = source)
+  payload <- compute_payload_test(load_fixture(), classes_littoral = source)
 
   expect_true(all(c("littoral_code", "littoral_classement_source") %in%
                     names(payload$territoires)))
@@ -282,17 +282,17 @@ test_that("chaque producteur de thème conserve la classification littorale", {
   }
   source <- source_littorale("22001")
 
-  expect_littoral(compute_payload(
+  expect_littoral(compute_payload_test(
     load_fixture(), classes_littoral = source
   )$territoires)
-  expect_littoral(compute_payload(
+  expect_littoral(compute_payload_test(
     load_fixture_habitat(), theme = theme_habitat(), classes_littoral = source
   )$territoires)
-  expect_littoral(compute_payload(
+  expect_littoral(compute_payload_test(
     communes_fixture_milieux_ocsge(), theme = theme_milieux(),
     classes_littoral = source
   )$territoires)
-  expect_littoral(construire_payload_economie(
+  expect_littoral(construire_payload_economie_test(
     fixture_analytiques_economie(), base_epci_economie, vintages_economie(),
     classes_littoral = source
   )$territoires)

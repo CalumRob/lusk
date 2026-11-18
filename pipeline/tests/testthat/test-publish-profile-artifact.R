@@ -80,7 +80,7 @@ test_that("declared profile serving artifacts round-trip every owner as one gene
 
 test_that("declared profile serving round-trips a structure-age pyramid and a mobility detail", {
   demography <- lire_theme_metadata("demographie")
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   root <- tempfile("profile-serving-dem-"); dir.create(root)
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   published <- materialize_theme_profile_artifacts(

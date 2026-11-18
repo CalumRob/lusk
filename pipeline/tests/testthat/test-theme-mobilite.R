@@ -2115,7 +2115,8 @@ test_that("publier_mobilite transmet classes_littoral au payload", {
   )
   publier_mobilite(list(), cache = tempdir(), vintages = vintages_mobilite(),
                    sortie = tempfile("sortie-mobilite-littoral-"),
-                   classes_littoral = source)
+                   classes_littoral = source,
+                   reference = reference_canonique_minimale_test())
   expect_identical(vu$classes_littoral, source)
 })
 test_that("compute_histoires_mobilite : le thème ne porte plus de lecture (#1048)", {

@@ -4,7 +4,7 @@
 # arrivent au ticket 4 (issue #5).
 
 test_that("le payload couvre chaque territoire du fixture", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
 
   territoires_attendus <- c(
     "22001", "22002", "29001", "29002", # communes
@@ -17,7 +17,7 @@ test_that("le payload couvre chaque territoire du fixture", {
 })
 
 test_that("chaque territoire porte 4 clés d'indicateur (structure = 7 tranches × 2 sexes)", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
 
   attentes <- c(densite = 1, structure_age = 14, evolution_1968 = 1,
                 taille_menages = 1)
@@ -30,7 +30,7 @@ test_that("chaque territoire porte 4 clés d'indicateur (structure = 7 tranches 
 })
 
 test_that("la forme des quatre tables est le contrat", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
 
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_named(payload$indicateurs, c(
@@ -55,7 +55,7 @@ test_that("la forme des quatre tables est le contrat", {
 })
 
 test_that("la table de référence couvre les mêmes territoires, une fois chacun", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
 
   territoires_attendus <- c(
     "22001", "22002", "29001", "29002", # communes
@@ -71,7 +71,7 @@ test_that("la table de référence couvre les mêmes territoires, une fois chacu
 })
 
 test_that("la table de référence porte les noms réels (LIBGEO/LIBEPCI)", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   tr <- payload$territoires
 
   # communes : LIBGEO
@@ -92,7 +92,7 @@ test_that("la table de référence porte les noms publics Geo API des EPCIs", {
     "200000001" = "CA EPCI X",
     "200000002" = "CC EPCI Y"
   )
-  payload <- compute_payload(load_fixture(), noms_epci_geo_api = noms)
+  payload <- compute_payload_test(load_fixture(), noms_epci_geo_api = noms)
   tr <- payload$territoires
 
   expect_equal(tr$nom[tr$territoire == "200000001"], "CA EPCI X")
@@ -101,7 +101,7 @@ test_that("la table de référence porte les noms publics Geo API des EPCIs", {
 })
 
 test_that("la table de référence porte le département d'appartenance", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   tr <- payload$territoires
 
   # une commune : son département
@@ -116,7 +116,7 @@ test_that("la table de référence porte l'EPCI (SIREN) des communes, NA pour le
   # issue #32 : la colonne epci — chaque commune porte l'EPCI dont elle est
   # membre (le SIREN, jamais le nom — le nom vit dans la colonne nom), les
   # EPCIs / départements / région portent NA (miroir de `departement`).
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   tr <- payload$territoires
 
   # une commune : son EPCI (SIREN)
@@ -133,7 +133,7 @@ test_that("la table de référence porte l'EPCI (SIREN) des communes, NA pour le
 test_that("la table apercu porte les clés de l'Aperçu pour chaque territoire", {
   # issue #32, ADR-0007 : la table des stats de base de l'onglet Aperçu —
   # une ligne par (territoire × clé), l'app la rend, elle ne la dérive pas.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   ap <- payload$apercu
 
   expect_named(ap, c("territoire", "type", "key", "value", "unit"))
@@ -154,7 +154,7 @@ test_that("la table apercu porte les clés de l'Aperçu pour chaque territoire",
 })
 
 test_that("la table apercu : les valeurs de base (population, densité, part 65+)", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   ap <- payload$apercu
 
   valeur <- function(code, cle) ap$value[ap$territoire == code & ap$key == cle]
@@ -174,7 +174,7 @@ test_that("la table apercu : les valeurs de base (population, densité, part 65+
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   # plus de tampon de thème (issue #9) : l'estampille nomme la source de
   # référence de chaque indicateur — jamais un tampon commun.
   references <- c(

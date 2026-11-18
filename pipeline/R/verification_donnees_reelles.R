@@ -872,8 +872,15 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
   verifier_forme_sidecar_m(analytiques$m, analytiques$lq,
                            "Économie e2e — l'artefact support m_economie")
 
+  # #1057 : la référence est une entrée OBLIGATOIRE du payload. Le référentiel
+  # canonique se construit depuis les mêmes épingles du cache que le run —
+  # jamais depuis les lignes de faits du thème vérifié.
+  reference <- reference_territoires_canonique_du_cache(
+    dirname(dirname(base_epci))
+  )
   payload <- construire_payload_economie(analytiques, base,
-                                         vintages_economie())
+                                         vintages_economie(),
+                                         reference = reference)
   comptes_payload <- c(
     indicateurs = 1268L * 3L, territoires = 1268L, apercu = 0L
   )
@@ -1232,8 +1239,13 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
 
   # les Stories résolues (issue #312) : une lecture par (territoire, groupe),
   # la saillance vélo REMPLACE le défaut là où elle tire (139 territoires)
+  # #1057 : la référence canonique est une entrée OBLIGATOIRE du payload.
+  reference <- reference_territoires_canonique_du_cache(
+    dirname(dirname(base_epci))
+  )
   payload <- construire_payload_mobilite(analytiques, base,
-                                          vintages_mobilite())
+                                          vintages_mobilite(),
+                                          reference = reference)
   verifier_egale(sum(payload$indicateurs$key ==
                        "bornes_ev_par_station_service"), nrow(ratio),
                  "Mobilité e2e — la clé B316 du payload publié")

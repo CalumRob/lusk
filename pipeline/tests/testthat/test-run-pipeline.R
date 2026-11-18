@@ -64,6 +64,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   )
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) {
       appels$download <- appels$download + 1
       appels$mode_vu <- mode
@@ -222,6 +223,7 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
   )
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) {
       mode_vu <<- mode
       faux_statuts
@@ -285,6 +287,7 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
   )
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) faux_statuts,
     construire_donnees_brut = function(cache) list(couverture = couverture),
     vintages_demographie = function() faux_vintages,
@@ -334,6 +337,7 @@ test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
   ecrit <- NULL
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) {
       stop(erreur_telechargement(statuts_echec, "https://example.invalid/epci.zip"))
     },
@@ -373,6 +377,7 @@ test_that("run_pipeline transmet la classification littorale au compute", {
     mode = "cron", status = "frais"
   )
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     construire_donnees_brut = function(cache) load_fixture(),
     lire_classes_densite = function(chemin) tibble::tibble(
@@ -436,6 +441,7 @@ test_that("run_pipeline refuse un cache littoral tronqué/altéré", {
     mode = "cron", status = "frais"
   )
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     construire_donnees_brut = function(cache) load_fixture(),
     lire_classes_densite = function(chemin) tibble::tibble(
@@ -486,6 +492,7 @@ test_that("run_pipeline refuse un compute qui n'admet pas classes_littoral", {
     mode = "cron", status = "frais"
   )
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     construire_donnees_brut = function(cache) load_fixture(),
     lire_classes_densite = function(chemin) tibble::tibble(
@@ -539,6 +546,7 @@ test_that("run_pipeline refuse un publier de thème qui n'admet pas classes_litt
     mode = "cron", status = "frais"
   )
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     lire_classes_densite = function(chemin) tibble::tibble(
       CODGEO = c("22001", "22002"), DENS7 = c("1", "2"),
@@ -617,6 +625,7 @@ test_that("run_pipeline accepte publier_programmes avec la source littorale épi
     programme_libl = character(), montant = numeric()
   )
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     construire_donnees_programmes = function(cache) donnees_vides,
     construire_donnees_subventions = function(cache) {

@@ -118,7 +118,7 @@ test_that("l'estampille vient de la source de référence, pas du dénominateur"
     date_publication = c("2026-06-30", "2026-07-01", "2026-06-25")
   )
 
-  p <- compute_payload(load_fixture(), vintages = vintages)
+  p <- compute_payload_test(load_fixture(), vintages = vintages)
 
   # densite et evolution_1968 : la série historique (POP/SUP/BRTH/DEATH)
   for (cle in c("densite", "evolution_1968")) {

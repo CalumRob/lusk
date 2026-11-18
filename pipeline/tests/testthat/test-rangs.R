@@ -27,7 +27,7 @@ test_that("rangs : la taille du groupe — le dénominateur des non-NA, porté �
 })
 
 test_that("rangs : la densité, avec l'ex æquo B/C (même rang, groupe partagé)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # B et C (29001/29002) sont ex æquo à 150 dans l'EPCI Y (n = 2) : les deux
   # sont 1ers — competition ranking (1, 1, pas de 2)
   r <- valeur_payload(p, "29001", "densite")
@@ -43,7 +43,7 @@ test_that("rangs : la densité, avec l'ex æquo B/C (même rang, groupe partagé
 })
 
 test_that("rangs : la densité, A1 en tête et D en queue de l'EPCI X", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   r <- valeur_payload(p, "22001", "densite")
   expect_equal(r$rang_epci, 1)   # 200 > 50
   expect_equal(r$rang_epci_n, 2)
@@ -54,7 +54,7 @@ test_that("rangs : la densité, A1 en tête et D en queue de l'EPCI X", {
 })
 
 test_that("rangs : les niveaux qui ne s'appliquent pas sont absents (NA)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
 
   # une EPCI n'a pas de rang « dans son EPCI » ; elle se classe parmi TOUS
   # les EPCIs bretons (rang_reg, ADR-0021) — plus jamais dans son département
@@ -83,7 +83,7 @@ test_that("rangs : les niveaux qui ne s'appliquent pas sont absents (NA)", {
 })
 
 test_that("rangs : l'évolution suit son propre classement (high-is-good)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # EPCI Y : 29001 (1/4) > 29002 (-1/11)
   expect_equal(valeur_payload(p, "29001", "evolution_1968")$rang_epci, 1)
   expect_equal(valeur_payload(p, "29002", "evolution_1968")$rang_epci, 2)
@@ -93,7 +93,7 @@ test_that("rangs : l'évolution suit son propre classement (high-is-good)", {
 })
 
 test_that("rangs : la structure par âge est classée par la part des moins de 20 ans", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # parts : C (550/3000) < D (80/400) < B (700/3000) < A1 (500/2000). Le rang
   # est celui de l'indicateur — la même valeur sur chacune des 7 lignes.
   rangs_a1 <- unique(valeur_payload(p, "22001", "structure_age")$rang_epci)
@@ -105,7 +105,7 @@ test_that("rangs : la structure par âge est classée par la part des moins de 2
 })
 
 test_that("rangs : la taille des ménages", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # ordre : C (2) < B (3000/1400) < D (400/175) < A1 (2000/850)
   expect_equal(valeur_payload(p, "22001", "taille_menages")$rang_epci, 1)
   expect_equal(valeur_payload(p, "22002", "taille_menages")$rang_epci, 2)
@@ -127,7 +127,7 @@ test_that("rangs : une valeur NA n'empoisonne pas son groupe (unitaire)", {
 test_that("rangs : une commune NA ne casse pas les rangs des autres (payload)", {
   fx <- load_fixture()
   fx$population_1968[fx$code == "22001"] <- NA  # A1 perd son évolution
-  p <- compute_payload(fx)
+  p <- compute_payload_test(fx)
 
   # A1 n'a pas de rang d'évolution (sa valeur est NA)
   expect_true(is.na(valeur_payload(p, "22001", "evolution_1968")$rang_epci))

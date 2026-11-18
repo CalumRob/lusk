@@ -1,5 +1,5 @@
 test_that("taille moyenne des ménages : les communes", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_equal(valeur_payload(p, "22001", "taille_menages")$value, 1950 / 850)
   expect_equal(valeur_payload(p, "22002", "taille_menages")$value, 390 / 175)
   expect_equal(valeur_payload(p, "29001", "taille_menages")$value, 2920 / 1400)
@@ -14,7 +14,7 @@ test_that("taille moyenne des ménages : l'unité est le UTF-8 exact pers./ména
   # est posé AU NIVEAU DES CODEPOINTS : le payload ne peut pas porter un
   # ré-encodage malheureux (Latin-1 -> UTF-8, U+00E9 -> U+01F8, etc.) sans
   # casser ce test.
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
 
   lignes <- p$indicateurs[p$indicateurs$key == "taille_menages", , drop = FALSE]
   # chaque territoire porte la même unité
@@ -27,7 +27,7 @@ test_that("taille moyenne des ménages : l'unité est le UTF-8 exact pers./ména
 })
 
 test_that("taille moyenne des ménages : les agrégats", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_equal(valeur_payload(p, "200000001", "taille_menages")$value, 2340 / 1025)
   expect_equal(valeur_payload(p, "200000002", "taille_menages")$value, 5870 / 2900)
   expect_equal(valeur_payload(p, "53", "taille_menages")$value, 8210 / 3925)

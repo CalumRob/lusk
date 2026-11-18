@@ -105,6 +105,17 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
 
   brut <- theme$construire_donnees(cache = cache)
 
+  # #1056 (option B) : la référence territoriale est une DIMENSION, construite
+  # UNE fois depuis la base INSEE épinglée (1 202 communes, îles incluses) et
+  # les deux classifications, INDÉPENDAMMENT des faits du thème. Construite
+  # APRÈS `construire_donnees` : ce sont les builders de thème qui extraient la
+  # base EPCI du cache sur un run neuf. #1057 : une base absente est une ERREUR
+  # NOMMÉE — aucun producteur ne reçoit un `NULL` qui le ferait replier sur ses
+  # propres lignes (le référentiel 1 200 communes sans îles).
+  reference_canonique <- reference_territoires_canonique_du_cache(
+    cache, noms_epci_geo_api = noms_epci_geo_api
+  )
+
   # Issue #233 : le diagnostic de couverture du thème (lignes + km par
   # département, courant vs précédent) quand il le porte — NULL pour les
   # thèmes sans diagnostic (le rapport garde sa forme historique). La lecture
@@ -165,6 +176,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     if ("classes_littoral" %in% names(formals(theme$publier))) {
       args_publier$classes_littoral <- classes_littoral
     }
+    # #1056 : la dimension canonique est injectée dans le seam publier qui la
+    # déclare — la référence ne dépend jamais des faits du thème.
+    if ("reference" %in% names(formals(theme$publier)) &&
+        !is.null(reference_canonique)) {
+      args_publier$reference <- reference_canonique
+    }
     payload <- do.call(theme$publier, args_publier)
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
@@ -188,6 +205,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     }
     if ("classes_littoral" %in% names(formals(compute_payload))) {
       args_compute$classes_littoral <- classes_littoral
+    }
+    # #1056 : la dimension canonique est injectée dans le compute — la
+    # référence publiée est identique pour tous les thèmes.
+    if ("reference" %in% names(formals(compute_payload)) &&
+        !is.null(reference_canonique)) {
+      args_compute$reference <- reference_canonique
     }
     payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)
