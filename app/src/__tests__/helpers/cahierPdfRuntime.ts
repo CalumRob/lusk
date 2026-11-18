@@ -6,7 +6,11 @@
  * block (a decode/embed proof, not map fidelity). Neither helper is bundled in
  * production.
  */
+import { vi } from 'vitest'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+
+// Only specs that use this PDF runtime need the longer browser-mount budget.
+vi.setConfig({ testTimeout: 60000, hookTimeout: 120000 })
 import { resolve } from 'node:path'
 import { inflateSync } from 'node:zlib'
 

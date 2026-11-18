@@ -7,6 +7,9 @@ import type { CahierCaptureMapItem, CahierExportRequest } from './cahierExportCa
 import { evaluerDisponibiliteExportPdf } from './cahierPdfExport'
 import { chargerPolicePdf } from './cahierPdfFonts'
 import { LARGEUR_CORPS_PT, PAGE_APPROUVEE, ptDepuisCssPx } from './cahierPdfGrammaire'
+import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
+import { CAHIER_EXPORT_ROUTES } from './cahierExportRoutes'
+import { CAHIER_EXPORT_SURFACE } from './cahierExportSurface'
 import type { OptionsCompositionCahierPdf } from './cahierPdfComposer'
 
 export class CahierNativePdfError extends Error {
@@ -113,30 +116,33 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
   const scale = ptDepuisCssPx(1)
   const width = layout.widthPt
   const host = document.createElement('div')
-  host.className = 'cahier-native-pdf-host'
+  host.className = CAHIER_EXPORT_SURFACE.hostClass
   host.inert = true
   host.setAttribute('aria-hidden', 'true')
-  host.style.cssText = 'position:fixed;left:-20000px;top:0;width:1440px;pointer-events:none'
+  host.style.cssText = `position:fixed;left:-20000px;top:0;width:${CAHIER_FIGURE_ROW.desktopViewportPx}px;pointer-events:none`
   const sheet = document.createElement('style')
-  const scope = layout.document ? '.cahier-native-pdf-host[data-native-document]' : '.cahier-native-pdf-host:not([data-native-document])'
+  const scope = layout.document ? `.${CAHIER_EXPORT_SURFACE.hostClass}[data-native-document]`
+    : `.${CAHIER_EXPORT_SURFACE.hostClass}:not([data-native-document])`
   if (layout.document) host.dataset.nativeDocument = ''
-  sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important' : ''} }
-${scope} .cahier-page, ${scope} .page-layout, ${scope} .page-main, ${scope} .page-heading { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }
-${scope} .cahier-section-footer, ${scope} [role=tooltip], ${scope} .cahier-rank { display:none!important }
-/* Owner decision: PDF exports carry no explanatory prose. One generic rule on
-   the shared prose roles; figure titles, captions, axis/legend text, scalar
-   labels and figure-attached reading notes keep their own classes and remain. */
-${scope} .argument-copy, ${scope} .page-subtitle { display:none!important }
-${layout.document ? `${scope} .cahier-evidence-source:not(.cahier-map-legend__note) { display:none!important }` : ''}`
+  const neutral = CAHIER_EXPORT_SURFACE.neutralised
+    .map((selector) => `${scope} ${selector} { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }`)
+    .join('\n')
+  const hidden = CAHIER_EXPORT_SURFACE.hidden
+    .map((selector) => `${scope} ${selector} { display:none!important }`)
+    .join('\n')
+  sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }
+${neutral}
+${hidden}
+${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { display:none!important }` : ''}`
   const target = document.createElement('div')
   host.append(sheet, target)
   // The mounted sections resolve exploration links by named routes. They are
   // inert here (no navigation), but must exist so a render cannot throw.
   const inert = { render: () => null }
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/indicateurs', name: 'indicateurs', component: inert },
-    { path: '/indicateurs/:theme/:indicator', name: 'indicateur', component: inert },
-    { path: '/territoire/:type/:code', name: 'territoire', component: inert },
+    { path: CAHIER_EXPORT_ROUTES.indicateurs, name: 'indicateurs', component: inert },
+    { path: CAHIER_EXPORT_ROUTES.indicateur, name: 'indicateur', component: inert },
+    { path: CAHIER_EXPORT_ROUTES.territoire, name: 'territoire', component: inert },
     { path: '/:pathMatch(.*)*', component: inert },
   ] })
   const comparison = { status: capture.comparison.status, error: capture.comparison.error ?? undefined }

@@ -98,6 +98,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      // Vitest only, and before the broad '@' entry: specs generate through one
+      // headless Chromium because happy-dom has no layout for the DOM painter.
+      ...(process.env.VITEST
+        ? { '@/fiche/prototype/cahierPdfComposer': path.join(racineApp, 'src/__tests__/helpers/cahierPdfComposerNative.ts') }
+        : {}),
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       // svg2pdf's UMD `main` cannot consume jsPDF's ESM exports under Vitest's
       // SSR resolver. The package's own ES build is the browser build; pin it

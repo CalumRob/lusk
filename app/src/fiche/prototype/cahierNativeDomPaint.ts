@@ -25,6 +25,18 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
     const pixel = measure.getImageData(0, 0, 1, 1).data
     return [pixel[0]!, pixel[1]!, pixel[2]!, pixel[3]!]
   }
+  /** Nearest embedded static instance of the screen's variable face. */
+  function facePour(style: CSSStyleDeclaration) {
+    const family = style.fontFamily.split(',')[0]?.replace(/["']/g, '').trim().replace(/ Variable$/, '')
+    const weight = Number(style.fontWeight)
+    const withinStyle = POLICES_PDF.filter((face) => face.family === family && face.style === style.fontStyle)
+    const candidates = withinStyle.length ? withinStyle : POLICES_PDF.filter((face) => face.family === family)
+    const face = candidates.length
+      ? candidates.reduce((best, candidate) => Math.abs(candidate.weight - weight) < Math.abs(best.weight - weight) ? candidate : best)
+      : undefined
+    if (!face) throw Error(`Police native non prise en charge : ${style.fontFamily} ${style.fontWeight} ${style.fontStyle}`)
+    return face
+  }
   function fill(color: string, draw: () => void) {
     const [r, g, b, a] = rgba(color)
     if (!a) return
@@ -62,13 +74,7 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
             y: titleRect.y + titleRect.height / 2,
             width: 0, height: 0,
           } as DOMRect)
-          const family = s.fontFamily.split(',')[0]?.replace(/["']/g, '').trim().replace(/ Variable$/, '')
-          const withinStyle = POLICES_PDF.filter((f) => f.family === family && f.style === s.fontStyle)
-          const candidates = withinStyle.length ? withinStyle : POLICES_PDF.filter((f) => f.family === family)
-          const face = candidates.length
-            ? candidates.reduce((best, f) => Math.abs(f.weight - Number(s.fontWeight)) < Math.abs(best.weight - Number(s.fontWeight)) ? f : best)
-            : undefined
-          if (!face) throw Error(`Police native non prise en charge : ${s.fontFamily} ${s.fontWeight} ${s.fontStyle}`)
+          const face = facePour(s)
           const [r, g, b] = rgba(s.color)
           doc.setFont(face.id, 'normal').setFontSize(parseFloat(s.fontSize) * scale * doc.internal.scaleFactor).setTextColor(r, g, b)
           // jsPDF's `align:'center'` on a rotated run shifts the anchor by half
@@ -80,17 +86,7 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
           return
         }
       }
-      const family = s.fontFamily.split(',')[0]?.replace(/["']/g, '').trim().replace(/ Variable$/, '')
-      const weight = Number(s.fontWeight)
-      // The screen uses variable faces; the PDF embeds static instances. Choose
-      // the nearest embedded instance of the same family/style, falling back to
-      // the nearest style only when the requested one has no instance at all.
-      const withinStyle = POLICES_PDF.filter((f) => f.family === family && f.style === s.fontStyle)
-      const candidates = withinStyle.length ? withinStyle : POLICES_PDF.filter((f) => f.family === family)
-      const face = candidates.length
-        ? candidates.reduce((best, f) => Math.abs(f.weight - weight) < Math.abs(best.weight - weight) ? f : best)
-        : undefined
-      if (!face) throw Error(`Police native non prise en charge : ${s.fontFamily} ${s.fontWeight} ${s.fontStyle}`)
+      const face = facePour(s)
       measure.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`
       const ascent = measure.measureText('Hg').fontBoundingBoxAscent
       const [r, g, b] = rgba(s.color)
@@ -165,11 +161,6 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
       await doc.svg(svg, { x: b.x, y: b.y, width: b.w, height: b.h })
       return
     }
-    // Native legend swatches are CSS boxes: a dashed `border-top` on a
-    // zero-height `<i>` (peer/comparison) or a small filled square/dot. The
-    // zero-height mark must be painted before the generic size guard, and a
-    // one-sided border must be drawn explicitly (the generic path only handles
-    // four equal borders).
     fill(style.backgroundColor, () => path(b, style).fill())
     if (node instanceof HTMLImageElement) {
       if (!node.complete || !node.naturalWidth || style.objectFit !== 'cover' || style.objectPosition !== '50% 50%') throw Error('Image native non prête ou cadrage non pris en charge.')

@@ -14,13 +14,14 @@
  */
 import type { jsPDF } from 'jspdf'
 
+import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
+
 import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK, sommetErmineEm } from '@/components/luskBrandMark'
 
 import type { CahierPdfArtifact, CahierPdfGenerator } from './cahierPdfExportController'
 import type { CahierFigureProjection } from './cahierExportAdapters'
 import { projeterRequeteExportFigures } from './cahierExportAdapters'
 import type {
-  CahierCaptureFigure,
   CahierCaptureMapItem,
   CahierCaptureSource,
   CahierExportCapture,
@@ -535,7 +536,7 @@ function libelleComparaisonProjection(projection: CahierFigureProjection): strin
   }
 }
 
-function preuveFigureComparative(projection: CahierFigureProjection, capture: CahierExportCapture): boolean {
+export function preuveFigureComparative(projection: CahierFigureProjection, capture: CahierExportCapture): boolean {
   switch (projection.family) {
     case 'aedar-ramps':
       return preuveProprietaire(capture, ['comparison'])
@@ -578,40 +579,6 @@ function tableColumnsComparison(projection: Extract<CahierFigureProjection, { fa
   return projection.tables.flatMap((table) => table.columns
     .filter((column) => column.kind === 'comparison')
     .map((column) => column.key))
-}
-
-/**
- * Owner-derived comparison proof and labels of a projection, still consumed by
- * the footer/table proof predicates. It is not a painter input: figure bodies
- * come from the native mount.
- */
-export function optionsFigurePdf(
-  request: CahierExportRequest,
-  projection: CahierFigureProjection,
-) {
-  const capture = request.capture
-  const parSlot = <F extends CahierCaptureFigure['family']>(family: F) => capture.figures.find(
-    (figure): figure is Extract<CahierCaptureFigure, { family: F }> => (
-      figure.family === family && figure.slot === projection.slot),
-  )
-  const bars = parSlot('mobilite-bars')
-  const curve = parSlot('mobilite-curve')
-  const explorer = parSlot('aedar-equipment-explorer')
-  return {
-    comparisonProof: preuveFigureComparative(projection, capture),
-    ...(explorer
-      ? {
-        distributionTitle: explorer.model.distributionFigureTitle,
-        distributionUnit: explorer.model.distributionValueUnit,
-        explorerTypequLabel: explorer.effective.typequLabel,
-      }
-      : {}),
-    ...(bars ? { modeleBars: bars.model.figure } : {}),
-    // The captured curve model is consumed through its actual narrowed shape
-    // (axis, points, trajectory, comparison), never widened to a fake full
-    // screen evidence with prose/sources/kind it does not carry.
-    ...(curve ? { modeleCourbe: curve.model } : {}),
-  }
 }
 
 function assemblerPages(
@@ -1389,7 +1356,7 @@ function lignesPiedComparaison(
   const groupeLabel = group ? group.label ?? group.names.join(', ') : null
   const libelle = labels.length ? labels.join(' · ') : groupeLabel
   if (!libelle) return []
-  return plierTexte(`¹ Groupe comparé : ${libelle}`, mesure, {
+  return plierTexte(`¹ ${GROUPE_COMPARE_LABEL} : ${libelle}`, mesure, {
     police: ROLE_PDF.pied.police,
     taillePt: TAILLE.pied,
     largeurMax: PAGE.largeurUtile,

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { CAHIER_EXPORT_ROUTES } from '../fiche/prototype/cahierExportRoutes'
 
 import AccueilView from '../views/AccueilView.vue'
 import AProposView from '../views/AProposView.vue'
@@ -60,7 +61,7 @@ export const routes = [
     meta: { title: 'Départements' },
   },
   {
-    path: '/territoire/:type/:id',
+    path: CAHIER_EXPORT_ROUTES.territoire,
     name: 'territoire',
     component: TerritoireView,
     props: true,
@@ -86,13 +87,13 @@ export const routes = [
     // Le catalogue des indicateurs (#409) — la route EXACTE précède sa sœur
     // paramétrée : /indicateurs liste les Pages d'indicateur publiées,
     // groupées par thème canonique et sous-groupe de fiche.
-    path: '/indicateurs',
+    path: CAHIER_EXPORT_ROUTES.indicateurs,
     name: 'indicateurs',
     component: IndicateursView,
     meta: { title: 'Indicateurs' },
   },
   {
-    path: '/indicateurs/:theme/:indicator',
+    path: CAHIER_EXPORT_ROUTES.indicateur,
     name: 'indicateur',
     component: IndicateurView,
     props: true,

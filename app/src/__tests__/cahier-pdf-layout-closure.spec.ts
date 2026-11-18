@@ -9,9 +9,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   composerCahierPdf,
-  optionsFigurePdf,
   mesurePdfProduction,
 } from '@/fiche/prototype/cahierPdfComposer'
+import { optionsFigurePdf } from './helpers/cahierPdfLegacyOptions'
 import {
   dessinerFigurePdf,
   hauteurFigurePdf,

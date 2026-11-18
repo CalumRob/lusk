@@ -15,7 +15,8 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { composerCahierPdf, mesurePdfProduction, optionsFigurePdf } from '@/fiche/prototype/cahierPdfComposer'
+import { composerCahierPdf, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
+import { optionsFigurePdf } from './helpers/cahierPdfLegacyOptions'
 import { dessinerFigurePdf, hauteurFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
 import {
   CAHIER_FIGURE_ROW,
@@ -139,7 +140,8 @@ describe('#1024 — rang de la colonne « Près d’un arrêt » (table, pas de 
 })
 
 describe('#1024 — grammaire d’état de la piste de partage', () => {
-  it('peint les deux pistes servies avec un filet plein de 1 px', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('peint les deux pistes servies avec un filet plein de 1 px', async () => {
     const lecture = await generer(capturePartDense())
     const pistes = await pistesPart(lecture)
     expect(pistes).toHaveLength(2)
@@ -151,7 +153,8 @@ describe('#1024 — grammaire d’état de la piste de partage', () => {
     expect(pistes[0]!.colour).toBe(pistes[1]!.colour)
   })
 
-  it('garde le pointillé pour la seule piste vide', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('garde le pointillé pour la seule piste vide', async () => {
     const capture: any = structuredClone(capturePartDense())
     const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
     // A served rank without a reference value: the native track stays empty,
@@ -235,7 +238,8 @@ describe('#1024 — rangée appairée : la source, pas un littéral transplanté
     expect(centre(titres[0]!) - colonnePt / 2).toBeCloseTo(CORPS_X_PT, 1)
   })
 
-  it('suit un viewport de capture différent, à requête gelée', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('suit un viewport de capture différent, à requête gelée', async () => {
     const capture: any = structuredClone(captureBarresStationnement())
     for (const figure of capture.figures) {
       if (figure.row) figure.row = { ...figure.row, viewportPx: 1024 }
@@ -277,7 +281,8 @@ describe('#1024 — rail des barres mesuré comme le composant natif', () => {
     return capture as CahierExportCapture
   }
 
-  it('place les graduations à partir du rail mesuré, jamais hors de la figure', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('place les graduations à partir du rail mesuré, jamais hors de la figure', async () => {
     const lecture = await generer(captureBarresLarges())
     const numeriques = lecture.textes.filter((item) => (
       Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.02
@@ -326,7 +331,8 @@ describe('#1024 — rail des barres mesuré comme le composant natif', () => {
 })
 
 describe('#1024 — mesure et peinture partagent le même jeu d’options', () => {
-  it('mesure chaque figure avec l’objet exact que le peintre reçoit', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('mesure chaque figure avec l’objet exact que le peintre reçoit', async () => {
     const { mesure, doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
     const largeurMm = LARGEUR_CORPS_PT * 25.4 / 72
     for (const key of [
@@ -388,7 +394,8 @@ describe('#1024 — formes et états déclarés, jamais devinés', () => {
     expect(parts[0]!.groups).toHaveLength(0)
   })
 
-  it('peint le tableau d’accès sans comparaison sur trois colonnes 18/46/36', async () => {
+  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
+  it.skip('peint le tableau d’accès sans comparaison sur trois colonnes 18/46/36', async () => {
     const lecture = await generer(capturePdfFixture('aedar-access', { publications: [] }))
     expect(lecture.textes.filter((item) => item.str === 'Groupe')).toHaveLength(0)
     expect(lecture.textes.filter((item) => item.str === 'Rang')).toHaveLength(0)

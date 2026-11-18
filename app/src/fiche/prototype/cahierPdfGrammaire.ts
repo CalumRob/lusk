@@ -77,6 +77,19 @@ export const PADDING_SECTION_PT = ptDepuisCssPx(PAGE_APPROUVEE.paddingSectionPx)
 export const LARGEUR_CORPS_PT = PAGE_APPROUVEE.largeurUtilePt - 2 * PADDING_SECTION_PT
 
 /**
+ * The app's standard figure frame (`cahierFigure.css`:
+ * `--cahier-figure-width-standard: 760px`, `.cahier-figure-frame { width:
+ * min(100%, var(--cahier-figure-max-width)); margin-inline: auto; }`) projected
+ * at the approved reading scale. A lone single-panel PDF figure takes this
+ * frame, horizontally centred inside the body instead of stretching to it.
+ * Native composites, map-bearing figures and paired rows keep their approved
+ * body geometry (see `largeurFigureLone` in the composer).
+ */
+/** CSS owner of the standard figure frame (`cahierFigure.css`). */
+export const LARGEUR_FIGURE_STANDARD_PX = 760
+export const LARGEUR_FIGURE_STANDARD_PT = ptDepuisCssPx(LARGEUR_FIGURE_STANDARD_PX)
+
+/**
  * Typographic roles. Every size is the role's CSS size at the approved reading
  * scale (except the owner-fixed comparison names). Colours are resolved through
  * `PALETTE_PDF` by the painters, never duplicated here.
@@ -184,9 +197,11 @@ export const ROLE_PDF = {
     taille: ptDepuisCssPx(10),
     espacementEm: 0.02,
   },
-  /** Approved footer is an explicit 7 pt in `desktop.js`, not a scaled role. */
+  /** Approved footer is an explicit 7 pt in `desktop.js`, not a scaled role.
+   *  Page furniture is the body face, not the metadata/mono face: the invitation
+   *  and page number must not read as Fira Code. */
   pied: {
-    police: POLICE_PDF.metaMedium,
+    police: POLICE_PDF.body,
     taille: 7,
     espacementEm: 0,
   },
