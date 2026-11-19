@@ -19,6 +19,7 @@
  */
 import { pathToFileURL } from 'node:url'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,9 +28,13 @@ const { chromium } = await import(pathToFileURL(path.join(appDir, 'node_modules/
 const { getDocument, OPS } = await import(pathToFileURL(path.join(appDir, 'node_modules/pdfjs-dist/legacy/build/pdf.mjs')).href)
 
 const [type = 'commune', code = '35238'] = process.argv.slice(2)
-const outDir = process.env.CAHIER_PDF_EVIDENCE_DIR || 'E:/Temp/opencode/1025-evidence/production'
+const outDir = process.env.CAHIER_PDF_EVIDENCE_DIR || path.join(os.tmpdir(), 'lusk-cahier-pdf-evidence')
 const origin = process.env.LUSK_BASE || 'http://127.0.0.1:5173'
-const canonicalHost = 'lusk.calumrobertson.fr'
+// Single source of truth: the app owns the canonical public host.
+const urlsSource = await readFile(path.join(appDir, 'src/fiche/prototype/cahierExportUrls.ts'), 'utf-8')
+const publicUrl = /CAHIER_EXPORT_PUBLIC_URL\s*=\s*'([^']+)'/.exec(urlsSource)?.[1]
+if (!publicUrl) throw new Error('CAHIER_EXPORT_PUBLIC_URL introuvable dans cahierExportUrls.ts')
+const canonicalHost = new URL(publicUrl).host
 
 // The three production Mobilité chapters and their native sections. This is a
 // harness reading the existing nine-section contract, never a second registry:
@@ -40,21 +45,16 @@ const chapters = [
   { anchor: 'figure-offre-transports-commun', sections: ['couverture-du-territoire', 'visiter-la-bretagne'] },
 ]
 
-const candidates = [
-  process.env.CAHIER_PDF_CHROMIUM,
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  path.join(process.env.LOCALAPPDATA ?? '', 'ms-playwright/chromium-1248/chrome-win/chrome.exe'),
-].filter(Boolean)
-let executablePath
-for (const candidate of candidates) {
-  try { await access(candidate); executablePath = candidate; break } catch { /* next */ }
+const executablePath = process.env.CAHIER_PDF_CHROMIUM
+if (!executablePath) {
+  throw new Error('CAHIER_PDF_CHROMIUM doit désigner l\'exécutable Chromium/Chrome à utiliser pour ce harnais.')
+}
+try { await access(executablePath) } catch {
+  throw new Error(`CAHIER_PDF_CHROMIUM pointe vers un exécutable introuvable : ${executablePath}`)
 }
 
 await mkdir(outDir, { recursive: true })
-const browser = await chromium.launch({
-  headless: true,
-  ...(executablePath ? { executablePath } : { channel: 'chrome' }),
-})
+const browser = await chromium.launch({ headless: true, executablePath })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true })
 const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(String(error.message)))
@@ -209,30 +209,51 @@ async function audit(file, key) {
   }
 }
 
+const territories = (process.env.CAHIER_PDF_TERRITORIES || `${type}/${code}`)
+  .split(',').map((value) => value.trim()).filter(Boolean)
 const results = []
 try {
-  for (const chapter of chapters) {
-    await page.evaluate((hash) => { window.location.hash = hash }, chapter.anchor)
-    const actions = await waitReady(chapter.sections)
-    const blocked = actions.filter((a) => chapter.sections.includes(a.key) && a.blocked)
-      .map((a) => ({ key: a.key, status: 'blocked', reason: a.reason }))
-    for (const key of chapter.sections) {
-      if (blocked.some((b) => b.key === key)) {
-        results.push(blocked.find((b) => b.key === key))
-        continue
+  for (const territory of territories) {
+    const [territoryType, territoryCode] = territory.split('/')
+    await page.goto(`${origin}/territoire/${territoryType}/${territoryCode}?theme=mobilite`, {
+      waitUntil: 'domcontentloaded', timeout: 60000,
+    })
+    for (const chapter of chapters) {
+      await page.evaluate((hash) => { window.location.hash = hash }, chapter.anchor)
+      const actions = await waitReady(chapter.sections)
+      const blocked = actions.filter((a) => chapter.sections.includes(a.key) && a.blocked)
+        .map((a) => ({ key: a.key, status: 'blocked', reason: a.reason }))
+      for (const key of chapter.sections) {
+        const comparisonState = await page.evaluate((sectionKey) => {
+          const section = document.querySelector(`[data-section="${sectionKey}"]`)
+          if (!section) return 'absent'
+          if (section.querySelector('[role=status], .cahier-comparison-retry')) return 'error'
+          if (section.querySelector('.cahier-loading, [aria-busy=true]')) return 'loading'
+          return section.textContent?.includes('Groupe comparé') ? 'shown' : 'absent'
+        }, key)
+        if (blocked.some((b) => b.key === key)) {
+          results.push({ territory, comparisonState, ...blocked.find((b) => b.key === key) })
+          continue
+        }
+        const result = await exportSection(key)
+        results.push({ territory, comparisonState, ...result })
+        console.log(JSON.stringify({ territory, progress: key, comparisonState, status: result.status, reason: result.reason ?? null }))
       }
-      const result = await exportSection(key)
-      results.push(result)
-      console.log(JSON.stringify({ progress: key, status: result.status, reason: result.reason ?? null }))
     }
   }
 } finally {
+  const coverage = territories.map((territory) => ({
+    territory,
+    sections: results.filter((result) => result.territory === territory)
+      .map((result) => ({ key: result.key, status: result.status, comparisonState: result.comparisonState })),
+  }))
   const receipt = {
-    territory: `${type}/${code}`,
+    territories,
     origin,
     canonicalHost,
     at: new Date().toISOString(),
     pageErrors: pageErrors.slice(0, 30),
+    coverage,
     results,
   }
   const receiptPath = path.join(outDir, 'receipt.json')

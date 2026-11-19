@@ -42,23 +42,17 @@ const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reess
 
 /**
  * #1025 — the one production junction between the shared controller and the
- * real browser composer. The composer chunk is loaded on demand: until it
- * settles the shared action stays honestly inert (the controller reports
- * `generator-unavailable`, never a simulated success or download), then the
- * factory's result is supplied through the same public `pdfGenerator` seam
- * without remounting the shell. The composer lazy-imports jsPDF/svg2pdf itself,
- * so no PDF runtime enters the initial bundle. A failed chunk load simply
- * leaves the action unavailable, which the controller already surfaces.
+ * real browser composer. The 84.5 kB composer chunk is fetched only on export
+ * INTENT: the installed generator is a thin wrapper that dynamically imports
+ * the composer on its first invocation, so ordinary fiche visitors never
+ * download it. The controller still owns capture, delivery, retry and cleanup;
+ * a failed import rejects as a generation error and the controller shows
+ * `Réessayer`, never a fabricated success. The composer itself lazy-imports
+ * jsPDF/svg2pdf, so no PDF runtime enters the initial bundle.
  */
-const pdfGenerator = shallowRef<CahierPdfGenerator | null>(null)
-void import('../prototype/cahierPdfComposer')
-  .then(({ creerGenerateurCahierPdf }) => {
-    pdfGenerator.value = creerGenerateurCahierPdf()
-  })
-  .catch(() => {
-    // Honest unavailability is already the controller's state; nothing else to
-    // fabricate here.
-  })
+const pdfGenerator = shallowRef<CahierPdfGenerator | null>((request, options) =>
+  import('../prototype/cahierPdfComposer').then(({ creerGenerateurCahierPdf }) =>
+    creerGenerateurCahierPdf()(request, options)))
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {

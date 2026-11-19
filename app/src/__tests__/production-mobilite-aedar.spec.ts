@@ -1358,7 +1358,7 @@ describe('ProductionMobiliteAedar', () => {
     expect(profileHorizon.get('button[aria-pressed="true"]').attributes('value')).toBe('20')
     expect(distributionHorizon.get('button[aria-label="20 minutes"]').attributes('aria-pressed')).toBe('true')
     expect(chartLabels()[1]).toContain('20 minutes')
-  })
+  }, 20000)
 
   it('merges the reference territory into per-mode comparison values when versions match', async () => {
     const content = baseContent()

@@ -293,23 +293,30 @@ legend labels, scalar labels and figure-attached reading notes keep their own
 roles and are not hidden. A drift test fails if a listed producer selector
 disappears. The screen router owns the shared route identities
 (`CAHIER_EXPORT_ROUTES` is exported from `src/router/index.ts`), and the
+standard figure width and desktop viewport constants come from their figure
+owners.
+
 **Export layout contract (#1025).** The section *layout* container — the one
 that holds prose beside its figure(s) — declares
 `data-cahier-export-layout="spread"`. It is declared by the owning component,
-never on an internal figure grid (a waffle's tile grid, a plot's own grid). The
-export shell's single reflow pass visits only containers carrying that
-attribute: it drops the authored prose column, collapses the now-unused tracks
-to the visible figure children, centres the block and pins each figure child to
-its measured pre-reflow width so nothing stretches or shrinks. No layout class
-name participates and there is one mechanism only. Declarations: the five AEDAR
-section bodies and the Mobilité `mobilite-section-spread` wrappers; the stacked
-`mobilite-section-stack` (curve) legitimately declares none (its prose is not a
-side-by-side column); the diversity-loss layout and comparison rows and the access evidence
-grid declare it on their inner container. The stationnement `mobilite-paired`
-row legitimately does not: it has no prose column, only two side-by-side figures.
+never on an internal figure grid (a waffle's tile grid, a plot's own grid, or
+the diversity-loss comparison row). The export shell's single reflow pass
+visits only containers carrying that attribute and acts only when a visible
+prose child is actually removed — with no prose to drop the container is left
+completely untouched. It identifies prose by the same shared prose-role
+selector used to hide it in the mount, removes it regardless of any remaining
+source stamp, then collapses the authored tracks to the figure children while
+pinning every figure's pre-pass width, height and mutual gap. Only the block's
+position changes; no figure is stretched or shrunk. No layout class name
+participates and there is one mechanism only.
 
-standard figure width and desktop viewport constants come from their figure
-owners.
+Declarations: the five AEDAR section bodies and the Mobilité
+`mobilite-section-spread` wrappers; the diversity-loss layout and the access
+evidence grid declare it on their inner container. Legitimate non-declarations:
+the stacked `mobilite-section-stack` (curve) has no side-by-side prose column;
+the stationnement `mobilite-paired` row has two figures and no prose; the
+diversity-loss comparison row and every figure's internal grid are figure
+layouts, not prose-plus-figure layouts.
 
 **Public strings come from the owner, not the runtime host.** `cahierExportUrls.ts`
 owns the canonical public site (`CAHIER_EXPORT_PUBLIC_URL`); the footer invitation

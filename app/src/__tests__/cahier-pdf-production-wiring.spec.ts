@@ -67,30 +67,20 @@ async function mountProduction() {
 }
 
 describe('production Cahier PDF wiring (#1025)', () => {
-  it('starts honest while the composer loads, then supplies the real generator', async () => {
+  it('installs a lazy generator at mount and defers the composer chunk to export intent', async () => {
     const wrapper = await mountProduction()
     const shell = () => wrapper.getComponent(VarianteCahierLibre)
 
-    // Before the async composer chunk settles the shell receives no generator:
-    // the shared actions stay visibly inert with an accessible reason, never a
-    // simulated download or a fabricated success.
-    expect(shell().props('pdfGenerator')).toBeNull()
-    expect(wrapper.findAll('.cahier-pdf-action')).toHaveLength(9)
-    for (const button of wrapper.findAll('.cahier-pdf-action__button')) {
-      expect(button.attributes('aria-disabled')).toBe('true')
-    }
-    expect(wrapper.findAll('.cahier-pdf-action__reason')
-      .some((reason) => reason.text() === GENERATEUR_EN_ATTENTE)).toBe(true)
-
-    await vi.waitFor(() => {
-      expect(typeof shell().props('pdfGenerator')).toBe('function')
-    })
-
+    // The installed generator is a thin wrapper: it is a function immediately
+    // (no pending/unavailable state), but the 84.5 kB composer module is only
+    // imported when the function is actually invoked by an export.
     const generator = shell().props('pdfGenerator')
     expect(typeof generator).toBe('function')
-    await flushPromises()
+    expect(wrapper.findAll('.cahier-pdf-action')).toHaveLength(9)
     expect(wrapper.findAll('.cahier-pdf-action__reason')
       .some((reason) => reason.text() === GENERATEUR_EN_ATTENTE)).toBe(false)
+    await flushPromises()
+    expect(shell().props('pdfGenerator')).toBe(generator)
     wrapper.unmount()
   })
 
