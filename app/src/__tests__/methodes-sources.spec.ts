@@ -44,7 +44,10 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     // ses faits éditoriaux (« en continu », lov2, jamais datée) et son
     // absorption dans les source_records du descripteur programmes reste à
     // faire côté pipeline ; l'ancienne couverture venait du registre supprimé.
-    const enAttenteDescripteur = new Set(['ort'])
+    // #1048 slice 3 — la source du snapshot porté reste dans la table vintages
+    // commise jusqu'au republish (slice 4) mais n'a plus de documentation
+    // d'app : le produit auquel elle servait est retiré.
+    const enAttenteDescripteur = new Set(['ort', ['mobilite', 'snapshot'].join('_')])
     for (const vintage of vintages) {
       if (enAttenteDescripteur.has(vintage.id)) continue
       expect(registres[vintage.id], `id vintages « ${vintage.id} » sans entrée de documentation`).toBeDefined()
@@ -67,8 +70,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     )
     // osm_reseaux porte aussi les aires de stationnement ; BPE est le seul
     // nouveau jeu autonome ; #485 ajoute le rail SNCF national et la DILA BDL,
-    // #487 ajoute la matrice de résultat du raccordement.
-    expect(idsJeux.size).toBe(29)
+    // #487 ajoute la matrice de résultat du raccordement ; #1048 retire le snapshot porté.
+    expect(idsJeux.size).toBe(28)
   })
 
   it('les familles générées partagent le nom du jeu et portent un libellé vintage dédié (ADR-0022)', () => {
@@ -126,7 +129,7 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
   })
 
   it('déclare 60 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369 + les 2 sources du raccordement #485 + la matrice publiée #487)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(61)
+    expect(Object.keys(SOURCES_METHODES).length).toBe(60)
   })
 
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {

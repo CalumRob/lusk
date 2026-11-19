@@ -181,9 +181,10 @@ describe('SourcesView — route dataset-centric', () => {
     const matrice = wrapper.find('#source-raccordement-gtfs-national')
     expect(matrice.exists()).toBe(true)
     expect(matrice.text()).toContain('Référence nommée — moyenne des courbes communales évaluées')
-    const snapshot = wrapper.find('#source-mobilite-snapshot')
-    expect(snapshot.exists()).toBe(true)
-    expect(snapshot.text()).toContain('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
+    // #1048 slice 3 — la source du snapshot porté n'est plus documentée :
+    // aucune fiche Source ne la réintroduit.
+    const idSnapshot = ['mobilite', 'snapshot'].join('-')
+    expect(wrapper.find(`#source-${idSnapshot}`).exists()).toBe(false)
     expect(wrapper.text()).toContain('Couverture programmatique')
 
     // Le référentiel territorial reste un consommateur non-indicateur sans lien.
@@ -235,17 +236,9 @@ describe('SourcesView — route dataset-centric', () => {
     expect(page.find('a[href="/indicateurs/mobilite/raccordement_tc"]').exists()).toBe(true)
     expect(page.text()).not.toContain('Déclaration sans page')
 
-    // Les déclarations d'accessibilité retirées portent le MÊME cue générique,
-    // dans la même liste — sans statut « retiré » inventé ni classification
-    // gardée/historique : le wording couvre les deux sans présumer de la
-    // disponibilité factuelle.
-    const snapshot = wrapper.find('#source-mobilite-snapshot')
-    const itemsSnapshot = snapshot.findAll('.source-record__consumers li')
-    expect(itemsSnapshot.length).toBeGreaterThan(0)
-    for (const item of itemsSnapshot) {
-      expect(item.find('a').exists()).toBe(false)
-      expect(item.text()).toContain('Déclaration sans page d’indicateur courante')
-    }
+    // #1048 slice 3 — la fiche du snapshot retiré n'existe plus : la couverture
+    // du cue générique est portée ci-dessus par la référence nommée et, plus
+    // bas, par la couverture programmatique, sans statut « retiré » inventé.
 
     // La couverture programmatique du sixième thème : même cue générique.
     const acv = wrapper.findAll('article.source-record').find((fiche) => fiche.text().includes('Couverture programmatique'))

@@ -462,10 +462,9 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
     expect(sousGroupes[1].lectureIndisponible).toBe(true)
   })
 
-  it('ne déclare indisponible que les paramètres RÉFÉRENCÉS par le template (le vélo Mobilité lit sa ligne)', () => {
-    // la ligne vélo porte pct_iso_full_t null par contrat — déclaré, jamais
-    // #627 - the retired Mobilité stories no longer resolve a lecture even
-    // with committed rows: the app grammar declares no reading for the theme.
+  it('ne déclare indisponible que les paramètres RÉFÉRENCÉS par le template', () => {
+    // #627 / #1048 slice 3 — the retired Mobilité stories no longer resolve a
+    // lecture: the app grammar declares no reading and the fixture has no row.
     const sousGroupes = sousGroupesDe(
       'mobilite',
       '22002',

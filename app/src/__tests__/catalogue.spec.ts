@@ -128,10 +128,11 @@ describe('catalogue des Pages d’indicateur app-owned', () => {
     // Recomputed from canonical declarations via sources -> source_records;
     // editorial labels are deliberately not compared to producer metadata.
     // #962 added the three Mobility supply pages (stations_service,
-    // stations_service_1000, bornes_recharge_1000): 45 -> 48 declared pages,
-    // 31 -> 34 retained.
-    expect(pagesDeclarees).toHaveLength(48)
-    expect(retirees).toHaveLength(14)
+    // stations_service_1000, bornes_recharge_1000): 31 -> 34 retained.
+    // #1048 slice 2 removed the 14 snapshot pages from the producer catalogue:
+    // every declared page is now retained, none is flagged as retired.
+    expect(pagesDeclarees).toHaveLength(34)
+    expect(retirees).toHaveLength(0)
     expect(conservees).toHaveLength(34)
     expect(new Set(pagesCatalogue).size).toBe(pagesCatalogue.length)
     expect(pagesCatalogue.sort()).toEqual(

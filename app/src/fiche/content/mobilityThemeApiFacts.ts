@@ -261,9 +261,9 @@ export function mobilityFactsFromThemeApi(
     return { indicatorId: 'raccordement_courbe', id: reference.id as string, label: reference.label as string,
       role: reference.role as string, statistic: reference.statistic as string, unit: reference.unit as string, points }
   })
-  // #627 - Mobilité has no selected-reading resource in the native catalogue:
-  // the retired div_loss_t/b reading adapter and its legacy metadata lookup
-  // are gone; no reading is fabricated from the retired subgroup declaration.
+  // #627 / #1048 slice 3 — Mobilité has no selected-reading resource in the
+  // native catalogue: the snapshot reading adapter and its legacy metadata
+  // lookup are gone; no lecture is fabricated from a retired story declaration.
   const resourceFailures = resourceFailuresFrom(response)
   return { ...facts, mobility: { ...facts.mobility, namedTrajectoryReferences, trajectoryContract,
     comparisonStatistic: 'median',

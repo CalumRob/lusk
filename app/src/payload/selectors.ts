@@ -12,7 +12,6 @@ import type {
   Histoire,
   HistoireDemographie,
   HistoireEconomie,
-  HistoireMobilite,
   Indicateur,
   MembreProgramme,
   Payload,
@@ -202,24 +201,6 @@ export function histoireEconomiePourTerritoire(
   return histoire ?? null
 }
 
-/**
- * The Mobilité Story row of a territoire (issue #142, RÉSOLUE par #312,
- * ADR-0012) — ONE resolved reading: the always-on default
- * « vingt-minutes-sans-voiture », replaced ONLY where the bike delta is real
- * (salience_reason « delta-velo-saillant ») by « ce-que-le-velo-preserve ».
- * The candidate pool is never in the payload. Null for a territory without a
- * Mobilité Story (handled honestly, no invented reading).
- */
-export function histoireMobilitePourTerritoire(
-  payload: Payload,
-  territoire: string,
-): HistoireMobilite | null {
-  const histoire = payload.histoires.find(
-    (h): h is HistoireMobilite => h.theme === 'mobilite' && h.territoire === territoire,
-  )
-  return histoire ?? null
-}
-
 interface PointNuageCommun {
   territoire: string
   type: TerritoireType
@@ -259,31 +240,6 @@ function construireNuage<T extends Histoire['theme'], Projection extends object>
     return [{ territoire: code, type: refPoint.type, nom: refPoint.nom, ...projection }]
   })
 }
-
-/** One point of the Mobilité story chart's context cloud — a peer's div_loss_t (ADR-0011). */
-export interface PointNuageMobilite {
-  territoire: string
-  type: TerritoireType
-  nom: string
-  /** La lecture du pair — le nombre de types de services qu'il perd à pied ou en transports en commun. */
-  divLoss: number
-}
-
-/**
- * The Mobilité story chart's context cloud (ADR-0011) — the SAME comparison
- * scope as the Démographie nuage (codesComparaison) but reading each peer's
- * RESOLVED Story row (its div_loss_t — every territory carries its own
- * reading, default or vélo, issue #312 : the reading's matter survives the
- * resolution). The nuage is derivable app-side from the peers' lines, never a
- * downloaded list (theme_mobilite.R — le même pattern que la Story
- * Démographie).
- */
-export function nuageMobilite(payload: Payload, territoire: string): PointNuageMobilite[] | null {
-  return construireNuage(payload, territoire, 'mobilite', (histoire) => ({
-    divLoss: histoire.div_loss_t,
-  }))
-}
-
 
 /** One point of the story chart's context cloud (ADR-0011). */
 export interface PointNuage {
@@ -344,8 +300,8 @@ export interface PointNuageMilieux {
  * artif_m2_par_habitant. Every point carries its OCS-GE state window, so a
  * cross-département peer's millésime span (periode_artif with per-dépt dates)
  * is stated, never hidden. The nuage is derivable app-side from the peers'
- * lines, never a downloaded list — the same pattern as nuageComparaison /
- * nuageMobilite.
+ * lines, never a downloaded list — the same pattern as nuageComparaison.
+
  */
 export function nuageMilieux(payload: Payload, territoire: string): PointNuageMilieux[] | null {
   return construireNuage(payload, territoire, 'milieux', (histoire) => {

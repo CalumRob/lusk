@@ -28,7 +28,6 @@
 import type {
   Histoire,
   HistoireEconomie,
-  HistoireMobilite,
   Indicateur,
   NoeudTexteRiche,
   Payload,
@@ -127,18 +126,6 @@ const CLASSIFICATIONS_MILIEUX = [
   'sen-aller-et-consommer-quand-meme',
   'les-departs-laissent-la-place-a-la-renaturation',
 ] as const
-
-/** Les classifications de saillance du flagship (theme_mobilite.R — la règle du delta réel). */
-const CLASSIFICATIONS_SAILLANCE = ['saillant', 'notable', 'non-saillant'] as const
-
-/** Les 20 champs précalculés de la signature de distribution (dens_1..10 + dec_1..10). */
-type SignatureDistribution = Pick<
-  HistoireMobilite,
-  | 'dens_1' | 'dens_2' | 'dens_3' | 'dens_4' | 'dens_5'
-  | 'dens_6' | 'dens_7' | 'dens_8' | 'dens_9' | 'dens_10'
-  | 'dec_1' | 'dec_2' | 'dec_3' | 'dec_4' | 'dec_5'
-  | 'dec_6' | 'dec_7' | 'dec_8' | 'dec_9' | 'dec_10'
->
 
 const DATE_ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -1050,8 +1037,6 @@ function verifierCartesienStructureAge(
 
 /** La raison de saillance attendue pour chaque story (le miroir R du registre). */
 const RAISON_PAR_STORY: Record<string, RaisonSaillance> = {
-  'vingt-minutes-sans-voiture': 'defaut',
-  'ce-que-le-velo-preserve': 'delta-velo-saillant',
   'trajectoire-demographique': 'defaut',
   'etat-energetique-du-parc': 'defaut',
   'ce-que-la-commune-abrite': 'defaut',
@@ -1068,7 +1053,16 @@ interface EnteteLectureResolue {
   salience_reason: RaisonSaillance
 }
 
-/** The histoires (Story) facts table — RESOLVED readings (issue #312): one row per (territoire × groupe), the explicit subgroup join (groupe), the SELECTED story key and the salience reason. Per-theme shape (types.ts). */
+/**
+ * The histoires (Story) facts table — RESOLVED readings (issue #312): one row
+ * per (territoire × groupe), the explicit subgroup join (groupe), the SELECTED
+ * story key and the salience reason. Per-theme shape (types.ts).
+ *
+ * #1048 slice 3 — a theme without a reading registry (Mobilité since the
+ * snapshot retirement, Programmes) publishes no histoire row. A legacy row
+ * still served before the republish is IGNORED, never a load error: the app
+ * must be tolerant before the producer stops serving the retired fields.
+ */
 export function validerHistoires(
   brut: unknown,
   fichier: string,
@@ -1081,9 +1075,16 @@ export function validerHistoires(
   // lecture en double échoue ICI, jamais deux lectures pour le même slot
   const vus = new Set<string>()
 
-  return lignes.map((ligne, i) => {
+  return lignes.flatMap((ligne, i) => {
     const ligneIndexee = i + 1
     exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne doit être un objet')
+    const themeBrut = ligne['theme']
+    if (
+      estUneDe(themeBrut, THEMES_CANONIQUES) &&
+      CLES_HISTOIRES_PAR_THEME[themeBrut].length === 0
+    ) {
+      return []
+    }
     verifierReference(ligne, reference, fichier, ligneIndexee)
 
     const territoire = ligne['territoire'] as string
@@ -1173,7 +1174,6 @@ export function validerHistoires(
     }
 
     if (theme === 'milieux') return lireHistoireMilieux(ligne, entete, ligneIndexee, fichier)
-    if (theme === 'mobilite') return lireHistoireMobilite(ligne, entete, ligneIndexee, fichier)
     if (theme === 'economie') return lireHistoireEconomie(ligne, entete, ligneIndexee, fichier)
 
     // Un thème sans Story construite ne publie pas d'histoires (le loader 404
@@ -1281,173 +1281,6 @@ function lireHistoireEconomie(
     vintage_date_publication,
   }
   return lecture as HistoireEconomie
-}
-
-/**
- * Une ligne d'Histoire Mobilité (issue #142, RÉSOLUE par #312, ADR-0012) —
- * UNE ligne par territoire : le défaut « vingt-minutes-sans-voiture »
- * (div_loss_t + la signature de distribution), remplacé là où la saillance
- * tire par « ce-que-le-velo-preserve » (le delta seul — la signature est la
- * matière du défaut, null sur la ligne vélo). L'estampille snapshot est
- * portée par chaque ligne comme l'Économie (issue #74).
- */
-function lireHistoireMobilite(
-  ligne: LigneBrute,
-  entete: EnteteLectureResolue,
-  ligneIndexee: number,
-  fichier: string,
-): Histoire {
-  const { territoire, type, story_key, groupe, salience_reason } = entete
-
-  const div_loss_t = ligne['div_loss_t']
-  const div_loss_b = ligne['div_loss_b']
-  const delta = ligne['delta']
-  exiger(
-    estNombre(div_loss_t) && div_loss_t >= 0,
-    fichier,
-    ligneIndexee,
-    '« div_loss_t » doit être un nombre non négatif',
-  )
-  exiger(
-    estNombre(div_loss_b) && div_loss_b >= 0,
-    fichier,
-    ligneIndexee,
-    '« div_loss_b » doit être un nombre non négatif',
-  )
-  exiger(
-    estNombre(delta) && delta >= 0,
-    fichier,
-    ligneIndexee,
-    '« delta » doit être un nombre non négatif',
-  )
-
-  const classification_saillance = lireChaine(
-    ligne,
-    'classification_saillance',
-    fichier,
-    ligneIndexee,
-  )
-  exiger(
-    estUneDe(classification_saillance, CLASSIFICATIONS_SAILLANCE),
-    fichier,
-    ligneIndexee,
-    `« classification_saillance » doit être l'un de ${CLASSIFICATIONS_SAILLANCE.join(' | ')}, reçu « ${String(classification_saillance)} »`,
-  )
-
-  const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
-  const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
-  const vintage_date_reference = ligne['vintage_date_reference']
-  const vintage_date_publication = ligne['vintage_date_publication']
-  exiger(
-    vintage_date_reference === null || estDateIso(vintage_date_reference),
-    fichier,
-    ligneIndexee,
-    '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
-  )
-  exiger(
-    estDateIso(vintage_date_publication),
-    fichier,
-    ligneIndexee,
-    '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
-  )
-
-  const estampille = { vintage_source, vintage_version, vintage_date_reference, vintage_date_publication }
-
-  // La saillance ne se déclenche que sur le delta réel : la story vélo exige
-  // la classification « saillant » ET la raison de saillance déclarée
-  // (déjà vérifiée dans l'en-tête — la raison attendue de cette story)
-  if (story_key === 'ce-que-le-velo-preserve') {
-    exiger(
-      classification_saillance === 'saillant',
-      fichier,
-      ligneIndexee,
-      'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
-    )
-    const dens_min = ligne['dens_min']
-    const dens_max = ligne['dens_max']
-    exiger(estNombre(dens_min), fichier, ligneIndexee, '« dens_min » doit être numérique pour une Story vélo')
-    exiger(estNombre(dens_max), fichier, ligneIndexee, '« dens_max » doit être numérique pour une Story vélo')
-    exiger((dens_max as number) >= (dens_min as number), fichier, ligneIndexee, '« dens_min/dens_max » doit avoir un intervalle valide')
-    const densites: number[] = []
-    const deciles: number[] = []
-    for (let k = 1; k <= 10; k++) {
-      const dens = ligne[`dens_${k}`]
-      const dec = ligne[`dec_${k}`]
-      exiger(estNombre(dens), fichier, ligneIndexee, `« dens_${k} » doit être numérique pour une Story vélo`)
-      exiger(estNombre(dec), fichier, ligneIndexee, `« dec_${k} » doit être numérique pour une Story vélo`)
-      densites.push(dens as number)
-      deciles.push(dec as number)
-    }
-    exiger(densites.some((valeur) => valeur > 0), fichier, ligneIndexee, 'la signature plate de densité doit être exploitable')
-    return {
-      territoire,
-      type,
-      theme: 'mobilite',
-      groupe,
-      story_key: 'ce-que-le-velo-preserve',
-      salience_reason,
-      div_loss_t: div_loss_t as number,
-      div_loss_b: div_loss_b as number,
-      delta: delta as number,
-      pct_iso_full_t: null,
-      dens_min: dens_min as number,
-      dens_max: dens_max as number,
-      dens_1: densites[0], dens_2: densites[1], dens_3: densites[2], dens_4: densites[3], dens_5: densites[4],
-      dens_6: densites[5], dens_7: densites[6], dens_8: densites[7], dens_9: densites[8], dens_10: densites[9],
-      dec_1: deciles[0], dec_2: deciles[1], dec_3: deciles[2], dec_4: deciles[3], dec_5: deciles[4],
-      dec_6: deciles[5], dec_7: deciles[6], dec_8: deciles[7], dec_9: deciles[8], dec_10: deciles[9],
-      classification_saillance: classification_saillance as 'saillant',
-      ...estampille,
-    }
-  }
-
-  const pct_iso_full_t = ligne['pct_iso_full_t']
-  exiger(
-    estValeur(pct_iso_full_t),
-    fichier,
-    ligneIndexee,
-    '« pct_iso_full_t » doit être un nombre ou null',
-  )
-  const dens_min = ligne['dens_min']
-  const dens_max = ligne['dens_max']
-  exiger(estValeur(dens_min), fichier, ligneIndexee, '« dens_min » doit être un nombre ou null')
-  exiger(estValeur(dens_max), fichier, ligneIndexee, '« dens_max » doit être un nombre ou null')
-
-  // La signature de distribution — les 10 densités et les 10 bornes de déciles
-  // (la leçon de l'issue #131 : JAMAIS la matrice, seulement les précalculés).
-  // Le trou du portage (Brest Métropole) porte NA — jamais une valeur inventée.
-  const signature = {} as SignatureDistribution
-  for (const famille of ['dens', 'dec'] as const) {
-    for (let k = 1; k <= 10; k++) {
-      const champ = `${famille}_${k}` as keyof SignatureDistribution
-      const valeur = ligne[champ]
-      exiger(
-        estValeur(valeur),
-        fichier,
-        ligneIndexee,
-        `« ${champ} » doit être un nombre ou null`,
-      )
-      signature[champ] = valeur as number | null
-    }
-  }
-
-  return {
-    territoire,
-    type,
-    theme: 'mobilite',
-    groupe,
-    story_key: 'vingt-minutes-sans-voiture',
-    salience_reason,
-    div_loss_t: div_loss_t as number,
-    div_loss_b: div_loss_b as number,
-    delta: delta as number,
-    pct_iso_full_t,
-    dens_min,
-    dens_max,
-    ...signature,
-    classification_saillance,
-    ...estampille,
-  }
 }
 
 /**
@@ -2076,14 +1909,11 @@ export function validerThemeMetadata(
   })
 
   // 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
-  //    EXACTEMENT un sous-groupe, chaque histoire non-candidate est lue par
-  //    EXACTEMENT un sous-groupe — rien d'orphelin, rien de partagé (l'identité
-  //    (territoire × groupe) unique du parent #308). Une story déclarée au
-  //    registre sans sous-groupe qui la lit est LÉGITIME quand le registre de
-  //    résolution la déclare candidate de saillance (ADR-0002) du groupe d'un
-  //    sous-groupe déclaré : le pool Mobilité partage SON slot — le candidat
-  //    « ce-que-le-velo-preserve » remplace le défaut dans le même groupe,
-  //    jamais une lecture en double, jamais un slot supplémentaire.
+  //    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
+  //    sous-groupe — rien d'orphelin, rien de partagé (l'identité (territoire ×
+  //    groupe) unique du parent #308). L'exception des candidats de saillance
+  //    (ADR-0002) a disparu avec le pool Mobilité (#1048 slice 3) : toute story
+  //    déclarée sans sous-groupe qui la lit est désormais orpheline.
   const orphelinsInd = indicator_keys.filter((cle) => !indicateursGroupes.has(cle))
   exiger(
     orphelinsInd.length === 0,

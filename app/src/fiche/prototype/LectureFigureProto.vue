@@ -2,7 +2,7 @@
 /**
  * [PROTOTYPE #499 — JETABLE] Le dispatcheur de figure de lecture partagé par
  * les trois variantes : le même branchement que la fiche réelle (OngletTheme)
- * — soldes / distribution / quadrant / liste LQ — rendu dans le conteneur de
+ * — soldes / quadrant / liste LQ — rendu dans le conteneur de
  * LA variante. La taille du canevas se règle par héritage de
  * --figure-compact-height (les graphiques lisent cette variable), la taille de
  * la liste LQ par --figure-compact-max-height.
@@ -10,7 +10,6 @@
  * Composant de mise en page uniquement : aucune donnée, aucun état.
  */
 import type { DescriptionNuage } from '@/payload/selectors'
-import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureListeLQ from '@/components/fiche/FigureListeLQ.vue'
@@ -28,7 +27,7 @@ defineProps<{
 <template>
   <div class="lecture-figure-proto">
     <p
-      v-if="nuage && lecture.figure && (lecture.figure.genre === 'soldes' || lecture.figure.genre === 'distribution')"
+      v-if="nuage && lecture.figure && lecture.figure.genre === 'soldes'"
       class="figure-contexte"
     >
       {{ nuage.prepositionCourant }}
@@ -51,15 +50,6 @@ defineProps<{
       :taux-naturel="lecture.figure.tauxNaturel"
       :taux-migratoire="lecture.figure.tauxMigratoire"
       :classification="lecture.figure.classification"
-      :nom="lecture.figure.nom"
-      :nuage="lecture.figure.nuage"
-    />
-    <GraphiqueDistributionMobilite
-      v-else-if="lecture.figure?.genre === 'distribution'"
-      :distribution="lecture.figure.distribution"
-      :mediane="lecture.figure.mediane"
-      :mediane-velo="lecture.figure.medianeVelo"
-      :modes="lecture.figure.modes"
       :nom="lecture.figure.nom"
       :nuage="lecture.figure.nuage"
     />

@@ -11,80 +11,26 @@ import {
   histoiresDemographieFixture,
   histoiresEconomieFixture,
   histoiresMilieuxFixture,
-  histoiresMobiliteFixture,
   indicateursDemographieFixture,
   indicateursEconomieFixture,
   indicateursMilieuxFixture,
-  indicateursMobiliteFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload, ScalarPageMetadata, ThemeMetadata } from '../payload/types'
+import type { Payload, ThemeMetadata } from '../payload/types'
 
 /**
  * Les passarelles des GRANDES LECTURES (#473) : chaque figure de lecture
- * (GraphiqueSoldes, GraphiqueDistributionMobilite, FigureListeLQ,
- * GraphiqueQuadrantMilieux) offre la main aux Pages d'indicateur PUBLIÉES de
- * ses constituants — l'affordance compacte partagée (#468 : « Explorer »,
- * nouvelle fenêtre, vraie ancre), sous la lecture pour ne jamais concurrencer
- * le récit. Les quantités calculées pour la seule lecture (div_loss_*, les
- * taux de solde, la signature dens/dec, le top-N LQ) n'ont AUCUNE page :
- * aucune passarelle, jamais une page inventée (l'audit du ticket #473).
+ * (GraphiqueSoldes, FigureListeLQ, GraphiqueQuadrantMilieux) offre la main aux
+ * Pages d'indicateur PUBLIÉES de ses constituants — l'affordance compacte
+ * partagée (#468 : « Explorer », nouvelle fenêtre, vraie ancre), sous la
+ * lecture pour ne jamais concurrencer le récit. Les quantités calculées pour
+ * la seule lecture (taux de solde, top-N LQ) n'ont AUCUNE page : aucune
+ * passarelle, jamais une page inventée (l'audit du ticket #473). La lecture
+ * du snapshot Mobilité est retirée avec ses pages (#1048 slice 3).
  */
-
-/** Les sept constituants PUBLIÉS que la lecture flagship interprète. */
-const CLEFS_ACCES = [
-  'tot_loss_t',
-  'tot_loss_b',
-  'iso_alimentation',
-  'iso_sante',
-  'iso_administration',
-  'iso_ecole',
-  'iso_banque',
-] as const
-
-const LABELS_PERTES_TOTALES: Record<'tot_loss_t' | 'tot_loss_b', string> = {
-  tot_loss_t: 'Perte totale d’accès — à pied ou en transports en commun',
-  tot_loss_b: 'Perte totale d’accès — à vélo',
-}
-
-function pageScalaire(clef: string, libelle: string): ScalarPageMetadata {
-  return {
-    indicator: clef,
-    detail: null,
-    label: libelle,
-    definition: `Définition publiée de ${libelle}.`,
-    unit: 'types de services perdus',
-    calculation: 'Calcul publié par le pipeline.',
-    direction: 'low',
-    caveats: '',
-    levels: ['commune', 'epci', 'departement'],
-    sources: ['mobilite_snapshot'],
-    family: 'scalar',
-  }
-}
-
-/** Le clone TYPÉ de la métadonnée Mobilité enrichi des SEPT pages d'accès —
- *  les pertes totales rejoignent le registre (le payload committé les porte). */
-function mobiliteAvecPagesAcces(): ThemeMetadata {
-  const clone = structuredClone(metadonneesThemesFixtures.mobilite)
-  const sousGroupe = clone.subgroups[0]!
-  sousGroupe.indicators = [...sousGroupe.indicators, 'tot_loss_t', 'tot_loss_b']
-  clone.indicator_keys = [...clone.indicator_keys, 'tot_loss_t', 'tot_loss_b']
-  clone.sources.tot_loss_t = 'mobilite_snapshot'
-  clone.sources.tot_loss_b = 'mobilite_snapshot'
-  clone.indicator_labels.tot_loss_t = LABELS_PERTES_TOTALES.tot_loss_t
-  clone.indicator_labels.tot_loss_b = LABELS_PERTES_TOTALES.tot_loss_b
-  clone.indicator_pages = Object.fromEntries(
-    CLEFS_ACCES.map((clef) => [
-      clef,
-      pageScalaire(clef, clone.indicator_labels[clef] ?? LABELS_PERTES_TOTALES[clef as 'tot_loss_t' | 'tot_loss_b'] ?? clef),
-    ]),
-  )
-  return clone
-}
 
 /** Le clone TYPÉ Milieux enrichi de la seule page « Intensité état » (M2→M3). */
 function milieuxAvecPageEtat(): ThemeMetadata {
@@ -108,7 +54,7 @@ function milieuxAvecPageEtat(): ThemeMetadata {
   return clone
 }
 
-function payloadPour(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie', metadata: ThemeMetadata): Payload {
+function payloadPour(theme: 'demographie' | 'milieux' | 'economie', metadata: ThemeMetadata): Payload {
   const parTheme = {
     demographie: {
       indicateurs: indicateursDemographieFixture,
@@ -117,10 +63,6 @@ function payloadPour(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie',
     milieux: {
       indicateurs: indicateursMilieuxFixture,
       histoires: histoiresMilieuxFixture,
-    },
-    mobilite: {
-      indicateurs: indicateursMobiliteFixture,
-      histoires: histoiresMobiliteFixture,
     },
     economie: {
       indicateurs: indicateursEconomieFixture,
@@ -137,7 +79,7 @@ function payloadPour(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie',
   }
 }
 
-async function monter(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie', payload: Payload, territoire: string) {
+async function monter(theme: 'demographie' | 'milieux' | 'economie', payload: Payload, territoire: string) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   const wrapper = mount(OngletTheme, {
     props: { theme, payload, territoire },
@@ -147,11 +89,10 @@ async function monter(theme: 'demographie' | 'milieux' | 'mobilite' | 'economie'
   return wrapper
 }
 
-// #627 - the Mobilité flagship lecture retired with the accessibility
-// snapshot: its Explorer row (seven passarelles to the legacy tot_loss/iso
-// pages) has no reading to serve any more, and the legacy pages themselves
-// render the unknown-indicator state. The passarelles machinery keeps its
-// coverage below (Milieux quadrant, no-constituent honesty, pure seam).
+// #627 / #1048 slice 3 — the snapshot flagship lecture and its seven legacy
+// page handoffs are gone: no reading serves them any more. The passarelles
+// machinery keeps its coverage below (Milieux quadrant, no-constituent honesty,
+// pure seam).
 
 describe('la passarelle unique du quadrant Milieux (#473)', () => {
   it('offre la page « Intensité état » — les deux états M2/M3 que l’axe y confronte', async () => {
@@ -191,20 +132,19 @@ describe('l’honnêteté des lectures sans constituant publié (#473)', () => {
 
 describe('passarellesLecture — le seam pur (#473)', () => {
   it('laisse tomber un constituant SANS page publiée — jamais un lien mort', () => {
-    const metadata = mobiliteAvecPagesAcces()
-    delete (metadata.indicator_pages as Record<string, unknown>).iso_sante
-
     const commune = territoiresFixture.find((t) => t.territoire === '22001')!
-    const passarelles = passarellesLecture(metadata, 'vingt-minutes-sans-voiture', commune)
-    expect(passarelles.map((p) => p.clef)).toEqual([
-      'tot_loss_t',
-      'tot_loss_b',
-      'iso_alimentation',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-    ])
-    expect(passarellesLecture(structuredClone(metadonneesThemesFixtures.milieux), 'se-densifier-setaler-ou-sen-aller', commune)).toEqual([])
+    const sansPage = passarellesLecture(structuredClone(metadonneesThemesFixtures.milieux), 'se-densifier-setaler-ou-sen-aller', commune)
+    expect(sansPage).toEqual([])
+
+    const avecPage = passarellesLecture(milieuxAvecPageEtat(), 'se-densifier-setaler-ou-sen-aller', commune)
+    expect(avecPage.map((p) => p.clef)).toEqual(['artif_par_habitant'])
+    expect(avecPage[0]!.libelle).toBe('Intensité état')
+
     expect(passarellesLecture(metadonneesThemesFixtures.demographie, 'trajectoire-demographique', commune)).toEqual([])
+  })
+
+  it('ne fabrique aucune passarelle pour une lecture retirée du contrat', () => {
+    const commune = territoiresFixture.find((t) => t.territoire === '22001')!
+    expect(passarellesLecture(metadonneesThemesFixtures.mobilite, 'story-retiree', commune)).toEqual([])
   })
 })

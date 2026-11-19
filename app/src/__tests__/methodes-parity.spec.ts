@@ -12,12 +12,9 @@ import { PRODUCER_THEME_METADATA } from './helpers/producerThemeMetadata'
  */
 const THEMES_DOCUMENTATION_DEDIEE = ['programmes'] as const
 
-// Producer metadata retains old Mobilité Story declarations although the
-// current app surface has no Mobilité Story. Economy's second note is app-owned
-// analysis explicitly paused, not a published producer Story.
-const STORIES_PRODUCTEUR_HORS_REGISTRE = {
-  mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
-} as const
+// Economy's second note is app-owned analysis explicitly paused, not a
+// published producer Story. The Mobilité snapshot stories are retired with the
+// product (#1048 slice 3) — the producer registry is empty and so is Methods.
 const STORIES_METHODES_EN_PAUSE = {
   economie: ['le-matin-la-commune-se-vide'],
 } as const
@@ -50,17 +47,11 @@ describe('contrat Méthodes — couverture du registre canonique', () => {
         .map((story) => story.clef).sort()
       const pausedKeys = stories.filter((story) => story.statut === 'en-pause')
         .map((story) => story.clef).sort()
-      const producerOnly = STORIES_PRODUCTEUR_HORS_REGISTRE[theme as keyof typeof STORIES_PRODUCTEUR_HORS_REGISTRE] ?? []
       const paused = STORIES_METHODES_EN_PAUSE[theme as keyof typeof STORIES_METHODES_EN_PAUSE] ?? []
 
       expect(publishedKeys, `${theme} published producer Story keys`).toEqual(
-        (producer.story_keys as string[]).filter((key) => !(producerOnly as readonly string[]).includes(key)).sort())
+        (producer.story_keys as string[]).sort())
       expect(pausedKeys, `${theme} explicitly paused Methods notes`).toEqual(paused)
-      for (const key of producer.story_keys as string[]) {
-        expect(publishedKeys.includes(key) || (producerOnly as readonly string[]).includes(key),
-          `${theme}.${key} published or explicitly excluded`).toBe(true)
-      }
-      for (const key of producerOnly) expect(producer.story_keys).toContain(key)
 
       const documentedClassifications = stories.filter((story) => story.statut === 'publiee')
         .flatMap((story) => story.lectures.map((lecture) => lecture.clef)).sort()

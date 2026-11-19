@@ -294,55 +294,15 @@ export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
 }
 
 /**
- * The Mobilité Story row (issue #142, RESOLVED by #312) — ONE row per
- * territoire, the salience already resolved: the always-on default
- * « vingt-minutes-sans-voiture » everywhere, replaced ONLY where the bike
- * delta is real (classification « saillant », salience_reason
- * « delta-velo-saillant ») by « ce-que-le-velo-preserve ». The candidate pool
- * is never in the payload (ADR-0002). The row carries the reading (div_loss_t
- * — the service types that leave the reach à pied ou en transports en commun
- * at 20 minutes), the story depth (pct_iso_full_t), the precomputed
- * distribution signature (dens_1..10 + dec_1..10 + min/max — the
- * building-level density of div_loss_t, NEVER the matrix, lesson of issue
- * #131) and the saillance classification. When the vélo reading fires, the
- * signature columns carry the flattened distribution for the vélo story too
- * (the current contract keeps the signature available on vélo rows). Each row
- * carries the snapshot's vintage stamp (issue #74).
+ * #1048 slice 3 — the Mobilité snapshot reading is RETIRED. There is no
+ * `HistoireMobilite` shape any more: the theme stays canonical but owns no
+ * resolved reading, so `Histoire` admits no Mobilité member. The retired
+ * fields (the two snapshot losses, the delta, the isolation depth and the 20-bin
+ * distribution signature, and the salience classification) and both retired story keys are gone from the
+ * app contract. A legacy row still served before the republish is ignored by
+ * the validator, never read as a figure (CONTEXT.md §Story — retired product
+ * concept; §Lecture).
  */
-export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
-  theme: 'mobilite'
-  story_key: 'vingt-minutes-sans-voiture' | 'ce-que-le-velo-preserve'
-  /** La lecture — les types de services perdus à pied ou en transports en commun à 20 min. */
-  div_loss_t: number
-  div_loss_b: number
-  /** Ce que le vélo préserve déjà (div_loss_t − div_loss_b) — la matière de la saillance. */
-  delta: number
-  /** La part des bâtiments qui perdent TOUT accès — la profondeur du Story. */
-  pct_iso_full_t: number | null
-  dens_min: number | null
-  dens_max: number | null
-  dens_1: number | null
-  dens_2: number | null
-  dens_3: number | null
-  dens_4: number | null
-  dens_5: number | null
-  dens_6: number | null
-  dens_7: number | null
-  dens_8: number | null
-  dens_9: number | null
-  dens_10: number | null
-  dec_1: number | null
-  dec_2: number | null
-  dec_3: number | null
-  dec_4: number | null
-  dec_5: number | null
-  dec_6: number | null
-  dec_7: number | null
-  dec_8: number | null
-  dec_9: number | null
-  dec_10: number | null
-  classification_saillance: string
-}
 
 /**
  * The Milieux Story row (issue #174, ADR-0014, re-keyed by spec #225) —
@@ -412,7 +372,7 @@ export interface HistoireMilieux extends LectureResolueBase {
   classification: string | null
 }
 
-export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
+export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMilieux
 
 /**
  * The programme sigles of the payload contract (ADR-0013, the ANCT/DGALN
@@ -647,7 +607,9 @@ export type TypeNoeudTexteRiche = (typeof TYPES_NOEUD_TEXTE_RICHE)[number]
  * Mirrored in R (CLES_HISTOIRES_PAR_THEME, pipeline/R/theme_metadata.R).
  */
 export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
-  mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
+  // #1048 slice 3 — le snapshot Mobilité est retiré : le thème reste canonique
+  // mais ne porte aucune lecture (comme Programmes).
+  mobilite: [],
   demographie: ['trajectoire-demographique'],
   habitat: ['etat-energetique-du-parc'],
   economie: ['ce-que-la-commune-abrite'],
@@ -657,12 +619,12 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
 
 /**
  * The closed salience-reason vocabulary (issue #312): « defaut » for the
- * always-on reading, the declared reason when a salience candidate replaced
- * it (Mobilité: « delta-velo-saillant »). The validator refuses any other
- * value — never an invented reason. Mirrors SALIENCE_DEFAUT + the declared
- * reasons of STORIES_RESOLUES_PAR_THEME (pipeline/R/theme_metadata.R).
+ * always-on reading. The retired Mobilité bike-delta salience reason
+ * was dropped with its story (#1048 slice 3); the
+ * validator refuses any other value — never an invented reason. Mirrors
+ * SALIENCE_DEFAUT in pipeline/R/theme_metadata.R.
  */
-export const RAISONS_SAILLANCE = ['defaut', 'delta-velo-saillant'] as const
+export const RAISONS_SAILLANCE = ['defaut'] as const
 
 export type RaisonSaillance = (typeof RAISONS_SAILLANCE)[number]
 
@@ -670,14 +632,11 @@ export type RaisonSaillance = (typeof RAISONS_SAILLANCE)[number]
  * The fiche subgroup per story (issue #312) — the TS mirror of
  * STORIES_RESOLUES_PAR_THEME (pipeline/R/theme_metadata.R): the groupe each
  * story resolves into, the explicit join the app never infers. Mobilité's
- * pool shares ONE groupe (the salience replaces the default inside the same
- * slot, ADR-0002); Économie's two readings live in two distinct groups.
+ * snapshot pool is retired (#1048 slice 3) — the theme declares no reading;
+ * Économie's readings live in their own groups.
  */
 export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
-  mobilite: {
-    'vingt-minutes-sans-voiture': 'acces-aux-services',
-    'ce-que-le-velo-preserve': 'acces-aux-services',
-  },
+  mobilite: {},
   demographie: { 'trajectoire-demographique': 'trajectoire-demographique' },
   habitat: { 'etat-energetique-du-parc': 'etat-energetique-du-parc' },
   economie: { 'ce-que-la-commune-abrite': 'sante-et-taille' },
@@ -794,7 +753,7 @@ export interface SousGroupeMetadata {
  *   templates (the pipeline's quadrants/lectures — attire-meurt,
  *   parc-intermediaire…) to their French prose, so a reading never renders a
  *   raw key. Optional for a theme whose templates never reference
- *   `classification` (Mobilité); REQUIRED (non-empty object of non-empty
+ *   `classification` (plus aucun thème depuis la retraite du snapshot Mobilité); REQUIRED (non-empty object of non-empty
  *   strings) once a reading.params references it. The one-directional
  *   parity — every published non-null classification value has its label —
  *   is verifierPariteLibelles.
@@ -834,7 +793,7 @@ export interface ThemeMetadata {
    * se meurt »). The reading templates resolve the `classification` param
    * through it — a value absent from the map makes the reading unavailable,
    * never a raw key. Optional for themes that never reference `classification`
-   * (Mobilité); REQUIRED once a reading.params references it (non-empty
+   * (plus aucun thème) ; REQUIRED once a reading.params references it (non-empty
    * object of non-empty strings). The published-value parity is the
    * verifierPariteLibelles load guard.
    */
