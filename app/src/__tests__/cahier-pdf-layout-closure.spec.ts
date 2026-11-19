@@ -9,16 +9,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   composerCahierPdf,
-  mesurePdfProduction,
 } from '@/fiche/prototype/cahierPdfComposer'
 import { optionsFigurePdf } from './helpers/cahierPdfLegacyOptions'
-import {
-  dessinerFigurePdf,
-  hauteurFigurePdf,
-  GEOMETRIE_PART_PDF,
-  GAP_PANNEAUX_FIGURE_MM,
-} from '@/fiche/prototype/cahierPdfFigures'
-import type { OptionsFigurePdfLiaison } from '@/fiche/prototype/cahierPdfFigures'
+import { GAP_PANNEAUX_FIGURE_MM } from '@/fiche/prototype/cahierFigureNativeGeometry'
 import { CAHIER_FIGURE_AXIS, CAHIER_FIGURE_RAIL } from '@/fiche/cahierFigureGrammaire'
 import {
   CAHIER_MOBILITE_BARS_GEOMETRY,
@@ -35,7 +28,6 @@ import {
   ROLE_PDF,
   mmDepuisCssPx,
   ptDepuisCssPx,
-  rythmePt,
 } from '@/fiche/prototype/cahierPdfGrammaire'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
@@ -45,7 +37,6 @@ import {
 import {
   chargeurImageTest,
   chargeurPoliceTest,
-  cheminsPdf,
   cheminsPdfPage,
   lirePdf,
   mesurePdfTest,
@@ -401,47 +392,6 @@ describe('#1024 — rapport indisponible : une seule sémantique de cellule', ()
   })
 })
 
-describe('#1024 — partage : une seule géométrie mesurée et peinte', () => {
-  it('mesure exactement la hauteur que le peintre émet', async () => {
-    const { doc, mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
-    const capture = capturePartDense()
-    const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
-    const projection = projeterRequeteExport(capture, offered.slice(0, 3))
-    if (projection.status !== 'ready') throw new Error(projection.reason)
-    const share = projeterRequeteExportFigures(projection.request)
-      .find((figure) => figure.family === 'mobilite-share')!
-    const largeurMm = LARGEUR_CORPS_PT * 25.4 / 72
-    const opts = optionsFigurePdf(projection.request, share)
-    const mesuree = hauteurFigurePdf(share, largeurMm, mesure, opts)
-    const peinte = await dessinerFigurePdf({
-      ...opts,
-      doc,
-      mesure,
-      x: 20,
-      y: 60,
-      width: largeurMm,
-      signal: new AbortController().signal,
-      chargerImage: chargeurImageTest,
-    }, share)
-    expect(mesuree).toBeCloseTo(peinte, 1)
-  })
-
-  // RETIRED (#1024 native switch): Pins the deleted painter's rail/tick/label geometry; the native component geometry is the source now.
-  it.skip('supprime le blanc de 68 pt avant « Valeurs du graphique »', async () => {
-    const lecture = await generer(capturePartDense())
-    const pistes = (await cheminsPdf(lecture.octets, lecture.pages)).filter((chemin) => (
-      chemin.kind === 'stroke' && chemin.height > 13.5 && chemin.height < 15 && chemin.width > 200
-    ))
-    expect(pistes).toHaveLength(2)
-    const basPistes = Math.max(...pistes.map((piste) => piste.y + piste.height))
-    const valeurs = lecture.textes.find((item) => item.str === 'Valeurs du graphique')!
-    const hautValeurs = H - valeurs.y - valeurs.taille * 0.945
-    // Source rhythm: 24 px heading margin + the row's own unused pitch (9 - 5 mm).
-    const attendu = rythmePt(24) + (GEOMETRIE_PART_PDF.pasRangee - GEOMETRIE_PART_PDF.hauteurPiste) * 72 / 25.4
-    expect(Math.abs(hautValeurs - basPistes - attendu)).toBeLessThan(1.5)
-    expect(hautValeurs - basPistes).toBeLessThan(30)
-  })
-})
 
 describe('#1024 — origine des rampes : unités dans le titre, jamais répétées sur l’axe', () => {
   // RETIRED (#1024 native switch): Pins the deleted painter's rail/tick/label geometry; the native component geometry is the source now.
@@ -485,9 +435,9 @@ describe('#1024 — contrat de type du modèle de courbe capturé', () => {
     const capture = captureCourbeDense()
     const curve = capture.figures.find((figure) => figure.family === 'mobilite-curve')!
     if (curve.family !== 'mobilite-curve') throw new Error('famille inattendue')
-    // Compile-time contract: the painter input accepts the captured model
-    // without an `as unknown as` widening to the full screen evidence.
-    const modele: NonNullable<OptionsFigurePdfLiaison['modeleCourbe']> = curve.model
+    // The captured curve model is the minimal native input; it is consumed as
+    //-is, with no widening to a full screen-evidence object.
+    const modele = curve.model
     expect(modele).toBe(curve.model)
     expect('prose' in modele).toBe(false)
     expect('sources' in modele).toBe(false)
@@ -554,43 +504,3 @@ describe('#1024 — libellés x du graphique groupé : le décalage natif de la 
   })
 })
 
-describe('#1024 — graduations de rampe : le formateur partagé, jamais une unité par hasard', () => {
-  // RETIRED (#1024 native switch): Pins the deleted painter's rail/tick/label geometry; the native component geometry is the source now.
-  it.skip('peint des graduations nues même quand l’unité du modèle est non vide', async () => {
-    const capture = captureExplorerRangs()
-    const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
-    const projection = projeterRequeteExport(capture, offered.slice(0, 3))
-    if (projection.status !== 'ready') throw new Error(projection.reason)
-    const baseExplorer = projeterRequeteExportFigures(projection.request)
-      .find((figure) => figure.family === 'aedar-equipment-explorer')!
-    const explorer: any = {
-      ...baseExplorer,
-      volume: {
-        ...baseExplorer.volume,
-        yAxis: { ...baseExplorer.volume.yAxis, unit: 'équipements' },
-      },
-    }
-    // A valid, non-empty model unit: the axis title carries it; the ticks stay
-    // bare because the shared formatter (`rampTickLabel`) is the only owner.
-    explorer.volume.yAxis.unit = 'équipements'
-    const { doc, mesure } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
-    await dessinerFigurePdf({
-      ...optionsFigurePdf(projection.request, explorer),
-      doc,
-      mesure,
-      x: 20,
-      y: 40,
-      width: LARGEUR_CORPS_PT * 25.4 / 72,
-      signal: new AbortController().signal,
-      chargerImage: chargeurImageTest,
-    }, explorer)
-    const lecture = await lirePdf(new Blob([doc.output('arraybuffer')]))
-    const ticks = lecture.textes.filter((item) => (
-      Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.02 && item.rotation === 0
-    ))
-    expect(ticks.length).toBeGreaterThan(1)
-    expect(ticks.some((item) => /équipements/i.test(item.str))).toBe(false)
-    // The factual unit remains visible once, on the rotated axis title.
-    expect(lecture.texteComplet).toContain('ÉQUIPEMENTS')
-  })
-})

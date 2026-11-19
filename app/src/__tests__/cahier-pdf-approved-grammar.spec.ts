@@ -27,16 +27,11 @@ import type { TableauPdfPart } from '@/fiche/prototype/cahierPdfTableau'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture, CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
-import { dessinerFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
-import { CAHIER_FIGURE_STROKE, CSS_PX_EN_MM } from '@/fiche/prototype/cahierFigureNativeGeometry'
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import {
   chargeurImageTest,
   chargeurPoliceTest,
-  couleursRemplissage,
-  epaisseursTraitPdf,
   lirePdf,
-  opacitesRemplissagePdf,
   programmesPoliceEmbarques,
   type LecturePdf,
   type TextePdf,
@@ -409,113 +404,4 @@ describe('PDF approuvé — wordmark, figures AEDAR', () => {
     expect(mot.largeur).toBeLessThan(21.4)
   })
 
-  async function peindre(capture: CahierExportCapture, modes: readonly string[] = capture.capabilities.selectableSeries.slice(0, 3).map((s) => s.id)) {
-    const request = requete(capture, modes)
-    const doc = new jsPDF({ unit: 'mm' })
-    const signal = new AbortController().signal
-    for (const face of POLICES_PDF) {
-      doc.addFileToVFS(face.file, Buffer.from(await chargeurPoliceTest(face, { signal })).toString('base64'))
-      doc.addFont(face.file, face.id, 'normal')
-    }
-    const svgs: SVGElement[] = []
-    Object.assign(doc, { svg: async (svg: SVGElement) => { svgs.push(svg.cloneNode(true) as SVGElement); return doc } })
-    const mesure = await mesureMm()
-    const native = (projection: { slot: string }) => capture.figures.find((figure) => figure.slot === projection.slot)!
-    const projections = projeterRequeteExportFigures(request)
-    for (const projection of projections) {
-      const model = native(projection)
-      await dessinerFigurePdf({
-        doc, signal, mesure, x: 12, y: 25, width: 186, chargerImage: chargeurImageTest, comparisonProof: true,
-        ...(model.family === 'aedar-equipment-explorer'
-          ? {
-            distributionTitle: model.model.distributionFigureTitle,
-            distributionUnit: model.model.distributionValueUnit,
-            explorerTypequLabel: model.effective.typequLabel,
-          }
-          : {}),
-      }, projection)
-    }
-    return { svgs, lecture: await lirePdf(doc.output('blob')) }
-  }
-
-  it('lit la géométrie native 640×300 et n’invente aucun point', async () => {
-    const { svgs } = await peindre(captureExplorerRangs())
-    expect(svgs).toHaveLength(2)
-    for (const svg of svgs) {
-      expect(svg.getAttribute('viewBox')).toBe('0 0 640 300')
-      expect(svg.querySelectorAll('circle')).toHaveLength(0)
-    }
-    const rampPaths = [...svgs[0]!.querySelectorAll('path')]
-    expect(rampPaths.length).toBeGreaterThan(0)
-    for (const path of rampPaths) {
-      const d = path.getAttribute('d')!
-      const xs = [...d.matchAll(/[ML] (-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g)].map((match) => Number(match[1]))
-      // Plot bounds come from the native margins: left 64, right 640 − 68.
-      expect(Math.min(...xs)).toBeGreaterThanOrEqual(63.9)
-      expect(Math.max(...xs)).toBeLessThanOrEqual(572.1)
-      // Strokes stay in native units; the document transform scales them once.
-      expect(Number(path.getAttribute('stroke-width'))).toBe(CAHIER_FIGURE_STROKE.widthPx)
-    }
-    const references = rampPaths.filter((path) => path.getAttribute('stroke-dasharray'))
-    expect(references.length).toBeGreaterThan(0)
-    expect(references[0]!.getAttribute('stroke-dasharray')).toBe('10 6')
-  })
-
-  // RETIRED (#1024 native switch): Pins the deleted painter's raster roles and stroke metrics; those roles now come from the mounted native section.
-  it.skip('transpose la géométrie native en points dans le PDF (trait, titres, opacité)', async () => {
-    // The real composer conversion (svg2pdf) is what a reader receives; the
-    // stub painter cannot prove mark fills.
-    const lecture = await generer(captureExplorerRangs())
-    const epaisseurs = await epaisseursTraitPdf(lecture.octets)
-    expect(epaisseurs.length).toBeGreaterThan(0)
-    // The painter states the stroke in native figure units; the document
-    // transform scales it once. The removed 96 dpi millimetre metric (2.5 px →
-    // 0.662) must not survive as the SVG user-space width.
-    expect(epaisseurs).toContain(CAHIER_FIGURE_STROKE.widthPx)
-    expect(epaisseurs).toContain(CAHIER_FIGURE_STROKE.axisWidthPx)
-    expect(epaisseurs.some((value) => Math.abs(value - CAHIER_FIGURE_STROKE.widthPx * CSS_PX_EN_MM) < 0.01))
-      .toBe(false)
-    // Native uppercase axis-title role, not sentence case.
-    expect(lecture.texteComplet).toContain('TEMPS DE TRAJET')
-    expect(lecture.texteComplet).toContain('VOLUME DE L’OFFRE')
-    expect(lecture.texteComplet).toContain('DÉCILE')
-    expect(lecture.texteComplet).toContain('NOMBRE D’ÉTABLISSEMENTS')
-    expect(lecture.texteComplet).not.toContain('Temps de trajet')
-    expect(runs(lecture, 'Décile').filter((item) => proche(item.taille, ROLE_PDF.axe.taille))).toHaveLength(0)
-    expect(runs(lecture, 'Temps de trajet').filter((item) => proche(item.taille, ROLE_PDF.axe.taille)))
-      .toHaveLength(0)
-    // The native figcaption's second line: once per figure panel and once per
-    // exported table caption (the approved generator clones the figcaption).
-    const sousTitre = runs(lecture, 'Équipement test')
-    expect(sousTitre).toHaveLength(4)
-    for (const ligne of sousTitre) {
-      const titre = lecture.textes.find((item) => proche(item.taille, ROLE_PDF.sousTitreFigure.taille)
-        && item.y > ligne.y && item.y - ligne.y < 12
-        && item.x < ligne.x + ligne.largeur && item.x + item.largeur > ligne.x)
-      expect(titre, 'la seconde ligne est empilée sous un titre de panneau').toBeTruthy()
-    }
-    // Native `.bar { fill-opacity: .78 }`: the bar keeps its own ink and the
-    // shape alpha is emitted, so the grid beneath shows through. Pre-compositing
-    // the 78 % onto paper would hide the grid and must not come back.
-    const fills = await couleursRemplissage(lecture.octets)
-    expect(fills).toContain(couleurPdf('var(--cahier-mode-car)').toLowerCase())
-    expect(fills).not.toContain(couleurPdf('color-mix(in srgb, var(--cahier-mode-car) 78%, var(--paper))').toLowerCase())
-    expect(await opacitesRemplissagePdf(lecture.octets, 0)).toContain(0.78)
-  })
-
-  it('garde les barres groupées semi-transparentes et sans transposition visuelle', async () => {
-    const { svgs } = await peindre(captureExplorerRangs())
-    const rects = [...svgs[1]!.querySelectorAll('rect')]
-    expect(rects.length).toBeGreaterThan(0)
-    // The SVG carries the native series ink and its own `.78` shape alpha, not
-    // an opaque pre-composited colour that would hide the grid beneath.
-    expect(rects[0]!.getAttribute('fill')).toBe(couleurPdf('var(--cahier-mode-car)'))
-    expect(rects[0]!.getAttribute('fill-opacity')).toBe('0.78')
-    for (const rect of rects) {
-      expect(rect.getAttribute('fill-opacity')).toBe('0.78')
-      // Bars grow from the native plot bottom, not a recomputed 96 dpi box.
-      const bottom = Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))
-      expect(bottom).toBeLessThanOrEqual(238.01)
-    }
-  })
 })

@@ -15,9 +15,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { composerCahierPdf, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
-import { optionsFigurePdf } from './helpers/cahierPdfLegacyOptions'
-import { dessinerFigurePdf, hauteurFigurePdf } from '@/fiche/prototype/cahierPdfFigures'
+import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
 import {
   CAHIER_FIGURE_ROW,
   figureRowLayout,
@@ -327,45 +325,6 @@ describe('#1024 — rail des barres mesuré comme le composant natif', () => {
       }
     }
     verifierCollisions(lecture)
-  })
-})
-
-describe('#1024 — mesure et peinture partagent le même jeu d’options', () => {
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('mesure chaque figure avec l’objet exact que le peintre reçoit', async () => {
-    const { mesure, doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
-    const largeurMm = LARGEUR_CORPS_PT * 25.4 / 72
-    for (const key of [
-      'aedar-access',
-      'aedar-equipment-explorer',
-      'stationnement-ravitaillement',
-      'couverture-du-territoire',
-      'visiter-la-bretagne',
-    ] as const) {
-      const capture = key === 'stationnement-ravitaillement'
-        ? captureBarresStationnement()
-        : capturePdfFixture(key)
-      const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
-      const result = projeterRequeteExport(capture, offered.slice(0, 3))
-      if (result.status !== 'ready') throw new Error(result.reason)
-      for (const projection of projeterRequeteExportFigures(result.request)) {
-        const options = optionsFigurePdf(result.request, projection)
-        const mesuree = hauteurFigurePdf(projection, largeurMm, mesure, options)
-        const peinte = await dessinerFigurePdf({
-          ...options,
-          doc,
-          mesure,
-          x: 20,
-          y: 60,
-          width: largeurMm,
-          signal: new AbortController().signal,
-          chargerImage: chargeurImageTest,
-        }, projection)
-        // The measured block must reserve at least what the painter emits, or
-        // pagination would clip a figure the same options just drew.
-        expect(mesuree + 0.01, `${key}/${projection.family}`).toBeGreaterThanOrEqual(peinte)
-      }
-    }
   })
 })
 

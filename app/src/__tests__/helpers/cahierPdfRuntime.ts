@@ -18,7 +18,11 @@ import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 
 import type { ChargeurPolicePdf, PdfFontFace } from '@/fiche/prototype/cahierPdfFonts'
-import type { ChargeurImagePdf } from '@/fiche/prototype/cahierPdfFigures'
+/** Test-only bounded image loader shape (the retired painter's former type). */
+type ChargeurImagePdf = (
+  url: string,
+  options: { readonly signal: AbortSignal },
+) => Promise<{ readonly dataUrl: string; readonly width: number; readonly height: number }>
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture, CahierExportRequest } from '@/fiche/prototype/cahierExportCapture'

@@ -14,6 +14,7 @@ import {
   valeursGraduationPourDomaine,
 } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureGeometry, CahierFigureAxisTick, CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
+import { mmDepuisCssPx } from './cahierPdfGrammaire'
 import type {
   MobiliteBarCategoryEvidence,
   MobiliteBarsFigureEvidence,
@@ -74,11 +75,40 @@ export const CAHIER_FIGURE_ROW = {
   desktopViewportPx: 1440,
 } as const
 
+/** Measured gap between two side-by-side native figure panels, in mm. */
+export const GAP_PANNEAUX_FIGURE_MM = 6
+
 export interface FigureRowLayout {
   readonly columns: number
   readonly viewportPx: number
   /** The source clamp resolved at `viewportPx`, in screen CSS pixels. */
   readonly gapPx: number
+}
+
+/**
+ * Resolve a paired figure row's measured panel width and gap from the available
+ * width and the source clamp layout. Kept here (not in a PDF painter) because
+ * the paired grid is a live native-figure contract used by the composer and its
+ * closure tests.
+ */
+export function figureRowGeometry(
+  largeurDisponible: number,
+  layout: FigureRowLayout,
+): {
+  readonly columns: number
+  readonly panelWidth: number
+  readonly gap: number
+  readonly figureWidthPx: number
+} {
+  const { columns, gapPx } = layout
+  const contenuPx = largeurDisponible / mmDepuisCssPx(1)
+  const figureWidthPx = (contenuPx - gapPx * (columns - 1)) / columns
+  if (!(figureWidthPx > 0)) {
+    throw new Error('Largeur de colonne native nulle : la rangée appairée ne peut pas être peinte.')
+  }
+  const ratio = gapPx / figureWidthPx
+  const panelWidth = largeurDisponible / (columns + (columns - 1) * ratio)
+  return { columns, panelWidth, gap: panelWidth * ratio, figureWidthPx }
 }
 
 /** Resolve the native paired-row gap from its own clamp at a host width. */

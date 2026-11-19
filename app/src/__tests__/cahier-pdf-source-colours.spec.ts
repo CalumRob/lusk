@@ -72,7 +72,6 @@ it('n’entretient qu’un propriétaire pour la teinte cycle partagée', () => 
   const consommateurs = [
     'src/fiche/prototype/cahierMobiliteReadings.ts',
     'src/fiche/prototype/CartographicBreakoutPrototype.vue',
-    'src/fiche/prototype/cahierPdfFigures.ts',
     'src/fiche/prototype/cahierPdfPalette.ts',
   ]
   for (const chemin of consommateurs) {
