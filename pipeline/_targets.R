@@ -438,9 +438,10 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   # LE CRON SAUTE LA CHAÎNE (le même mode que les sources « manuel »,
   # ADR-0004) : en mode cron la cible porte cue mode = "never" — jamais
   # évaluée, jamais payée par l'horloge légère ; sa valeur (et celle de tout
-  # l'aval qui en dépend) reste celle du dernier run manuel, et
-  # lire_raccordement REFUSERAIT une enveloppe périmée plutôt que de laisser
-  # republier en silence des parts calculées depuis une autre matrice.
+  # l'aval qui en dépend) reste celle du dernier run manuel. Le corpus épinglé
+  # est BYTE-VÉRIFIÉ par lire_artefact_raccordement_national (empreintes de
+  # l'enveloppe et de la matrice) : une épingle altérée est refusée par ce
+  # contrat, jamais republiée en silence depuis une autre matrice.
   if (!is.null(theme$raccordement)) {
     pin_enveloppe <- as.name(paste0("pin_raccordement_national_enveloppe_", nom))
     pin_matrice <- as.name(paste0("pin_raccordement_national_matrice_", nom))

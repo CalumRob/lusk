@@ -357,7 +357,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     nom: 'IGN \u2014 Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)',
     libelle: 'Millésime 2025',
     editeur: 'IGN',
-    url: 'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,urn:ogc:def:crs:EPSG::4326',
+    url: 'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,EPSG:4326',
     themes: ['mobilite'],
   },
   korrigo: {

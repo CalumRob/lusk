@@ -210,6 +210,45 @@ test_that("chemin_enveloppe_raccordement résout l'épingle pour un répertoire 
                    chemin_artefact_raccordement_national())
 })
 
+test_that("les valeurs dorées du modèle publié tiennent à l'artefact épinglé (#1066)", {
+  artefact <- lire_artefact_raccordement_national()
+  calcul <- artefact$calculation
+
+  # couverture : les littéraux du verrou « données réelles » sont ceux du
+  # modèle arrêt-à-arrêt GTFS recomputé depuis l'épingle (73 points).
+  lignes <- lignes_indicateurs_raccordement_national(calcul, vintages_mobilite())
+  for (cle in names(COUVERTURE_DOREE_RACCORDEMENT)) {
+    sub <- lignes[lignes$key == cle, , drop = FALSE]
+    obtenu <- c(communes = sum(sub$type == "commune"),
+                epcis = sum(sub$type == "epci"),
+                departements = sum(sub$type == "departement"),
+                region = sum(sub$type == "region"))
+    expect_identical(unname(obtenu),
+                     unname(COUVERTURE_DOREE_RACCORDEMENT[[cle]]), info = cle)
+  }
+
+  # ancres @90, médiane et points de courbe : de nouvelles valeurs dorées qui
+  # remplacent les anciennes ancres mairie-à-mairie retirées.
+  part_de <- function(code, minute) {
+    calcul$commune_curves$share[
+      calcul$commune_curves$code == code &
+        calcul$commune_curves$minute == minute]
+  }
+  for (code in names(ANCRE_DOREE_90)) {
+    expect_equal(part_de(code, 90L), ANCRE_DOREE_90[[code]],
+                 tolerance = 1e-6, info = code)
+  }
+  expect_equal(median(calcul$commune_scalars$share_90), ANCRE_DOREE_MEDIANE_90,
+               tolerance = 1e-9)
+  for (code in names(ANCRE_DOREE_COURBE)) {
+    for (minute in names(ANCRE_DOREE_COURBE[[code]])) {
+      expect_equal(part_de(code, as.integer(minute)),
+                   ANCRE_DOREE_COURBE[[code]][[minute]],
+                   tolerance = 1e-9, info = paste(code, minute))
+    }
+  }
+})
+
 test_that("le lecteur national lit l'épingle copiée dans un répertoire de sortie (#1070)", {
   sortie <- tempfile("sortie-lecture-raccordement-")
   dir.create(sortie)
@@ -220,11 +259,17 @@ test_that("le lecteur national lit l'épingle copiée dans un répertoire de sor
   file.copy(chemin_artefact_raccordement_national(), enveloppe)
   file.copy(chemin_matrice_raccordement_national(), matrice)
 
-  # le verrou passe le fichier rendu par la cible ; la résolution évite le
-  # jointure fallacieuse et lit bien l'épingle (son empreinte est celle du fichier)
-  lu <- lire_artefact_raccordement_national(
-    chemin_enveloppe = chemin_enveloppe_raccordement(enveloppe),
-    chemin_matrice = matrice)
-  expect_identical(lu$envelope_sha256,
-                   empreinte_fichier_raccordement(enveloppe))
+  # Le lecteur normalise LUI-MÊME à la frontière : un répertoire OU le fichier
+  # rendu par la cible mènent au même artefact. Aucun appelant ne doit refaire
+  # la règle du nom de fichier (ni reconstruire le jointure fallacieuse).
+  lu_dir <- lire_artefact_raccordement_national(
+    chemin_enveloppe = sortie, chemin_matrice = matrice)
+  lu_file <- lire_artefact_raccordement_national(
+    chemin_enveloppe = enveloppe, chemin_matrice = matrice)
+  for (lu in list(lu_dir, lu_file)) {
+    expect_identical(lu$envelope_sha256,
+                     empreinte_fichier_raccordement(enveloppe))
+    expect_identical(lu$matrix_sha256,
+                     empreinte_fichier_raccordement(matrice))
+  }
 })

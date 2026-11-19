@@ -236,7 +236,7 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
   # filtre breton se fait au chargement (le code département ∈ 22/29/35/56).
   "communes_limites",
   "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
-  "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,urn:ogc:def:crs:EPSG::4326",
+  "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,EPSG:4326",
   "communes_limites.geojson", "2025", "2025-01-01", NA_character_, "lov2",
   paste0(
     "Le référentiel géométrique des réseaux t/b/c : les limites communales ",
