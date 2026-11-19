@@ -67,6 +67,12 @@ export const ESPACE_TABLEAU = {
   ligneInsetMm: 1,
   /** Measured header advance over the embedded face's 1.2 em line box. */
   interligneEntete: 1.16,
+  /**
+   * Extra measured clearance below the last painted header line. The face's
+   * box alone put the band's bottom rule through the glyphs of a one-line
+   * `Rang`/`Groupe¹` header on real data; the rule must sit below the text.
+   */
+  supplementBandeEnteteMm: 4.0,
   /** Measured row-text advance over the same box. */
   interligneLigne: 1.12,
   /** Row box bottom padding measured on the approved table rows. */
@@ -298,6 +304,10 @@ export function construireTableauxPdf(
   const groupable = table.columns.some((column) => (
     column.groupLabel != null || column.seriesKey !== null
   ))
+  // Only the two-level header needs the extra clearance: its bottom rule is
+  // painted by the composer independently of the mode-group band. The flat
+  // table's 16.24 pt approved gap is left untouched.
+  const supplementBande = grouped ? ESPACE_TABLEAU.supplementBandeEnteteMm : 0
   if (table.columns.length === 0) {
     return [{
       key: table.key,
@@ -550,7 +560,8 @@ export function construireTableauxPdf(
           headerHeight: mesure.hauteurLigne(
             roleEntete.police,
             roleEntete.taille,
-          ) * ESPACE_TABLEAU.interligneEntete + ESPACE_TABLEAU.remplissageEnteteMm,
+          ) * ESPACE_TABLEAU.interligneEntete + ESPACE_TABLEAU.remplissageEnteteMm
+            + supplementBande,
         }
       }
       // Wrap the header to the cell minus the `¹` the painter appends after the
@@ -567,7 +578,7 @@ export function construireTableauxPdf(
         headerLines,
         headerHeight: headerLines.length * (
           mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * ESPACE_TABLEAU.interligneEntete
-        ) + ESPACE_TABLEAU.remplissageEnteteMm,
+        ) + ESPACE_TABLEAU.remplissageEnteteMm + supplementBande,
       }
     })
     let abrege = false

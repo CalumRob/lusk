@@ -140,6 +140,7 @@ async function audit(file, key) {
   let allText = ''
   let imageXObjects = 0
   let overlappingTextPairs = 0
+  const textItems = []
   const links = []
   for (let index = 1; index <= pdf.numPages; index += 1) {
     const pdfPage = await pdf.getPage(index)
@@ -156,6 +157,7 @@ async function audit(file, key) {
       w: item.width,
       h: Math.abs(item.transform[3]),
     }))
+    textItems.push(...boxes)
     for (let a = 0; a < boxes.length; a += 1) {
       for (let b = a + 1; b < boxes.length; b += 1) {
         const left = boxes[a], right = boxes[b]
@@ -173,6 +175,16 @@ async function audit(file, key) {
   // Native French grouping uses U+202F; jsPDF maps it to a plain space in the
   // text layer. The separated forms must survive, never the collapsed digits.
   const collapsedGrouping = ['6440', '12881', '12081'].filter((value) => allText.includes(value))
+  // Two-level table headers: the row dimension (Statistique / Temps / Mode)
+  // must share the painted baseline block of its one-line sub-headers, not sit
+  // on a line of its own above them.
+  const headerText = (needle) => textItems.find((item) => item.str === needle)?.y ?? null
+  const rowHeaders = textItems.filter((item) => item.str === 'Statistique' || item.str === 'Temps').map((item) => item.y)
+  const subHeaders = textItems.filter((item) => item.str === 'Rennes' || item.str === 'Groupe¹').map((item) => item.y)
+  // Several tables can share one PDF; compare each row dimension with its
+  // nearest one-line sub-header baseline, never a label from another table.
+  const headerAligned = rowHeaders.length === 0 || subHeaders.length === 0 ? null
+    : rowHeaders.every((y) => subHeaders.some((other) => Math.abs(y - other) <= 0.6))
   // Only Lusk site links must use the canonical public host. External source
   // attributions are owner-owned and preserved verbatim, not treated as drift.
   const siteLinks = links.filter((url) => /lusk\./i.test(url))
@@ -188,6 +200,7 @@ async function audit(file, key) {
     replacementGlyph: allText.includes('\ufffd'),
     imageXObjects,
     overlappingTextPairs,
+    headerAligned,
     collapsedGrouping,
     separatorsPreserved: collapsedGrouping.length === 0,
     siteLinkCount: siteLinks.length,

@@ -1122,28 +1122,29 @@ function dessinerTableau(
   // A header cell's measured text block is centred vertically inside the real
   // cell, matching the mounted `th` box: a one-line `Rang` is not left pinned to
   // the top of a cell whose measured height comes from a wrapped `Groupe` label.
-  // The offset is shared by every non-mode header (row dimension and sub-header)
-  // so mixed single-/multi-line columns keep one common centre. The mode-group
-  // labels above keep the approved presentation and are not touched here.
-  const hauteurLigneModeEntete = mesure.hauteurLigne(
-    ROLE_PDF.enteteTableauMode.police,
-    ROLE_PDF.enteteTableauMode.taille,
-  ) * ESPACE_TABLEAU.interligneEntete
   const centreDans = (hauteurCellule: number, nbLignes: number, hauteurLigne: number) =>
     (hauteurCellule - nbLignes * hauteurLigne) / 2
+  // The sub-header role and its real painted line metrics are owned here, once,
+  // so the row dimension and every sub-header share one measured block.
+  const roleEntete = part.layout === 'grouped' ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
+  const hauteurLigneEntete = mesure.hauteurLigne(roleEntete.police, roleEntete.taille)
+    * ESPACE_TABLEAU.interligneEntete
   // Row-dimension header (`Temps` / `Statistique`): in the grouped shape it is
   // the approved `th[colspan=1][rowspan=2]` spanning both header rows; in the
   // flat shape it is the first column's header. It uses the mode role
   // (`--type-figure-mode`, 7.36 pt), not the smaller sub-header role.
+  // One measured header block shared by the row dimension and every
+  // sub-header. The row dimension used to be centred across the group band and
+  // the sub-header band together, which put `Statistique` on its own line above
+  // `Rennes` / `Groupe¹` / `Rang` and outside its cell. It now starts on the
+  // same baseline block as its peers, whatever the column's line count.
+  const hautBlocEntete = sousEnteteTop + centreDans(part.headerHeight, 1, hauteurLigneEntete)
   if (part.rowHeader) {
-    const hauteurSpannée = part.layout === 'grouped' ? part.groupHeaderHeight + part.headerHeight : part.headerHeight
-    const hautSpanné = part.layout === 'grouped' ? enteteTop : sousEnteteTop
-    texte(doc, part.rowHeader, x + 1,
-      hautSpanné + centreDans(hauteurSpannée, 1, hauteurLigneModeEntete), {
-        police: ROLE_PDF.enteteTableauMode.police,
-        taille: ROLE_PDF.enteteTableauMode.taille,
-        couleur: PALETTE_PDF.ink,
-      })
+    texte(doc, part.rowHeader, x + 1, hautBlocEntete, {
+      police: ROLE_PDF.enteteTableauMode.police,
+      taille: ROLE_PDF.enteteTableauMode.taille,
+      couleur: PALETTE_PDF.ink,
+    })
   }
   if (part.layout === 'grouped') {
     // Legend-key header row: one coloured, spanning cell per mode, exactly like
@@ -1170,15 +1171,15 @@ function dessinerTableau(
   }
   // Sub-header row: over each group, `[territory | Groupe¹ | Rang]`; the flat
   // shape uses the same native header role as its own row-dimension cell.
-  const roleEntete = part.layout === 'grouped' ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
-  const hauteurLigneEntete = mesure.hauteurLigne(roleEntete.police, roleEntete.taille)
-    * ESPACE_TABLEAU.interligneEntete
   const numeroPage = (doc as jsPDF & {
     internal: { getCurrentPageInfo: () => { pageNumber: number } }
   }).internal.getCurrentPageInfo().pageNumber
   let cx = x + part.rowLabelWidth
   for (const colonne of part.columns) {
-    // Centre this column's whole measured block in the (row-height) cell.
+    // Each column centres its own measured block in the header band, so a
+    // wrapped `Groupe comparé` and a one-line `Rang` stay vertically centred
+    // inside their own cells. The row dimension uses the single-line block
+    // above, the same baseline as its one-line peers.
     let hy = sousEnteteTop + centreDans(part.headerHeight, colonne.headerLines.length, hauteurLigneEntete)
     // The `¹` footnote belongs to the compared group cell, once per cell —
     // never once per wrapped line and never to `Rang`. It is an in-document

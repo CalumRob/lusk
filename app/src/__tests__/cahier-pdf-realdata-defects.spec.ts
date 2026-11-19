@@ -47,6 +47,17 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(legend).toContain('\\u202f')
   })
 
+  it('keeps the row-dimension header on the measured subheader block', () => {
+    const composer = read('src/fiche/prototype/cahierPdfComposer.ts')
+    // The row dimension used to be centred across the group band + subheader
+    // band, leaving `Statistique` on a line above its one-line peers. It now
+    // starts on the single-line subheader block, while each column still
+    // centres its own wrapped block inside its header cell.
+    expect(composer).toMatch(/const hautBlocEntete = sousEnteteTop \+ centreDans\(part\.headerHeight, 1, hauteurLigneEntete\)/u)
+    expect(composer).toMatch(/texte\(doc, part\.rowHeader, x \+ 1, hautBlocEntete/u)
+    expect(composer).toMatch(/centreDans\(part\.headerHeight, colonne\.headerLines\.length, hauteurLigneEntete\)/u)
+  })
+
   it('gives the continuous map legend its own measured band below the plate', () => {
     const slots = read('src/fiche/prototype/CahierBlankMapSlots.vue')
     const legend = read('src/fiche/prototype/CahierContinuousMapLegend.vue')
