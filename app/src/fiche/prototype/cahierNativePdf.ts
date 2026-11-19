@@ -63,7 +63,7 @@ interface NativePdfOptions {
 }
 
 /** Default reader: only the bytes frozen in the capture. No owner re-contact. */
-async function readAssetParDefaut(item: CahierCaptureMapItem, signal: AbortSignal): Promise<Blob> {
+export async function readAssetParDefaut(item: CahierCaptureMapItem, signal: AbortSignal): Promise<Blob> {
   signal.throwIfAborted()
   if (!item.bytes) throw new CahierNativePdfError('asset-unfrozen')
   const head = new Uint8Array(item.bytes, 0, Math.min(4, item.bytes.byteLength))
