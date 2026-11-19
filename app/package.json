@@ -18,7 +18,7 @@
     "verify:rank-circles": "node scripts/verify-rank-circles.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "verify:detector": "npx --yes impeccable@4.10.0 detect src"
+    "verify:detector": "npx --yes impeccable@4.9.2 detect src"
   },
   "dependencies": {
     "@fontsource-variable/fira-code": "^5.3.0",
