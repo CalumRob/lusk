@@ -23,6 +23,19 @@ async function generate(capture: ReturnType<typeof capturePdfFixture>) {
 }
 
 describe('Cahier PDF natif — mobilier de page', () => {
+  it('garde les sélecteurs du contrat de surface alignés sur leurs producteurs', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const { CAHIER_EXPORT_SURFACE } = await import('@/fiche/prototype/cahierExportSurface')
+    const action = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/CahierActionButton.vue'), 'utf8')
+    const producer = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/CahierAedarAccessSection.vue'), 'utf8')
+    const source = `${action}\n${producer}`
+    for (const selector of ['.cahier-action-button', '.argument-copy']) {
+      expect(CAHIER_EXPORT_SURFACE.hidden).toContain(selector)
+      expect(source, `producteur manquant pour ${selector}`).toContain(selector.slice(1))
+    }
+  })
+
   it('places each rotated y-axis title beside its own ticks, inside its figure', async () => {
     const { items } = await generate(capturePdfFixture('aedar-access'))
     const rotated = items.filter((item) => {

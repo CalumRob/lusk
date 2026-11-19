@@ -76,14 +76,15 @@ window.__luskRender = async (bytes, scale, pageNumber) => {
   return canvas.toDataURL('image/png').split(',')[1]
 }
 window.__luskGenerate = async (request, options) => {
-  const controller = new AbortController()
-  const readAsset = async () => {
-    const binary = atob('${testRasterBase64}')
-    return new Blob([Uint8Array.from(binary, (character) => character.charCodeAt(0))], { type: 'image/png' })
+  for (const item of request?.capture?.capabilities?.maps?.items ?? []) {
+    if (Array.isArray(item.bytes)) item.bytes = new Uint8Array(item.bytes).buffer
   }
+  const controller = new AbortController()
   try {
+    // No readAsset stub: the default reader must consume the bytes frozen in
+    // the captured map items, exactly as production does.
     const result = await composerCahierPdf(request, {
-      signal: controller.signal, readAsset,
+      signal: controller.signal,
       urlAccueil: options.urlAccueil, urlPublique: options.urlPublique,
     })
     return { bytes: Array.from(new Uint8Array(await result.blob.arrayBuffer())), fileName: result.fileName }
@@ -174,6 +175,13 @@ async function generate(payload) {
     })
     await page.goto(origin + '/')
     await page.waitForFunction(() => typeof window.__luskGenerate === 'function')
+    for (const item of payload.request?.capture?.capabilities?.maps?.items ?? []) {
+      if (item.bytes && Array.isArray(item.bytes.__luskBytes)) {
+        // Playwright's evaluate cannot carry ArrayBuffer: pass plain bytes and
+        // revive them inside the page before the production reader sees them.
+        item.bytes = Array.from(new Uint8Array(item.bytes.__luskBytes))
+      }
+    }
     return await page.evaluate((input) => window.__luskGenerate(input.request, input.options), payload)
   } finally {
     await page.close()

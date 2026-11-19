@@ -272,8 +272,7 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
     expect(explorer.texteComplet).not.toContain('Indisp. :')
   })
 
-  // RETIRED (#1024 native switch): Pins the deleted hand-built per-family painter's calibrated glyph/figure geometry; the native section layout is now the only figure owner.
-  it.skip('compte la continuation par identité de table et par page, pas sur tous les titres', async () => {
+  it('compte la continuation par identité de table et par page, pas sur tous les titres', async () => {
     const lecture = await generer(captureProfilRangsDense())
     expect(lecture.pages).toBeGreaterThanOrEqual(2)
     const heading = lecture.textes.find((item) => item.page === 1

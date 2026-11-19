@@ -34,7 +34,6 @@ import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { projeterCaptureExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import { TABLEAU_TEMPS_LABEL } from '@/fiche/content/cahierTableauWording'
 import {
-  chargeurImageTest,
   chargeurPoliceTest,
   contientTout,
   enregistrerArtefact,
@@ -50,7 +49,7 @@ import {
 } from './helpers/cahierPdfRuntime'
 import { cahierExportFixture, communeMembers, sectionOf } from './helpers/cahierExportFixtures'
 import {
-  capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense,
+  capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense, PNG_FIXTURE_BYTES,
   captureRampeDense, captureBarresDense, captureWaffleDense,
 } from './helpers/cahierPdfFixtures'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
@@ -61,7 +60,6 @@ function options() {
   return {
     signal: signal(),
     chargerPolice: chargeurPoliceTest,
-    chargerImage: chargeurImageTest,
     urlPublique: 'https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access',
     urlAccueil: 'https://lusk.test/',
   }
@@ -229,8 +227,14 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     }
     // Every page that carries comparative proof carries the footer, with the
     // owner's actual comparison sentence (its statistic AND its cohort, once).
-    expect(occurrences(lecture, '¹ Groupe comparé : Médiane des communes de EPCI X'))
-      .toBe(lecture.pages)
+    // The note is page-local: a page carries it exactly once when that page
+    // actually shows comparative proof (native body or compared table cells).
+    const note = '¹ Groupe comparé : Médiane des communes de EPCI X'
+    expect(occurrences(lecture, note)).toBeGreaterThanOrEqual(1)
+    for (let page = 1; page <= lecture.pages; page += 1) {
+      const pageText = lecture.lignes.filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
+      expect(pageText.split(note).length - 1).toBeLessThanOrEqual(1)
+    }
     expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — communes de EPCI X')
     // No row is cut: the six native rows appear once across the two pages, and
     // a category total is not joined to itself.
@@ -304,8 +308,8 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
           owner: 'map-availability',
           state: {
             maps: [
-              { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/walk-inline.webp' },
-              { id: 'transit', label: 'Transports', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/transit-inline.webp' },
+              { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/walk-inline.webp', bytes: PNG_FIXTURE_BYTES },
+              { id: 'transit', label: 'Transports', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/transit-inline.webp', bytes: PNG_FIXTURE_BYTES },
             ],
             legend: 'available',
             legendDetail: {
@@ -331,12 +335,9 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     ])
   })
 
-  it('décode une vraie image bornée pour la carte, sans données ni API', async () => {
-    const bytes = readFileSync(resolve(process.cwd(), '../docs/prototypes/2026-08-26-fiche-prototype/captures/C-fil-desktop-commune-mobilite.png'))
-    const dataUrl = `data:image/png;base64,${bytes.toString('base64')}`
+  it('génère une carte à partir des octets figés dans la capture, sans nouvel appel réseau', async () => {
     const artifact = await composerCahierPdf(requetePour('aedar-car-overview'), {
       ...options(),
-      chargerImage: async () => ({ dataUrl, width: 1280, height: 900 }),
     })
     const lecture = await lirePdf(artifact.blob)
     expect(lecture.pages).toBe(1)
@@ -679,7 +680,6 @@ describe('compositeur PDF Cahier — refus explicites', () => {
   it.skip('refuse une carte requise dont le chargement échoue', async () => {
     await expect(composerCahierPdf(requetePour('aedar-car-overview'), {
       ...options(),
-      chargerImage: async () => { throw new Error('image absente') },
     })).rejects.toMatchObject({ code: 'asset' })
   })
 

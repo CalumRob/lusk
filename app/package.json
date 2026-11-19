@@ -17,7 +17,8 @@
     "verify:aedar-demand": "node scripts/verify-aedar-demand.mjs",
     "verify:rank-circles": "node scripts/verify-rank-circles.mjs",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:detector": "npx --yes impeccable@4.10.0 detect src"
   },
   "dependencies": {
     "@fontsource-variable/fira-code": "^5.3.0",

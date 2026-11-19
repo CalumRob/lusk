@@ -77,6 +77,38 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(text).toContain('sur lusk.test')
   })
 
+  it('gèle l’équipement et l’horizon sélectionnés dans la capture', async () => {
+    const { captureExplorerRangs } = await import('./helpers/cahierPdfFixtures')
+    const capture: any = structuredClone(captureExplorerRangs())
+    capture.nativeSelection.typequ = 'T001'
+    capture.nativeSelection.horizonMinutes = 30
+    const projection = projeterRequeteExport(capture)
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    expect(projection.request.capture.nativeSelection).toMatchObject({ typequ: 'T001', horizonMinutes: 30 })
+    const text = await textOf(await generer(capture))
+    const defaultText = await textOf(await generer(structuredClone(captureExplorerRangs())))
+    expect(text).toContain('TEMPS DE TRAJET')
+    // The frozen non-default selection changes the rendered figure, not just
+    // the capture object.
+    expect(text).not.toBe(defaultText)
+  })
+
+  it('mappe chaque raison native vers un code et un message français', async () => {
+    const { codeErreurNativePdf, messageErreurNativePdf } = await import('@/fiche/prototype/cahierNativePdf')
+    const cases: Array<[string, string]> = [
+      ['map-unavailable', 'asset'],
+      ['asset-unfrozen', 'asset'],
+      ['unsupported-native-modes', 'incomplete-capture'],
+      ['unbreakable-native-figure', 'layout'],
+      ['missing-rendered-section', 'serialization'],
+    ]
+    for (const [reason, code] of cases) {
+      expect(codeErreurNativePdf(reason)).toBe(code)
+      expect(messageErreurNativePdf(reason)).toMatch(/[éèàç\w]/)
+      expect(messageErreurNativePdf(reason)).not.toBe(reason)
+    }
+  })
+
   it('refuse une carte déclarée non chargée avec une erreur typée', async () => {
     const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
     capture.capabilities.maps.items[0].loaded = false
@@ -94,14 +126,13 @@ describe('Cahier PDF natif — contrats remplacés', () => {
   })
 
   it('transmet les modes sélectionnés aux sections non-access', async () => {
-    const { modesNatifDepuisCapture } = await import('@/fiche/prototype/cahierNativePdf')
-    const base = capturePdfFixture('aedar-equipment-profile')
-    const profile: any = structuredClone(base)
+    const profile: any = structuredClone(capturePdfFixture('aedar-equipment-profile'))
     profile.aedar.modes = ['transit', 'bike_lts2']
-    const request = requete(base)
-    expect(modesNatifDepuisCapture(request, profile, false)).toEqual(['transit', 'bike_lts2'])
-    expect(modesNatifDepuisCapture(requete(capturePdfFixture('aedar-access'), ['car', 'walk']), base, true))
-      .toEqual(['car', 'walk'])
+    profile.nativeSelection.modes = ['transit', 'bike_lts2']
+    const projection = projeterRequeteExport(profile)
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    expect(projection.request.modeIds).toEqual(['transit', 'bike_lts2'])
+    expect(projection.request.capture.nativeSelection?.modes).toEqual(['transit', 'bike_lts2'])
   })
 
   it('refuse une police tronquée au lieu de la substituer', async () => {

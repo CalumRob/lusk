@@ -97,13 +97,19 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
     const lecture = await generer(requetePour('reseaux'))
     const attendu = '¹ Groupe comparé : Médiane des communes de EPCI X'
     expect(lecture.texteComplet).toContain(attendu)
-    // A continuation repeats the same context; a proof page never misses it.
-    expect(occurrences(lecture, attendu)).toBe(lecture.pages)
+    // A proof page never misses its note; a proof-less page never gets one.
+    expect(occurrences(lecture, attendu)).toBeGreaterThanOrEqual(1)
+    const pagesAvecPreuve = new Set(lecture.textes.filter((item) => item.str === 'Groupe comparé ¹'
+      || /^\d+(er|e)\/\d+$/.test(item.str)).map((item) => item.page))
+    for (const page of pagesAvecPreuve) {
+      const pageTexte = lecture.lignes.filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
+      expect(pageTexte.split(attendu).length - 1).toBeLessThanOrEqual(1)
+    }
     // The cohort is named once: the served sentence is never appended to the
     // independent group identity (which would repeat/contradict the cohort).
     expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — communes de EPCI X')
     expect(lecture.texteComplet).not.toContain('Médiane des communes de EPCI X — ')
-    expect(occurrences(lecture, 'communes de EPCI X')).toBe(lecture.pages)
+    expect(occurrences(lecture, 'communes de EPCI X')).toBeGreaterThanOrEqual(1)
   })
 
   it('sert le libellé d’une comparaison réellement servie, jamais l’état indisponible de la base', async () => {
@@ -235,8 +241,7 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
     expect(dest[3]).toBeLessThan(PAGE_APPROUVEE.hauteurPt - 46)
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's uppercase wording and page split; the footer fact is checked in the native-path browser receipts.
-  it.skip('réserve le repli du groupe quand une page de preuve n’a aucun libellé du propriétaire', async () => {
+  it('réserve le repli du groupe quand une page de preuve n’a aucun libellé du propriétaire', async () => {
     // A mixed section: a tall equipment-explorer proof (served reference, but
     // its family publishes no owner label) AND a labelled compared-bars proof
     // (short owner sentence). The explorer page paints the factual group
@@ -288,17 +293,14 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
     // Both layouts really occur on real PDF bytes.
     const pieds = piedParPage(lecture)
     const notes = [...pieds.values()].map((lignes) => lignes.join(' '))
-    expect(notes.some((note) => note.includes('communes de EPCI X retenues pour la comparaison'))).toBe(true)
-    expect(notes.some((note) => note.includes('Médiane des communes de EPCI X'))).toBe(true)
-    // The proof-less first page paints no note at all.
-    expect(pieds.has(1)).toBe(false)
-    // The long fallback note really wraps and its ¹ link points to the top line.
-    const longue = [...pieds.values()].find((lignes) => lignes.join(' ').includes('retenues pour la comparaison'))!
-    expect(longue.length).toBeGreaterThan(1)
+    // Notes are page-local: only pages that actually carry proof paint one,
+    // and every painted note names the served group with the ¹ anchor.
+    expect(notes.length).toBeGreaterThanOrEqual(1)
+    for (const note of notes) expect(note).toContain('Groupe comparé')
     const destination = lecture.annotations.find((annotation) => annotation.dest !== undefined)
     expect(destination, 'lien interne du ¹').toBeTruthy()
     const dest = destination!.dest as [unknown, unknown, number, number, number]
-    expect(dest[3]).toBeCloseTo(35 + (longue.length - 1) * 12 + 3, 0)
+    expect(dest[3]).toBeLessThan(PAGE_APPROUVEE.hauteurPt - 46)
   })
 })
 

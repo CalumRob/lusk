@@ -24,7 +24,6 @@ import { MARQUE_LUSK_LOCKUP } from '@/components/luskBrandMark'
 import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
 import { PAGE_APPROUVEE, ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import {
-  chargeurImageTest,
   chargeurPoliceTest,
   cheminsPdfPage,
   lirePdf,
@@ -91,7 +90,6 @@ describe('#1024 — lockup PDF : géométrie du header réel et propriétaire pa
     const lecture = await lirePdf((await composerCahierPdf(request, {
       signal: new AbortController().signal,
       chargerPolice: chargeurPoliceTest,
-      chargerImage: chargeurImageTest,
       urlAccueil: 'https://lusk.test/',
       urlPublique: 'https://lusk.test/territoire/commune/22001',
     })).blob)

@@ -7,6 +7,8 @@
  * layer, an acquired explorer equipment. They are test observations, never a
  * production default.
  */
+import { deflateSync } from 'node:zlib'
+
 import type {
   CahierAedarCaptureState,
   CahierCaptureReadiness,
@@ -104,6 +106,41 @@ export function mapAvailability(
   return { slot: 'maps', state: { owner: 'map-availability', state: { maps, legend } } }
 }
 
+/** Labelled TEST-ONLY raster bytes frozen into fixture map items. */
+function fixturePng(size = 200): ArrayBuffer {
+  const crcTable = new Uint32Array(256)
+  for (let n = 0; n < 256; n += 1) {
+    let value = n
+    for (let k = 0; k < 8; k += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+    crcTable[n] = value >>> 0
+  }
+  const chunk = (name: string, data: Buffer) => {
+    const head = Buffer.alloc(8)
+    head.writeUInt32BE(data.length, 0)
+    head.write(name, 4, 'ascii')
+    const body = Buffer.concat([Buffer.from(name, 'ascii'), data])
+    let crcValue = 0xffffffff
+    for (const byte of body) crcValue = crcTable[(crcValue ^ byte) & 0xff]! ^ (crcValue >>> 8)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE((crcValue ^ 0xffffffff) >>> 0, 0)
+    return Buffer.concat([head, data, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8; ihdr[9] = 6
+  const row = Buffer.alloc(1 + size * 4)
+  for (let x = 0; x < size; x += 1) {
+    row[1 + x * 4] = 0x2f; row[2 + x * 4] = 0x5e; row[3 + x * 4] = 0x55; row[4 + x * 4] = 0xff
+  }
+  const raw = Buffer.concat(Array.from({ length: size }, () => row))
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+  return Uint8Array.from(png).buffer
+}
+
+export const PNG_FIXTURE_BYTES = fixturePng()
+
 export function loadedMaps(ids: readonly string[]): CahierMapAvailabilityCaptureState['maps'] {
   return ids.map((id) => ({
     id,
@@ -112,6 +149,7 @@ export function loadedMaps(ids: readonly string[]): CahierMapAvailabilityCapture
     loaded: true,
     unavailable: false,
     inlineUrl: `https://example.test/${id}-inline.webp`,
+    bytes: PNG_FIXTURE_BYTES,
   }))
 }
 

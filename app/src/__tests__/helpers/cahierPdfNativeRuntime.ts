@@ -30,6 +30,7 @@ let child: ChildProcess | null = null
 let starting: Promise<ChildProcess> | null = null
 let seq = 0
 const pending = new Map<number, Pending>()
+process.once('exit', () => { child?.kill() })
 
 class NativeComposerError extends Error {
   readonly code?: string
@@ -109,6 +110,17 @@ export async function rendrePngNatif(bytes: Uint8Array, scale = 1.7, pageNumber 
   return Buffer.from(png, 'base64')
 }
 
+/** Structural transfer of frozen ArrayBuffers across the JSON harness line. */
+function transfertRequest(request: CahierExportRequest) {
+  const clone: any = structuredClone(request)
+  for (const item of clone.capture.capabilities.maps.items) {
+    if (item.bytes instanceof ArrayBuffer) {
+      item.bytes = { __luskBytes: Array.from(new Uint8Array(item.bytes)) }
+    }
+  }
+  return clone
+}
+
 /** Generate a real PDF through the native path, returning the artifact bytes. */
 export async function composerCahierPdfNativedansNavigateur(
   request: CahierExportRequest,
@@ -122,7 +134,7 @@ export async function composerCahierPdfNativedansNavigateur(
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
     child!.stdin!.write(JSON.stringify({
       id,
-      request: JSON.parse(JSON.stringify(request)),
+      request: transfertRequest(request),
       options: { urlAccueil: options.urlAccueil ?? null, urlPublique: options.urlPublique ?? null },
     }) + '\n')
   })

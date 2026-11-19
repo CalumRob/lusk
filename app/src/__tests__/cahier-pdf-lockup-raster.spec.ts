@@ -32,7 +32,6 @@ import { MARQUE_LUSK_LOCKUP } from '@/components/luskBrandMark'
 import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
 import { PAGE_APPROUVEE, ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import {
-  chargeurImageTest,
   chargeurPoliceTest,
   cheminsPdfPage,
   lirePdf,
@@ -281,7 +280,6 @@ describe('#1024 — lockup réel écran vs PDF : deux rasters indépendants, enc
     const lecture = await lirePdf((await composerCahierPdf(requetePour('aedar-access'), {
       signal: new AbortController().signal,
       chargerPolice: chargeurPoliceTest,
-      chargerImage: chargeurImageTest,
       urlAccueil: 'https://lusk.test/',
       urlPublique: 'https://lusk.test/territoire/commune/22001',
     })).blob)

@@ -238,9 +238,11 @@ for every Cahier section kind. `composerCahierPdf` — and therefore the
 `CahierPdfGenerator` seam — now routes exclusively through
 `composerCahierPdfNatif`: it mounts the existing section shell in an inert
 offscreen host from those frozen inputs, and paints browser layout into
-selectable text, vector SVG and clipped raster. Map bytes are bound to the
-owner observation through a settled-asset reader; the mount never acquires
-from the owner. The painter receives no section or figure kind and there is no
+selectable text, vector SVG and clipped raster. The map owner freezes the
+bytes of the image it already displays into `CahierCaptureMapItem.bytes`; the
+default reader uses only those bytes (no `fetch`, no `readAsset` injection),
+so a retry cannot re-contact the owner. The mount never acquires. The painter
+receives no section or figure kind and there is no
 per-section PDF figure template or fallback painter. `rendreCorpsNatifPdf`
 remains the body-only witness used by the browser proofs.
 
@@ -254,10 +256,14 @@ figures remain atomic) and paginated at fixed reading scale — no global shrink
 no dead second page. A `figure` is never cut across pages: it moves whole to the
 next page or, if it genuinely exceeds a whole page, is rejected with
 `unbreakable-native-figure` (mapped to a layout error). No figure is silently
-split. The mode-bearing AEDAR access section freezes the
-reader's chooser selection and survives a recoverable failure and retry without
-reacquiring the owner. The mounted browser checks use a labelled technical
-raster and do not establish a production map or visual-approval claim.
+split. One frozen selection (`capture.nativeSelection`, mirrored into
+`request.modeIds`) drives both the native figure and the B tables, so they
+cannot disagree; the equipment typequ and horizon are frozen there too. The
+comparison footnote is page-local: each body that actually carries proof gets
+its own `¹ Groupe comparé` note. The break budget is derived from the real
+per-page useful space, not the raw content box. The mounted browser checks use
+a labelled technical raster and do not establish a production map or visual
+approval.
 
 **Centring decision (#1014 vs prototype).** `desktop.js:606` centres each page's
 content with `top + max(0, (capacity - used) / 2)`, but it also computes one
@@ -284,14 +290,17 @@ rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`), screen-only
 interactive CTAs/controls (`.cahier-action-button`, retries, carousels) and, in
 the document route, standalone evidence sources. Figure titles, captions, axis and
 legend labels, scalar labels and figure-attached reading notes keep their own
-roles and are not hidden. `cahierExportRoutes.ts` shares the route identities
-with the screen router, and the standard figure width and desktop viewport
-constants come from their figure owners.
+roles and are not hidden. A drift test fails if a listed producer selector
+disappears. The screen router owns the shared route identities
+(`CAHIER_EXPORT_ROUTES` is exported from `src/router/index.ts`), and the
+standard figure width and desktop viewport constants come from their figure
+owners.
 
-**Public strings come from the owner, not the runtime host.** `cahierExportUrls.ts`
-owns the public base URL; the footer invitation and the public link are built
-from it (or an explicitly supplied reviewer URL), never from `location` or from
-the capture, so a preview/test hostname cannot leak into a public PDF.
+**Public strings follow the current environment.** `cahierExportUrls.ts` builds
+the home/public links from the active origin and forwards the active query
+string, so a preview PDF links back to that preview. A caller may supply an
+explicit `urlAccueil`/`urlPublique` (as the review harness does); no deployment
+hostname is hardcoded and no capture or test fixture provides these strings.
 
 **Map failure is explicit.** Every declared map is read from bytes frozen in
 the capture and bound to a settled object URL; a declared-but-unloaded or
