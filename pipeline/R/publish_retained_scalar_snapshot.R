@@ -1,21 +1,21 @@
 # One coherent scalar table publication assembled only from canonical,
 # producer-owned scalar-serving artifacts. Legacy service-share facts are not
 # members of this snapshot.
+# #1048 (slice 2) : la disposition de retrait vit DANS LE CONTRAT SCALAIRE de
+# chaque indicateur, pas dans un source_record. Le snapshot porté (et sa fiche
+# de source dédiée) a disparu du catalogue : les 29 ids retirés ne
+# sont plus déclarés comme sources de référence, mais leurs contrats scalaires
+# restent épinglés avec `excluded_legacy_accessibility` — c'est cette déclaration
+# que le backend lit pour retirer les faits à la publication. Les indicateurs
+# réellement servis gardent un contrat sans disposition (ou « retained »).
 scalar_indicators_with_serving_disposition <- function(metadata, disposition) {
-  sources <- metadata$sources %||% list()
-  records <- metadata$source_records %||% list()
-  ids <- names(sources)
-  if (!is.list(sources) || is.null(ids) || any(!nzchar(ids)) || anyDuplicated(ids) ||
-      !is.list(records))
-    stop("Producer scalar source declarations are invalid", call.=FALSE)
-  missing_records <- unique(unlist(sources, use.names=FALSE))
-  missing_records <- setdiff(missing_records, names(records))
-  if (length(missing_records))
-    stop("Producer scalar source record is missing: ", paste(sort(missing_records), collapse=", "),
-      call.=FALSE)
-  ids[vapply(ids, function(id) {
-    record <- records[[sources[[id]]]]
-    identical(record$serving_disposition, disposition)
+  contracts <- metadata$scalar_contracts %||% list()
+  ids <- names(contracts)
+  if (is.null(ids)) ids <- character(0L)
+  if (!is.list(contracts) || any(!nzchar(ids)) || anyDuplicated(ids))
+    stop("Producer scalar contract declarations are invalid", call.=FALSE)
+  ids[vapply(contracts, function(contract) {
+    is.list(contract) && identical(contract$serving_disposition, disposition)
   }, logical(1))]
 }
 

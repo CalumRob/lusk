@@ -418,13 +418,9 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
     } else {
       lectures_documentees[[theme]]
     }
-    if (identical(theme, "mobilite")) {
-      # Le registre de directions conserve les clés retirées jusqu'au slice 2
-      # (validation croisée du catalogue épinglé, #1048).
-      expect_true(all(c(registre[[theme]], lectures) %in% names(directions)))
-    } else {
-      expect_setequal(names(directions), c(registre[[theme]], lectures))
-    }
+    # #1048 (slice 2) : Mobilité ne déclarait plus que 17 clés classées — les
+    # 29 directions du snapshot retiré ont quitté le registre avec leurs pages.
+    expect_setequal(names(directions), c(registre[[theme]], lectures))
     # chaque direction est une valeur du contrat (high | low)
     expect_true(all(vapply(directions, function(d) d %in% c("high", "low"),
                            logical(1L))), info = theme)
@@ -617,9 +613,10 @@ test_that("concordance des facettes résumées : les SIX canons épinglés passe
 })
 
 # La décomposition des sous-groupes (issue #370, parent #367 ; étendue par
-# #408) : les SIX thèmes déclarent leurs sous-groupes en ordre de fiche —
-# Mobilité ×4, Démographie ×2, Habitat ×3, Économie ×2, Milieux ×1,
-# Programmes et subventions ×2 (QUATORZE sous-groupes). Le fichier épinglé
+# #408 et #1048) : les SIX thèmes déclarent leurs sous-groupes en ordre de
+# fiche — Mobilité ×3 (le sous-groupe « acces-aux-services » du snapshot
+# retiré a disparu au slice 2), Démographie ×2, Habitat ×3, Économie ×2,
+# Milieux ×1, Programmes et subventions ×2 (TREIZE sous-groupes). Le fichier épinglé
 # est le contrat : les clés exactes, l'ordre, les libellés et l'appartenance
 # des indicateurs — la parité registres ↔ sous-groupes (chaque indicateur dans
 # EXACTEMENT un sous-groupe, chaque story lue par EXACTEMENT un sous-groupe ou
@@ -627,12 +624,11 @@ test_that("concordance des facettes résumées : les SIX canons épinglés passe
 # `structure-verte` ne déclare AUCUNE lecture — le sous-groupe silencieux de
 # la grammaire (#370) ; les DEUX sous-groupes Programmes (#408) n'en
 # déclarent aucun non plus (le thème sans lecture).
-test_that("sous-groupes : la décomposition #370 + #408 — quatorze sous-groupes, ordre de fiche exact, familles des huit", {
+test_that("sous-groupes : la décomposition #370 + #408 + #1048 — treize sous-groupes, ordre de fiche exact, familles des huit", {
   attendu <- list(
     mobilite = list(
-      c("acces-aux-services", "partage-de-lespace-public",
-        "motorisation", "offre-transports-commun"),
-      c("comparison-bars", "composition", "composition", "scalar")
+      c("partage-de-lespace-public", "motorisation", "offre-transports-commun"),
+      c("composition", "composition", "scalar")
     ),
     demographie = list(
       c("etat-de-la-population", "trajectoire-demographique"),
@@ -670,25 +666,55 @@ test_that("sous-groupes : la décomposition #370 + #408 — quatorze sous-groupe
     # chaque famille déclarée est l'une des huit de la grammaire (ADR-0023)
     expect_true(all(familles %in% FAMILLES_FIGURE), info = theme)
     # le registre des sous-groupes et la résolution restent en parité : le
-    # groupe de chaque story résolue est un sous-groupe déclaré
+    # groupe de chaque story résolue est un sous-groupe déclaré. Mobilité est
+    # le seul pool ADR-0002 conservé comme preuve de la règle après #1048 : son
+    # groupe a disparu du catalogue avec le snapshot, il ne peut plus être émis.
     registre <- STORIES_RESOLUES_PAR_THEME[[theme]]
-    expect_true(all(registre$groupe %in% cles), info = theme)
+    if (!identical(theme, "mobilite"))
+      expect_true(all(registre$groupe %in% cles), info = theme)
     expect_no_error(valider_theme_metadata(meta))
   }
 })
 
-test_that("Mobilité #369 places parking and fuel comparison in their semantic groups", {
+test_that("Mobilité #369 : le stationnement et le ravitaillement gardent leurs groupes, les clés retirées ont disparu", {
   meta <- lire_theme_metadata("mobilite")
   groupe <- setNames(lapply(meta$subgroups, `[[`, "indicators"),
                      vapply(meta$subgroups, `[[`, character(1), "key"))
+  declarees <- unlist(groupe, use.names = FALSE)
 
-  expect_true(all(c("tot_loss_t", "tot_loss_b") %in% groupe[["acces-aux-services"]]))
-  expect_false(any(c("places_stationnement_voiture_1000",
-                     "stationnement_velo_par_voiture",
-                     "bornes_ev_par_station_service") %in% groupe[["acces-aux-services"]]))
+  # Le découpage sémantique #369 survit au retrait du snapshot : le stationnement
+  # voiture et le vélo/voiture restent dans « partage de l'espace public », le
+  # ratio EV/fuel avec la motorisation.
   expect_true(all(c("places_stationnement_voiture_1000",
                     "stationnement_velo_par_voiture") %in% groupe[["partage-de-lespace-public"]]))
   expect_true("bornes_ev_par_station_service" %in% groupe[["motorisation"]])
+  # #1048 : aucune clé du snapshot retiré ne survit dans un sous-groupe — la
+  # disparition du groupe « acces-aux-services » ne doit pas masquer une clé
+  # réassignée ailleurs.
+  expect_false(any(INDICATEURS_MOBILITE_RETIRES %in% declarees))
+  expect_setequal(declarees, INDICATEURS_MOBILITE$key)
+})
+
+test_that("le catalogue Mobilité ne porte plus aucune référence au snapshot retiré (#1048)", {
+  meta <- lire_theme_metadata("mobilite")
+  # Les cinq registres SERVIS sont exactement les 17 clés retenues — aucun
+  # sur-ensemble, aucune clé fantôme, aucun.libellé orphelin.
+  for (champ in c("indicator_keys", "sources", "indicator_labels")) {
+    expect_true(setequal(
+      names(meta[[champ]]) %||% unlist(meta[[champ]], use.names = FALSE),
+      INDICATEURS_MOBILITE$key), info = champ)
+  }
+  expect_false(any(INDICATEURS_MOBILITE_RETIRES %in% names(meta$indicator_pages)))
+  expect_length(unlist(meta$story_keys, use.names = FALSE), 0L)
+  expect_null(meta$selected_reading_contract)
+  expect_null(meta$distribution_contracts)
+  expect_null(meta$source_records$mobilite_snapshot)
+  expect_false(any(vapply(meta$subgroups, function(g) !is.null(g$reading), logical(1))))
+  expect_length(meta$indicator_directions, 0L)
+  # Les 29 reçus de retrait restent, eux, déclarés dans scalar_contracts.
+  expect_setequal(
+    scalar_indicators_with_serving_disposition(meta, "excluded_legacy_accessibility"),
+    INDICATEURS_MOBILITE_RETIRES)
 })
 
 test_that("sous-groupes : structure-verte ne déclare AUCUNE lecture — le sous-groupe silencieux (#370)", {

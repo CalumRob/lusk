@@ -20,7 +20,7 @@
 # fournit la population du calcul Offre TC et le poids du thème. L'étage
 # demande/réseaux garde ses sources (RP voitures, OSM t/c, Geovelo b, limites,
 # OCS-GE routier, BPE B316, IRVE, hub vélo, parkings OSM). Aucun artefact
-# mobilite_snapshot.rds n'est écrit. Le paramètre `sources` permet aux tests de
+# d'artefact de snapshot porté n'est écrit. Le paramètre `sources` permet aux tests de
 # passer les fixtures directement — le même chemin de code qu'en production.
 construire_donnees_mobilite <- function(cache = "data/raw",
                                         sortie = "data/processed/mobilite",
@@ -121,26 +121,13 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
   "2023–2025", "lov2", "2023-01-01", "2026-07-03"
 )
 
-# VINTAGE_MOBILITE_SNAPSHOT_RETRAITE — slice 2 (#1048) ---------------------------
-# Le snapshot a été retiré du manifeste et de la chaîne de calcul (#1048). Sa
-# ligne de vintage subsiste TEMPORAIREMENT : le catalogue épinglé
-# (theme_mobilite.json — slice 2) cite encore `mobilite_snapshot` comme source
-# de référence des clés retirées, et la validation croisée exige un vintage par
-# source déclarée. Le slice 2 retire ces références ; la ligne part avec elles.
-VINTAGES_MOBILITE_SNAPSHOT_RETRAITE <- tibble::tibble(
-  id = "mobilite_snapshot",
-  source = paste0("Lusk — analyse d'accessibilité « Vingt minutes sans voiture » ",
-                  "(source retirée, #1048)"),
-  version = "2026-02", licence = "odbl",
-  date_reference = "2026-02-28", date_publication = "2026-08-06"
-)
-
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence et SA publication, jamais alignées.
-# Les fragments snapshot et bâtiments ont été retirés en #1048. Depuis
-# l'issue #486, les DEUX faits construits du raccordement voyagent à leurs
-# côtés.
+# Les fragments snapshot et bâtiments ont été retirés en #1048 — aucune ligne
+# de vintage ne référence plus le snapshot retiré (le catalogue ne le cite
+# plus depuis le slice 2). Depuis l'issue #486, les DEUX faits construits du
+# raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
   ids_techniques <- IDS_OCSGE_RESEAUX
   dplyr::bind_rows(
@@ -150,7 +137,6 @@ vintages_mobilite <- function() {
         , drop = FALSE
       ]
     ),
-    VINTAGES_MOBILITE_SNAPSHOT_RETRAITE,
     VINTAGES_RACCORDEMENT,
     VINTAGES_MOBILITE_OCSGE_RESEAUX
   )
@@ -311,7 +297,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Réseaux à pied / vélo / voiture",
      "Longueur du réseau par habitant",
      "Part du territoire consacré aux réseaux routiers",
-    "Part des bâtiments près d’un arrêt (à 500 m)",
+    "Part des adresses près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
      "Places de stationnement voiture pour 1 000 hab.",
@@ -366,8 +352,9 @@ APERCU_MOBILITE <- tibble::tibble(
 # La table des territoires du thème : le squelette PARTAGÉ (squelette_territoires,
 # compute.R) — communes/EPCIs/départements/région avec les noms réels de la
 # base des EPCI (lire_epci), la règle de pluralité départementale — avec le
-# POIDS du thème : le nombre d'adresses résidentielles du spine par commune (n_adresses du
-# snapshot porté — la mesure signature de l'analyse d'accessibilité).
+# POIDS du thème : le nombre d'adresses résidentielles du spine AEDAR par commune
+# (`n_adresses`) — le dénominateur de l'offre TC et la mesure de rattachement des
+# territoires, jamais un décompte de bâtiments du snapshot retiré (#1048).
 construire_territoires_mobilite <- function(base_epci, analytiques,
                                             noms_epci_geo_api = NULL,
                                             classes_densite = NULL,
@@ -856,11 +843,10 @@ validations_mobilite <- list(
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (les clés historiques + le
-# raccordement #486 — avec rangs + estampilles T7, les 5
-# parts d'isolation portant l'estampille snapshot),
-# histoires (les deux story keys), territoires (référence partagée), la
-# apercu (vide — gating). Validé par la validation
+# d'compute_payload, compute.R) — indicateurs (les 17 clés retenues + le
+# raccordement #486 — avec rangs + estampilles T7), histoires (une table VIDE
+# depuis #1048 : les deux story keys du snapshot ont disparu), territoires
+# (référence partagée), la apercu (vide — gating). Validé par la validation
 # GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_mobilite <- function(analytiques, base_epci, vintages,
@@ -984,14 +970,12 @@ verifier_descripteur_mobilite <- function(descripteur) {
 # un builder (le graphe targets ne peut pas suivre le cycle descripteur →
 # builder → descripteur).
 #
-# Les clés `nb_buildings`, `tot_loss_*`, `avg_*`, `iso_*` et `share_*` ci-dessous
-# ne sont PLUS calculées ni publiées depuis #1048. Elles restent déclarées UNIQUEMENT
-# pour la parité avec le catalogue épinglé (theme_mobilite.json — slice 2) :
-# valider_theme_metadata() croise la direction de chaque page encore épinglée et
-# les 15 `indicator_directions`, dont certaines sont `low`. Le slice 2 retire ces
-# pages du catalogue ; les lignes correspondantes partent alors d'ici.
+# Depuis #1048 (slice 2), le registre ne porte QUE les 17 indicateurs encore
+# calculés : les 29 directions du snapshot porté (`nb_buildings`, `tot_loss_*`,
+# `avg_*`, `iso_*`, `share_*`) sont parties avec leurs pages du catalogue. Ces
+# clés restent déclarées comme RETRAIT dans les `scalar_contracts` du canon —
+# jamais comme des directions classées ici.
 DIRECTIONS_MOBILITE <- list(
-  nb_buildings = "high",
   voitures_menage = "high",
   reseaux = "high",
   reseaux_par_habitant = "high",
@@ -1008,24 +992,13 @@ DIRECTIONS_MOBILITE <- list(
   stations_service = "high",
   stations_service_1000 = "high",
   bornes_recharge_1000 = "high",
-  avg_tot_car = "high", avg_tot_b = "high", avg_tot_t = "high",
-  avg_div_car = "high", avg_div_b = "high", avg_div_t = "high",
-  tot_loss_t = "low",
-  tot_loss_b = "low",
   offre_cyclable = "high",
   raccordement_tc = "high",
   # les deux clés de MATIÈRE DE FIGURE du raccordement (#486) : déclarées
   # pour l'audit directions↔registre (la bijection du contrat), jamais
   # consommées — des courbes ne sont classées nulle part
   raccordement_courbe = "high",
-  raccordement_reference = "high",
-  share_food_t = "high", share_food_b = "high", share_food_c = "high",
-  share_health_t = "high", share_health_b = "high", share_health_c = "high",
-  share_admin_t = "high", share_admin_b = "high", share_admin_c = "high",
-  share_school_t = "high", share_school_b = "high", share_school_c = "high",
-  share_bank_t = "high", share_bank_b = "high", share_bank_c = "high",
-  iso_alimentation = "low", iso_sante = "low",
-  iso_administration = "low", iso_ecole = "low", iso_banque = "low"
+  raccordement_reference = "high"
 )
 
 # theme_mobilite ---------------------------------------------------------------
@@ -1051,7 +1024,8 @@ theme_mobilite <- function() {
     # payload, jamais un recompute des tables de faits
     metadata = function() lire_theme_metadata("mobilite"),
     # L'export bâtiment retiré ne doit pas subsister dans les vintages partagés
-    # issus d'une publication antérieure. Les faits conservés citent le snapshot.
+    # issus d'une publication antérieure. Les faits conservés citent leurs
+    # propres sources (le snapshot retiré n'est plus l'une d'elles).
     retire_vintages = "accessibilite_batiments",
     # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
     # chaîne de calcul — les épingles du package en cibles de fichiers, la

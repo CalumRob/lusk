@@ -81,14 +81,14 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
 })
 
 
-test_that("vintages_mobilite : seize sources publiques incluent la production nationale du raccordement", {
+test_that("vintages_mobilite : quinze sources publiques incluent la production nationale du raccordement", {
   v <- vintages_mobilite()
-  expect_equal(nrow(v), 16L)
+  expect_equal(nrow(v), 15L)
 
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
-                  c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux", "amenagements_cyclables",
+                  c("rp_logement_princ", "osm_reseaux", "amenagements_cyclables",
                     "communes_limites", "korrigo", "bornes-recharges",
                     "stationnement-velo", "bpe_b316", "cog_passage",
                     "sncf_voyageurs", "dila_bdl",
@@ -96,11 +96,9 @@ test_that("vintages_mobilite : seize sources publiques incluent la production na
                     "raccordement_gtfs_national", "ocsge_reseaux_routiers"))
   expect_false("batiments_residentiels" %in% v$id)
   expect_false("accessibilite_batiments" %in% v$id)
-
-  # le vintage du snapshot retiré reste jusqu'au slice 2 pour la validation
-  # croisée du catalogue épinglé (il n'est plus dans le manifeste).
-  snap <- v[v$id == "mobilite_snapshot", ]
-  expect_equal(snap$date_reference, "2026-02-28")
+  # #1048 (slice 2) : la ligne temporaire du snapshot porté a quitté la table
+  # avec sa dernière référence dans le catalogue épinglé.
+  expect_false(any(grepl("snapshot", v$id)))
 
   # le raccordement : l'horloge du FIGÉ
   mat <- v[v$id == "matrice_temps_mairies", ]

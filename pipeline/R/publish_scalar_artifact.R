@@ -86,7 +86,12 @@ scalar_artifact_read_generation <- function(generation, expected_version=NULL) {
 }
 
 materialize_theme_scalar_artifact <- function(payload, metadata, vintages, theme, directory) {
-  ids <- names(metadata$scalar_contracts)
+  # #1048 : un contrat déclaré `excluded_legacy_accessibility` est une fiche de
+  # RETRAIT, pas une offre à matérialiser — le producteur ne publie plus ses
+  # faits et il n'a plus de page. Le projeter ferait échouer la garde de page.
+  ids <- setdiff(names(metadata$scalar_contracts),
+    scalar_indicators_with_serving_disposition(
+      metadata, "excluded_legacy_accessibility"))
   if (!length(ids)) return(invisible(NULL))
   if (!is.list(payload) || !is.data.frame(payload$indicateurs) ||
       !is.data.frame(payload$territoires) || !is.data.frame(vintages))
@@ -105,7 +110,7 @@ materialize_theme_scalar_artifact <- function(payload, metadata, vintages, theme
     publication_date=as.character(rows$vintage_date_publication),
     support=if ("n" %in% names(rows)) as.integer(rows$n) else rep(NA_integer_, nrow(rows)),
     stringsAsFactors=FALSE)
-  levels <- unique(unlist(lapply(metadata$scalar_contracts, function(contract)
+  levels <- unique(unlist(lapply(metadata$scalar_contracts[ids], function(contract)
     as.character(unlist(contract$allowed_levels, use.names=FALSE))), use.names=FALSE))
   eligible <- payload$territoires[payload$territoires$type %in% levels,
     c("territoire", "type"), drop=FALSE]
