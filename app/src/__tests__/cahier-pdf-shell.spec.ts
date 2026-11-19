@@ -150,6 +150,46 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     wrapper.unmount()
   })
 
+  it('forwards an explicit null reference status as no direct reference, not unobserved', async () => {
+    // In production a displayed comparison group is the reference source; the
+    // owner passes null. The shell must not collapse that to `unobserved`, which
+    // would block aedar-access / aedar-car-overview forever under a comparison.
+    const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
+    const { content } = cahierExportFixture()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: cahierPaginationFor({} as Payload, content, true),
+        showAllUnits: true,
+        presentation: 'plain',
+        layoutVariant: 'indexed-sections',
+        aedarAccessEnabled: true,
+        aedarChapterActive: false,
+        aedarStatus: 'ready',
+        comparisonStatus: 'ready',
+        nativeComparisonStatus: 'ready',
+        aedarReferenceStatus: null,
+        pdfGenerator: generate,
+      },
+      global: {
+        plugins: [router],
+        provide: { [CONTROLE_COMPARAISON_KEY as symbol]: ref(control()) },
+      },
+    })
+    await flushPromises()
+    await nextTick()
+
+    const seam = wrapper.vm as unknown as {
+      captureSection: (key: string) => ReturnType<typeof captureCahierSection> | null
+    }
+    for (const key of ['aedar-access', 'aedar-car-overview']) {
+      expect(seam.captureSection(key)!.comparison.referenceStatus, key).toBeNull()
+    }
+    wrapper.unmount()
+  })
+
   it('prepares a non-mode section directly through the same common controller', async () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const { wrapper } = await mountShell(generate)

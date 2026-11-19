@@ -224,7 +224,7 @@ function buildExportCapture(
     territory: props.content.territory,
     readiness: captureReadiness(record.section, record.unitKey),
     referenceStatus: cahierCaptureConsumesReference(family)
-      ? (props.aedarReferenceStatus ?? 'unobserved') : null,
+      ? (props.aedarReferenceStatus === undefined ? 'unobserved' : props.aedarReferenceStatus) : null,
     comparisonEligible: comparisonEligible.value,
     comparisonStatus: aedarEvidence
       ? (props.comparisonStatus ?? 'idle')

@@ -643,8 +643,12 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   const comparisonStatus = captureComparisonStatus(family, input, publications)
   const comparisonError = captureComparisonError(family, input, publications)
   const comparisonNone = captureComparisonNone(family, publications)
+  // An explicit null means the owner displayed a comparison group, not a direct
+  // reference: keep it null so the activation policy does not block the export.
+  // Only an absent observation is an honest `unobserved` (`??` would collapse
+  // both and permanently block a reference family shown under a comparison).
   const referenceStatus = cahierCaptureConsumesReference(family)
-    ? (input.referenceStatus ?? 'unobserved')
+    ? (input.referenceStatus === undefined ? 'unobserved' : input.referenceStatus)
     : null
   const explorer = publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
   const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
