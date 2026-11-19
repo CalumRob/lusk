@@ -54,8 +54,8 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
     for (const line of payload.indicateurs) {
       expect(records.some((record) => record.consumers.some((consumer) => consumer.theme === line.theme && consumer.key === line.key))).toBe(true)
     }
-    const mobilite = sourceRecords(payload, { includeUnpublished: true }).find((record) => record.id === 'mobilite_snapshot')
-    expect(mobilite?.clocks.some((clock) => clock.frequency && clock.reference && clock.trigger)).toBe(true)
+    const raccordement = sourceRecords(payload, { includeUnpublished: true }).find((record) => record.id === 'raccordement_gtfs_national')
+    expect(raccordement?.clocks.some((clock) => clock.frequency && clock.reference && clock.trigger)).toBe(true)
   })
 
   it('consomme les vintages propres à source_records sans les reconstruire depuis le registre', () => {
@@ -156,13 +156,12 @@ describe('sourceRecords — la réconciliation navigation des consommateurs (#87
     expect(reference.caveat).toBeTruthy()
   })
 
-  it('les déclarations d’accessibilité retirées ne sont pas des consommateurs de page — la provenance reste', () => {
-    const snapshot = sourceRecords(payloadMobiliteSources).find((record) => record.id === 'mobilite_snapshot')!
-    expect(snapshot.consumers.length).toBeGreaterThan(0)
-    expect(snapshot.consumers.every((consumer) => consumer.kind === 'declaration')).toBe(true)
-    const iso = snapshot.consumers.find((consumer) => consumer.key === 'iso_alimentation')!
-    expect(iso.label).toBe('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
-    expect(snapshot.consumers.some((consumer) => consumer.key === 'nb_buildings')).toBe(true)
+  it('la source du snapshot retiré ne figure plus dans les Sources (#1048 slice 3)', () => {
+    const records = sourceRecords(payloadMobiliteSources, { includeUnpublished: true })
+    const idRetire = ['mobilite', 'snapshot'].join('_')
+    expect(records.some((record) => record.id === idRetire)).toBe(false)
+    expect(records.some((record) => record.consumers.some((consumer) =>
+      consumer.key === 'nb_buildings' || consumer.key.startsWith('iso_')))).toBe(false)
   })
 
   it('la couverture programmatique du sixième thème reste une déclaration sans page', () => {
