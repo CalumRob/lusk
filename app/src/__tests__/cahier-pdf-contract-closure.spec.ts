@@ -372,7 +372,9 @@ describe('#1024 contrat — en-tête plat, colgroup, barres, séparateurs, horiz
     // The coverage-share table has no row dimension, but its compared cell is
     // served: the mark/link policy must depend on the proof, not on rowHeader.
     const lecture = await generer(capturePartDense())
-    const marques = lecture.textes.filter((item) => item.str.endsWith('¹')
+    // One `¹` link mark in the compared header cell (PDF text extraction may
+    // merge it with the adjacent `Rang` header once the table is natural-width).
+    const marques = lecture.textes.filter((item) => item.str.includes('¹')
       && Math.abs(item.taille - ROLE_PDF.enteteTableauMode.taille) < 0.02)
     expect(marques).toHaveLength(1)
     const liens = lecture.annotations.filter((annotation) => annotation.dest !== undefined)

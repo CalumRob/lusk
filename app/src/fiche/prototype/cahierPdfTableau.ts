@@ -362,23 +362,26 @@ export function construireTableauxPdf(
         .filter((cell): cell is CahierTableCell => Boolean(cell) && estNumerique(cell!))
         .map((cell) => largeurCellule(cell, mesure)),
     )
+    // Natural width is the honest one-line advance of the whole header label
+    // and of every cell display, read from the embedded face. Keeping the full
+    // label (not just its longest word) means a header such as « Groupe comparé »
+    // is not forced onto two lines by the natural-width layout. The focal
+    // territory is the one approved exception: its long public name wraps/
+    // ellipsizes in a fixed compact band. Cell displays are measured at full
+    // width so a cell that fit on one line before is never forced to wrap.
     const enteteMin = nomTerritoire !== null && column.label === nomTerritoire
       ? 24
-      : Math.max(
-        ...column.label.split(/\s+/).map((word) => mesure.largeur(
-          word,
-          roleEntete.police,
-          roleEntete.taille,
-        )),
-      )
+      : mesure.largeur(column.label, roleEntete.police, roleEntete.taille)
     const texte = Math.max(
-      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => (
-        cell.display === INDISPONIBLE
-          ? mesure.largeur(INDISPONIBLE_ABREGEE, ROLE_PDF.valeurTableau.police, ROLE_PDF.valeurTableau.taille)
-          : largeurCellule(cell, mesure)
-      )),
+      0,
+      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => largeurCellule(cell, mesure)),
     )
-    const natural = Math.max(9, numerique, enteteMin, Math.min(texte, 24)) + 2.6
+    // A served comparison header carries the `¹` link; reserve its advance so
+    // the mark never spills into the neighbouring `Rang` column.
+    const marqueComparaison = column.kind === 'comparison'
+      ? mesure.largeur(' ¹', roleEntete.police, roleEntete.taille)
+      : 0
+    const natural = Math.max(9, numerique, enteteMin, Math.min(texte, 24)) + 2.6 + marqueComparaison
     const groupe = groupeParCle.get(column.key) ?? column.key
     affichage.push({ column, role: 'valeur', groupe, natural, numerique })
     if (column.kind === 'comparison') {
@@ -505,12 +508,14 @@ export function construireTableauxPdf(
   const parts: TableauPdfPart[] = []
   for (let groupIndex = 0; groupIndex < groupes.length; groupIndex += 1) {
     const groupe = groupes[groupIndex]!
-    const naturelTotal = groupe.reduce((sum, item) => sum + item.natural, largeurLibelle)
-    const marge = Math.max(0, largeurDisponible - naturelTotal)
-    const bonus = groupe.length ? marge / groupe.length : 0
+    // Natural width, not `largeurDisponible`: a narrow value table is as wide
+    // as its measured content needs and is centred against the figure it
+    // belongs to by the composer. Wide tables already carry their full width
+    // in `item.natural` (the split/fit passes above never shrink below the
+    // served content), so nothing here stretches or truncates any column.
     const politiqueSeparateur = table.columnSeparators
     const colonnes: ColonneTableauPdf[] = groupe.map((item, index) => {
-      const width = item.natural + bonus
+      const width = item.natural
       const separatorBefore = politiqueSeparateur === 'legend-key'
         ? index > 0
         : politiqueSeparateur === 'group'
@@ -645,17 +650,20 @@ export function construireTableauxPdf(
     const headerHeight = groupeHeaderHeight
       + Math.max(...colonnes.map((colonne) => colonne.headerHeight), 4)
     const hasComparison = comparatifProuve && options.ownerDisplayed !== false
+    const largeurTableau = colonnes.reduce((sum, colonne) => sum + colonne.width, largeurLibelle)
+    // The caption wraps to the table's own width, not the whole body, so a
+    // narrow table keeps a short caption centred over its content.
     const titleLines = [
       ...plierTexte(table.title, mesure, {
         police: ROLE_PDF.titreTableau.police,
         taillePt: ROLE_PDF.titreTableau.taille,
-        largeurMax: largeurDisponible,
+        largeurMax: Math.max(largeurTableau, 24),
       }).map((ligne) => ligne.texte),
       ...(table.subtitle
         ? plierTexte(table.subtitle, mesure, {
           police: ROLE_PDF.titreTableau.police,
           taillePt: ROLE_PDF.titreTableau.taille,
-          largeurMax: largeurDisponible,
+          largeurMax: Math.max(largeurTableau, 24),
         }).map((ligne) => ligne.texte)
         : []),
     ]
@@ -669,7 +677,7 @@ export function construireTableauxPdf(
       groups: grouped ? groups : [],
       columns: colonnes,
       rows,
-      width: colonnes.reduce((sum, colonne) => sum + colonne.width, largeurLibelle),
+      width: largeurTableau,
       naturalWidth,
       colgroupFixe,
       rowLabelWidth: largeurLibelle,

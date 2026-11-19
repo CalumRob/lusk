@@ -236,8 +236,8 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
       layout: 'grouped',
       columnSeparators: 'group',
       columns: [
-        { key: 'a', label: 'Territoire', unit: null, kind: 'focal', seriesKey: 'a', groupLabel: 'Transports en commun et marche', groupColor: '#a94562' },
-        { key: 'b', label: 'Groupe comparé', unit: null, kind: 'comparison', seriesKey: 'a', groupLabel: 'Transports en commun et marche', groupColor: '#a94562' },
+        { key: 'a', label: 'Territoire', unit: null, kind: 'focal', seriesKey: 'a', groupLabel: 'Transports en commun, marche et vélo LTS2 sur voirie compartimentée', groupColor: '#a94562' },
+        { key: 'b', label: 'Groupe comparé', unit: null, kind: 'comparison', seriesKey: 'a', groupLabel: 'Transports en commun, marche et vélo LTS2 sur voirie compartimentée', groupColor: '#a94562' },
       ],
       rows: [{
         key: 'row',
@@ -249,7 +249,7 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
       }],
       notes: [],
       unit: null,
-    }, { mesure, largeurDisponible: 60, nomTerritoire: null })
+    }, { mesure, largeurDisponible: 180, nomTerritoire: null })
     const part = parts[0]!
     const groupe = part.groups[0]!
     expect(groupe.labelLines.length).toBeGreaterThan(1)

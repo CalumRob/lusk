@@ -712,13 +712,22 @@ function assemblerPages(
     for (const [index, group] of tableGroups.entries()) {
       blocks.push({
         kind: 'table',
-        cells: group.parts.map((part, cellIndex) => ({
-          part,
-          rows: part.rows,
-          x: PAGE.corpsX + cellIndex * (PAIRE_TABLEAUX.largeur + PAIRE_TABLEAUX.gap),
-          width: largeurCellule(group.parts),
-          continued: false,
-        })),
+        cells: group.parts.map((part, cellIndex) => {
+          const largeurCelluleReelle = largeurCellule(group.parts)
+          const xCellule = PAGE.corpsX + cellIndex * (PAIRE_TABLEAUX.largeur + PAIRE_TABLEAUX.gap)
+          // A value table is as wide as its measured content needs (up to the
+          // body). Centre that natural-width table inside its column the same
+          // way the native figure body is centred, so figure and table share
+          // one horizontal axis. A full-width table (paired access / grouped)
+          // has no slack, so this is a no-op for it.
+          return {
+            part,
+            rows: part.rows,
+            x: xCellule + Math.max(0, largeurCelluleReelle - part.width) / 2,
+            width: part.width,
+            continued: false,
+          }
+        }),
         comparisonLabel: group.comparisonLabel,
         // The first caption keeps the heading's 12 px bottom margin; a new
         // table row keeps its 20 px `margin-bottom` (source rhythm, not zero).
