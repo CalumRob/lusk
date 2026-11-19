@@ -212,15 +212,6 @@ export const vintagesFixture: Vintage[] = [
     date_publication: null,
   },
   {
-    id: 'mobilite_snapshot',
-    source:
-      "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
-    version: '2026-02',
-    licence: 'odbl',
-    date_reference: '2026-02-28',
-    date_publication: '2026-08-06',
-  },
-  {
     id: 'consoenaf',
     source:
       "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
@@ -478,15 +469,6 @@ export const histoiresEconomieFixture: Histoire[] = [
  * saillance vélo. Rien d'inventé — chaque valeur et estampille est copiée du payload.
  */
 
-/** Le snapshot porté — la source de référence du flagship (la « Taille », la grille, les Stories). */
-const vintageSnapshotMobilite = {
-  vintage_source:
-    "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
-  vintage_version: '2026-02',
-  vintage_date_reference: '2026-02-28',
-  vintage_date_publication: '2026-08-06',
-}
-
 /** L'étage demande — le cube RP exploitation principale (LOG T12). */
 const vintageVoituresMobilite = {
   vintage_source:
@@ -582,45 +564,6 @@ export const indicateursOffreCyclableFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 4913.233, unit: 'km', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
 ]
 
-/** Les clés d'accès publiées du thème (INDICATEURS_MOBILITE) : les 5 parts
- * d'accès directes (trois modes par service), complétées par les 5 parts d'isolation de
- * les 5 parts d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings`
- * porte la taille target-scoped des bâtiments — valeurs réelles du payload
- * reshapé, une ligne par (territoire × key × detail), plus la clé
- * multi-mesures « L'offre cyclable » (issue #232, les lignes
- * d'indicateursOffreCyclableFixture). */
-const CLES_ACCES_MOBILITE_FIXTURE = [
-  'share_food_t', 'share_food_b', 'share_food_c',
-  'share_health_t', 'share_health_b', 'share_health_c',
-  'share_admin_t', 'share_admin_b', 'share_admin_c',
-  'share_school_t', 'share_school_b', 'share_school_c',
-  'share_bank_t', 'share_bank_b', 'share_bank_c',
-] as const
-
-const indicateursAccesMobiliteFixture: Indicateur[] = ([
-  ['22001', 'commune', [0, 0, 1, 0, 0, 1, 0.36, 0.32, 1, 0, 0, 1, 0, 0, 1]],
-  ['200000001', 'epci', [0.610111918604651, 0.549, 1, 0.448648255813954, 0.404, 1, 0.56853125, 0.512, 1, 0.574292151162791, 0.517, 1, 0.299010174418605, 0.269, 1]],
-  ['22', 'departement', [0.613244684728932, 0.552, 1, 0.534464290510596, 0.481, 1, 0.619575392242256, 0.558, 1, 0.621973432278017, 0.56, 1, 0.445400607021031, 0.4, 1]],
-  ['53', 'region', [0.689505131671213, 0.62, 1, 0.611447811255188, 0.55, 1, 0.656679516957644, 0.591, 1, 0.676997853835227, 0.609, 1, 0.497752264261044, 0.448, 1]],
-] as const).flatMap(([territoire, type, values]) =>
-  CLES_ACCES_MOBILITE_FIXTURE.map((key, index) => ({
-    territoire,
-    type,
-    theme: 'mobilite' as const,
-    key,
-    detail: null,
-    value: values[index] ?? null,
-    unit: '%',
-    rang_epci: null,
-    rang_epci_n: null,
-    rang_dep: null,
-    rang_dep_n: null,
-    rang_reg: null,
-    rang_reg_n: null,
-    ...vintageSnapshotMobilite,
-  })),
-)
-
 const indicateursReseauxParHabitantFixture: Indicateur[] = ([
   ['22001', 'commune', [10.93466, 0.009688638, 134.8049]],
   ['22002', 'commune', [12.15354, 0, 34.35351]],
@@ -652,11 +595,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0, unit: "%", rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 0, unit: "bornes", rang_epci: 18, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageBornesMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 0, unit: "places / 1 000 hab", rang_epci: 7, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageStationnementVeloMobilite },
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_alimentation', detail: null, value: 1, unit: "%", rang_epci: 27, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_sante', detail: null, value: 1, unit: "%", rang_epci: 19, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_administration', detail: null, value: 0.640000000000000, unit: "%", rang_epci: 34, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_ecole', detail: null, value: 1, unit: "%", rang_epci: 31, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_banque', detail: null, value: 1, unit: "%", rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.482473250797723, unit: "%", rang_epci: 15, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0552161313870770, unit: "%", rang_epci: 27, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.4623106178152, unit: "%", rang_epci: 21, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
@@ -669,11 +607,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.327643092813083, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 41, rang_reg_n: 61, ...vintageOffreTcMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 17, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 32, rang_reg_n: 61, ...vintageBornesMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 3.91577645725277, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 38, rang_reg_n: 61, ...vintageStationnementVeloMobilite },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_alimentation', detail: null, value: 0.389888081395349, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 30, rang_reg_n: 61, ...vintageSnapshotMobilite },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_sante', detail: null, value: 0.551351744186046, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 41, rang_reg_n: 61, ...vintageSnapshotMobilite },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_administration', detail: null, value: 0.431468750000000, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 41, rang_reg_n: 61, ...vintageSnapshotMobilite },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_ecole', detail: null, value: 0.425707848837209, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 37, rang_reg_n: 61, ...vintageSnapshotMobilite },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.700989825581395, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 47, rang_reg_n: 61, ...vintageSnapshotMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.471139230368514, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 27, rang_reg_n: 61, ...vintageVoituresMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0599463471318512, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 48, rang_reg_n: 61, ...vintageVoituresMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.468914422499635, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 28, rang_reg_n: 61, ...vintageVoituresMobilite },
@@ -685,11 +618,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.446562999011482, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageOffreTcMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 407, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageBornesMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 8.82384784726984, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageStationnementVeloMobilite },
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_alimentation', detail: null, value: 0.386755315271068, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_sante', detail: null, value: 0.465535709489404, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_administration', detail: null, value: 0.380424607757744, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 3, rang_reg_n: 4, ...vintageSnapshotMobilite },
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_ecole', detail: null, value: 0.378026567721983, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.554599392978969, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.422902086572718, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 1, rang_reg_n: 4, ...vintageVoituresMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0946997418501721, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageVoituresMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.48239817157711, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 3, rang_reg_n: 4, ...vintageVoituresMobilite },
@@ -701,11 +629,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.572896439016138, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 1918, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageBornesMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 18.4989387483219, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageStationnementVeloMobilite },
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_alimentation', detail: null, value: 0.310494868328787, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_sante', detail: null, value: 0.388552188744812, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_administration', detail: null, value: 0.343320483042356, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_ecole', detail: null, value: 0.323002146164773, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.502247735738956, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.402229632062882, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.118268000112935, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.479502367824183, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
@@ -713,9 +636,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 'c_longueur', value: 101353.736321719, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 6732.87001274969, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'surface_reseaux_routiers', detail: null, value: 0.015630621893133537, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSurfaceReseauxMobilite },
-  // la douzième clé du thème (issue #232) : la figure « L'offre cyclable » du
-  // sous-bloc — 5 mesures par territoire (indicateursOffreCyclableFixture)
-  ...indicateursAccesMobiliteFixture,
   ...indicateursReseauxParHabitantFixture,
   ...indicateursOffreCyclableFixture,
 ]
@@ -859,19 +779,12 @@ export const indicateursRaccordementFixture: Indicateur[] = [
   ], 'raccordement_reference'),
 ]
 
-/** Les Stories Mobilité (issue #142, RÉSOLUES par #312) — UNE lecture par
- * territoire : le défaut « vingt-minutes-sans-voiture » (div_loss_t + la
- * signature de distribution) pour 22001 / 200000001 / 22 / 53, et — pour la
- * commune saillante 22055 (remappée sur 22002, le delta réel) — la lecture
- * RÉSOLUE « ce-que-le-velo-preserve » : la saillance a REMPLACÉ le défaut, le
- * payload ne porte jamais le pool (ADR-0002). */
-export const histoiresMobiliteFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 38, div_loss_b: 38, delta: 0, pct_iso_full_t: 0.480000000000000, dens_min: 28, dens_max: 47, dens_1: 0.00591500000000000, dens_2: 0.0148690000000000, dens_3: 0.0315630000000000, dens_4: 0.0577150000000000, dens_5: 0.0988470000000000, dens_6: 0.0916830000000000, dens_7: 0.0441880000000000, dens_8: 0.0320730000000000, dens_9: 0.0456240000000000, dens_10: 0.0412520000000000, dec_1: 33.7000000000000, dec_2: 35, dec_3: 37, dec_4: 37, dec_5: 38, dec_6: 39, dec_7: 40, dec_8: 44, dec_9: 46, dec_10: 47, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 35, div_loss_b: 33, delta: 2, pct_iso_full_t: 0.140000000000000, dens_min: 4, dens_max: 52, dens_1: 0.00159400000000000, dens_2: 0.0135920000000000, dens_3: 0.0227140000000000, dens_4: 0.0121260000000000, dens_5: 0.0130840000000000, dens_6: 0.0150800000000000, dens_7: 0.0482170000000000, dens_8: 0.0293260000000000, dens_9: 0.0299690000000000, dens_10: 0.00200800000000000, dec_1: 13, dec_2: 17, dec_3: 27, dec_4: 33, dec_5: 35, dec_6: 37, dec_7: 39, dec_8: 43, dec_9: 47, dec_10: 52, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22', type: 'departement', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 33, div_loss_b: 28, delta: 5, pct_iso_full_t: 0.110000000000000, dens_min: 0, dens_max: 53, dens_1: 0.000664000000000000, dens_2: 0.00899900000000000, dens_3: 0.0158810000000000, dens_4: 0.0145150000000000, dens_5: 0.0204750000000000, dens_6: 0.0219920000000000, dens_7: 0.0232280000000000, dens_8: 0.0283190000000000, dens_9: 0.0251220000000000, dens_10: 0.00512300000000000, dec_1: 11, dec_2: 17, dec_3: 23, dec_4: 28, dec_5: 33, dec_6: 37, dec_7: 41, dec_8: 44, dec_9: 48, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '53', type: 'region', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 29, div_loss_b: 22, delta: 7, pct_iso_full_t: 0.100000000000000, dens_min: 0, dens_max: 53, dens_1: 0.00314500000000000, dens_2: 0.0165130000000000, dens_3: 0.0167950000000000, dens_4: 0.0184880000000000, dens_5: 0.0190630000000000, dens_6: 0.0197990000000000, dens_7: 0.0230430000000000, dens_8: 0.0254610000000000, dens_9: 0.0214220000000000, dens_10: 0.00464500000000000, dec_1: 7, dec_2: 13, dec_3: 19, dec_4: 24, dec_5: 29, dec_6: 34, dec_7: 38, dec_8: 42, dec_9: 47, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', groupe: 'acces-aux-services', salience_reason: 'delta-velo-saillant', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: null, dens_min: 28, dens_max: 47, dens_1: 0.005915, dens_2: 0.014869, dens_3: 0.031563, dens_4: 0.057715, dens_5: 0.098847, dens_6: 0.091683, dens_7: 0.044188, dens_8: 0.032073, dens_9: 0.045624, dens_10: 0.041252, dec_1: 33.7, dec_2: 35, dec_3: 37, dec_4: 37, dec_5: 38, dec_6: 39, dec_7: 40, dec_8: 44, dec_9: 46, dec_10: 47, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
-]
+/**
+ * #1048 slice 3 — les lignes du snapshot porté sont retirées : le thème
+ * Mobilité ne publie plus de lecture résolue. Le symbole reste pour les specs
+ * qui construisent un payload Mobilité, mais il ne porte aucune ligne.
+ */
+export const histoiresMobiliteFixture: Histoire[] = []
 
 /** Le vintage CONSOENAF — le tampon de SA source de référence (manifest #171). */
 const vintageConsoenaf = {
@@ -1607,53 +1520,16 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         label: 'L\u2019accès aux services',
         framing: 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l\u2019offre de transport qui le permet.',
         indicators: [
-           'voitures_menage',
-           'reseaux',
-           'reseaux_par_habitant',
-           'surface_reseaux_routiers',
-           'offre_tc',
+          'voitures_menage',
+          'reseaux',
+          'reseaux_par_habitant',
+          'surface_reseaux_routiers',
+          'offre_tc',
           'bornes_recharge',
           'places_stationnement_velo_1000',
           'offre_cyclable',
-          'iso_alimentation',
-          'iso_sante',
-          'iso_administration',
-          'iso_ecole',
-          'iso_banque',
-          'share_food_t',
-          'share_food_b',
-          'share_food_c',
-          'share_health_t',
-          'share_health_b',
-          'share_health_c',
-          'share_admin_t',
-          'share_admin_b',
-          'share_admin_c',
-          'share_school_t',
-          'share_school_b',
-          'share_school_c',
-       'share_bank_t',
-       'share_bank_b',
-       'share_bank_c',
-       'nb_buildings',
         ],
         figure: { family: 'scalar', indicator: 'offre_cyclable' },
-        reading: {
-          story_key: 'vingt-minutes-sans-voiture',
-          params: ['div_loss_t', 'pct_iso_full_t', 'classification_saillance'],
-          template: [
-            { type: 'text', content: 'Sans voiture, ' },
-            { type: 'param', key: 'div_loss_t' },
-            { type: 'text', content: ' types de services disparaissent de l\u2019accès quotidien de ' },
-            { type: 'territoire' },
-            { type: 'text', content: '. ' },
-            {
-              type: 'link',
-              href: '/sources',
-              children: [{ type: 'text', content: 'Sources' }],
-            },
-          ],
-        },
       },
     ],
     indicator_keys: [
@@ -1665,86 +1541,23 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       'bornes_recharge',
       'places_stationnement_velo_1000',
       'offre_cyclable',
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-      'share_food_t',
-      'share_food_b',
-      'share_food_c',
-      'share_health_t',
-      'share_health_b',
-      'share_health_c',
-      'share_admin_t',
-      'share_admin_b',
-      'share_admin_c',
-      'share_school_t',
-      'share_school_b',
-      'share_school_c',
-      'share_bank_t',
-      'share_bank_b',
-      'share_bank_c',
-      'nb_buildings',
     ],
-    story_keys: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
+    story_keys: [],
     sources: {
-        voitures_menage: 'rp_logement_princ',
-        reseaux: 'amenagements_cyclables',
-        reseaux_par_habitant: 'osm_reseaux',
-        surface_reseaux_routiers: 'ocsge_reseaux_routiers',
+      voitures_menage: 'rp_logement_princ',
+      reseaux: 'amenagements_cyclables',
+      reseaux_par_habitant: 'osm_reseaux',
+      surface_reseaux_routiers: 'ocsge_reseaux_routiers',
       offre_tc: 'korrigo',
       bornes_recharge: 'bornes-recharges',
       places_stationnement_velo_1000: 'stationnement-velo',
       offre_cyclable: 'osm_reseaux',
-      iso_alimentation: 'mobilite_snapshot',
-      iso_sante: 'mobilite_snapshot',
-      iso_administration: 'mobilite_snapshot',
-      iso_ecole: 'mobilite_snapshot',
-      iso_banque: 'mobilite_snapshot',
-      share_food_t: 'mobilite_snapshot',
-      share_food_b: 'mobilite_snapshot',
-      share_food_c: 'mobilite_snapshot',
-      share_health_t: 'mobilite_snapshot',
-      share_health_b: 'mobilite_snapshot',
-      share_health_c: 'mobilite_snapshot',
-      share_admin_t: 'mobilite_snapshot',
-      share_admin_b: 'mobilite_snapshot',
-      share_admin_c: 'mobilite_snapshot',
-      share_school_t: 'mobilite_snapshot',
-      share_school_b: 'mobilite_snapshot',
-      share_school_c: 'mobilite_snapshot',
-       share_bank_t: 'mobilite_snapshot',
-       share_bank_b: 'mobilite_snapshot',
-       share_bank_c: 'mobilite_snapshot',
-       nb_buildings: 'mobilite_snapshot',
     },
     indicator_labels: {
-      iso_alimentation: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
-      iso_sante: 'Part des bâtiments sans accès à la santé (à pied ou en transports en commun)',
-      iso_administration: 'Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)',
-      iso_ecole: 'Part des bâtiments sans accès à l’école (à pied ou en transports en commun)',
-      iso_banque: 'Part des bâtiments sans accès à la banque (à pied ou en transports en commun)',
-      share_food_t: 'Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun',
-      share_food_b: 'Part des bâtiments avec accès à l’alimentation — à vélo',
-      share_food_c: 'Part des bâtiments avec accès à l’alimentation — en voiture',
-      share_health_t: 'Part des bâtiments avec accès à la santé — à pied ou en transports en commun',
-      share_health_b: 'Part des bâtiments avec accès à la santé — à vélo',
-      share_health_c: 'Part des bâtiments avec accès à la santé — en voiture',
-      share_admin_t: 'Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun',
-      share_admin_b: 'Part des bâtiments avec accès aux services administratifs — à vélo',
-      share_admin_c: 'Part des bâtiments avec accès aux services administratifs — en voiture',
-      share_school_t: 'Part des bâtiments avec accès à l’école — à pied ou en transports en commun',
-      share_school_b: 'Part des bâtiments avec accès à l’école — à vélo',
-      share_school_c: 'Part des bâtiments avec accès à l’école — en voiture',
-       share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
-       share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
-       share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
-        nb_buildings: 'Bâtiments résidentiels analysés',
       voitures_menage: 'Voitures par ménage',
-        reseaux: 'Réseaux à pied / vélo / voiture',
-        reseaux_par_habitant: 'Longueur du réseau par habitant',
-        surface_reseaux_routiers: 'Part du territoire consacré aux réseaux routiers',
+      reseaux: 'Réseaux à pied / vélo / voiture',
+      reseaux_par_habitant: 'Longueur du réseau par habitant',
+      surface_reseaux_routiers: 'Part du territoire consacré aux réseaux routiers',
       offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',
       bornes_recharge: 'Bornes de recharge pour véhicules électriques',
       places_stationnement_velo_1000: 'Places de stationnement vélo pour 1 000 hab.',
@@ -1774,11 +1587,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         total_longueur: 'Longueur totale',
       },
     },
-    param_labels: {
-      div_loss_t: 'Types de services perdus à pied ou en transports en commun',
-      pct_iso_full_t: 'Part des bâtiments perdant tout accès',
-      classification_saillance: 'Classification de saillance',
-    },
+    param_labels: {},
   },
   programmes: {
     theme: 'programmes',

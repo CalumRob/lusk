@@ -302,17 +302,9 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   },
 
   // ---- Mobilité (docs/themes/mobilite.md) ----
-  // L'ordre du manifeste (manifest_mobilite.R) : le snapshot porté (l'horloge
-  // lente du flagship, issue #137), les trois sources de l'étage
-  // demande/réseaux (issue #139), puis les quatre sources du sous-bloc
-  // « L'offre de mobilité alternative » (issue #140).
-  mobilite_snapshot: {
-    nom: 'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
-    libelle: 'Snapshot 2026-02',
-    editeur: 'Lusk',
-    url: null,
-    themes: ['mobilite'],
-  },
+  // #1048 slice 3 — la source du snapshot porté est retirée avec ses 29
+  // indicateurs et ses deux lectures. Les sources ci-dessous sont celles
+  // des 17 indicateurs retenus et de l'étage AEDAR.
   rp_logement_princ: {
     nom: 'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',
     libelle: 'Millésime 2023',
