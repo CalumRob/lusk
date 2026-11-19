@@ -107,6 +107,24 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
     assert {declaration.indicator_id for declaration in catalogue.excluded} == expected_excluded
 
 
+def test_retirement_receipts_outside_the_roster_do_not_break_discovery():
+    """#1048 slice 2 keeps the 29 retired Mobility ids as audit-only receipts.
+
+    They are no longer indicator keys, so runtime discovery must tolerate their
+    presence in `scalar_contracts` without advertising them as resources.
+    """
+    catalogue = discover_indicator_resources(METADATA)
+    metadata = json.loads((METADATA / "theme_mobilite.json").read_text(encoding="utf-8"))
+    receipts = [
+        key for key, contract in metadata["scalar_contracts"].items()
+        if contract.get("serving_disposition") == "excluded_legacy_accessibility"
+    ]
+    assert len(receipts) == 29
+    assert all(key not in metadata["indicator_keys"] for key in receipts)
+    assert all(key not in {resource.indicator_id for resource in catalogue.resources}
+               for key in receipts)
+
+
 def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(monkeypatch, tmp_path):
     """Mirror only the producer metadata COPY inputs from api/deploy/Dockerfile."""
     root = Path(__file__).parents[2]

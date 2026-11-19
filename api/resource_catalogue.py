@@ -232,7 +232,17 @@ def _producer_capabilities(metadata, theme_id, indicator_ids):
         if not isinstance(scalar_contracts, dict):
             raise ValueError(f"Invalid producer scalar contracts: {theme_id}")
         for indicator_id, contract in scalar_contracts.items():
-            if not isinstance(indicator_id, str) or indicator_id not in known_indicators:
+            if not isinstance(indicator_id, str) or not isinstance(contract, dict):
+                raise ValueError(
+                    f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
+            # #1048 slice 2 keeps the retired snapshot ids as retirement
+            # receipts in scalar_contracts after removing them from
+            # indicator_keys. They are audit-only declarations, never
+            # discoverable resources: tolerate them here instead of failing
+            # every consumer of the producer catalogue at import time.
+            if indicator_id not in known_indicators:
+                if contract.get("serving_disposition") == "excluded_legacy_accessibility":
+                    continue
                 raise ValueError(
                     f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
             if not isinstance(contract, dict):
