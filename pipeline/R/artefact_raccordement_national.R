@@ -41,14 +41,13 @@ chemin_artefact_raccordement_national <- function() {
 }
 
 # chemin_enveloppe_raccordement ------------------------------------------------
-# Résout le chemin de l'enveloppe à partir de CE QUE LA CIBLE REND (#1070).
-# Depuis #728 la cible `raccordement_<thème>` rend LE CHEMIN DU FICHIER de
-# l'épingle versionnée (format = "file") — plus jamais un répertoire de sortie
-# analytique. Les verrous « données réelles » reçoivent donc tantôt ce chemin
-# de fichier, tantôt un répertoire (les fixtures/appels historiques) : on
-# n'ajoute le nom de fichier QUE dans le second cas. La confusion — traiter le
-# fichier comme une base de répertoire — produisait le jointure fallacieuse
-# `raccordement_national_outbound_v1.rds/raccordement_mobilite.rds`.
+# L'UNIQUE implémentation de la règle de nom de l'épingle (issue #1070) : reçoit
+# un répertoire OU le chemin de l'épingle déjà résolu, rend le fichier. Depuis
+# #728 la cible `raccordement_<thème>` rend LE CHEMIN DU FICHIER (format = "file")
+# — plus jamais un répertoire analytique. C'est LE LECTEUR
+# (lire_artefact_raccordement_national) qui appelle ce résolveur à la frontière :
+# aucun appelant n'a à refaire la règle, donc personne ne peut reconstruire le
+# jointure fallacieuse `..._outbound_v1.rds/raccordement_mobilite.rds`.
 chemin_enveloppe_raccordement <- function(sortie = NULL) {
   if (is.null(sortie) || !nzchar(sortie)) {
     return(chemin_artefact_raccordement_national())
@@ -166,7 +165,10 @@ verifier_contrat_artefact_raccordement_national <- function(
 
 lire_artefact_raccordement_national <- function(
     chemin_enveloppe = NULL, chemin_matrice = NULL) {
-  if (is.null(chemin_enveloppe)) chemin_enveloppe <- chemin_artefact_raccordement_national()
+  # Normalisation À LA FRONTIÈRE : répertoire de sortie ou fichier rendu par la
+  # cible format = "file" — un seul résolveur, jamais une règle dupliquée chez
+  # l'appelant (issue #1070).
+  chemin_enveloppe <- chemin_enveloppe_raccordement(chemin_enveloppe)
   if (is.null(chemin_matrice)) chemin_matrice <- chemin_matrice_raccordement_national()
   if (!file.exists(chemin_enveloppe) || !file.exists(chemin_matrice))
     stop("National raccordement envelope or pinned matrix is missing.", call. = FALSE)
