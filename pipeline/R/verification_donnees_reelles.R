@@ -169,6 +169,10 @@ COUVERTURE_DOREE_RACCORDEMENT <- list(
   raccordement_reference = c(communes = 0L, epcis = 0L,
                              departements = 0L, region = 73L)
 )
+# Une seule valeur par fait, à une seule tolérance documentée : t90 vit dans
+# ANCRE_DOREE_90 (tolérance 1e-6, suffisante pour 56014 piné à 7 décimales), et
+# ANCRE_DOREE_COURBE ne retient que les points HORS t90 (tolérance 1e-9).
+# Aucun Combourg dupliqué entre les deux jeux.
 ANCRE_DOREE_MEDIANE_90 <- 0.03604382829328254
 ANCRE_DOREE_90 <- c(
   "22001" = 0,                   # zéro structurel : aucun arrêt modèle
@@ -180,12 +184,10 @@ ANCRE_DOREE_90 <- c(
 )
 ANCRE_DOREE_COURBE <- list(
   "35085" = c(`30` = 0.08970913529137, `60` = 0.20498496826957,
-              `90` = 0.31532250816816, `180` = 0.66187361750117,
-              `360` = 0.84866250938577),
+              `180` = 0.66187361750117, `360` = 0.84866250938577),
   "35238" = c(`30` = 0.206793704358, `60` = 0.325023120164,
-              `90` = 0.437721960822, `180` = 0.776491649200,
-              `360` = 0.848911830276),
-  "22001" = c(`30` = 0, `60` = 0, `90` = 0, `180` = 0, `360` = 0)
+              `180` = 0.776491649200, `360` = 0.848911830276),
+  "22001" = c(`30` = 0, `60` = 0, `180` = 0, `360` = 0)
 )
 
 verifier_raccordement_reel <- function(artefact, payload) {
