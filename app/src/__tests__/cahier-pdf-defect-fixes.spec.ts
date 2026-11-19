@@ -11,7 +11,7 @@ import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import { LARGEUR_CORPS_PT, PADDING_SECTION_PT, PAGE_APPROUVEE } from '@/fiche/prototype/cahierPdfGrammaire'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { chargeurPoliceTest, lirePdf, cheminsPdf } from './helpers/cahierPdfRuntime'
-import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import { capturePdfFixture, captureProfilRangsDense } from './helpers/cahierPdfFixtures'
 
 const CORPS_CENTRE = PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT + LARGEUR_CORPS_PT / 2
 
@@ -91,4 +91,30 @@ describe('corrections de la revue données réelles (#1024)', () => {
       expect(Math.abs((gauche + droite) / 2 - CORPS_CENTRE), key).toBeLessThan(20)
     }
   }, 120000)
+
+  it('5. le graphique réseaux reste centré sous la rangée de cartes pleine largeur', async () => {
+    const lecture = await generate(capturePdfFixture('reseaux'))
+    const paths = await cheminsPdf(lecture.octets, 1)
+    // The bar chart's own plot grid: long horizontal strokes below the map row.
+    const grille = paths.filter((p) => p.kind === 'stroke' && p.height < 1
+      && p.width > 100 && p.width < 400 && p.y > 560 && p.y < 700)
+    expect(grille.length, 'plot grid lines').toBeGreaterThan(0)
+    const centre = (Math.min(...grille.map((p) => p.x)) + Math.max(...grille.map((p) => p.x + p.width))) / 2
+    expect(Math.abs(centre - CORPS_CENTRE)).toBeLessThan(2)
+  })
+
+  it('6. a served 18.1 percent fraction is painted as 18,1, never 181,1', async () => {
+    // Literal served fraction from the real 35238 / G103 API row.
+    const formatte = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 })
+      .format(0.181).replace(/\s/g, ' ')
+    expect(formatte).toBe('18,1 %')
+    const capture = captureProfilRangsDense()
+    const lecture = await generate(capture)
+    const pourcents = lecture.textes.filter((item) => /^\d+(?:[.,]\d+)?\s*%$/.test(item.str.trim()))
+      .map((item) => parseFloat(item.str.trim().replace(',', '.')))
+    expect(pourcents.length).toBeGreaterThan(0)
+    // The waffle reader only receives fractions in [0, 1]: no painted
+    // percentage may exceed 100 unless the served value itself does.
+    for (const valeur of pourcents) expect(valeur).toBeLessThanOrEqual(100)
+  })
 })

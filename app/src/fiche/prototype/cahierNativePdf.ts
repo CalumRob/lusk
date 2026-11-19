@@ -163,6 +163,11 @@ ${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}p
 ${scope} .figure-spread:not(.figure-spread--paired) { grid-template-columns:minmax(0,1fr)!important; column-gap:0!important; justify-items:center!important }
 ${scope} .figure-spread:not(.figure-spread--paired) > .argument-side { display:none!important }
 ${scope} .figure-spread--paired { justify-content:center!important }
+/* The Mobilité delegate owns the same copy/figure split under another shared
+   class. Collapse it by the same rule so the remaining figure is centred in
+   the body, never parked in the right-hand grid slot of hidden prose. */
+${scope} .mobilite-section-spread { grid-template-columns:minmax(0,1fr)!important; justify-items:center!important }
+${scope} .mobilite-section-spread > .mobilite-section-copy { display:none!important }
 ${neutral}
 ${hidden}
 ${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { display:none!important }` : ''}`
