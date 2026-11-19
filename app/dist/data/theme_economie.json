@@ -152,7 +152,7 @@
       "url": "https://www.insee.fr/fr/statistiques/8266010",
       "licence": "Licence Ouverte 2.0",
       "vintage": "2024",
-      "freshness": "27 août 2026",
+      "freshness": "31 mars 2026",
       "vintages": [
         {
           "id": "flores_a88",
@@ -160,7 +160,7 @@
           "version": "2024",
           "licence": "Licence Ouverte 2.0",
           "dateReference": "2024-01-01",
-          "datePublication": "2026-08-27"
+          "datePublication": "2026-03-31"
         }
       ]
     },
@@ -187,16 +187,16 @@
       "publisher": "INSEE",
       "url": "https://data.bretagne.bzh/explore/dataset/sirene-v3-consolidee/",
       "licence": "Licence Ouverte 2.0",
-      "vintage": "Snapshot 2026-10",
-      "freshness": "18 novembre 2026",
+      "vintage": "Snapshot 2026-04",
+      "freshness": "avril 2026",
       "vintages": [
         {
           "id": "sirene_snapshot",
-          "label": "Snapshot 2026-10",
-          "version": "2026-10",
+          "label": "Snapshot 2026-04",
+          "version": "2026-04",
           "licence": "Licence Ouverte 2.0",
-          "dateReference": "2026-09-30",
-          "datePublication": "2026-11-18"
+          "dateReference": "2026-04-01",
+          "datePublication": "2026-04-01"
         }
       ]
     }
