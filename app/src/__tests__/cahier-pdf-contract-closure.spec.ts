@@ -15,7 +15,7 @@ import { composerCahierPdf, PAIRE_TABLEAUX_PT, mesurePdfProduction } from '@/fic
 import { ROLE_PDF, LARGEUR_CORPS_PT, LARGEUR_FIGURE_STANDARD_PT, PADDING_SECTION_PT, PAGE_APPROUVEE, ptDepuisCssPx } from '@/fiche/prototype/cahierPdfGrammaire'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import { CAHIER_FIGURE_ROW, figureRowLayout } from '@/fiche/prototype/cahierFigureNativeGeometry'
-import { figureRowGeometry } from '@/fiche/prototype/cahierFigureNativeGeometry'
+import { figureRowGeometry } from './helpers/cahierPdfFigureRow'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'

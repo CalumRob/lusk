@@ -729,7 +729,11 @@ export function projectOverview(
     }
   })
   const columns: CahierTableColumn[] = [
-    { key: 'value', label: figure.model.scalarFigureTitle, unit: null, kind: 'focal', seriesKey: null },
+    // The approved generator prints the figure title once as the caption and
+    // uses the focal territory as this column's header (`rennes.js`:
+    // `heading(scalarFigureTitle)` then `['Mesure', 'Rennes', ...]`). Using the
+    // caption here would print the same owner string twice in a row.
+    { key: 'value', label: capture.identity.territory.name, unit: null, kind: 'focal', seriesKey: null },
     ...(comparisonDisplayed ? [{
       key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: null, kind: 'comparison' as const, seriesKey: null,
     }] : []),

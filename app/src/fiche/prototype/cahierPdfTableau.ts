@@ -276,22 +276,12 @@ export function construireTableauxPdf(
   options: OptionsTableauPdf,
 ): readonly TableauPdfPart[] {
   const { mesure, largeurDisponible, nomTerritoire } = options
-  // The approved generator prints the figure/caption string once and uses the
-  // focal territory as that column's header (`rennes.js`: heading(title) then
-  // `['Mesure', 'Rennes', ...]`). When an adapter supplies the caption itself as
-  // a column label, the two would print twice in a row. Dedupe generically: use
-  // the territory identity for that column instead of repeating the caption.
-  const colonnesEffectives = table.columns.map((column) => (
-    nomTerritoire !== null && column.label === table.title
-      ? { ...column, label: nomTerritoire }
-      : column
-  ))
   /** Explicit approved shape: adapters declare it; the PDF never infers it. */
   const grouped = table.layout === 'grouped'
   /** Approved flat shape A: the generator's fixed `colgroup` percentages. */
   const colgroupFixe = table.colgroup === 'access-approved'
   /** Any series/legend-key grouping means a split may only cut whole groups. */
-  const groupable = colonnesEffectives.some((column) => (
+  const groupable = table.columns.some((column) => (
     column.groupLabel != null || column.seriesKey !== null
   ))
   if (table.columns.length === 0) {
@@ -325,13 +315,13 @@ export function construireTableauxPdf(
   // value/rank exists, it stays visible as `Indisponible` but is not proof:
   // no subtitle/footer/`¹` marker claims a comparison that was not served.
   const comparisonKeys = new Set(
-    colonnesEffectives.filter((column) => column.kind === 'comparison').map((column) => column.key),
+    table.columns.filter((column) => column.kind === 'comparison').map((column) => column.key),
   )
   const comparatifProuve = table.rows.some((row) => row.cells.some((cell) => (
     comparisonKeys.has(cell.columnKey) && (cell.value !== null || cell.rankDisplay !== null)
   )))
 
-  const avecComparaison = colonnesEffectives.some((column) => column.kind === 'comparison')
+  const avecComparaison = table.columns.some((column) => column.kind === 'comparison')
   const largeurLibelle = !colgroupFixe
     ? Math.min(
       36,
@@ -351,7 +341,7 @@ export function construireTableauxPdf(
   // The flat approved shape (A) prints its single header row in the mode role;
   // the grouped shape (B) keeps the smaller legend-role sub-header.
   const roleEntete = grouped ? ROLE_PDF.enteteTableauSous : ROLE_PDF.enteteTableauMode
-  const groupesOrdonnes = groupesSource(ordonnerColonnes(colonnesEffectives, groupable), groupable)
+  const groupesOrdonnes = groupesSource(ordonnerColonnes(table.columns, groupable), groupable)
   const groupeParCle = new Map<string, string>()
   const libelleGroupe = new Map<string, { label: string; color: string | null }>()
   groupesOrdonnes.forEach((groupe, index) => {

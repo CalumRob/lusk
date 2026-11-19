@@ -97,6 +97,15 @@ describe('plaque cartographique et légende de tableau (#1024)', () => {
     expect(entetes).not.toContain(caption)
     expect(entetes).toContain(capture.identity.territory.name)
 
+    // The dedupe belongs to the owner: the grammar never rewrites any label by
+    // a title match, so a comparison/series column keeps its own header.
+    const compare: any = structuredClone(table)
+    compare.columns[1].label = compare.title
+    const compareParts = construireTableauxPdf(compare, {
+      mesure, largeurDisponible: 180, nomTerritoire: capture.identity.territory.name, ownerDisplayed: true,
+    })
+    expect(compareParts[0]!.columns.some((column) => column.headerLines.join(' ') === compare.title)).toBe(true)
+
     const lecture = await generate(capture)
     const titre = 'En voiture en 15 minutes (moyenne par adresse)'
     // Figure caption + one table caption, but no third identical header line.
