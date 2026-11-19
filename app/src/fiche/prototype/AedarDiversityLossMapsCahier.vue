@@ -123,12 +123,13 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
       <CahierProse :blocks="[props.evidence.mapFigureTitle]" />
     </figcaption>
 
-    <div class="aedar-diversity-loss__layout">
+    <div class="aedar-diversity-loss__layout" data-cahier-export-layout="spread">
       <div class="aedar-diversity-loss__comparisons">
         <section
           v-for="group in comparisonGroups"
           :key="group.key"
           class="aedar-diversity-loss__comparison-row"
+          data-cahier-export-layout="spread"
           role="group"
           :aria-label="group.label"
         >

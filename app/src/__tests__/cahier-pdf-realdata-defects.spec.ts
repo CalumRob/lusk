@@ -47,6 +47,23 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(legend).toContain('\\u202f')
   })
 
+  it('scopes export reflow to owner-declared layout containers only', () => {
+    const surface = read('src/fiche/prototype/cahierExportSurface.ts')
+    const native = read('src/fiche/prototype/cahierNativePdf.ts')
+    expect(surface).toContain("layoutHook: 'data-cahier-export-layout'")
+    expect(surface).toMatch(/\[\$\{surface\.layoutHook\}/u)
+    expect(surface).toMatch(/repeat\(\$\{visible\.length\}/u)
+    expect(native).toContain('reflowVisibleFigureTracks(root)')
+    // Exactly one mechanism: no layout class-name rule remains in the shell.
+    expect(native).not.toContain('figure-spread')
+    expect(native).not.toContain('mobilite-section-spread')
+    // Declared by the owning components, never by an internal figure grid.
+    for (const file of ['VarianteCahierLibre.vue', 'CahierMobiliteSection.vue',
+      'AedarDiversityLossMapsCahier.vue', 'CahierAedarAccessSection.vue']) {
+      expect(read(`src/fiche/prototype/${file}`), file).toContain('data-cahier-export-layout')
+    }
+  })
+
   it('keeps the row-dimension header on the measured subheader block', () => {
     const composer = read('src/fiche/prototype/cahierPdfComposer.ts')
     // The row dimension used to be centred across the group band + subheader

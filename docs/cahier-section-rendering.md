@@ -293,6 +293,21 @@ legend labels, scalar labels and figure-attached reading notes keep their own
 roles and are not hidden. A drift test fails if a listed producer selector
 disappears. The screen router owns the shared route identities
 (`CAHIER_EXPORT_ROUTES` is exported from `src/router/index.ts`), and the
+**Export layout contract (#1025).** The section *layout* container — the one
+that holds prose beside its figure(s) — declares
+`data-cahier-export-layout="spread"`. It is declared by the owning component,
+never on an internal figure grid (a waffle's tile grid, a plot's own grid). The
+export shell's single reflow pass visits only containers carrying that
+attribute: it drops the authored prose column, collapses the now-unused tracks
+to the visible figure children, centres the block and pins each figure child to
+its measured pre-reflow width so nothing stretches or shrinks. No layout class
+name participates and there is one mechanism only. Declarations: the five AEDAR
+section bodies and the Mobilité `mobilite-section-spread` wrappers; the stacked
+`mobilite-section-stack` (curve) legitimately declares none (its prose is not a
+side-by-side column); the diversity-loss layout and comparison rows and the access evidence
+grid declare it on their inner container. The stationnement `mobilite-paired`
+row legitimately does not: it has no prose column, only two side-by-side figures.
+
 standard figure width and desktop viewport constants come from their figure
 owners.
 

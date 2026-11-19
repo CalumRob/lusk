@@ -48,7 +48,7 @@ import {
 import { communeMembers } from './helpers/cahierExportFixtures'
 import {
   capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense,
-  captureRampeDense, captureBarresDense,
+  captureRampeDense, captureBarresDense, captureBarresContinuation,
 } from './helpers/cahierPdfFixtures'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
 
@@ -139,7 +139,12 @@ describe('compositeur PDF Cahier — matrice des neuf sections', () => {
 describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
 
   it('audite les barres comparées et rangs de réseaux, page par page', async () => {
-    const { lecture } = await generer(requetePour('reseaux'), 'audit-reseaux.pdf')
+    // Dense stand-in matching the real section's table density: its value table
+    // continues onto the last page, which must repeat the title and identity.
+    const captureDense = captureBarresContinuation()
+    const projectionDense = projeterRequeteExport(captureDense, [])
+    if (projectionDense.status !== 'ready') throw new Error(projectionDense.reason)
+    const { lecture } = await generer(projectionDense.request, 'audit-reseaux.pdf')
     expect(lecture.pages).toBeGreaterThanOrEqual(1)
     contientTout(lecture, [
       'Le partage de l’espace public',
@@ -160,17 +165,17 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     ])
     // Rank text is a second line under its value; the row stays one table row.
     expect(lecture.lignes.some((candidate) => candidate.texte.includes('2e/2'))).toBe(true)
-    // A continuation repeats the section identity, column header and sources.
-    if (lecture.pages > 1) {
-      const pageDerniere = lecture.lignes.filter((ligne) => ligne.page === lecture.pages).map((ligne) => ligne.texte).join(' ')
-      contientTout({ ...lecture, texteComplet: pageDerniere } as LecturePdf, [
-        'COMMUNE A1',
-        'Longueur du réseau par habitant',
-        'Groupe comparé',
-        'Source(s) : OpenStreetMap',
-        `${lecture.pages} / ${lecture.pages}`,
-      ])
-    }
+    // The dense fixture must actually continue onto a second page, like the
+    // real section: that continuation repeats the table title and identity.
+    expect(lecture.pages).toBeGreaterThan(1)
+    const pageDerniere = lecture.lignes.filter((ligne) => ligne.page === lecture.pages).map((ligne) => ligne.texte).join(' ')
+    contientTout({ ...lecture, texteComplet: pageDerniere } as LecturePdf, [
+      'COMMUNE A1',
+      'Longueur du réseau par habitant',
+      'Groupe comparé',
+      'Source(s) : OpenStreetMap',
+      `${lecture.pages} / ${lecture.pages}`,
+    ])
     // Every page that carries comparative proof carries the footer, with the
     // owner's actual comparison sentence (its statistic AND its cohort, once).
     // The note is page-local: a page carries it exactly once when that page

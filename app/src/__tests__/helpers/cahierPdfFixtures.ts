@@ -467,6 +467,31 @@ export function captureBarresDense(): CahierExportCapture {
 }
 
 /**
+ * A dense stand-in for the real `réseaux` section: production serves several
+ * network measures and raw rows, so its value table continues onto the last
+ * page and repeats its title. The base fixture's three categories fit on one
+ * page and encoded the old one-page layout; these extra producer-shaped
+ * categories make the fixture a faithful stand-in without touching the audit.
+ */
+export function captureBarresContinuation(): CahierExportCapture {
+  const capture: any = structuredClone(capturePdfFixture('reseaux'))
+  const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
+  if (!figure) throw new Error('Fixture PDF : la famille mobilite-bars est requise.')
+  const categories = figure.model.figure.categories as any[]
+  const template = categories[0]!
+  for (const [suffix, value] of [['pieton-longueur', 12.4], ['velo-longueur', 8.6], ['voiture-longueur', 21.3]] as const) {
+    categories.push({
+      ...structuredClone(template),
+      key: suffix,
+      label: `Réseau ${suffix} (valeur brute)`,
+      value: { ...structuredClone(template.value), fact: { ...template.value.fact, value } },
+      rawValue: null,
+    })
+  }
+  return capture as CahierExportCapture
+}
+
+/**
  * A coherent synthetic equipment profile. The 40 (or N) rows are explicitly
  * synthetic equipment labels, but their accessibility buckets and mode order
  * come from the published AEDAR owners (`AEDAR_EQUIPMENT_BUCKET_ORDER`,
@@ -616,7 +641,7 @@ export function captureRampeRangs(): CahierExportCapture {
  * distribution) and producer-shaped comparison cells carrying served ranks.
  * This is the populated two-tables/continuation fixture.
  */
-export function captureExplorerRangs(): CahierExportCapture {
+export function captureExplorerRangs(options: { compact?: boolean } = {}): CahierExportCapture {
   const capture: any = structuredClone(capturePdfFixture('aedar-equipment-explorer', {
     publications: [
       ...readyPublications('aedar-equipment-explorer'),
@@ -626,7 +651,11 @@ export function captureExplorerRangs(): CahierExportCapture {
   const figure = capture.figures.find((candidate: any) => candidate.family === 'aedar-equipment-explorer')
   const typequ = figure.effective.typequ as string
   const modes = figure.effective.modes as readonly string[]
-  const statistics = figure.model.distributionStatistics as readonly { key: string }[]
+  // A compact stand-in with fewer served statistics for the approved compact
+  // case (one sheet); the dense case keeps every published statistic.
+  const statistics: readonly { key: string }[] = options.compact
+    ? (figure.model.distributionStatistics as readonly { key: string }[]).slice(0, 3)
+    : figure.model.distributionStatistics
   const fact = figure.model.facts.find((candidate: any) => candidate.typequ === typequ)
   if (!fact) throw new Error('Fixture PDF : fait focal introuvable pour les rangs.')
   const source = {

@@ -592,6 +592,7 @@ onBeforeUnmount(() => {
                 :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
+                :data-cahier-export-layout="rendererFor(section).exportLayout"
               >
                 <div
                   v-if="rendererFor(section).argument && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"

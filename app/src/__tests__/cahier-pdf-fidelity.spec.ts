@@ -218,7 +218,7 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
 
   // RETIRED (#1024 native switch): Pins the deleted painter's measured glyph/raster geometry; native DOM paint owns those boxes now.
   it('garde une terminaison compacte et une continuation sans réduction globale', async () => {
-    const base = captureExplorerRangs()
+    const base = captureExplorerRangs({ compact: true })
     const compact = await generer(base, [base.capabilities.selectableSeries[0]!.id])
     expect(compact.lecture.pages).toBe(1)
     // The dense two-table document is the measured continuation: both value
