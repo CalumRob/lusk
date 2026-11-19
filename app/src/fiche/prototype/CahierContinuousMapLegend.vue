@@ -13,7 +13,10 @@ const props = defineProps<{
   ariaLabel?: string
 }>()
 
-const tickFormatter = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
+// Same visible grouping as the shared ramp formatter: a normal space survives
+// the DOM-to-PDF glyph painting, U+202F does not.
+const tickFormatter = { format: (value: number) =>
+  new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value).replace(/\u202f|\u00a0/gu, ' ') }
 const labels = computed(() => props.tickLabels ?? props.ticks?.map((tick) => tickFormatter.format(tick)) ?? [])
 const accessibleLabel = computed(() => props.ariaLabel ?? [
   props.title.replace(/\*$/, ''),
@@ -52,8 +55,10 @@ const accessibleLabel = computed(() => props.ariaLabel ?? [
 </template>
 
 <style scoped>
-.cahier-map-legend { display: grid; gap: 4px; width: 100%; margin: 0; }
-.cahier-map-legend__title { margin: 0; text-align: center; }
+/* One measured band: the wrap, ramp, ticks and note keep their own line boxes
+   instead of being pressed against the plate edge when the figure is narrow. */
+.cahier-map-legend { display: grid; gap: 6px; width: 100%; margin: 0; }
+.cahier-map-legend__title { margin: 0; text-align: center; line-height: 1.35; }
 .cahier-map-legend__ramp { display: flex; height: 8px; overflow: hidden; border-radius: 4px; }
 .cahier-map-legend__swatch { flex: 1 1 0; }
 .cahier-map-legend__swatch--first { border-radius: 4px 0 0 4px; }

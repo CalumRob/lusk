@@ -139,16 +139,40 @@ async function audit(file, key) {
   const pages = []
   let allText = ''
   let imageXObjects = 0
+  let overlappingTextPairs = 0
   const links = []
   for (let index = 1; index <= pdf.numPages; index += 1) {
     const pdfPage = await pdf.getPage(index)
-    allText += ' ' + ((await pdfPage.getTextContent()).items).map((item) => item.str ?? '').join(' ')
+    const items = (await pdfPage.getTextContent()).items.filter((item) => item.str?.trim())
+    allText += ' ' + items.map((item) => item.str ?? '').join(' ')
+    // Two runs on the same baseline must not overprint each other. A narrow
+    // separator painted at its DOM advance but advanced by the embedded face's
+    // glyph width used to hide the comma/thin space by overprinting the next
+    // digit; this guard fails on that class of defect.
+    const boxes = items.map((item) => ({
+      str: item.str,
+      x: item.transform[4],
+      y: item.transform[5],
+      w: item.width,
+      h: Math.abs(item.transform[3]),
+    }))
+    for (let a = 0; a < boxes.length; a += 1) {
+      for (let b = a + 1; b < boxes.length; b += 1) {
+        const left = boxes[a], right = boxes[b]
+        if (Math.abs(left.y - right.y) > Math.max(left.h, right.h) * 0.5) continue
+        const overlap = Math.min(left.x + left.w, right.x + right.w) - Math.max(left.x, right.x)
+        if (overlap > 0.6) overlappingTextPairs += 1
+      }
+    }
     const operators = await pdfPage.getOperatorList()
     imageXObjects += operators.fnArray.filter((fn) => fn === OPS.paintImageXObject).length
     for (const annotation of await pdfPage.getAnnotations()) if (annotation.url) links.push(annotation.url)
     const viewport = pdfPage.getViewport({ scale: 1 })
     pages.push({ page: index, widthPt: Math.round(viewport.width), heightPt: Math.round(viewport.height) })
   }
+  // Native French grouping uses U+202F; jsPDF maps it to a plain space in the
+  // text layer. The separated forms must survive, never the collapsed digits.
+  const collapsedGrouping = ['6440', '12881', '12081'].filter((value) => allText.includes(value))
   // Only Lusk site links must use the canonical public host. External source
   // attributions are owner-owned and preserved verbatim, not treated as drift.
   const siteLinks = links.filter((url) => /lusk\./i.test(url))
@@ -163,6 +187,9 @@ async function audit(file, key) {
     hasRank: allText.includes('Rang'),
     replacementGlyph: allText.includes('\ufffd'),
     imageXObjects,
+    overlappingTextPairs,
+    collapsedGrouping,
+    separatorsPreserved: collapsedGrouping.length === 0,
     siteLinkCount: siteLinks.length,
     canonicalHostOnly: siteLinks.length > 0 && siteLinks.every((url) => hostOf(url) === canonicalHost),
     sourceLinkHosts: [...new Set(links.filter((url) => !/lusk\./i.test(url)).map(hostOf))],
