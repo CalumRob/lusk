@@ -205,6 +205,7 @@ useCahierExportPublication(() => ({
       unavailable: unavailableInlineModes.value.has(mode.key),
       // The plate draws the inline asset; the inspection gallery is not export content.
       inlineUrl: mapUrl(mode.key),
+      bytes: inlineMapBytes.get(mode.key),
     })),
     legend: 'none',
     legendDetail: null,
@@ -242,7 +243,11 @@ const unavailableInlineModes = ref(new Set<ModeKey>())
 const loadedInlineModes = ref(new Set<ModeKey>())
 const unavailableInspectionModes = ref(new Set<ModeKey>())
 const failedInspectionMode = ref<ModeKey | null>(null)
-function inlineLoaded(mode: ModeKey): void { loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode) }
+const inlineMapBytes = new Map<ModeKey, ArrayBuffer>()
+function inlineLoaded(mode: ModeKey, bytes: ArrayBuffer | null): void {
+  loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode)
+  if (bytes) inlineMapBytes.set(mode, bytes)
+}
 function inlineFailed(mode: ModeKey): void { unavailableInlineModes.value = new Set([...unavailableInlineModes.value, mode]) }
 function inspectionFailed(key: string): void {
   if (!isModeKey(key)) return
@@ -296,7 +301,7 @@ async function inspect(mode: ModeKey): Promise<void> {
             :cycling="mode.key === 'bike'"
             @focus="setActiveMode(mode.key)"
             @blur="clearActiveMode"
-            @loaded="inlineLoaded(mode.key)"
+            @loaded="inlineLoaded(mode.key, $event)"
             @unavailable="inlineFailed(mode.key)"
             @inspect="inspect(mode.key)"
           />

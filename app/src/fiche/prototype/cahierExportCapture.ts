@@ -522,6 +522,12 @@ export type CahierCaptureFigure =
 
 export interface CahierExportCapture {
   readonly nativeRender?: import('./cahierNativeRenderContext').CahierNativeRenderInput
+  /** The reader's current equipment/horizon selection, frozen for the export. */
+  readonly nativeSelection?: {
+    readonly typequ: string | null
+    readonly horizonMinutes: import('@/fiche/content/aedarEquipmentBuckets').AedarEquipmentHorizon | null
+    readonly modes: readonly AedarRampMode[]
+  }
   readonly identity: CahierCaptureIdentity
   readonly generation: CahierCaptureGeneration
   readonly readiness: CahierCaptureReadiness
@@ -640,8 +646,14 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus ?? 'unobserved')
     : null
+  const explorer = publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
+  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
+    ? explorer.state.state.typequ ?? null
+    : null
   const capture: CahierExportCapture = {
     ...(input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
+    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
+      modes: [...(input.aedar?.modes ?? [])] },
     identity: {
       sectionKey: section.key,
       evidenceKind: evidence?.kind ?? null,
@@ -1358,17 +1370,23 @@ function captureFigures(options: {
 
 export function projeterRequeteExport(
   capture: CahierExportCapture,
-  modes: readonly string[],
+  requestedModes?: readonly string[],
 ): CahierExportProjection {
   const offered = capture.capabilities.selectableSeries
+  // No argument means "use the single frozen selection" (figure + tables).
+  // An explicit empty choice on a chooser-bearing section stays invalid.
+  const modes = requestedModes === undefined ? (capture.nativeSelection?.modes ?? [])
+    : requestedModes.length ? [...requestedModes]
+      : (offered.length === 0 ? (capture.nativeSelection?.modes ?? []) : [])
   if (offered.length === 0) {
-    if (modes.length > 0) {
+    if ((requestedModes?.length ?? 0) > 0) {
       return invalidProjection('unknown-mode',
         'Cette section ne propose aucune série à choisir pour le PDF.')
     }
     return {
       status: 'ready',
-      request: Object.freeze({ capture, modes: Object.freeze([]), modeIds: Object.freeze([]) }),
+      request: Object.freeze({ capture, modes: Object.freeze(offered.filter((item) => (modes as readonly string[]).includes(item.id))),
+        modeIds: Object.freeze([...modes]) }),
     }
   }
   if (modes.length === 0) {

@@ -1,5 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { CAHIER_EXPORT_ROUTES } from '../fiche/prototype/cahierExportRoutes'
+
+/** Route identities shared with the inert export router (the router owns them). */
+export const CAHIER_EXPORT_ROUTES = {
+  indicateurs: '/indicateurs',
+  indicateur: '/indicateurs/:theme/:indicator',
+  territoire: '/territoire/:type/:id',
+} as const
 
 import AccueilView from '../views/AccueilView.vue'
 import AProposView from '../views/AProposView.vue'

@@ -15,7 +15,7 @@
 import type { jsPDF } from 'jspdf'
 
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
-import { CAHIER_EXPORT_PUBLIC_URL } from './cahierExportUrls'
+import { urlAccueilDepuisEnvironnement, urlPubliqueDepuisEnvironnement } from './cahierExportUrls'
 
 import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK, sommetErmineEm } from '@/components/luskBrandMark'
 
@@ -84,8 +84,6 @@ export type GenerateurCahierPdf = CahierPdfGenerator
 export interface OptionsCompositionCahierPdf {
   readonly signal: AbortSignal
   readonly chargerPolice?: ChargeurPolicePdf
-  /** @deprecated Ignored by the native path; captured maps are read as settled bytes. */
-  readonly chargerImage?: (...args: readonly any[]) => any
   /** Live territory/section URL; defaults to the current location when present. */
   readonly urlPublique?: string | null
   /** Home URL for the brand lockup; defaults to the current origin. */
@@ -313,10 +311,7 @@ export async function enregistrerPolices(
 }
 
 function urlParDefaut(capture: CahierExportCapture, hash: string): string | null {
-  const url = new URL(`/territoire/${capture.identity.territory.type}/${capture.identity.territory.code}`,
-    CAHIER_EXPORT_PUBLIC_URL)
-  url.hash = hash
-  return url.href
+  return urlPubliqueDepuisEnvironnement(capture, hash)
 }
 
 function nomFichier(capture: CahierExportCapture): string {
@@ -638,14 +633,14 @@ function assemblerPages(
 
   const blocks: BlocPdf[] = []
   const proved = nativeBodies.length ? projections.filter((projection) => preuveFigureComparative(projection, capture)) : []
-  for (const [index, body] of nativeBodies.entries()) {
+  for (const body of nativeBodies) {
     if (!Number.isFinite(body.heightPt) || body.heightPt <= 0 || mm(body.heightPt) > disponibles
       || !Number.isFinite(body.widthPt) || body.widthPt <= 0 || body.widthPt > LARGEUR_CORPS_PT + .1) {
       throw new CahierPdfCompositionError('layout', 'Un bloc natif ne tient pas sur une page à l’échelle fixe.')
     }
     blocks.push({ kind: 'native-figure', body, height: mm(body.heightPt), gapAvant: 0,
-      hasProof: index === 0 && proved.length > 0,
-      proofLabels: index === 0 ? proved.flatMap((projection) => libelleComparaisonProjection(projection) ?? []) : [] })
+      hasProof: body.carriesComparison && proved.length > 0,
+      proofLabels: body.carriesComparison ? proved.flatMap((projection) => libelleComparaisonProjection(projection) ?? []) : [] })
   }
   const messagesVus = new Set<string>()
   for (const projection of projections) {
@@ -1437,9 +1432,10 @@ export async function composerCahierPdf(request: CahierExportRequest,
   } catch (error) {
     // The controller only relies on `CahierPdfCompositionError.code`; keep that
     // contract when the shared native path refuses a request.
-    const { CahierNativePdfError, codeErreurNativePdf } = await import('./cahierNativePdf')
+    const { CahierNativePdfError, codeErreurNativePdf, messageErreurNativePdf } = await import('./cahierNativePdf')
     if (error instanceof CahierNativePdfError) {
-      throw new CahierPdfCompositionError(codeErreurNativePdf(error.reason), error.message, error)
+      throw new CahierPdfCompositionError(codeErreurNativePdf(error.reason),
+        messageErreurNativePdf(error.reason), error)
     }
     throw error
   }
@@ -1495,7 +1491,7 @@ async function composerDocument(request: CahierExportRequest, options: OptionsCo
   }
   const mesure = new MesureJsPdf(doc)
   const documentPdf = construirePages(request, mesure, nativeBodies)
-  const urlAccueil = options.urlAccueil ?? CAHIER_EXPORT_PUBLIC_URL
+  const urlAccueil = options.urlAccueil ?? urlAccueilDepuisEnvironnement()
   const urlPublique = options.urlPublique
     ?? urlParDefaut(capture, `section-${capture.identity.sectionKey}`)
   const total = documentPdf.pages.length

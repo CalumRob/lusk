@@ -161,7 +161,29 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
       await doc.svg(svg, { x: b.x, y: b.y, width: b.w, height: b.h })
       return
     }
+    if (style.backgroundImage !== 'none') {
+      // Gradient fills carry real ink. jsPDF has no gradient primitive here:
+      // paint the first resolved colour stop (or fail loudly if none exists)
+      // instead of silently dropping the background.
+      const firstColor = /rgba?\([^)]+\)/.exec(style.backgroundImage)?.[0]
+      if (firstColor) fill(firstColor, () => doc.rect(b.x, b.y, b.w, b.h, 'F'))
+      else throw Error(`Paint source non prise en charge : ${style.backgroundImage.slice(0, 60)}`)
+    }
     fill(style.backgroundColor, () => path(b, style).fill())
+    // Generated content is real ink on screen: paint its box rather than
+    // silently dropping the mark (legend ticks, separators, badges).
+    for (const pseudo of ['::before', '::after'] as const) {
+      const generated = getComputedStyle(node, pseudo)
+      const content = generated.content
+      if (!content || content === 'none' || content === 'normal') continue
+      fill(generated.backgroundColor, () => {
+        const insetX = parseFloat(generated.left ?? '0') || 0
+        const insetY = parseFloat(generated.top ?? '0') || 0
+        const width = parseFloat(generated.width) || b.w
+        const height = parseFloat(generated.height) || b.h
+        doc.rect(b.x + insetX, b.y + insetY, Math.min(width, b.w), Math.min(height, b.h), 'F')
+      })
+    }
     if (node instanceof HTMLImageElement) {
       if (!node.complete || !node.naturalWidth || style.objectFit !== 'cover' || style.objectPosition !== '50% 50%') throw Error('Image native non prête ou cadrage non pris en charge.')
       const image = document.createElement('canvas')

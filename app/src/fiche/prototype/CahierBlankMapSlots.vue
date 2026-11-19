@@ -115,6 +115,7 @@ useCahierExportPublication(() => ({
         unavailable: carMap && unavailableCarMapCodes.value.has(props.territory.code),
         // The figure plate renders the inline asset, not the excluded inspection gallery.
         inlineUrl: carMap ? aedarCarMapAssetUrl(props.territory.code, 'inline') : null,
+        bytes: carMap ? carMapBytes.value ?? undefined : undefined,
       }
     }),
     legend: showCarMapLegend.value
@@ -136,8 +137,11 @@ useCahierExportPublication(() => ({
   },
 }))
 
-function markCarMapLoaded(code: string): void {
+const carMapBytes = ref<ArrayBuffer | null>(null)
+
+function markCarMapLoaded(code: string, bytes: ArrayBuffer | null): void {
   loadedCarMapCodes.value = new Set(loadedCarMapCodes.value).add(code)
+  if (bytes) carMapBytes.value = bytes
 }
 
 function markCarMapUnavailable(code: string): void {
@@ -181,7 +185,7 @@ function markInspectionUnavailable(): void {
           :number="String(index + 1).padStart(2, '0')"
           :loaded="loadedCarMapCodes.has(props.territory.code)"
           :unavailable="unavailableCarMapCodes.has(props.territory.code)"
-          @loaded="markCarMapLoaded(props.territory.code)"
+          @loaded="markCarMapLoaded(props.territory.code, $event)"
           @unavailable="markCarMapUnavailable(props.territory.code)"
           @inspect="inspectCarMap"
         />

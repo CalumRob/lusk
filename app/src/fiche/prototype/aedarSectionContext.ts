@@ -35,7 +35,7 @@ export function provideAedarSectionContext(
     selectedModes: ref([...(native?.modes ?? AEDAR_DEFAULT_VISIBLE_RAMP_MODES)]),
     comparisonVisible: ref(native?.comparisonVisible ?? true),
     comparisonEligible: computed(() => native?.comparisonEligible ?? comparaisonTerritorialeEligible(unref(content).territory)),
-    selectedHorizon: ref(initial?.initialHorizonMinutes ?? null),
+    selectedHorizon: ref(native?.horizonMinutes ?? initial?.initialHorizonMinutes ?? null),
     chapterActive,
     comparison,
   }

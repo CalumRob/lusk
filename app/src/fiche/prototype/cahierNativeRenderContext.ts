@@ -31,6 +31,9 @@ export function supportsStagedNativeRender(kind: NonNullable<ContentSection['evi
 /** Every value is resolved before mount. Native owners must not acquire in this context. */
 export interface CahierNativeRenderContext {
   readonly modes: readonly AedarRampMode[]
+  /** Reader's frozen equipment identity and horizon (null when not applicable). */
+  readonly typequ: string | null
+  readonly horizonMinutes: import('@/fiche/content/aedarEquipmentBuckets').AedarEquipmentHorizon | null
   readonly comparisonVisible: boolean
   readonly comparisonEligible: boolean
   readonly sectionIndex: number

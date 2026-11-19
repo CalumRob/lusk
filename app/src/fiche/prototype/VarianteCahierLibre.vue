@@ -556,14 +556,14 @@ onBeforeUnmount(() => {
 
               <div class="figure-stack">
                 <section
-              v-for="(section, sectionIndex) in currentUnit.sections"
+                v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
               class="concept-group"
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
             >
               <div class="concept-group-heading cahier-baseline-group">
-                 <span v-if="props.layoutVariant !== 'indexed-sections'">{{ String((nativeRender?.sectionIndex ?? sectionIndex) + 1).padStart(2, '0') }}</span>
+                <span v-if="props.layoutVariant !== 'indexed-sections'">{{ String((nativeRender?.sectionIndex ?? sectionIndex) + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
                   class="concept-group-heading-copy"
@@ -573,7 +573,7 @@ onBeforeUnmount(() => {
                 </div>
                 <h3 v-else>{{ section.label }}</h3>
                 <CahierPdfAction
-                   v-if="!nativeRender && rendererFor(section).body"
+                  v-if="!nativeRender && rendererFor(section).body"
                   class="concept-group-pdf-action"
                   :section-key="section.key"
                   :section-label="section.label"
@@ -589,7 +589,7 @@ onBeforeUnmount(() => {
               </div>
 
               <section
-                 :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
+                :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
