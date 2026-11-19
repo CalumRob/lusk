@@ -183,3 +183,48 @@ test_that("national artifact verifier rejects altered bytes and incomplete OD ma
   expect_error(verifier_contrat_artefact_raccordement_national(bad, verifier_octets = FALSE),
                "row|coverage|complete")
 })
+
+# chemin_enveloppe_raccordement (#1070) ------------------------------------------
+# Les verrous « données réelles » reçoivent le chemin rendu par la cible
+# raccordement_<thème> : depuis #728 c'est le FICHIER de l'épingle versionnée.
+# Le résolveur ne doit JAMAIS joindre un nom de fichier à un fichier.
+
+test_that("chemin_enveloppe_raccordement résout l'épingle pour un répertoire de sortie (#1070)", {
+  sortie <- tempfile("sortie-raccordement-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  attendu <- file.path(sortie, RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER)
+  expect_identical(chemin_enveloppe_raccordement(sortie), attendu)
+
+  # la cible format = "file" rend le CHEMIN DU FICHIER : il est rendu tel quel,
+  # jamais réutilisé comme base de répertoire (la cause du bug #1070)
+  expect_identical(chemin_enveloppe_raccordement(attendu), attendu)
+  expect_false(grepl(paste0(RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER, "/"),
+                     chemin_enveloppe_raccordement(attendu), fixed = TRUE))
+  expect_false(grepl("raccordement_mobilite.rds",
+                     chemin_enveloppe_raccordement(attendu), fixed = TRUE))
+
+  # sans argument : l'épingle du package
+  expect_identical(chemin_enveloppe_raccordement(NULL),
+                   chemin_artefact_raccordement_national())
+})
+
+test_that("le lecteur national lit l'épingle copiée dans un répertoire de sortie (#1070)", {
+  sortie <- tempfile("sortie-lecture-raccordement-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  enveloppe <- file.path(sortie, RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER)
+  matrice <- file.path(sortie, RACCORDEMENT_NATIONAL_MATRICE_FICHIER)
+  file.copy(chemin_artefact_raccordement_national(), enveloppe)
+  file.copy(chemin_matrice_raccordement_national(), matrice)
+
+  # le verrou passe le fichier rendu par la cible ; la résolution évite le
+  # jointure fallacieuse et lit bien l'épingle (son empreinte est celle du fichier)
+  lu <- lire_artefact_raccordement_national(
+    chemin_enveloppe = chemin_enveloppe_raccordement(enveloppe),
+    chemin_matrice = matrice)
+  expect_identical(lu$envelope_sha256,
+                   empreinte_fichier_raccordement(enveloppe))
+})
