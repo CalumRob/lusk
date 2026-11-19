@@ -23,6 +23,18 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
       metadata$scalar_contracts$stations_service <- NULL
       metadata$scalar_contracts$stations_service_1000 <- NULL
       metadata$scalar_contracts$bornes_recharge_1000 <- NULL
+      # #1048 : l'artefact conservé est l'état AVANT retrait — il porte encore
+      # les faits du snapshot. On projette donc une copie du canon où la
+      # disposition de retrait est effacée, pour que la garde d'exclusion du
+      # snapshot RETENU ait quelque chose à exclure (jamais un test tautologique).
+      for (id in scalar_indicators_with_serving_disposition(
+        metadata, "excluded_legacy_accessibility")) {
+        metadata$scalar_contracts[[id]]$serving_disposition <- NULL
+      }
+      # Les clés sans page (les 15 `share_*`) n'ont jamais eu de contrat de
+      # matérialisation : le snapshot ne les publiait que comme directions.
+      metadata$scalar_contracts <- metadata$scalar_contracts[
+        names(metadata$scalar_contracts) %in% names(metadata$indicator_pages)]
     }
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
@@ -69,11 +81,11 @@ test_that("scalar publisher validates registered canonical fixture facts", {
 test_that("legacy service-share source declarations are excluded from retained scalar publication", {
   root <- file.path(pkgload::pkg_path(), "..", "public", "data")
   metadata <- lire_theme_metadata("mobilite")
-  excluded <- names(metadata$sources)[vapply(names(metadata$sources), function(id) {
-    record <- metadata$source_records[[metadata$sources[[id]]]]
-    identical(record$serving_disposition, "excluded_legacy_accessibility")
-  }, logical(1))]
-  expect_gt(length(excluded), 0L)
+  # #1048 : la disposition de retrait vit dans LES CONTRATS SCALAIRES du canon,
+  # pas dans les source_records (le snapshot porté a disparu du catalogue).
+  excluded <- scalar_indicators_with_serving_disposition(
+    metadata, "excluded_legacy_accessibility")
+  expect_setequal(excluded, INDICATEURS_MOBILITE_RETIRES)
   artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(
     c("economie", "demographie", "mobilite", "habitat"))
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
@@ -103,18 +115,19 @@ test_that("legacy service-share source declarations are excluded from retained s
 
 test_that("retained scalar retirement is metadata-derived and leaves undeclared omissions strict", {
   metadata_directory <- testthat::test_path("../../inst/extdata/theme-metadata")
-  files <- sort(list.files(metadata_directory, pattern="^theme_.*\\.json$", full.names=TRUE))
-  declared_retirements <- unlist(lapply(files, function(path) {
-    metadata <- jsonlite::fromJSON(path, simplifyVector=FALSE)
-    ids <- names(metadata$sources %||% list())
-    ids[vapply(ids, function(id) {
-      source_id <- metadata$sources[[id]]
-      source <- (metadata$source_records %||% list())[[source_id]]
-      identical(source$serving_disposition, "excluded_legacy_accessibility")
-    }, logical(1))]
-  }), use.names=FALSE)
+  meta <- lire_theme_metadata("mobilite")
+  declares_retirement <- names(meta$scalar_contracts)[vapply(
+    meta$scalar_contracts, function(contract)
+      identical(contract$serving_disposition, "excluded_legacy_accessibility"),
+    logical(1))]
+  # #1048 : TOUS les ids retirés sont déclarés dans scalar_contracts — les 29,
+  # y compris les 15 `share_*` qui n'ont jamais eu de page scalaire.
+  expect_setequal(declares_retirement, INDICATEURS_MOBILITE_RETIRES)
+
   retirements <- retained_scalar_retirement_ids(metadata_directory)
-  expect_setequal(retirements, declared_retirements)
+  # La liste nominale vient de l'epic, pas du canon — une clé oubliée dans
+  # scalar_contracts ferait échouer cette garde.
+  expect_setequal(retirements, INDICATEURS_MOBILITE_RETIRES)
   expect_length(retirements, 29L)
 
   projection <- list(descriptors=data.frame(indicator_id="densite"))
@@ -140,9 +153,9 @@ test_that("retained scalar snapshot combines exact producer-declared owners dete
   owner_metadata <- stats::setNames(lapply(owners, lire_theme_metadata), owners)
   expected <- unlist(lapply(owners, function(owner) {
     metadata <- lire_theme_metadata(owner)
-    names(metadata$scalar_contracts)[!vapply(names(metadata$scalar_contracts), function(id)
-      identical(metadata$source_records[[metadata$sources[[id]]]]$serving_disposition,
-        "excluded_legacy_accessibility"), logical(1))]
+    setdiff(names(metadata$scalar_contracts),
+      scalar_indicators_with_serving_disposition(metadata,
+        "excluded_legacy_accessibility"))
   }), use.names=FALSE)
   # The checked-in Mobility facts are an older raccordement vintage and are not
   # a valid fixture for the canonical scalar owner declared by current extdata.
@@ -293,7 +306,13 @@ test_that("canonical scalar contracts remain complete while public projections o
     canonical <- lire_theme_metadata(theme)
     expect_identical(source$scalar_contracts, canonical$scalar_contracts, info=theme)
     scalar_ids <- names(canonical$scalar_contracts %||% list())
-    expect_true(all(scalar_ids %in% names(canonical$indicator_pages)), info=theme)
+    # #1048 : seuls les contrats RETENUS ont une page — les contrats déclarés
+    # `excluded_legacy_accessibility` sont des reçus de retrait (les 15 `share_*`
+    # n'ont jamais eu de page scalaire).
+    retained_ids <- setdiff(scalar_ids,
+      scalar_indicators_with_serving_disposition(canonical,
+        "excluded_legacy_accessibility"))
+    expect_true(all(retained_ids %in% names(canonical$indicator_pages)), info=theme)
     expect_false(any(c("scalar_contracts", "profile_contracts", "map_layers") %in% names(generated)), info=theme)
     expect_true("indicator_pages" %in% names(generated), info=theme)
     expect_true(all(names(generated$indicator_pages) %in% names(canonical$indicator_pages)), info=theme)
@@ -355,10 +374,9 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_mobilite.parquet"))
   metadata <- lire_theme_metadata("mobilite")
   public_metadata <- jsonlite::fromJSON(file.path(root, "theme_mobilite.json"), simplifyVector=FALSE)
-  ids <- names(metadata$scalar_contracts)[!vapply(names(metadata$scalar_contracts), function(id) {
-    source <- metadata$source_records[[metadata$sources[[id]]]]
-    identical(source$serving_disposition, "excluded_legacy_accessibility")
-  }, logical(1))]
+  ids <- setdiff(names(metadata$scalar_contracts),
+    scalar_indicators_with_serving_disposition(metadata,
+      "excluded_legacy_accessibility"))
   # The static fixture has only the retired raccordement vintage; canonical
   # scalar serving is covered with its owner-produced rows in the bundle test.
   ids <- setdiff(ids, "raccordement_tc")
@@ -481,10 +499,9 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   snapshot <- project_retained_scalar_snapshot(file.path(pkgload::pkg_path(), "..", "public", "data"), reference, artifacts)$scalar
   expected_ids <- unlist(lapply(retained_scalar_artifact_owners(), function(owner) {
     owner_metadata <- lire_theme_metadata(owner)
-    names(owner_metadata$scalar_contracts)[!vapply(names(owner_metadata$scalar_contracts), function(id) {
-      source <- owner_metadata$source_records[[owner_metadata$sources[[id]]]]
-      identical(source$serving_disposition, "excluded_legacy_accessibility")
-    }, logical(1))]
+    setdiff(names(owner_metadata$scalar_contracts),
+      scalar_indicators_with_serving_disposition(owner_metadata,
+        "excluded_legacy_accessibility"))
   }), use.names=FALSE)
   expected_ids <- setdiff(expected_ids, "raccordement_tc")
   # les densités de ravitaillement (#953) naissent au prochain run : le
