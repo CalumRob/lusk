@@ -170,7 +170,7 @@ def _comparison_cohort(conn, territory_type, territory_id, selection, *, snapsho
         if key in snapshot_state.cohorts:
             return snapshot_state.cohorts[key]
     target = conn.execute(
-        "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s",
+        "SELECT territory_id,territory_type,density_class_code,littoral_code FROM territory_reference WHERE territory_id=%s",
         (territory_id,),
     ).fetchone()
     if not target:
@@ -179,7 +179,7 @@ def _comparison_cohort(conn, territory_type, territory_id, selection, *, snapsho
         raise HTTPException(422, "Focal territory type does not match route")
     if snapshot_state is None or snapshot_state.territory_reference_rows is None:
         reference_rows = tuple(conn.execute(
-            "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference"
+            "SELECT territory_id,territory_type,department_id,epci_id,density_class_code,littoral_code FROM territory_reference"
         ).fetchall())
         if snapshot_state is not None:
             snapshot_state.territory_reference_rows = reference_rows
@@ -250,15 +250,37 @@ def _fixed_scalar_comparison_context(conn, territory_type, territory_id, selecti
     # it is exactly one of the currently offered commune contexts.
     if territory_type != "commune" or cohort_type != "commune" or not members:
         return None
-    refs = ([(row[0], row[3], row[4]) for row in reference_rows if row[1] == "commune"]
-            if reference_rows is not None else conn.execute("""SELECT territory_id,epci_id,density_class_code
-                FROM territory_reference WHERE territory_type='commune'""").fetchall())
+    # #1042: the served C/NC classification rides on the same reference rows.
+    # Tolerate a pre-043 five-column shape (transition): it simply offers no
+    # littoral context and keeps every existing resolution unchanged.
+    if reference_rows is not None:
+        refs = [(row[0], row[3], row[4], row[5] if len(row) > 5 else None)
+                for row in reference_rows if row[1] == "commune"]
+    else:
+        refs = conn.execute("""SELECT territory_id,epci_id,density_class_code,littoral_code
+                FROM territory_reference WHERE territory_type='commune'""").fetchall()
     by_id = {row[0]: row[1:] for row in refs}
     focal = by_id.get(territory_id)
     if not focal:
         return None
     selected = set(members)
-    epci_id, density_class = focal
+    epci_id = focal[0] if len(focal) > 0 else None
+    density_class = focal[1] if len(focal) > 1 else None
+    littoral_code = focal[2] if len(focal) > 2 else None
+    littoral_of = lambda row: row[3] if len(row) > 3 else None
+    # A partially classified reference is a corrupt crosswalk (the producer
+    # publishes C/NC all-or-nothing). Fail closed with a named reason whenever
+    # classification is in use and ANY commune lacks it — including a
+    # classified focal with an unclassified peer, whose cohort would otherwise
+    # be silently truncated. A reference with NO classification at all is the
+    # legacy transition shape: it simply offers no littoral context and every
+    # existing resolution below is unchanged. Never borrow a density/Bretagne
+    # group or serve an arbitrary set in the corrupt case.
+    classified_rows = [row for row in refs if littoral_of(row) in ("C", "NC")]
+    if classified_rows and len(classified_rows) != len(refs):
+        raise HTTPException(503, "Published littoral classification is unavailable")
+    # An exact same-status member set resolves to the published littoral group,
+    # with focal inclusion; a foreign status cohort stays an explicit selection.
     if epci_id:
         epci_members = {row[0] for row in refs if row[1] == epci_id}
         if selected == epci_members:
@@ -275,6 +297,10 @@ def _fixed_scalar_comparison_context(conn, territory_type, territory_id, selecti
         density_members = {row[0] for row in refs if row[2] == density_class}
         if selected == density_members:
             return ("density_class", density_class, "commune")
+    if littoral_code in ("C", "NC"):
+        littoral_members = {row[0] for row in refs if littoral_of(row) == littoral_code}
+        if selected == littoral_members:
+            return ("littoral", littoral_code, "commune")
     return None
 
 

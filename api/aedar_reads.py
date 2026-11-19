@@ -312,6 +312,11 @@ def _aedar_comparison_marker(conn):
               (SELECT count(DISTINCT group_id) FROM aedar_density_class_summary s
                   WHERE s.comparison_content_version=p.content_version),
               p.density_summary_typequ_count
+              ,p.littoral_summary_status_count,p.littoral_summary_measure_count,p.littoral_summary_row_count,
+              (SELECT count(*) FROM aedar_littoral_summary s
+                 WHERE s.comparison_content_version=p.content_version),
+              (SELECT count(DISTINCT group_id) FROM aedar_littoral_summary s
+                  WHERE s.comparison_content_version=p.content_version)
               FROM aedar_comparison_publication p
               LEFT JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
               LEFT JOIN table_publication r ON r.table_name='territory_reference'
@@ -331,6 +336,17 @@ def _aedar_comparison_marker(conn):
              marker[13] != marker[11] * marker[12] or marker[14] != marker[13] or
              marker[15] != marker[11] or marker[16] < 1):
         raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
+    # Sibling littoral publication. A complete pre-extension generation has zero
+    # littoral groups and zero sibling counters; a partial C/NC generation is
+    # rejected with a named reason instead of borrowing a density/Bretagne group.
+    lit_status, lit_measure, lit_rows, lit_rows_actual, lit_groups_actual = marker[17:22]
+    if lit_rows == 0:
+        if lit_status != 0 or lit_rows_actual != 0 or lit_groups_actual != 0:
+            raise HTTPException(503, "AEDAR littoral publication is incomplete")
+    elif (lit_status < 1 or lit_measure != len(AEDAR_AGGREGATE_READINGS) or
+          lit_rows != lit_status * lit_measure or lit_rows_actual != lit_rows or
+          lit_groups_actual != lit_status):
+        raise HTTPException(503, "AEDAR littoral publication is incomplete")
     return marker
 
 
@@ -555,6 +571,65 @@ def _aedar_density_class_summary_records(conn, group_id, measures, marker):
     return result
 
 
+def _aedar_littoral_summary_records(conn, group_id, measures, marker):
+    """Read producer-published pooled C/NC summaries from this RR snapshot.
+
+    The littoral summary is a SIBLING publication of the density summary: same
+    availability/support law, distinct relation and descriptor. It never reads
+    or mutates the density counters and never re-aggregates TYPEQU facts.
+    """
+    requested = tuple(dict.fromkeys(measures))
+    if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
+        raise HTTPException(422, "Unknown AEDAR littoral summary measure")
+    if group_id not in ("C", "NC"):
+        raise HTTPException(422, "AEDAR littoral group must be C or NC")
+    rows = conn.execute("""SELECT measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,
+            aedar_content_version,reference_content_version,input_content_version
+        FROM aedar_littoral_summary
+        WHERE comparison_content_version=%s AND group_id=%s AND measure=ANY(%s::text[])""",
+        (marker[0], group_id, sorted(requested))).fetchall()
+    if not rows:
+        publication_unavailable("aedar", "AEDAR littoral summary is missing or incomplete")
+    if len(rows) != len(requested) or len({row[0] for row in rows}) != len(requested):
+        raise HTTPException(503, "AEDAR littoral summary is missing or incomplete")
+    result = {}
+    for (measure, value, status, n_typequ, n_addresses, n_observed, coverage_status,
+         aedar_version, reference_version, input_version) in rows:
+        if (measure not in requested or status not in ("available", "unavailable") or
+                aedar_version != marker[2] or reference_version != marker[3] or input_version != marker[4]):
+            raise HTTPException(503, "AEDAR littoral summary is malformed")
+        available = status == "available"
+        if (available and (value is None or not isfinite(value) or value < 0 or n_typequ != marker[16] or
+                n_addresses is None or n_addresses <= 0 or n_observed is None or n_observed < 0 or
+                n_observed > marker[16] * n_addresses or coverage_status != "covered")) or (
+                not available and (value is not None or n_typequ is not None or
+                    (n_addresses is not None and n_addresses < 0) or
+                    (n_observed is not None and n_observed < 0))):
+            raise HTTPException(503, "AEDAR littoral summary contains an invalid reading")
+        result[measure] = {
+            "value": value,
+            "available": available,
+            "n_typequ": n_typequ,
+            "n_addresses": n_addresses,
+            "n_observed": n_observed,
+            "coverage_status": coverage_status,
+            "statistic": "pooled",
+        }
+    return result
+
+
+def _aedar_fixed_littoral_code(conn, territory_type, territory_id):
+    """The published same-status classification of a commune, fail-closed."""
+    if territory_type != "commune":
+        raise HTTPException(422, "Littoral reference is available for commune scopes only")
+    row = conn.execute(
+        "SELECT littoral_code FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
+        (territory_type, territory_id)).fetchone()
+    if not row or row[0] not in ("C", "NC"):
+        raise HTTPException(503, "Published littoral classification is unavailable for this commune")
+    return row[0]
+
+
 def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
     """Resolved peer group of a declared fixed context (ADR-0021 scopes).
 
@@ -572,6 +647,11 @@ def _aedar_fixed_peer_ids(conn, territory_type, territory_id, context):
         rows = conn.execute(
             "SELECT territory_id FROM territory_reference WHERE territory_type='commune' AND density_class_code=%s",
             (focal[1],)).fetchall()
+    elif context == "littoral":
+        code = _aedar_fixed_littoral_code(conn, territory_type, territory_id)
+        rows = conn.execute(
+            "SELECT territory_id FROM territory_reference WHERE territory_type='commune' AND littoral_code=%s",
+            (code,)).fetchall()
     elif context == "same_level":
         if territory_type not in ("epci", "departement"):
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
@@ -616,6 +696,9 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
             raise HTTPException(422, "Density reference is available for commune scopes only")
         group_type, group_id = "commune", scope["density_class_code"]
         groups = _aedar_density_class_summary_records(conn, group_id, measures, marker)
+    elif context == "littoral":
+        group_type, group_id = "commune", _aedar_fixed_littoral_code(conn, territory_type, territory_id)
+        groups = _aedar_littoral_summary_records(conn, group_id, measures, marker)
     elif context == "same_level":
         if territory_type not in ("epci", "departement"):
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
@@ -636,7 +719,7 @@ def _aedar_prepare_fixed_aggregate_batch(conn, territory_type, territory_id, con
     summary_measures = sorted(set(measures) | set(rank_measures))
     summary = _aedar_territory_summary_snapshot(conn, territory_type, territorial_ids, summary_measures)
     territorial = _aedar_summary_records(summary, summary_measures, territorial_ids)
-    if context != "density_class":
+    if context not in ("density_class", "littoral"):
         group_snapshot = _aedar_territory_summary_snapshot(conn, group_type, [group_id], measures)
         if group_snapshot["content_version"] != summary["content_version"]:
             raise HTTPException(503, "AEDAR territory summary publication changed within the read snapshot")
@@ -697,6 +780,13 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         group_id, reference_type = scope["density_class_code"], "commune"
         group_row = conn.execute("""SELECT value,n_addresses,n_observed,coverage_status,statistic
             FROM aedar_comparison_group WHERE comparison_context='density_class' AND group_id=%s
+              AND territory_type='commune' AND typequ=%s AND measure=%s""",
+            (group_id,typequ,measure)).fetchone()
+    elif context == "littoral":
+        group_id = _aedar_fixed_littoral_code(conn, territory_type, territory_id)
+        reference_type = "commune"
+        group_row = conn.execute("""SELECT value,n_addresses,n_observed,coverage_status,statistic
+            FROM aedar_comparison_group WHERE comparison_context='littoral' AND group_id=%s
               AND territory_type='commune' AND typequ=%s AND measure=%s""",
             (group_id,typequ,measure)).fetchone()
     elif context == "same_level":
@@ -815,6 +905,9 @@ def _aedar_fixed_aggregate_snapshot(conn, territory_type, territory_id, context,
                 raise HTTPException(422, "Density reference is available for commune scopes only")
             group_id, reference_type = scope["density_class_code"], "commune"
             group = _aedar_density_class_summary_records(conn, group_id, [measure], marker).get(measure)
+        elif context == "littoral":
+            group_id, reference_type = _aedar_fixed_littoral_code(conn, territory_type, territory_id), "commune"
+            group = _aedar_littoral_summary_records(conn, group_id, [measure], marker).get(measure)
         elif context == "same_level":
             if territory_type not in ("epci","departement"):
                 raise HTTPException(422, "Same-level reference is unavailable for this territory scope")

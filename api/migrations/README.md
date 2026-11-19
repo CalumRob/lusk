@@ -1,5 +1,104 @@
 # PostgreSQL migration history
 
+## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
+
+`045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication
+with the third fixed context `littoral` (`group_id` `'C'`/`'NC'`,
+`territory_type` `commune`, `statistic` `pooled`). It widens
+`aedar_reference_context_check` and `aedar_reference_scope_check` in place,
+adds three `littoral_summary_*` counters to `aedar_comparison_publication`,
+and creates the SIBLING relation `aedar_littoral_summary`. No density-only
+PK/count contract, density descriptor, grant on the density table, or
+`aedar_comparison_territory` row is changed: C/NC summaries live in their own
+table and can never collide with the density summary keys. The deferred
+publication validator now accepts an existing complete **pre-extension**
+generation (zero littoral groups and counters) and rejects an incomplete
+littoral generation with a named reason. Replaying 045 on a current schema is
+a structural no-op; fresh installs carry the same contract in `api/schema.sql`.
+Fast contract: `api/tests/test_aedar_littoral_migration_contract.py`.
+The guarded, non-retained rehearsal
+`api/tests/integration/test_aedar_littoral_migration.py` proves on the
+dedicated test database (own random schemas, mutex, runtime identity checks,
+cleanup opt-in) that a pre-extension generation commits, an incomplete
+littoral generation is rejected, a complete C/NC sibling generation commits
+with density counters still correct, and replaying 045 leaves the AEDAR catalog
+unchanged.
+
+**Coordinated operator window (#1043 / #1044).** A code merge publishes
+nothing. In ONE operator window the owner must apply migrations 043, 044 and
+045 (in that order after the earlier pack), republish the enriched
+`territory_reference` with the complete C/NC crosswalk, republish ALL
+comparison families (scalar, declared profile, ordered series, observed
+collections), regenerate AEDAR references and BOTH the density and littoral
+sibling summaries via `scripts/publish-aedar-aggregates.R --check` then the
+gated `--publish` flow, rebuild the API service, and deploy the app (#1044).
+A partial rollout leaves comparison/AEDAR markers stale; the API fails closed
+with a named reason rather than borrowing a density or Bretagne cohort. No
+worker applied serving DDL, publication or deployment.
+
+## Migration 044 (#1042) — littoral comparison contexts (additive)
+
+`044_littoral_comparison_contexts.sql` widens the closed `comparison_context`
+domain of the four published comparison families and their shared
+`comparison_source_lineage` table from
+`('density_class','epci','bretagne','same_level')` to
+`('density_class','epci','bretagne','same_level','littoral')`. `group_id` is
+`'C'`/`'NC'` and `territory_type` is `'commune'` for that context. The DDL only
+replaces the existing context CHECK on each of the five tables (located through
+`pg_constraint`/`pg_get_constraintdef`, so it works on named or auto-named
+constraints); no row, column, table, trigger or grant changes. Existing
+density/EPCI/Bretagne/same_level generations stay readable and writable, and a
+replay of the migration is a no-op. `api/schema.sql` carries the widened domain
+for fresh installs.
+
+**Operator ordering:** apply 044 **after** the pack
+`030 -> 039 -> 033 -> 034 -> 035`. The driver is the upgrade-gap case: on an
+upgrade the comparison base relations do not exist until 039 creates them (and
+the lineage relations until 033/034/035), so 044 has no target to widen if it
+runs earlier; running it after the pack also widens each relation exactly once
+in its final shape. This is NOT about 039's exact-definition replay: its
+documented `m039_normalize_context` accepts both the four-value and the widened
+CHECK, so a widened fresh/current schema replays 039 cleanly (guarded proof:
+`-k test_migration_039`). Fresh installs take the widened domain from schema.sql.
+Fast contract: `api/tests/test_littoral_comparison_migration_contract.py`.
+The non-retained guarded rehearsal
+`api/tests/integration/test_littoral_comparison_migration.py` upgrades a
+synthetic pre-044 install, proves old generations survive, accepts both
+littoral cohorts, and compares the migrated structure with a fresh schema; it
+needs the documented `lusk_it_contract` DSNs, dedicated roles, private passfile,
+mutex and cleanup opt-in, and skips without them.
+
+**Coordinated-refresh rollout dependency (#1044 runbook).** The enriched
+territory-reference publication (migration 043) changes the projected reference
+content version, which invalidates every comparison generation bound to
+`territory_reference`. Code merges authorize no serving DDL, publication or
+deployment. In ONE operator window the owner must: apply the additive
+migrations; republish the reference with the complete C/NC crosswalk; republish
+ALL comparison families (scalar, declared profile, ordered series, observed
+collections) so their markers bind to the new reference and carry the littoral
+context; regenerate AEDAR references/ranks (#1043); rebuild the API and redeploy
+the app (#1044). A partial rollout leaves comparison markers stale and the API
+fails closed with a named reason rather than borrowing a density/Bretagne
+cohort. No worker applied any serving migration or publication.
+
+Migration 043 (#1041) is purely additive: it adds `littoral_code` and
+`littoral_classement_source` to `territory_reference`, with a closed CHECK
+(commune-only, C ⇒ Mer/Estuaire, NC ⇒ no source classement, NULL allowed for
+existing/transition rows). Apply it before running a publisher that writes the
+enriched reference. Applying it alone changes no data and publishes nothing.
+**Rollout caveat:** the projected reference content version changes once the
+enriched reference is published, so every comparison publication bound to
+`territory_reference` is invalidated until republished; do not publish the
+reference or the dependent comparison markers early. Existing rows and markers
+survive the DDL. See `docs/research/littoral-dreal-bretagne.md`.
+
+The guarded rehearsals are
+`api/tests/integration/test_littoral_reference_migration.py` (schema/migration
+upgrade) and `test_littoral_reference_publisher.py` (the real nine-column R
+adapter roundtrip), both non-retained, requiring the documented cleanup opt-in
+and the shared database mutex. Both verify the dedicated publisher/read roles
+and exact test database before any DDL.
+
 Migration 041 adds `aedar_territory_summary` and its independent publication
 marker. Apply it after 040 before running the producer's existing guarded
 AEDAR `--publish` operation. The producer atomically publishes source facts,
@@ -487,6 +586,16 @@ wall-clock threshold. This migration does not publish data or authorize
 deployment.
 
 # Migration 039 — restore scalar and ordered-series comparison bases
+
+**#1042 compatibility note (replay-proven, not a silent rewrite):** 039's exact
+constraint validator keeps its four-value `comparison_context` definitions and
+accepts the post-044 five-value form through one documented normaliser
+(`m039_normalize_context`) that strips only the `littoral` element from context
+CHECKs before comparison. Every other constraint is still validated byte for
+byte. This lets an already-widened fresh/current schema replay 039 as a no-op
+while an old four-value relation remains valid. The guarded proof
+`api/tests/integration/test_postgres_publication.py -k test_migration_039`
+passes with the widened `schema.sql` (4 passed).
 
 `039_comparison_base_objects.sql` repairs the retained upgrade gap behind #806:
 fresh installs receive the six scalar and ordered-series comparison base

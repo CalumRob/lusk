@@ -27,10 +27,10 @@
  * en tête), le découpage statut / âge du bâti / type qui remplace
  * statut_anciennete_taille, le stationnement voiture pour 1 000 habitants,
  * les deux ratios (bornes électriques ÷ stations-service, places vélo ÷
- * places voiture) et les lectures perte de diversité / perte totale (div_loss,
- * tot_loss). Les clés nouvelles sont documentées avant leur publication dans
- * la payload (les décisions sont verrouillées, #367) ; les clés anciennes
- * restent documentées tant que la payload commise les porte.
+  * places voiture). Les lectures du snapshot Mobilité porté (pertes,
+  * tot_loss) appartiennent au produit retiré (#1048) et ne sont plus
+  * documentées ici. Les clés nouvelles sont documentées avant leur
+  * publication dans la payload (les décisions sont verrouillées, #367).
  */
 
 import { slugifierAncre } from '@/methodes/ancres'

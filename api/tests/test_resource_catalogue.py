@@ -17,6 +17,42 @@ METADATA = Path(__file__).parents[2] / "pipeline/inst/extdata/theme-metadata"
 SNAPSHOT = Path(__file__).parents[2] / "docs/design/serving-resource-catalogue-snapshot.md"
 
 
+@pytest.mark.parametrize("indicator_id", [
+    "densite", "taille_menages", "effectifs_salaries", "chomage", "eco_activites",
+    "prix_m2", "part_passoires", "surface_reseaux_routiers", "offre_tc",
+    "bornes_recharge", "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "stations_service",
+    "stations_service_1000", "bornes_recharge_1000", "bornes_ev_par_station_service",
+])
+def test_regional_scalar_facts_follow_serving_contract_not_indicator_page(indicator_id):
+    catalogue = discover_indicator_resources(METADATA)
+    resource = catalogue.resources_by_id[indicator_id]
+    metadata = json.loads((METADATA / f"theme_{resource.theme_id}.json").read_text(encoding="utf-8"))
+    assert "region" not in metadata["indicator_pages"][indicator_id]["levels"]
+    assert resource.allowed_levels == tuple(metadata["scalar_contracts"][indicator_id]["allowed_levels"])
+    item = ResourceReadItem.model_validate({
+        "resource": indicator_id,
+        "target": {"kind": "territory", "type": "region", "id": "53"},
+        "intent": {"kind": "facts"},
+    })
+    validate_resource_item(item, catalogue)
+
+
+def test_only_scalar_serving_levels_replace_page_admission_and_other_capabilities_stay_strict():
+    catalogue = discover_indicator_resources(METADATA)
+    for resource in catalogue.resources:
+        metadata = json.loads((METADATA / f"theme_{resource.theme_id}.json").read_text(encoding="utf-8"))
+        page = metadata["indicator_pages"].get(resource.indicator_id)
+        if not page:
+            continue
+        if "scalar" in resource.shapes:
+            assert resource.allowed_levels == tuple(metadata["scalar_contracts"][resource.indicator_id]["allowed_levels"])
+        else:
+            assert resource.allowed_levels == tuple(page.get("levels", page.get("serving_levels", ())))
+        assert resource.unit == page.get("unit", "")
+        assert resource.direction == page.get("direction", "none")
+
+
 def _snapshot_indicator_ids():
     retained = set()
     excluded = set()
@@ -49,7 +85,10 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
     # Sets reject swapped identities; the count guard rejects duplicate pairs.
     assert declared_identities == declared_pairs
     assert len(catalogue.declarations) == len(declared_pairs)
-    assert len(catalogue.excluded) == 29
+    # #1048 slice 2 — the 29 snapshot ids are audit-only retirement receipts in
+    # scalar_contracts, no longer excluded declarations. They are tolerated but
+    # never discovered; the retained catalogue stays complete.
+    assert catalogue.excluded == ()
     # #962 added three Mobility supply scalar pages: stations_service,
     # stations_service_1000 and bornes_recharge_1000 (33 -> 36 retained).
     assert len(resources) == 36
@@ -62,13 +101,42 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
     assert reference.target_kinds == ("named_reference",)
     assert all(not key.startswith("share_") for key in resources)
     assert all(not key.startswith("iso_") for key in resources)
-    assert {resource.indicator_id for resource in catalogue.excluded} == {
-        declaration.indicator_id for declaration in catalogue.declarations
-        if declaration.disposition == "excluded_legacy_accessibility"
+
+    expected_retained, retired_ids = _snapshot_indicator_ids()
+    discovered_ids = {resource.indicator_id for resource in catalogue.resources}
+    declared_ids = {declaration.indicator_id for declaration in catalogue.declarations}
+    assert discovered_ids == expected_retained
+    assert len(retired_ids) == 29
+    # The independent snapshot oracle's retired ids must be ABSENT from
+    # discovery, not counted as excluded declarations.
+    assert discovered_ids.isdisjoint(retired_ids)
+    assert declared_ids.isdisjoint(retired_ids)
+    # The receipts are still declared by the producer for audit — the
+    # tolerance is not implemented by deleting the contract rows.
+    mobilite = json.loads((METADATA / "theme_mobilite.json").read_text(encoding="utf-8"))
+    receipts = {
+        key for key, contract in mobilite["scalar_contracts"].items()
+        if contract.get("serving_disposition") == "excluded_legacy_accessibility"
     }
-    expected_retained, expected_excluded = _snapshot_indicator_ids()
-    assert {resource.indicator_id for resource in catalogue.resources} == expected_retained
-    assert {declaration.indicator_id for declaration in catalogue.excluded} == expected_excluded
+    assert receipts == retired_ids
+
+
+def test_retirement_receipts_outside_the_roster_do_not_break_discovery():
+    """#1048 slice 2 keeps the 29 retired Mobility ids as audit-only receipts.
+
+    They are no longer indicator keys, so runtime discovery must tolerate their
+    presence in `scalar_contracts` without advertising them as resources.
+    """
+    catalogue = discover_indicator_resources(METADATA)
+    metadata = json.loads((METADATA / "theme_mobilite.json").read_text(encoding="utf-8"))
+    receipts = [
+        key for key, contract in metadata["scalar_contracts"].items()
+        if contract.get("serving_disposition") == "excluded_legacy_accessibility"
+    ]
+    assert len(receipts) == 29
+    assert all(key not in metadata["indicator_keys"] for key in receipts)
+    assert all(key not in {resource.indicator_id for resource in catalogue.resources}
+               for key in receipts)
 
 
 def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(monkeypatch, tmp_path):
@@ -94,10 +162,10 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
     declared_keys = [key for metadata in theme_metadata for key in metadata["indicator_keys"]]
     typed_readings = [resource["resource_id"] for metadata in theme_metadata
                       for resource in metadata.get("semantic_resources") or []]
-    # Independent of discover_indicator_resources: the raw producer roster
-    # carries the #962 supply pages, and the composed payload is 36 indicators
-    # + 2 AEDAR contracts + 4 typed readings.
-    assert len(declared_keys) == 65
+    # Independent of discover_indicator_resources: after #1048 slice 2 the raw
+    # producer roster carries 36 indicators (the 29 snapshot ids are audit-only
+    # receipts, no longer keys), including the #962 supply pages.
+    assert len(declared_keys) == 36
     assert {"stations_service", "stations_service_1000", "bornes_recharge_1000"} <= set(declared_keys)
     expected_ids = ({resource.resource_id for resource in indicator_catalogue.resources}
                     | {resource["resource_id"] for resource in contracts["resources"]}
@@ -107,7 +175,11 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
     # Set equality alone would accept duplicate ids; the count guard rejects them.
     assert len(catalogue_ids) == len(set(catalogue_ids))
     assert set(catalogue_ids) == expected_ids
-    assert len(catalogue.excluded) == 29
+    # In the Docker payload too, the retired receipts are tolerated but never
+    # discovered: no excluded declarations and no retired id in the resources.
+    assert catalogue.excluded == ()
+    retired_ids = _snapshot_indicator_ids()[1]
+    assert retired_ids.isdisjoint(set(catalogue_ids))
     assert "aedar_territorial_aggregate" in catalogue.resources_by_id
     summary = catalogue.resources_by_id["aedar_territory_summary"]
     assert summary.resource_kind == "aedar_territory_summary"

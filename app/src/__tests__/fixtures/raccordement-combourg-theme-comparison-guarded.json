@@ -30,7 +30,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -57,7 +57,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -84,7 +84,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -111,7 +111,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -138,7 +138,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -165,7 +165,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -254,7 +254,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -281,7 +281,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -308,7 +308,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -335,7 +335,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -362,7 +362,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -389,7 +389,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -586,7 +586,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",
@@ -613,7 +613,7 @@
       "rank_size": 331,
       "comparison_sources": [
         {
-          "source_id": "mobilite_snapshot",
+          "source_id": "legacy_accessibility_source",
           "name": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
           "vintage_id": "2026-02/2026-02-28",
           "version": "2026-02",

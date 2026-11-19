@@ -387,7 +387,7 @@ describe('IndicateurView — routed URL seam', () => {
         label: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
         definition: 'La part des bâtiments résidentiels sans accès à l’alimentation.',
         unit: '%', calculation: 'Analyse d’accessibilité', direction: 'low', caveats: '',
-        levels: ['commune', 'epci', 'departement'], sources: ['mobilite_snapshot'], family: 'scalar',
+        levels: ['commune', 'epci', 'departement'], sources: ['korrigo'], family: 'scalar',
       },
     }
     const appels: string[] = []

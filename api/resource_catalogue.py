@@ -12,6 +12,12 @@ import os
 from pathlib import Path
 
 
+# Producer-owned serving disposition (#1048): retired ids stay in the metadata
+# as audit-only receipts but never enter discovery. Single source of truth for
+# the literal the pipeline also declares.
+SERVING_DISPOSITION_EXCLUDED_LEGACY = "excluded_legacy_accessibility"
+
+
 @dataclass(frozen=True)
 class IndicatorDeclaration:
     theme_id: str
@@ -232,12 +238,19 @@ def _producer_capabilities(metadata, theme_id, indicator_ids):
         if not isinstance(scalar_contracts, dict):
             raise ValueError(f"Invalid producer scalar contracts: {theme_id}")
         for indicator_id, contract in scalar_contracts.items():
-            if not isinstance(indicator_id, str) or indicator_id not in known_indicators:
+            if not isinstance(indicator_id, str) or not isinstance(contract, dict):
                 raise ValueError(
                     f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
-            if not isinstance(contract, dict):
+            # #1048 slice 2 keeps the retired snapshot ids as retirement
+            # receipts in scalar_contracts after removing them from
+            # indicator_keys. They are audit-only declarations, never
+            # discoverable resources: tolerate them here instead of failing
+            # every consumer of the producer catalogue at import time.
+            if indicator_id not in known_indicators:
+                if contract.get("serving_disposition") == SERVING_DISPOSITION_EXCLUDED_LEGACY:
+                    continue
                 raise ValueError(
-                    f"Invalid producer scalar contract: {theme_id}/{indicator_id}")
+                    f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
             if ("counts_available" in contract
                     and type(contract["counts_available"]) is not bool):
                 raise ValueError(
@@ -424,7 +437,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
             by_key[key] = declaration
             declarations.append(declaration)
 
-            if disposition == "excluded_legacy_accessibility":
+            if disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY:
                 continue
             if disposition != "retained":
                 raise ValueError(f"unknown producer serving disposition: {disposition}")
@@ -479,8 +492,13 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 label=page_descriptor.get("label", metadata.get("indicator_labels", {}).get(indicator_id, indicator_id)),
                 unit=page_descriptor.get("unit", ""),
                 direction=page_descriptor.get("direction", "none"),
-                allowed_levels=tuple(page_descriptor.get(
-                    "levels", page_descriptor.get("serving_levels", collection.get("levels", ())))),
+                # Scalar facts have their own producer-serving eligibility.
+                # Dedicated indicator-page admission is presentation, not a
+                # restriction on factual territory reads (including a dual
+                # scalar/series resource such as prix_m2).
+                allowed_levels=(tuple(scalar_contracts[indicator_id]["allowed_levels"])
+                    if "scalar" in shapes else tuple(page_descriptor.get(
+                        "levels", page_descriptor.get("serving_levels", collection.get("levels", ()))))),
                 sources=_declared_source_identities(page_descriptor, source_records, source_id),
                 shapes=shapes,
                 axes=axes,
@@ -587,5 +605,5 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 measure_facets=measure_facets))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
-                     if item.disposition == "excluded_legacy_accessibility")
+                     if item.disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY)
     return ResourceCatalogue(tuple(declarations), tuple(resources), excluded)

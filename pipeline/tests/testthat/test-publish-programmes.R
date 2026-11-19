@@ -134,6 +134,7 @@ statuts_programmes_pub <- function(status = "frais") {
 executer_run_programmes_pub <- function(cache, sortie, donnees,
                                         conventions, statuts) {
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
     construire_donnees_programmes = function(cache) donnees,
     construire_donnees_subventions = function(cache) list(conventions = conventions),

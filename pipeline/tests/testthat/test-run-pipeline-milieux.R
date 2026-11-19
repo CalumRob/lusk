@@ -76,6 +76,7 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   on.exit(unlink(cache, recursive = TRUE))
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts_milieux(),
     lire_epci = function(chemin) base_epci_milieux,
     # ce cache n'a PAS les archives OCS-GE (#237) : les lignes d'état artif
@@ -166,6 +167,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   on.exit(unlink(cache, recursive = TRUE))
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts_milieux(),
     lire_epci = function(chemin) base_epci_milieux,
     # cache sans archives OCS-GE (#237) : pas de materialisation de séries
@@ -202,6 +204,7 @@ test_that("le téléchargement Milieux est idempotent : une seule fois, le cache
 
   telecharge <- character(0)
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
     telecharger_fichier = function(url, cible) {
       telecharge <<- c(telecharge, basename(cible))
       if (grepl("\\.zip$", cible)) {

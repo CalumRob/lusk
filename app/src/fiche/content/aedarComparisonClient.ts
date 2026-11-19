@@ -9,7 +9,20 @@ import { AEDAR_AGGREGATE_READING_KEYS } from './aedarTimeRampFacts'
 
 export type AedarComparisonIntent =
   | { kind: 'selected_comparison'; members: readonly MembreSelection[] }
-  | { kind: 'fixed_comparison'; context: 'density_class' | 'epci' | 'bretagne' | 'same_level' }
+  | { kind: 'fixed_comparison'; context: 'density_class' | 'littoral' | 'epci' | 'bretagne' | 'same_level' }
+
+/**
+ * #1044 — exhaustive commune-preset → fixed-context map. The old ternary ended
+ * in `: 'bretagne'`, so ANY unknown commune preset silently became Bretagne.
+ * A Record keyed by the closed PresetComparaison union makes a future preset a
+ * compile error until its real context is declared here.
+ */
+const PRESET_AEDAR_CONTEXT: Record<PresetComparaison, Extract<AedarComparisonIntent, { kind: 'fixed_comparison' }>['context']> = {
+  densite: 'density_class',
+  epci: 'epci',
+  bretagne: 'bretagne',
+  littoral: 'littoral',
+}
 
 /**
  * Resolve one typed AEDAR comparison intent from the resolved Sélection. The
@@ -33,9 +46,7 @@ export function aedarComparisonIntent(options: {
   const preset = selection.etat === 'preset' ? selection.preset : presetDefaut
   if (!preset || territoryType === 'region') return null
   if (territoryType === 'commune') {
-    const context = preset === 'densite' ? 'density_class'
-      : preset === 'epci' ? 'epci' : 'bretagne'
-    return { kind: 'fixed_comparison', context }
+    return { kind: 'fixed_comparison', context: PRESET_AEDAR_CONTEXT[preset] }
   }
   return preset === 'bretagne' ? { kind: 'fixed_comparison', context: 'same_level' } : null
 }
@@ -65,6 +76,13 @@ export interface AedarComparisonEvidence {
 export interface AedarComparisonRequest {
   intent: AedarComparisonIntent
   label: string
+  /**
+   * #1044 — the focal commune's SERVED littoral class (C/NC), required for a
+   * fixed `littoral` read. The API serves `group_id` on every fixed comparison
+   * row; binding it to this value fails closed on a wrong-class echo (a C group
+   * answering an NC focal, or vice versa). No geography is inferred here.
+   */
+  expectedLittoralCode?: 'C' | 'NC' | null
 }
 export type AedarComparisonResult = { status: 'ready'; evidence: AedarComparisonEvidence }
   | { status: 'error'; message: string }
@@ -130,6 +148,11 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
   try {
     const selected = options.intent.kind === 'selected_comparison'
     const members = options.intent.kind === 'selected_comparison' ? options.intent.members : null
+    const littoral = options.intent.kind === 'fixed_comparison' && options.intent.context === 'littoral'
+    // A fixed littoral read must name the focal's served class; without it a
+    // wrong-class group could be mistaken for this one. Fail closed.
+    const expectedGroup = options.expectedLittoralCode
+    if (littoral && expectedGroup !== 'C' && expectedGroup !== 'NC') invalid()
     const aggregate = options.typequ.length === 0 && options.measures.every((measure) => AEDAR_AGGREGATE_READING_KEYS.includes(measure))
     if (!options.measures.length || (!aggregate && !options.typequ.length) || members?.length === 0) invalid()
     if (aggregate && !options.expectedSummaryContentVersion) invalid()
@@ -201,6 +224,11 @@ async function readAedarComparison(fetcher: typeof fetch, type: AedarTerritoryTy
            if (!record(row) || (aggregate ? row.typequ !== null : typeof row.typequ !== 'string' || !item.coordinates!.typequ!.includes(row.typequ as string))
              || typeof row.measure !== 'string' || !item.coordinates!.measure.includes(row.measure) || returned.has(`${row.typequ ?? ''}/${row.measure}`)
             || row.comparison_context !== (options.intent.kind === 'selected_comparison' ? 'selected_comparison' : options.intent.context)
+            // #1044 — every fixed AEDAR row serves its group identity as
+            // `group_id` (C/NC for littoral, a density code for density_class,
+            // the region id for bretagne/same_level). Bind a littoral echo to
+            // the focal's served class; a C/NC mismatch is a different cohort.
+            || (littoral && row.group_id !== expectedGroup)
             || (row.statistic !== 'direct' && row.statistic !== 'pooled') || (selected && row.statistic !== 'pooled')
             || !(row.group_value === null || finite(row.group_value))
              || (aggregate

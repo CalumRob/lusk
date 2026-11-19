@@ -86,5 +86,5 @@ test_that("validations_habitat : un prix au m² négatif -> erreur", {
 test_that("compute_payload valide à la sortie : un fixture cassé échoue fort", {
   fx <- load_fixture_habitat()
   fx$communes$logements_principales[1] <- 10000  # le mix ne somme plus
-  expect_error(compute_payload(fx, theme = theme_habitat()), "somment pas")
+  expect_error(compute_payload_test(fx, theme = theme_habitat()), "somment pas")
 })

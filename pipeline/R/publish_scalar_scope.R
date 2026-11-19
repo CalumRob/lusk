@@ -1,7 +1,7 @@
 # Matérialisation scalaire CIBLÉE par indicateur (#989) -------------------------
 # La génération canonique complète matérialise l'artefact scalaire d'un thème
 # depuis le payload EN MÉMOIRE du thème. Pour Mobilité ce payload vient d'un
-# builder monolithique (OSM, OCS-GE, GTFS, bâtiments) : reconstruire trois
+# builder monolithique (OSM, OCS-GE, GTFS, adresses) : reconstruire trois
 # scalaires d'approvisionnement légers ne justifie pas de rejouer tout le
 # thème. Ce fichier ajoute un contrat de producteur ENREGISTRÉ, ciblé par
 # indicateur : un périmètre nomme le thème, ses indicateurs enregistrés et les
@@ -28,9 +28,8 @@ scalar_scope_registry <- function() {
   list(
     mobilite = list(
       indicators = c("stations_service", "stations_service_1000",
-                     "bornes_recharge_1000"),
-      sources = c("mobilite_snapshot", "bpe_b316", "bornes-recharges",
-                  "stationnement-velo"),
+                     "bornes_recharge_1000", "bornes_ev_par_station_service"),
+      sources = c("bpe_b316", "bornes-recharges", "stationnement-velo"),
       produce = produire_ravitaillement_mobilite
     )
   )
@@ -79,7 +78,7 @@ scalar_scope_contract <- function(theme, indicator_ids = NULL) {
 # politique de retrait legacy est la même que le publisher retenu.
 retained_scalar_indicator_ids <- function(metadata) {
   excluded <- scalar_indicators_with_serving_disposition(
-    metadata, "excluded_legacy_accessibility")
+    metadata, SERVING_DISPOSITION_EXCLUDED_LEGACY)
   ids <- setdiff(names(metadata$scalar_contracts), excluded)
   if (!length(ids))
     stop("Producer scalar metadata has no retained indicator", call. = FALSE)
@@ -293,13 +292,13 @@ verifier_snapshot_retention_scalaire <- function(sortie, reference = NULL) {
 }
 
 # produire_ravitaillement_mobilite ----------------------------------------------
-# Le producteur ENREGISTRÉ du périmètre : les trois scalaires
+# Le producteur ENREGISTRÉ du périmètre : les quatre scalaires
 # d'approvisionnement légers de Mobilité, à partir de LEURS sources et des
 # fonctions propriétaires du thème (BPE B316, IRVE, population du hub vélo).
 # Aucune lecture OSM / OCS-GE / GTFS : les agrégations passent par le seam
 # partagé agreger_ravitaillement_territoires, et l'assemblage par le seam
 # partagé assembler_indicateurs_mobilite — exactement le code du producteur
-# complet, avec des entrées réduites à ce que ces trois faits exigent.
+# complet, avec des entrées réduites à ce que ces quatre faits exigent.
 produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
                                              vintages) {
   fichier <- function(id) {
@@ -310,9 +309,14 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
   }
   base_epci <- lire_epci(file.path(cache, "extracted",
                                    "EPCI_au_01-01-2025.xlsx"))
-  snapshot <- normaliser_snapshot_mobilite(lire_snapshot_mobilite(
-    fichier("mobilite_snapshot")))
-  mobilite_communes <- snapshot[c("commune", "nb_buildings")]
+  # Le poids du thème est le nombre d'adresses du spine AEDAR (le
+  # dénominateur de l'offre TC), lu directement dans le cache (#1048).
+  adresses <- normaliser_adresses_residentielles(
+    lire_adresses_residentielles(file.path(cache, AEDAR_ADDRESS_ORIGIN_FILE)))
+  mobilite_communes <- sf::st_drop_geometry(adresses) %>%
+    dplyr::group_by(commune = code_commune_insee) %>%
+    dplyr::summarise(n_adresses = dplyr::n(), .groups = "drop") %>%
+    dplyr::arrange(commune)
   velo <- calculer_stationnement_velo_communes(
     normaliser_stationnement_velo(lire_stationnement_velo(
       fichier("stationnement-velo"))))
@@ -325,12 +329,13 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
     bornes, velo, fuel, base_epci[c("CODGEO", "EPCI", "DEP")])
   long <- dplyr::bind_rows(ravitaillement$bornes,
                            ravitaillement$bornes_1000,
-                           ravitaillement$stations)
+                           ravitaillement$stations, ravitaillement$ratio)
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes))
   units <- c(stations_service = "stations",
              stations_service_1000 = "stations / 1 000 hab",
-             bornes_recharge_1000 = "bornes / 1 000 hab")
+             bornes_recharge_1000 = "bornes / 1 000 hab",
+             bornes_ev_par_station_service = "bornes / station")
   missing <- setdiff(indicator_ids, names(units))
   if (length(missing))
     stop("Registered ravitaillement producer does not cover: ",

@@ -55,7 +55,11 @@ import type {
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
-import { PayloadError, verifierClassesDensite } from './validate'
+import {
+  PayloadError,
+  verifierClassesDensite,
+  verifierClassificationLittorale,
+} from './validate'
 
 /** The per-file payload charger — injectable so component tests stub the fetch seam. */
 export type ChargerFichier = (fichier: Fichier) => Promise<unknown>
@@ -183,7 +187,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
   }
 
   /** Cross-file validation runs when both territorial files have settled. */
-  function verifierReferenceDensite(): void {
+  function verifierReferenceTerritoriale(): void {
     const reference = etats.get('territoires')
     const metadata = etats.get('territoires-metadata')
     if (!reference || reference.etat !== 'succes' || !metadata || metadata.etat !== 'succes') return
@@ -192,10 +196,17 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         reference.valeur as Territoire[],
         metadata.valeur as TerritoryMetadata | null,
       )
+      // #1041 — même frontière atomique : une classification littorale
+      // partielle ou une provenance manquante est une dérive de domaine, pas
+      // une absence honnête.
+      verifierClassificationLittorale(
+        reference.valeur as Territoire[],
+        metadata.valeur as TerritoryMetadata | null,
+      )
     } catch (cause) {
       const validation = cause instanceof PayloadError
         ? cause
-        : new PayloadError('validation', 'territoires-metadata.json', 'Le registre des classes de densité est incohérent.')
+        : new PayloadError('validation', 'territoires-metadata.json', 'Le référentiel territorial est incohérent.')
       for (const entree of [reference, metadata]) {
         entree.etat = 'echec'
         entree.erreur = validation
@@ -327,7 +338,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.etat = 'succes'
         entree.valeur = valeur
         peupler(nom, valeur)
-        if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
+        if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceTerritoriale()
         // Reconcile injected legacy rows on EITHER settlement, regardless of
         // whether metadata or its in-memory indicators land first.
         if (chargerInjecte && (nom.startsWith('indicateurs_') || nom.startsWith('theme_'))) {

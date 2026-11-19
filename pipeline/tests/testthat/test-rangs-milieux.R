@@ -26,7 +26,7 @@
 # · 22001 : 1200/2400 · 22002 : 800/1300 · 29002 : 800/910 · 29003 : 700/500.
 
 test_that("artif_par_habitant : classé TEL QUEL sur l'état à M3 (m²/hab, jamais une normalisation de surface)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
 
   # la valeur publiée EST l'état par habitant (m²/hab) — jamais une part de
   # surface, jamais les hectares bruts
@@ -67,7 +67,7 @@ test_that("artif_par_habitant : classé TEL QUEL sur l'état à M3 (m²/hab, jam
 })
 
 test_that("artif_par_habitant : les DEUX lignes du territoire partagent le rang de l'état à M3", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
 
   # 56001 : M2 vaut 800/2900, M3 vaut 600/3100 — les VALEURS diffèrent, les
   # RANGS sont ceux de l'état final (M3), identiques sur les deux lignes
@@ -103,7 +103,7 @@ test_that("artif_par_habitant : les DEUX lignes du territoire partagent le rang 
 })
 
 test_that("la série annuelle : 14 lignes, le rang de la part de surface consommée (low-is-good)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
 
   # les 14 lignes annuelles d'un territoire portent le MÊME rang — celui de la
   # part de surface consommée de SON territoire (le scalaire de la clé, jamais
@@ -140,7 +140,7 @@ test_that("la série annuelle : 14 lignes, le rang de la part de surface consomm
 })
 
 test_that("un territoire à la série annuelle incomplète n'a pas de rang de série (l'état, lui, est là)", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
 
   # 29003 : la série annuelle CONSOENAF est NA (le fixture laisse la
   # consommation vide) -> la part de surface est NA -> aucun rang de série.

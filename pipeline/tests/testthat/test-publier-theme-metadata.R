@@ -78,7 +78,7 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
 
   # 1) le payload producteur passe par publish ; seules les ressources
   # partagées retenues sont sérialisées, les faits restent en mémoire.
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   publish(payload, cible)
   expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
   expect_false(file.exists(file.path(cible, "histoires_demographie.json")))
@@ -233,7 +233,7 @@ test_that("projection_navigateur : le fichier publié exclut les champs hors nav
     expect_identical(relu$sources, meta$sources, info = theme)
     expect_identical(relu$indicator_keys, meta$indicator_keys, info = theme)
     # les deux clauses factuelles retenues (#827) restent servies
-    if (theme %in% c("mobilite", "programmes")) {
+    if (theme_sans_lecture(theme)) {
       cadrages <- vapply(relu$subgroups, function(g) g$framing %||% "", character(1))
       expect_true(any(nzchar(cadrages)), info = theme)
     }
@@ -275,8 +275,9 @@ test_that("publier_theme_metadata valide encore les contrats canoniques avant le
 # dans les DEUX contextes. (Le test cross-thème ci-dessous échoue indépendamment et
 # ne couvrait pas ce contournement.)
 test_that("registre story_keys explicitement vide : aucune lecture non déclarée n'est autorisée (#868)", {
-  # mobilite a une lecture same-theme déclarée (acces-aux-services)
-  avec_lecture <- lire_theme_metadata("mobilite")
+  # Le catalogue Mobilité n'a plus de lecture depuis #1048 : on prend un thème
+  # qui en déclare encore une (Démographie) pour éprouver la règle.
+  avec_lecture <- lire_theme_metadata("demographie")
   expect_true(any(vapply(avec_lecture$subgroups, function(g) !is.null(g$reading), logical(1))))
   vide_avec_lecture <- avec_lecture
   vide_avec_lecture$story_keys <- list() # [] explicite
@@ -334,6 +335,8 @@ test_that("la parité registre ↔ métadonnées : chaque thème déclare les st
     meta <- lire_theme_metadata(theme)
     declarees <- unlist(meta$story_keys, use.names = FALSE)
     resolvables <- STORIES_RESOLUES_PAR_THEME[[theme]]$story_key
+    # #1048 : Mobilité déclare ZERO story dans le catalogue comme dans le
+    # registre de résolution — la parité porte aussi sur ce cas vide.
     expect_true(setequal(declarees, resolvables), info = theme)
   }
 })

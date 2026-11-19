@@ -1,21 +1,32 @@
 # One coherent scalar table publication assembled only from canonical,
 # producer-owned scalar-serving artifacts. Legacy service-share facts are not
 # members of this snapshot.
+
+# La disposition de retrait est un vocabulaire fermé, épinglé ici : producteur
+# et tests partagent la même constante (jamais une chaîne recopiée). Le JSON du
+# canon reste, lui, une donnée — il porte la valeur littérale.
+SERVING_DISPOSITION_EXCLUDED_LEGACY <- "excluded_legacy_accessibility"
+# #1048 (slice 2) : la disposition de retrait vit DANS LE CONTRAT SCALAIRE de
+# chaque indicateur, pas dans un source_record. Le snapshot porté (et sa fiche
+# de source dédiée) a disparu du catalogue : les 29 ids retirés ne
+# sont plus déclarés comme sources de référence, mais leurs contrats scalaires
+# restent épinglés avec `excluded_legacy_accessibility` — c'est cette déclaration
+# que le backend lit pour retirer les faits à la publication. Les indicateurs
+# réellement servis gardent un contrat sans disposition (ou « retained »).
 scalar_indicators_with_serving_disposition <- function(metadata, disposition) {
-  sources <- metadata$sources %||% list()
-  records <- metadata$source_records %||% list()
-  ids <- names(sources)
-  if (!is.list(sources) || is.null(ids) || any(!nzchar(ids)) || anyDuplicated(ids) ||
-      !is.list(records))
-    stop("Producer scalar source declarations are invalid", call.=FALSE)
-  missing_records <- unique(unlist(sources, use.names=FALSE))
-  missing_records <- setdiff(missing_records, names(records))
-  if (length(missing_records))
-    stop("Producer scalar source record is missing: ", paste(sort(missing_records), collapse=", "),
-      call.=FALSE)
-  ids[vapply(ids, function(id) {
-    record <- records[[sources[[id]]]]
-    identical(record$serving_disposition, disposition)
+  contracts <- metadata$scalar_contracts
+  # Un thème sans contrat scalaire est légitime (liste vide) ; une liste NON
+  # NOMMÉE est une déclaration malformée et doit échouer FORT — jamais un
+  # `character(0)` silencieux qui laisserait passer un sous-ensemble avec NA.
+  if (is.null(contracts)) contracts <- list()
+  ids <- names(contracts)
+  if (!is.list(contracts) ||
+      (length(contracts) > 0L &&
+       (is.null(ids) || any(!nzchar(ids)) || anyDuplicated(ids))))
+    stop("Producer scalar contract declarations are invalid", call.=FALSE)
+  if (is.null(ids)) ids <- character(0L)
+  ids[vapply(contracts, function(contract) {
+    is.list(contract) && identical(contract$serving_disposition, disposition)
   }, logical(1))]
 }
 
@@ -26,7 +37,8 @@ retained_scalar_retirement_ids <- function(metadata_directory=NULL) {
   if (!length(files)) stop("No producer theme metadata found for scalar retirement", call.=FALSE)
   ids <- unlist(lapply(files, function(path) {
     metadata <- jsonlite::fromJSON(path, simplifyVector=FALSE)
-    scalar_indicators_with_serving_disposition(metadata, "excluded_legacy_accessibility")
+    scalar_indicators_with_serving_disposition(metadata,
+      SERVING_DISPOSITION_EXCLUDED_LEGACY)
   }), use.names=FALSE)
   sort(unique(as.character(ids)))
 }
@@ -42,7 +54,8 @@ retained_scalar_artifact_owners <- function(metadata_directory=NULL) {
     theme <- metadata$theme
     contracts <- metadata$scalar_contracts %||% list()
     retained <- setdiff(names(contracts),
-      scalar_indicators_with_serving_disposition(metadata, "excluded_legacy_accessibility"))
+      scalar_indicators_with_serving_disposition(
+        metadata, SERVING_DISPOSITION_EXCLUDED_LEGACY))
     if (!length(retained)) return(NA_character_)
     if (!is.character(theme) || length(theme)!=1L || is.na(theme) || !nzchar(theme))
       stop("Scalar owner metadata is missing its theme identity", call.=FALSE)
@@ -60,7 +73,7 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme,
     "scalar-serving", theme))
   metadata <- lire_theme_metadata(theme)
   excluded <- scalar_indicators_with_serving_disposition(metadata,
-    "excluded_legacy_accessibility")
+    SERVING_DISPOSITION_EXCLUDED_LEGACY)
   if (length(excluded)) {
     projection$descriptors <- projection$descriptors[
       !projection$descriptors$indicator_id %in% excluded, , drop=FALSE]

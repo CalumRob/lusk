@@ -117,7 +117,7 @@ test_that("AEDAR projection preserves the complete 2025 TYPEQU registry at all f
 
 test_that("AEDAR fixed comparison inventory is complete and excludes custom groups", {
   expect_equal(AEDAR_FIXED_COMPARISON_SCOPES,
-    list(commune=c("densite", "epci", "bretagne"), epci="epci", departement="departement"))
+    list(commune=c("densite", "littoral", "epci", "bretagne"), epci="epci", departement="departement"))
   expect_false(any(grepl("custom|arbitrary", unlist(AEDAR_FIXED_COMPARISON_SCOPES))))
   adr <- paste(readLines(testthat::test_path("..","..","..","docs","adr",
     "0039-published-comparison-aggregates.md"),warn=FALSE),collapse="\n")
@@ -457,6 +457,33 @@ test_that("AEDAR comparison inputs load registered sparse modes and configured o
   missing_mode<-paths[-1]
   expect_error(read_aedar_comparison_inputs(missing_mode,spine_path,verify_hashes=FALSE),
     "All six registered")
+})
+
+test_that("AEDAR comparison inputs resolve the registered address-origin spine when no path is configured", {
+  dir <- tempfile("aedar-spine-default-"); dir.create(dir)
+  modes <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES, function(mode) {
+    x <- as.data.frame(as.list(stats::setNames(rep(1,4), AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+    x$code_insee <- "22001"; x$cle_interop_adr <- "addr-1"; x$TYPEQU <- "A104"; x
+  }), AEDAR_ADDRESS_SOURCE_MODES)
+  paths <- stats::setNames(vapply(names(modes), function(mode) {
+    path <- file.path(dir,paste0(mode,".parquet")); nanoparquet::write_parquet(modes[[mode]],path); path
+  }, character(1)), names(modes))
+  nanoparquet::write_parquet(
+    data.frame(address_id="addr-1",code_insee="22001",lon=1,lat=2),
+    file.path(dir,AEDAR_ADDRESS_ORIGIN_FILE))
+  previous <- Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS", unset=NA_character_)
+  Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+  on.exit({
+    if (is.na(previous)) Sys.unsetenv("LUSK_AEDAR_ADDRESS_ORIGINS")
+    else Sys.setenv(LUSK_AEDAR_ADDRESS_ORIGINS=previous)
+  }, add=TRUE)
+  loaded <- read_aedar_comparison_inputs(paths,origins_path=NULL,raw_dir=dir,verify_hashes=FALSE)
+  expect_equal(nrow(loaded$address_origins),1)
+  expect_equal(loaded$address_origins$commune,"22001")
+  empty <- tempfile("aedar-spine-empty-")
+  expect_error(
+    read_aedar_comparison_inputs(paths,origins_path=NULL,raw_dir=empty,verify_hashes=FALSE),
+    "aedar-address-origins-2026v1[.]parquet")
 })
 
 test_that("AEDAR density projection covers all 235 TYPEQU and all 312 measure results", {

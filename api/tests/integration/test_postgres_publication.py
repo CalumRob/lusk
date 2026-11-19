@@ -1709,6 +1709,13 @@ def _comparison_contract(connection, schema):
             # form is introduced by 039, so compare the rest of the constraint.
             if table == "ordered_series_comparison_zero_reason" and contype == "f":
                 definition = definition.replace(" ON DELETE CASCADE", "")
+            # #1042: additive migration 044 widened the comparison_context
+            # domain with 'littoral' in fresh schema.sql. This 039 proof does
+            # not apply 044, so its upgrade path still carries the four-value
+            # definition. Normalise ONLY that one domain element on context
+            # CHECKs; every other constraint is compared byte for byte.
+            if contype == "c" and "comparison_context" in definition:
+                definition = re.sub(r",\s*'littoral'::text", "", definition)
             constraints.add((contype, definition.replace(" DEFERRABLE INITIALLY DEFERRED", "")))
         indexes = {
             _scrub_relation_schema(definition, schema)

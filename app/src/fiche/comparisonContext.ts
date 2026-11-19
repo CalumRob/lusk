@@ -2,14 +2,14 @@ import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey, Ref } from 'vue'
 import { COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
-import { comparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
+import { comparisonScopeLabel, littoralScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 
 // #900 — the comparison vocabulary used to be re-exported type-only from the
 // per-territory read-model artifact contract (producer-side only since #868).
 // That artifact module and its committed trees are retired, so the fiche
 // layer now owns these types outright: no runtime dependency on any committed
 // model remains.
-export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
+export type TerritoryComparisonMode = 'densite' | 'littoral' | 'epci' | 'bretagne'
 
 /** Fiche selection contract (#768): Région has facts, but no peer comparison.
  * Keep this capability separate from a resource's factual allowed levels. */
@@ -42,6 +42,7 @@ export interface TerritoryComparisonContext {
     kind:
       | 'selection'
       | 'communes-densite'
+      | 'communes-littoral'
       | 'communes-epci'
       | 'communes-bretagne'
       | 'epcis-bretagne'
@@ -97,7 +98,7 @@ export const PARAM_COMPARAISON = 'comparaison'
  */
 
 /** Les presets de la Sélection — les mêmes jetons d’URL que les anciens modes. */
-export const PRESETS_COMPARAISON = ['epci', 'bretagne', 'densite'] as const
+export const PRESETS_COMPARAISON = ['epci', 'bretagne', 'densite', 'littoral'] as const
 export type PresetComparaison = (typeof PRESETS_COMPARAISON)[number]
 
 /**
@@ -161,6 +162,13 @@ export function contextesDepuisReference(
     const labelDensite = territoire.classe_densite_libelle_public ?? territoire.classe_densite_libelle_insee ?? null
     if (labelDensite) {
       contextes.densite = { mode: 'densite', scope: { kind: 'communes-densite', label: labelDensite }, ...vide() }
+    }
+    // #1044 — the littoral scope is bound to the SERVED two-value class. No
+    // geography, no local island exception, no N C-by-omission: an absent code
+    // simply offers no littoral preset (honest transition/legacy reference).
+    const labelLittoral = littoralScopeLabel(territoire.littoral_code)
+    if (labelLittoral && cohortLittoralPourFocal(territoire, territoires)) {
+      contextes.littoral = { mode: 'littoral', scope: { kind: 'communes-littoral', label: labelLittoral }, ...vide() }
     }
     if (territoire.epci) {
       const epci = territoires.find((candidate) => candidate.type === 'epci' && candidate.territoire === territoire.epci)
@@ -286,6 +294,25 @@ function presetApplicable(preset: PresetComparaison, territoire: Territoire): bo
 }
 
 /**
+ * #1044 — the exact same-status commune cohort of a focal, read ONLY from the
+ * served C/NC class on the compact reference. No geographic inference, no
+ * coastline buffer, no hardcoded island exception and no defensive count: the
+ * cohort IS every commune carrying the focal's served code. `null` means the
+ * focal has no published class (honest, retryable unavailability).
+ */
+export function cohortLittoralPourFocal(
+  territoire: Territoire,
+  territoires: readonly Territoire[],
+): readonly MembreSelection[] | null {
+  const code = territoire.littoral_code
+  if (territoire.type !== 'commune' || (code !== 'C' && code !== 'NC')) return null
+  const membres = territoires
+    .filter((candidate) => candidate.type === 'commune' && candidate.littoral_code === code)
+    .map((candidate) => ({ territory_type: candidate.type as 'commune', territory_id: candidate.territoire }))
+  return membres.length ? membres : null
+}
+
+/**
  * Résout les membres tapés d’un preset : une référence territoriale unique quand
  * elle existe (EPCI / région — le producteur résout la cohorte à la maille
  * requise), la cohorte communale de la classe de densité sinon, le défaut
@@ -299,6 +326,7 @@ function membresPourPreset(
 ): readonly MembreSelection[] | null | undefined {
   if (territoire.type === 'epci' || territoire.type === 'departement') return undefined
   if (territoire.type !== 'commune') return undefined
+  if (preset === 'littoral') return cohortLittoralPourFocal(territoire, territoires)
   if (preset === 'epci') {
     const epci = territoire.epci
       ? territoires.find((candidate) => candidate.type === 'epci' && candidate.territoire === territoire.epci)
@@ -457,7 +485,7 @@ export function presetsDisponibles(options: {
   const { territoire, contextes, territoires } = options
   if (!territoire || !comparaisonTerritorialeEligible(territoire)) return []
   const candidats: PresetComparaison[] = territoire.type === 'commune'
-    ? ['epci', 'bretagne', 'densite']
+    ? ['epci', 'bretagne', 'densite', 'littoral']
     : ['bretagne']
   const liste: PresetComparaisonOption[] = []
   for (const preset of candidats) {
@@ -509,6 +537,44 @@ export function libellePorteeMembres(
     return `${membres.length} ${nom} sélectionné${mot.feminin ? 'e' : ''}${membres.length > 1 ? 's' : ''}`
   }
   return `${membres.length} territoires sélectionnés`
+}
+
+/**
+ * #1044 — identify the preset behind a SERVED explicit-selection echo by
+ * comparing its exact typed membership against the focal's own reference-
+ * derived cohorts (EPCI, served C/NC littoral class, Bretagne, density class).
+ * A partial/foreign/whole-Bretagne member set therefore cannot borrow a more
+ * specific preset's public name. Null = no honest match; fail closed.
+ *
+ * This function receives NO publication clock or content version: it validates
+ * membership only. Clock/version safety lives at the acquisition seams that
+ * bind every read to its publication identity (`readSemanticOutcomes` coherence
+ * and `validerReponseComparaisonTheme`), and at the API's repeatable-read
+ * snapshot — a stale response is rejected there before it reaches this helper.
+ */
+export function modePourSelectionServie(
+  selection: readonly { territory_type: string; territory_id: string }[],
+  focal: Territoire,
+  territoires: readonly Territoire[],
+): TerritoryComparisonMode | null {
+  const membres = (items: readonly Territoire[]): MembreSelection[] =>
+    items.map((item) => ({ territory_type: item.type as TerritoireType, territory_id: item.territoire }))
+  const candidats: Array<[TerritoryComparisonMode, readonly MembreSelection[]]> = [
+    ['epci', focal.type === 'commune' && focal.epci
+      ? membres(territoires.filter((item) => item.type === 'commune' && item.epci === focal.epci)) : []],
+  ]
+  const littoral = cohortLittoralPourFocal(focal, territoires)
+  if (littoral) candidats.push(['littoral', littoral])
+  candidats.push(['bretagne', membres(territoires.filter((item) => item.type === focal.type))])
+  candidats.push(['densite', focal.type === 'commune' && focal.classe_densite_code
+    ? membres(territoires.filter((item) => item.type === 'commune' && item.classe_densite_code === focal.classe_densite_code)) : []])
+  for (const [mode, attendus] of candidats) {
+    if (attendus.length !== selection.length) continue
+    if (attendus.every((membre, index) =>
+      membre.territory_type === selection[index]!.territory_type &&
+      membre.territory_id === selection[index]!.territory_id)) return mode
+  }
+  return null
 }
 
 /** Libellé de la portée active pour la puce d’en-tête (défaut/preset/vide/membres). */

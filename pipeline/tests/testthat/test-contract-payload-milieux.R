@@ -25,7 +25,7 @@
 # mais présent (la forme du contrat).
 
 test_that("le payload Milieux couvre chaque territoire du fixture", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   territoires_attendus <- c(
@@ -41,7 +41,7 @@ test_that("le payload Milieux couvre chaque territoire du fixture", {
 })
 
 test_that("la forme des quatre tables est le contrat (payload Milieux)", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
@@ -78,7 +78,7 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
 })
 
 test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuelle 2011-2024 — les deux clés vivantes", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   # les DEUX clés du thème (issue #239) — l'état par habitant (multiplicité 2)
@@ -178,7 +178,7 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
 })
 
 test_that("la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   # aucune ligne des deux clés retirées (#63) dans le payload
@@ -190,7 +190,7 @@ test_that("la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence PAR LIGNE (le couple département × millésime, jamais une archive uniforme)", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   v <- vintages_milieux()
@@ -247,7 +247,7 @@ test_that("chaque indicateur est estampillé depuis sa source de référence PAR
 })
 
 test_that("les territoires multi-départements (EPCI transfrontalier, région) portent une estampille SPAN — jamais un couple unique inventé", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
   etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
 
@@ -287,7 +287,7 @@ test_that("les territoires multi-départements (EPCI transfrontalier, région) p
 })
 
 test_that("le payload Milieux passe la validation générique (forme, territoires, vintages)", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   # la validation générique avec les tables déclaratives du thème — un payload
@@ -302,7 +302,7 @@ test_that("le payload Milieux passe la validation générique (forme, territoire
 })
 
 test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   # une consommation annuelle négative (une dérive du fichier source) — la
@@ -318,7 +318,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
   )
 
   # une intensité d'état négative — la validation de VALEUR du thème l'attrape
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
   payload$indicateurs$value[payload$indicateurs$key == "artif_par_habitant"][1] <- -1
   expect_error(
@@ -331,7 +331,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
   )
 
   # une clé fantôme non déclarée — la validation GÉNÉRIQUE l'attrape
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
   payload$indicateurs$key[1] <- "lq"
   expect_error(
@@ -345,7 +345,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
 })
 
 test_that("la garde « toute commune a un état > 0 » : un état nul ou NA est une corruption (amendement #243)", {
-  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   # un état initial nul (le bug flux-et-état — les 102 communes à M2 = 0 du

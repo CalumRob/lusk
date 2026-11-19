@@ -407,6 +407,13 @@ reference_territoires <- function(territoires) {
   if (all(champs_densite %in% names(territoires))) {
     reference[champs_densite] <- territoires[champs_densite]
   }
+  # #1041 : la classification littorale est une propriété de la dimension des
+  # territoires, publiée par le même propriétaire (territory_reference). Une
+  # référence de transition qui ne la porte pas garde exactement sa forme.
+  champs_littoral <- c("littoral_code", "littoral_classement_source")
+  if (all(champs_littoral %in% names(territoires))) {
+    reference[champs_littoral] <- territoires[champs_littoral]
+  }
   reference
 }
 
@@ -719,15 +726,22 @@ validate_payload <- function(payload,
 compute_payload <- function(data, theme = theme_demographie(),
                             vintages = NULL,
                             noms_epci_geo_api = NULL,
-                            classes_densite = NULL) {
+                            classes_densite = NULL,
+                            classes_littoral = NULL,
+                            reference = NULL) {
+  # #1057 : entrée OBLIGATOIRE — jamais de repli silencieux sur les faits du
+  # thème (le référentiel 1 200 communes sans îles avec une version valide).
+  reference <- exiger_reference_territoires(reference, "compute_payload")
   territoires <- theme$construire_territoires(data)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
                                                 noms_epci_geo_api)
   }
-  if (!is.null(classes_densite)) {
-    territoires <- publier_classes_densite(territoires, classes_densite)
-  }
+  territoires <- appliquer_classifications_communales(
+    territoires,
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
+  )
   indicateurs <- theme$construire_indicateurs(territoires)
   rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires,
                          directions = theme$directions)
@@ -747,7 +761,9 @@ compute_payload <- function(data, theme = theme_demographie(),
     # la machinerie partagée choisit — jamais le pool dans le payload.
     histoires = resoudre_histoires(theme$compute_histoires(territoires),
                                    theme$theme),
-    territoires = reference_territoires(territoires),
+    # #1056 : la référence est une dimension, pas le miroir des faits du thème.
+    # Elle a été exigée à l'entrée : aucune voie de repli n'est possible ici.
+    territoires = reference,
     apercu = assemble_apercu(territoires, theme$construire_apercu(territoires))
   )
 

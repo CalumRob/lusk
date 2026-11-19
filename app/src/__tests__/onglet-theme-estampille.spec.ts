@@ -51,7 +51,7 @@ const payloadSixThemes: Payload = {
     ...histoiresMilieuxFixture,
   ],
   runReport: runReportFraisFixture,
-  vintages: vintagesFixture, // porte la ligne mobilite_snapshot — le fait que chaque onglet s'appropriait
+  vintages: vintagesFixture, // les horloges des sources retenues — plus de ligne de snapshot porté
   programmes: null,
   themeMetadata: metadonneesThemesFixtures,
 }

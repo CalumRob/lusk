@@ -56,11 +56,11 @@ payload_producteur_fixture <- function(
     stop("Unknown producer fixture theme: ", theme, call.=FALSE)
 
   switch(theme,
-    demographie = compute_payload(load_fixture()),
+    demographie = compute_payload_test(load_fixture()),
     habitat = payload_habitat(),
-    economie = construire_payload_economie(
+    economie = construire_payload_economie_test(
       fixture_analytiques_economie(), base_epci_economie, vintages_economie()),
-    milieux = compute_payload(
+    milieux = compute_payload_test(
       communes_fixture_milieux_ocsge(), theme=theme_milieux()),
     mobilite = list(
       indicateurs=nanoparquet::read_parquet(

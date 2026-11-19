@@ -33,6 +33,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
   )
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
+    lire_epci = function(chemin) base_epci_habitat_test(),
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
     vintages_habitat = function(cache) {
@@ -93,6 +95,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   # les étapes réseau / fichiers sont mockées ; le compute et le publish sont
   # réels — le payload Habitat complet part sur les fichiers par thème
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
+    lire_epci = function(chemin) base_epci_habitat_test(),
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
     publier_geometrie = function(cible = "public/data", fetch = NULL) {
@@ -162,6 +166,8 @@ test_that("un re-run Habitat écrase sans dupliquer (upsert, issue #19)", {
   on.exit(unlink(cache, recursive = TRUE))
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
+    lire_epci = function(chemin) base_epci_habitat_test(),
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
     publier_geometrie = function(cible = "public/data", fetch = NULL) {
@@ -211,6 +217,8 @@ test_that("en mode cron, le rapport enregistre les sources manuel « à traiter 
   )
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
+    lire_epci = function(chemin) base_epci_habitat_test(),
     download_sources = function(manifest, cache, mode) statuts_cron,
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
     publier_geometrie = function(cible = "public/data", fetch = NULL) {
@@ -251,6 +259,8 @@ test_that("le run Habitat estampille les DPE depuis le cache (base roulante)", {
   }
 
   local_mocked_bindings(
+    reference_territoires_canonique_du_cache = reference_cache_seam_test,
+    lire_epci = function(chemin) base_epci_habitat_test(),
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
     publier_geometrie = function(cible = "public/data", fetch = NULL) {

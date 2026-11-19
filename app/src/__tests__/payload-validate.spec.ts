@@ -14,8 +14,8 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite } from '../payload/validate'
-import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
+import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite, verifierClassificationLittorale } from '../payload/validate'
+import type { HistoireDemographie, HistoireMilieux, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
@@ -68,6 +68,156 @@ describe('contrat des classes de densité communale', () => {
     }]))
     expect(() => validerTerritoiresMetadata({ ...metadata, density_classes: classesDecalees }, 'territoires-metadata.json'))
       .toThrow('codes 1 à 7')
+  })
+})
+
+describe('contrat de la classification littorale (#1041)', () => {
+  const classes = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 1), {
+    code: String(index + 1),
+    libelle_insee: `Libellé INSEE ${index + 1}`,
+    libelle_public: `Libellé public ${index + 1}`,
+  }]))
+  const metadata = {
+    schema_version: '1',
+    territory_reference_label: 'Référentiel territorial — classifications communales',
+    density_classes: classes,
+    source_records: {
+      classe_densite_communale: {
+        dataset: 'Grille de densité 2025 — maille communale',
+        publisher: 'INSEE',
+        url: 'https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx',
+        licence: 'Licence Ouverte 2.0',
+        sha256: '8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978',
+        vintage: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+        freshness: 'Publication INSEE du 15 mai 2026',
+      },
+      classe_littorale_communale: {
+        dataset: 'Communes littorales en Bretagne au titre de la loi',
+        publisher: 'DREAL Bretagne',
+        url: 'https://www.data.gouv.fr/datasets/communes-littorales-en-bretagne-au-titre-de-la-loi',
+        acquisition_url: 'https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs',
+        licence: 'Licence Ouverte 2.0 (lov2)',
+        sha256: 'd68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc',
+        vintage: 'Liste positive DREAL Bretagne — métadonnées de diffusion du 2023-04-21',
+        freshness: 'Dernière modification déclarée par data.gouv.fr le 21 avril 2023',
+        definition: 'Communes définies par la loi Littoral de 1986, complétées par le décret 2004-311.',
+        coverage: 'Liste positive exhaustive pour les quatre départements bretons.',
+        classements: ['Mer', 'Estuaire'],
+        vintages: [{
+          id: 'classe_littorale_communale',
+          label: 'Communes littorales en Bretagne au titre de la loi',
+          version: 'Liste positive DREAL Bretagne — diffusion 2023-04-21',
+          licence: 'Licence Ouverte 2.0 (lov2)',
+          dateReference: null,
+          datePublication: '2023-04-21',
+        }],
+      },
+    },
+  }
+
+  const commune = (territoire: string, littoral_code: string | null, classement: string | null = null) => ({
+    territoire, type: 'commune' as const, nom: territoire, departement: '22', epci: null,
+    littoral_code, littoral_classement_source: classement,
+  })
+
+  it('accepte une référence de transition qui ne porte pas le littoral', () => {
+    const territoires = validerTerritoires([
+      { territoire: '22001', type: 'commune', nom: 'A', departement: '22', epci: null },
+    ], 'territoires.json')
+    expect(territoires[0]!.littoral_code).toBeUndefined()
+    expect(() => verifierClassificationLittorale(territoires, null)).not.toThrow()
+  })
+
+  it('accepte C/NC complets, îles comprises, et exige la provenance', () => {
+    const territoires = validerTerritoires([
+      commune('29083', 'C', 'Mer'),
+      commune('29084', 'C', 'Mer'),
+      commune('29209', 'NC'),
+      { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    expect(parsed.source_records['classe_littorale_communale']?.publisher).toBe('DREAL Bretagne')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+  })
+
+  it('honore le registre de classements SERVI, sans dupliquer le domaine source', () => {
+    const avecLac = structuredClone(metadata)
+    avecLac.source_records.classe_littorale_communale.classements = ['Mer', 'Estuaire', 'Lac']
+    const territoires = validerTerritoires([commune('29083', 'C', 'Lac')], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(avecLac, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+
+    const seulementMer = structuredClone(metadata)
+    seulementMer.source_records.classe_littorale_communale.classements = ['Mer']
+    const estuaire = validerTerritoires([commune('56086', 'C', 'Estuaire')], 'territoires.json')
+    const registreMer = validerTerritoiresMetadata(seulementMer, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(estuaire, registreMer))
+      .toThrow('classement littoral source incohérent')
+
+    const doublon = structuredClone(metadata)
+    doublon.source_records.classe_littorale_communale.classements = ['Mer', 'Mer']
+    expect(() => validerTerritoiresMetadata(doublon, 'territoires-metadata.json'))
+      .toThrow('classements')
+  })
+
+  it('accepte une dateReference absente et conserve la date de diffusion', () => {
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    const vintages = parsed.source_records['classe_littorale_communale']?.vintages
+    expect(vintages?.[0]?.dateReference).toBeNull()
+    expect(vintages?.[0]?.datePublication).toBe('2023-04-21')
+  })
+
+  it('refuse une classification partielle, inconnue ou portée par un non-commune', () => {
+    expect(() => validerTerritoires([
+      commune('29083', 'C', 'Mer'),
+      { territoire: '29209', type: 'commune', nom: 'Plouvien', departement: '29', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')).toThrow('littoral_code')
+
+    // Un classement source non vide est structurellement valide ; c'est le
+    // registre SERVI qui décide s'il est admis (test suivant).
+    expect(() => validerTerritoires([
+      commune('29083', 'C', 'Lac'),
+    ], 'territoires.json')).not.toThrow()
+
+    // Les deux colonnes présentes mais vides : même refus que côté R.
+    expect(() => validerTerritoires([
+      { territoire: '29083', type: 'commune', nom: 'Île-de-Sein', departement: '29', epci: null, littoral_code: null, littoral_classement_source: null },
+    ], 'territoires.json')).toThrow('littoral_code')
+
+    expect(() => validerTerritoires([
+      commune('29209', 'NC', 'Mer'),
+    ], 'territoires.json')).toThrow('classement source')
+
+    expect(() => validerTerritoires([
+      { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null, littoral_code: 'C', littoral_classement_source: 'Mer' },
+    ], 'territoires.json')).toThrow('classification littorale')
+  })
+
+  it('valide la référence réellement servie par R (contrat R -> référence -> app)', async () => {
+    const fs = await import('node:fs')
+    const document = JSON.parse(fs.readFileSync(
+      'src/__tests__/fixtures/littoral-reference-served.json', 'utf8'))
+    const territoires = validerTerritoires(document.territoires, 'territoires.json')
+    const parsed = validerTerritoiresMetadata(document.metadata, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed)).not.toThrow()
+    expect(territoires.find((t) => t.territoire === '29083')?.littoral_code).toBe('C')
+    expect(territoires.find((t) => t.territoire === '29084')?.littoral_code).toBe('C')
+    expect(territoires.find((t) => t.territoire === '29209')?.littoral_code).toBe('NC')
+    expect(territoires.find((t) => t.territoire === '22')?.littoral_code).toBeNull()
+  })
+
+  it('exige la source littorale dans les métadonnées et valide son empreinte', () => {
+    const sansSource = structuredClone(metadata)
+    delete (sansSource.source_records as Record<string, unknown>).classe_littorale_communale
+    const territoires = validerTerritoires([commune('29083', 'C', 'Mer')], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(sansSource, 'territoires-metadata.json')
+    expect(() => verifierClassificationLittorale(territoires, parsed))
+      .toThrow('classe_littorale_communale')
+
+    const empreinteInvalide = structuredClone(metadata)
+    empreinteInvalide.source_records.classe_littorale_communale.sha256 = 'pas-une-empreinte'
+    expect(() => validerTerritoiresMetadata(empreinteInvalide, 'territoires-metadata.json'))
+      .toThrow('sha256')
   })
 })
 
@@ -132,7 +282,7 @@ function documentsEconomie(overrides: Partial<DocumentsBruts> = {}): DocumentsBr
   })
 }
 
-/** The Mobilité documents (issue #142) — the fixture payload, theme swapped. */
+/** Les documents Mobilité — les faits retenus, sans lecture de snapshot (#1048). */
 function documentsMobilite(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
   return documentsBruts({
     indicateurs: indicateursMobiliteFixture,
@@ -683,101 +833,44 @@ describe('parsePayload — the Économie contract (issue #120, forme RÉSOLUE #3
   })
 })
 
-describe('parsePayload — the Mobilité contract (issue #142, RÉSOLU #312)', () => {
-  it('accepts the Mobilité documents — UNE lecture résolue par territoire', () => {
+describe('parsePayload — le thème Mobilité sans lecture (#1048 slice 3)', () => {
+  it('accepte les faits Mobilité retenus sans aucune ligne d’histoire', () => {
     const payload = parsePayload(documentsMobilite())
 
     expect(payload.indicateurs).toHaveLength(indicateursMobiliteFixture.length)
-    const histoires = payload.histoires.filter((h) => h.theme === 'mobilite')
-    expect(histoires).toHaveLength(histoiresMobiliteFixture.length)
-    // la saillante porte UNE lecture — le vélo a REMPLACÉ le défaut (issue
-    // #312 : le pool n'est jamais émis, ADR-0002)
-    const saillante = histoires.filter((h) => h.territoire === '22002')
-    expect(saillante.map((h) => h.story_key)).toEqual(['ce-que-le-velo-preserve'])
-    expect(saillante[0]).toMatchObject({
+    expect(payload.histoires.filter((h) => (h.theme as string) === 'mobilite')).toEqual([])
+  })
+
+  it('ignore une ligne d’histoire résiduelle encore servie avant le republish', () => {
+    const legacy = {
+      territoire: '22001',
+      type: 'commune',
+      theme: 'mobilite',
       groupe: 'acces-aux-services',
-      salience_reason: 'delta-velo-saillant',
-    })
+      story_key: 'story-du-snapshot-retire',
+      salience_reason: 'defaut',
+    }
+    const payload = parsePayload(documentsMobilite({ histoires: [legacy] }))
+
+    expect(payload.histoires).toEqual([])
   })
 
-  it('rejects a Mobilité histoire with an unknown story_key (drift must be loud)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { story_key: string }).story_key = 'la-voiture-reine'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/inconnue du contrat/)
-  })
-
-  it('rejects a Mobilité histoire missing its required reading (div_loss_t absent — loud)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    delete (histoires[0] as Partial<HistoireMobilite>).div_loss_t
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/div_loss_t/)
-  })
-
-  it('rejects a negative delta — la neutralité modale (vélo ≥ à pied) est le contrat', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { delta: number }).delta = -3
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/delta/)
-  })
-
-  it('rejects a vélo Story without the « saillant » classification', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    const velo = histoires.find(
-      (h) => (h as { story_key: string }).story_key === 'ce-que-le-velo-preserve',
-    ) as unknown as { classification_saillance: string }
-    velo.classification_saillance = 'notable'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/saillant/)
-  })
-
-  it('rejects a vélo Story without its flat distribution signature', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    const velo = histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite
-    velo.dens_1 = null
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/dens_1/)
-  })
-
-  it.each([
-    ['nonnumeric', (velo: HistoireMobilite) => { velo.dec_4 = 'bad' as unknown as number }],
-    ['unusable', (velo: HistoireMobilite) => { velo.dens_1 = 0; velo.dens_2 = 0; velo.dens_3 = 0; velo.dens_4 = 0; velo.dens_5 = 0; velo.dens_6 = 0; velo.dens_7 = 0; velo.dens_8 = 0; velo.dens_9 = 0; velo.dens_10 = 0 }],
-    ['invalid range', (velo: HistoireMobilite) => { velo.dens_max = 1; velo.dens_min = 2 }],
-  ])('rejects a vélo Story with a %s flat signature', (_, mutate) => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    mutate(histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite)
-    expect(() => parsePayload(documentsMobilite({ histoires }))).toThrow()
-  })
-
-  it('rejects an unknown saillance classification', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { classification_saillance: string }).classification_saillance = 'super'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/classification_saillance/)
-  })
-
-  it('rejects a duplicate lecture (territoire × groupe) — jamais deux lectures pour le même slot', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+  it('rejette toujours une lecture en double sur un thème qui en porte (Démographie)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresDemographieFixture))
     histoires.push({ ...histoires[0] })
 
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    const erreur = attendErreurValidation(documentsBruts({ histoires }))
     expect(erreur.message).toMatch(/plusieurs lectures/)
   })
 
-  it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { vintage_date_publication: string }).vintage_date_publication = '2026/08/06'
+  it('rejette toujours un tampon d’histoire malformé sur un thème qui en porte', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture))
+    histoires[0].vintage_date_publication = '2026/08/06'
 
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/vintage/)
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/vintage|ISO/)
   })
 })
-
 describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed par la spec #225)', () => {
   it('accepts the Milieux documents — la Story unique « Se densifier, s’étaler, ou s’en aller »', () => {
     const payload = parsePayload(documentsMilieux())

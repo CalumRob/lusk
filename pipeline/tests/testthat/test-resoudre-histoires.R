@@ -36,7 +36,7 @@ test_that("le registre couvre les cinq thèmes et déclare les groupes de fiche"
 })
 
 test_that("Démographie : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
 
   expect_named(h, c(
@@ -59,7 +59,7 @@ test_that("Démographie : chaque lecture résolue porte son groupe et « defaut 
 })
 
 test_that("Habitat : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(load_fixture_habitat(), theme = theme_habitat())
+  p <- compute_payload_test(load_fixture_habitat(), theme = theme_habitat())
   h <- p$histoires
 
   # issue #370 : la lecture vit dans le sous-groupe « etat-energetique-du-parc »
@@ -71,7 +71,7 @@ test_that("Habitat : chaque lecture résolue porte son groupe et « defaut »", 
 })
 
 test_that("Milieux : chaque lecture résolue porte son groupe et « defaut »", {
-  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  p <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- p$histoires
 
   expect_true(all(h$groupe == "artificialisation"))
@@ -88,7 +88,31 @@ test_that("Milieux : chaque lecture résolue porte son groupe et « defaut »", 
                     sign(h$delta_population[definis])))
 })
 
-test_that("Mobilité : la saillance REMPLACE le défaut — une lecture par territoire", {
+test_that("Mobilité : le pool ADR-0002 est retiré — aucune candidate ne peut plus être émise (#1048)", {
+  expect_equal(nrow(STORIES_RESOLUES_PAR_THEME$mobilite), 0L)
+  candidats <- tibble::tibble(
+    territoire = "22001", type = "commune", theme = "mobilite",
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"))
+  expect_error(resoudre_histoires(candidats, "mobilite"), "inconnue")
+  vide <- resoudre_histoires(candidats[0L, ], "mobilite")
+  expect_equal(nrow(vide), 0L)
+})
+
+test_that("le pool ADR-0002 résout encore une saillance pour un thème qui le déclare", {
+  # Mécanique générique conservée : on épingle TEMPORAIREMENT un pool pour
+  # prouver que la règle « la saillance remplace le défaut » tient toujours,
+  # même si Mobilité ne l'utilise plus depuis #1048.
+  ns <- asNamespace("lusk")
+  registre <- get("STORIES_RESOLUES_PAR_THEME", envir = ns)
+  original <- registre
+  pool <- tibble::tibble(
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
+    groupe = "acces-aux-services", ordre = c(1L, 2L),
+    salience_reason = c(NA_character_, "delta-velo-saillant"))
+  registre$mobilite <- pool
+  assignInNamespace("STORIES_RESOLUES_PAR_THEME", registre, ns = "lusk")
+  on.exit(assignInNamespace("STORIES_RESOLUES_PAR_THEME", original, ns = "lusk"),
+          add = TRUE)
   # le pool (vingt-minutes toujours allumé + vélo quand le delta est réel) se
   # résout en UNE lecture par territoire : la story saillante là où elle tire,
   # le défaut ailleurs. Jamais les deux lignes du pool dans le payload.
@@ -131,6 +155,17 @@ test_that("Mobilité : la saillance REMPLACE le défaut — une lecture par terr
 })
 
 test_that("Mobilité : la lecture résolue garde la matière du défaut quand elle ne tire pas", {
+  # Pool épinglé temporairement (Mobilité n'en publie plus depuis #1048).
+  ns <- asNamespace("lusk")
+  registre <- get("STORIES_RESOLUES_PAR_THEME", envir = ns)
+  original <- registre
+  pool <- tibble::tibble(
+    story_key = "vingt-minutes-sans-voiture", groupe = "acces-aux-services",
+    ordre = 1L, salience_reason = NA_character_)
+  registre$mobilite <- pool
+  assignInNamespace("STORIES_RESOLUES_PAR_THEME", registre, ns = "lusk")
+  on.exit(assignInNamespace("STORIES_RESOLUES_PAR_THEME", original, ns = "lusk"),
+          add = TRUE)
   # quand le défaut est choisi, sa matière (div_loss_t/b, delta, la profondeur
   # et la signature) reste portée par la ligne résolue — la même forme qu'avant
   vingt <- tibble::tibble(
@@ -196,7 +231,7 @@ test_that("un thème sans registre échoue FORT", {
 })
 
 test_that("la validation échoue FORT sur une lecture en double (territoire × groupe)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h2 <- dplyr::bind_rows(h, h[1, ])   # 22001 en double
   expect_error(valider_histoires_resolues(h2, "demographie"),
@@ -204,7 +239,7 @@ test_that("la validation échoue FORT sur une lecture en double (territoire × g
 })
 
 test_that("la validation échoue FORT sur une raison de saillance incohérente", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h$salience_reason[1] <- "delta-velo-saillant"   # incohérent pour le défaut
   expect_error(valider_histoires_resolues(h, "demographie"),
@@ -212,7 +247,7 @@ test_that("la validation échoue FORT sur une raison de saillance incohérente",
 })
 
 test_that("la validation échoue FORT sur une story hors registre ou un groupe inconnu", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- p$histoires
   h$story_key[1] <- "story-fantome"
   expect_error(valider_histoires_resolues(h, "demographie"), "registre")
@@ -222,6 +257,21 @@ test_that("la validation échoue FORT sur une story hors registre ou un groupe i
 })
 
 test_that("la validation accepte les histoires résolues valides", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_no_error(valider_histoires_resolues(p$histoires, "demographie"))
+})
+
+test_that("garde #312 : une table d'histoires vide échoue sauf pour les thèmes SANS lecture déclarés", {
+  vide <- data.frame(territoire = character(), type = character(),
+                     theme = character(), stringsAsFactors = FALSE)
+  # Démographie et Habitat déclarent une lecture : le vide est une corruption.
+  for (theme in c("demographie", "habitat")) {
+    expect_error(valider_histoires_resolues(vide, theme), "aucune histoire",
+                 info = theme)
+  }
+  # L'exemption est une propriété DÉCLARÉE du thème, pas un nom en dur.
+  expect_true("mobilite" %in% THEMES_SANS_LECTURE)
+  expect_true("programmes" %in% THEMES_SANS_LECTURE)
+  expect_silent(valider_histoires_resolues(vide, "mobilite"))
+  expect_silent(valider_histoires_resolues(vide, "programmes"))
 })

@@ -258,25 +258,59 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
     expect(wrapper.text()).not.toContain('Réessayer les comparaisons')
     expect(wrapper.find('.mobilite-raccordement-curve__territory').exists()).toBe(true)
-    expect(reads.some(item => item.resource === 'offre_tc')).toBe(false)
-    expect(wrapper.find('.mobilite-share-track').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Contenu indisponible pour ce territoire.')
-    const parking = wrapper.get('[data-column="stationnement"] .mobilite-comparison-bars svg')
-    expect(parking.attributes('aria-label')).toContain('Indisponible')
-    if (failNetworkFacts) expect(wrapper.get('.mobilite-section--reseaux').text()).toContain('Publication indisponible')
-    if (!failNetworkFacts) {
-      // The extracted per-Cahier context survives route changes: eligibility
-      // must follow the new native identity, not its initial content object.
-      await router.replace('/territoire/commune/22001?theme=mobilite')
-      await flushPromises()
-      await flushPromises()
-      expect(wrapper.get('.aedar-access-mode-selector').text()).toContain('Groupe comparé')
-      await router.replace('/territoire/region/53?theme=mobilite')
-      await flushPromises()
-      await flushPromises()
-      expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
-      expect(requests.flat().filter(item => item.target.type === 'region' && item.intent.kind !== 'facts')).toEqual([])
+    // #1032: the real producer-derived catalogue now admits scalar-serving
+    // levels independently of dedicated indicator-page display admission.
+    // These are native regional fixture facts, not relabelled commune reads.
+    for (const resource of ['offre_tc', 'places_stationnement_velo_1000',
+      'places_stationnement_voiture_1000', 'bornes_recharge', 'bornes_recharge_1000',
+      'stations_service', 'stations_service_1000', 'bornes_ev_par_station_service']) {
+      expect(reads.some(item => item.resource === resource && item.target.type === 'region' &&
+        item.target.id === '53' && item.intent.kind === 'facts'), resource).toBe(true)
     }
+    expect(wrapper.find('.mobilite-share-track').exists()).toBe(true)
+    const parking = wrapper.get('[data-column="stationnement"] .mobilite-comparison-bars svg')
+    expect(parking.attributes('aria-label')).not.toContain('Indisponible')
+    expect(wrapper.findAll('.mobilite-comparison-bars [data-comparison]')).toHaveLength(0)
+    expect(wrapper.find('.mobilite-raccordement-curve__comparison').exists()).toBe(false)
+    if (failNetworkFacts) expect(wrapper.get('.mobilite-section--reseaux').text()).toContain('Publication indisponible')
+    wrapper.unmount()
+  })
+
+  // #1035: the route-change identity check used to share this test's body. It
+  // mounts a second (commune) fiche and returns to the region, so it is its own
+  // 5 s-budgeted case: bundling it with the region-fact lock above pushed that
+  // case past vitest's default timeout under a full-suite CI load (6127 ms in
+  // run 44068143211; 5411 ms locally under the same command).
+  it('gains the Cahier comparison eligibility when a route change reaches a comparable native identity', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const nativeFetch = nativeSemanticFetch(requests)
+    vi.stubGlobal('fetch', vi.fn(nativeFetch))
+    const { router, wrapper } = await monter('/territoire/region/53?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
+    // The extracted per-Cahier context survives route changes: eligibility
+    // must follow the new native identity, not its initial content object.
+    await router.replace('/territoire/commune/22001?theme=mobilite')
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.get('.aedar-access-mode-selector').text()).toContain('Groupe comparé')
+    wrapper.unmount()
+  })
+
+  it('drops the Cahier comparison eligibility when a route change reaches the ineligible region', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const nativeFetch = nativeSemanticFetch(requests)
+    vi.stubGlobal('fetch', vi.fn(nativeFetch))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.get('.aedar-access-mode-selector').text()).toContain('Groupe comparé')
+    await router.replace('/territoire/region/53?theme=mobilite')
+    await flushPromises()
+    await flushPromises()
+    expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
+    expect(requests.flat().filter(item => item.target.type === 'region' && item.intent.kind !== 'facts')).toEqual([])
     wrapper.unmount()
   })
 

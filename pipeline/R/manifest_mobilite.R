@@ -7,12 +7,6 @@
 # publication.
 #
 # Les fragments (concaténés dans MANIFEST_MOBILITE, l'ordre du manifeste) :
-#   - mobilite_snapshot   (issue #137, fragment SNAPSHOT) : le snapshot PORTÉ
-#     de l'analyse d'accessibilité « Vingt minutes sans voiture » — le fichier
-#     de production bretagne_mobility_super_dashboard_gravity.csv. INSTANTANÉ
-#     sur horloge lente : la référence est la date d'instantané de l'analyse
-#     (2026-02-28), la publication la date du portage (2026-08-06). Mode
-#     « manuel » (ADR-0004), jamais de cron.
 #   - rp_logement_princ  (issue #139, fragment DEMANDE) : le cube RP exploitation
 #     principale DS_RP_LOGEMENT_PRINC (le code de table LOG T12 « Équipement
 #     automobile des ménages ») — les voitures/ménage de la demande.
@@ -29,12 +23,6 @@
 #     stops.txt GTFS (27 297 arrêts, dont 2 919 STAR — Rennes), PAS de
 #     mobibreizh-stops (24 380 arrêts SANS le réseau STAR — un constat de
 #     qualité de la donnée). ODbL (ADR-0001).
-#   - batiments_residentiels (issue #140, fragment BATIMENTS) : la couche des
-#     bâtiments résidentiels de Bretagne (BDNB — Base Nationale des
-#     Bâtiments), portée comme le snapshot (mode « manuel », son propre
-#     millésime BDNB 2025-07). Les geom_adresse POINT (EPSG:2154) avec leur
-#     code_commune_insee portent la VRAIE part des bâtiments près d'un arrêt
-#     (la correction de la méthode). Licence Ouverte 2.0 (Etalab).
 #   - bornes-recharges    (issue #140, fragment BORNES) : le fichier consolidé
 #     IRVE (Etalab via data.bretagne.bzh), Licence Ouverte, refreshed
 #     2026-07-28 (le vintage verrouillé du contrat thème).
@@ -50,75 +38,12 @@
 # jamais antérieure à la référence). Un manifeste corrompu échoue là où il est
 # construit, jamais plus tard dans la machinerie.
 #
-# Guardrails du PRD #136 (fragment SNAPSHOT) : l'artefact non-production
-# indicateurs_summarized_communes.csv (deltas vélo NÉGATIFS) n'est JAMAIS une
-# base — le contrat du fragment refuse tout autre nom de fichier ; aucune
-# ingestion du dashboard original au-delà du fichier porté ; la matrice
-# complète reste un artefact interne — jamais publiée dans le payload (leçon
-# de l'issue #131).
-#
 # Ce qui n'y figure PLUS (la correction de la première passe, issue #140) :
 #   - mobibreizh-stops : le fichier ne porte AUCUN arrêt du réseau STAR de
 #     Rennes (vérifié en direct 2026-08-06 — les préfixes CTRL, KICEO,
 #     PENNARBED, QUB, BIBUS… y sont, STAR absent). La fédération GTFS
 #     (stops.txt, 27 297 arrêts dont 2 919 STAR) est autoritaire. Le constat
 #     est documenté dans la note du fragment korrigo ;
-#   - communes-france : la couche bâtiments porte elle-même code_commune_insee
-#     — la jointure spatiale aux polygones communaux n'est plus nécessaire.
-
-# VINTAGE_MOBILITE_SNAPSHOT -----------------------------------------------------
-# Le millésime du snapshot porté : l'analyse a été figée le 2026-02-28 (la
-# date de génération du fichier de production — ses données de référence sont
-# BPE 2024 · OSM 02-2026 · BDNB 2025-07). La RÉFÉRENCE du vintage est CETTE
-# date d'instantané (ce que « l'analyse du 28 février 2026 » veut dire) ; la
-# PUBLICATION est la date du portage dans le pipeline (2026-08-06 — le jour où
-# le snapshot est devenu la source du thème). Les deux dates sont la vérité de
-# la source, jamais alignées sur un tampon de thème.
-VINTAGE_MOBILITE_SNAPSHOT <- MOBILITE_SNAPSHOT_VERSION
-DATE_REFERENCE_MOBILITE_SNAPSHOT <- MOBILITE_SNAPSHOT_DATE_REFERENCE
-DATE_PUBLICATION_MOBILITE_SNAPSHOT <- MOBILITE_SNAPSHOT_DATE_PUBLICATION
-
-# MANIFEST_MOBILITE_SNAPSHOT ----------------------------------------------------
-# Le fragment SNAPSHOT (issue #137) : les 11 colonnes standard du manifeste (la
-# même forme que SIRENE / Flores / RP / Habitat), une ligne : la source portée.
-# `url` reprend le chemin de cache repo-relatif du fichier de production (la
-# source n'a pas de point de publication public ; le mode « manuel » fait que
-# le cron ne la touche jamais). Le fragment est VALIDÉ par
-# verifier_contrat_mobilite_snapshot (la
-# garde du « jamais cette base » du PRD #136).
-MANIFEST_MOBILITE_SNAPSHOT <- tibble::tribble(
-  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
-   MOBILITE_SNAPSHOT_SOURCE_ID,
-   MOBILITE_SNAPSHOT_SOURCE,
-   "data/raw/bretagne_mobility_super_dashboard_gravity.csv",
-  "bretagne_mobility_super_dashboard_gravity.csv",
-   MOBILITE_SNAPSHOT_VERSION,
-   MOBILITE_SNAPSHOT_DATE_REFERENCE,
-   MOBILITE_SNAPSHOT_DATE_PUBLICATION,
-   MOBILITE_SNAPSHOT_LICENCE,
-  paste0(
-    "Le snapshot PORTÉ de l'analyse d'accessibilité « Vingt minutes sans ",
-    "voiture » (le flagship, docs/adr/0012) : le fichier de production ",
-    "bretagne_mobility_super_dashboard_gravity.csv (1 200 communes × 2 061 ",
-    "colonnes, les niveaux _epci/_dep/_reg inclus), figé le 2026-02-28 — les ",
-    "données de référence BPE 2024 · OSM 02-2026 · BDNB 2025-07, calcul par ",
-    "bâtiment (1,2 M de bâtiments résidentiels, routage R5, cap 20 minutes). ",
-    "JAMAIS l'artefact non-production indicateurs_summarized_communes.csv : il ",
-    "a montré des deltas vélo NÉGATIFS (le contrat refuse tout autre nom de ",
-    "fichier). Le portage EST le fichier : le cache est le CSV, aucune autre ",
-    "ingestion du dashboard original. La matrice complète du super dashboard ",
-    "reste un artefact interne — jamais publiée dans le payload (leçon de ",
-    "l'issue #131). INSTANTANÉ sur horloge lente : la date de référence est la ",
-    "date d'instantané de l'analyse, la publication la date du portage — le ",
-    "thème ne prétend jamais être plus frais que son calcul. Attribution ",
-    "ODbL : l'analyse consomme l'OSM (réseaux) — © OpenStreetMap contributors, ",
-    "licence ODbL (ADR-0001), code de l'analyse publié avec la Méthodes du thème."
-  ),
-  "manuel", "fichier"
-)
-
-
 # MANIFEST_MOBILITE_RP_LOGEMENT -------------------------------------------------
 # Le fragment DEMANDE (issue #139) : le cube RP exploitation principale
 # DS_RP_LOGEMENT_PRINC — les voitures/ménage, le code de table épinglé LOG T12
@@ -341,10 +266,10 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 # constat est documenté ici, dans la Méthodes et dans les tests).
 #
 # DÉCISION DE MÉTHODE (l'item 🔶 du contrat, docs/themes/mobilite.md §Open
-# items et ADR-0012) : « part des bâtiments près d'un arrêt » = la fraction
-# des BÂTIMENTS de la commune (la couche batiments_residentiels, geom_adresse
-# POINT EPSG:2154, code_commune_insee) à moins de 500 m à vol d'oiseau d'un
-# arrêt GTFS — la VRAIE part, jamais un proxy de superficie communale. La
+# items et ADR-0012) : « part des adresses près d'un arrêt » = la fraction
+# des ADRESSES résidentielles de la commune (le spine AEDAR, geom_adresse
+# POINT reprojeté EPSG:2154, code_commune_insee) à moins de 500 m à vol
+# d'oiseau d'un arrêt GTFS — la VRAIE part, jamais un proxy de superficie. La
 # distance de 500 m est le rayon classique « 10 minutes à pied » ; verrouillée
 # dans le code (DISTANCE_ARRET_M, analytics_mobilite.R).
 #
@@ -358,7 +283,7 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 #     663d7db62ba6751333240d5aaee9142c74f3e8b9f654601bea35d13f8aa74969,
 #     feed_version « 80335 », validité 2025-12-14 → 2034-01-20, 32 agences).
 #     CE PIN EST PARTAGÉ : il alimente aussi l'indicateur offre_tc (part des
-#     bâtiments près d'un arrêt) — son PREMIER PASSAGE À LA FRAÎCHEUR y
+#     adresses près d'un arrêt) — son PREMIER PASSAGE À LA FRAÎCHEUR y
 #     déplacera les valeurs publiées (les arrêts bougent avec les réseaux) ;
 #     les verrous données réelles de l'offre TC (Rennes 0,9957 · Ille-et-
 #     Vilaine 0,5731 · EPCI 0,9412 · Finistère 0,6761) devront être réétablis
@@ -391,67 +316,19 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
     "périmé laissait douze réseaux sombres sur septembre, la leçon de la ",
     "porte de présence). CE PIN EST PARTAGÉ avec l'indicateur offre_tc : son ",
     "PREMIER PASSAGE À LA FRAÎCHEUR déplacera les valeurs publiées de cette ",
-    "part des bâtiments près d'un arrêt — les verrous données réelles ",
+    "part des adresses près d'un arrêt — les verrous données réelles ",
     "(Rennes 0,9957 · 35 : 0,5731 · EPCI 0,9412 · 29 : 0,6761) seront ",
     "rétablis sur le premier run frais, le déplacement documenté ici, jamais ",
     "tu. Réseaux sombres documentés du millésime : Coralie Concarneau et ",
     "LinéotimL30 (RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335). DÉCISION DE ",
-    "MÉTHODE (l'item 🔶 du contrat) : « part des bâtiments près d'un arrêt » ",
-    "= la fraction des BÂTIMENTS de la commune à moins de 500 m à vol ",
-    "d'oiseau d'un arrêt GTFS (la couche batiments_residentiels, geom_adresse ",
-    "POINT EPSG:2154) — la VRAIE part, jamais un proxy de superficie. ODbL ",
+    "MÉTHODE (l'item 🔶 du contrat) : « part des adresses près d'un arrêt » ",
+    "= la fraction des ADRESSES résidentielles de la commune à moins de 500 ",
+    "m à vol d'oiseau d'un arrêt GTFS (le spine AEDAR reprojeté EPSG:2154) ",
+    "— la VRAIE part, jamais un proxy de superficie. ODbL ",
     "(ADR-0001) : attribution « © OpenStreetMap contributors » portée par ",
     "l'indicateur."
   ),
   "cron", "fichier"
-)
-
-# MANIFEST_MOBILITE_BATIMENTS ---------------------------------------------------
-# Le fragment BATIMENTS (issue #140, la correction de la méthode) : la couche
-# des bâtiments résidentiels de Bretagne, dérivée de la BDNB (Base Nationale
-# des Bâtiments) — 1 338 591 bâtiments, dont 1 235 417 portent un geom_adresse
-# POINT (EPSG:2154) et leur code_commune_insee. PORTÉE comme le snapshot (mode
-# « manuel », jamais un cron) : le fichier est extrait à la main, avec SON
-# propre millésime (BDNB 2025-07 — la même référence BDNB que le snapshot),
-# la publication étant la date du portage. Licence Ouverte 2.0 (Etalab) — la
-# BDNB Open est réutilisable librement sous condition de citation des sources
-# (docs/research/bndb.md §3).
-#
-# Cette couche porte la correction de la MÉTHODE de l'offre TC : la part des
-# bâtiments près d'un arrêt est désormais la fraction des BÂTIMENTS de la
-# commune à moins de 500 m d'un arrêt GTFS — calculée POINT par POINT sur les
-# geom_adresse (jamais une part de superficie communale, qui diverge
-# massivement dans les communes denses : Rennes superficie 0,40 vs bâtiments
-# 0,996). La couche portant elle-même code_commune_insee, la jointure spatiale
-# aux polygones communaux (communes-france) n'est plus nécessaire — le
-# référentiel disparaît du manifeste.
-MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
-  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
-  "batiments_residentiels",
-  "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
-   "data/raw/batiments_residentiels_bretagne.csv",
-  "batiments_residentiels_bretagne.csv",
-  "2025-07", "2025-07-31", "2026-08-06",
-  "lov2",
-  paste0(
-    "La couche des bâtiments résidentiels de Bretagne, dérivée de la BDNB : ",
-    "1 338 591 bâtiments, dont 1 235 417 portent un geom_adresse POINT ",
-    "(EPSG:2154 — Lambert-93) et leur code_commune_insee (1 200 communes ; les ",
-    "deux îles sans bâtiment géocodé — 29083/29084 — n'ont pas de part, un ",
-    "fait de la couche). PORTÉE à la main comme le snapshot (mode « manuel », ",
-    "jamais un cron), avec SON propre millésime BDNB 2025-07 (la référence du ",
-    "fichier, citée dans le snapshot) et la date du portage comme publication. ",
-    "Elle porte la CORRECTION de la méthode de l'offre TC : « part des ",
-    "bâtiments près d'un arrêt » = la fraction des BÂTIMENTS de la commune à ",
-    "moins de 500 m à vol d'oiseau d'un arrêt GTFS — calculée POINT par POINT, ",
-    "jamais un proxy de superficie communale (la première passe proxyait par ",
-    "la surface : Rennes 0,40 vs bâtiments 0,996 — rejetée). La couche portant ",
-    "code_commune_insee, communes-france disparaît du manifeste. Licence ",
-    "Ouverte 2.0 (Etalab — la BDNB Open est réutilisable librement sous ",
-    "condition de citation des sources, docs/research/bndb.md)."
-  ),
-  "manuel", "fichier"
 )
 
 # MANIFEST_MOBILITE_BORNES -----------------------------------------------------
@@ -738,23 +615,21 @@ MANIFEST_MOBILITE_DILA_BDL <- tibble::tribble(
 # trois sources de l'étage demande/réseaux (issue #139 : le cube RP voitures,
 # l'extrait OSM, les limites communales), puis les quatre sources du sous-bloc
 # « L'offre de mobilité alternative » (issue #140 : korrigo GTFS,
-# batiments_residentiels, bornes-recharges, stationnement-velo). Depuis l'issue
+# l'adresse AEDAR, bornes-recharges, stationnement-velo). Depuis l'issue
 # #222 (ticket #227), le manifeste porte aussi la table de passage COG partagée
 # (cog_passage) ; depuis le ticket #228, le mode `b` de `reseaux` est alimenté
 # par le jeu Geovelo (amenagements_cyclables) ; depuis l'issue #485 (le
 # raccordement), les DEUX sources ferroviaires/géocodage de la fondation
 # données : sncf_voyageurs (le rail national, TGV inclus) et dila_bdl (les
-# points mairie). QUATORZE lignes, quatorze ids uniques, chaque source garde SON
+# points mairie). QUINZE lignes, quinze ids uniques, chaque source garde SON
 # vintage. Validé par verifier_contrat_manifest_mobilite.
 MANIFEST_MOBILITE <- dplyr::bind_rows(
-  MANIFEST_MOBILITE_SNAPSHOT,
   MANIFEST_MOBILITE_RP_LOGEMENT,
   MANIFEST_MOBILITE_OSM_RESEAUX,
   MANIFEST_MOBILITE_OCSGE_RESEAUX,
   MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES,
   MANIFEST_MOBILITE_COMMUNES_LIMITES,
   MANIFEST_MOBILITE_KORRIGO,
-  MANIFEST_MOBILITE_BATIMENTS,
   MANIFEST_MOBILITE_BORNES,
   MANIFEST_MOBILITE_STATIONNEMENT_VELO,
   MANIFEST_MOBILITE_BPE_B316,
@@ -762,94 +637,6 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_SNCF_VOYAGEURS,
   MANIFEST_MOBILITE_DILA_BDL
 )
-
-# verifier_contrat_mobilite_snapshot ---------------------------------------------
-# La VALIDATION du contrat du manifeste (la discipline des fragments, comme
-# verifier_contrat_sirene_snapshot) : le contrat épingle LE fichier de
-# production porté, jamais l'artefact non-production. Elle s'exécute sur le
-# manifeste réel ET sur des fixtures négatives : toute violation — id hors
-# contrat, fichier hors contrat, dates mal formées, publication antérieure à
-# la référence, licence non ODbL, mode non manuel — échoue bruyamment en
-# nommant le champ fautif.
-verifier_contrat_mobilite_snapshot <- function(manifest) {
-  # le fragment peut vivre dans le manifeste COMPLET du thème (issue #139 —
-  # quatre sources) : on isole la ligne de la source avant de valider son
-  # contrat — la discipline du fragment reste entière (une ligne, un id)
-  if (inherits(manifest, "tbl_df") && "id" %in% names(manifest)) {
-    manifest <- manifest[manifest$id == "mobilite_snapshot", ]
-  }
-  manquer <- function(champ, detail) {
-    stop(sprintf("Contrat Mobilité snapshot violé — %s : %s.", champ, detail),
-         call. = FALSE)
-  }
-  valeur <- function(champ) {
-    x <- manifest[[champ]]
-    if (is.null(x) || length(x) == 0) NA_character_ else as.character(x[1])
-  }
-
-  # UNE source, un id unique — la source absente du manifeste est nommée
-  if (!inherits(manifest, "tbl_df")) {
-    manquer("forme", "le manifeste doit être un tibble")
-  }
-  if (nrow(manifest) == 0L) {
-    manquer("id", "la source 'mobilite_snapshot' est absente du manifeste")
-  }
-  if (nrow(manifest) != 1L) {
-    manquer("id", "le contrat épingle UNE source — une seule ligne")
-  }
-  if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
-  if (valeur("id") != "mobilite_snapshot") {
-    manquer("id", "id attendu : 'mobilite_snapshot'")
-  }
-
-  # LE fichier de production, jamais l'artefact non-production aux deltas vélo
-  # négatifs — la garde du « jamais cette base » du PRD #136
-  fichier <- valeur("fichier")
-  if (is.na(fichier)) manquer("fichier", "nom de cache absent")
-  if (fichier != "bretagne_mobility_super_dashboard_gravity.csv") {
-    manquer("fichier", paste0(
-      "le contrat épingle le fichier de production ",
-      "bretagne_mobility_super_dashboard_gravity.csv — l'artefact ",
-      "non-production (indicateurs_summarized_communes.csv, deltas vélo ",
-      "négatifs) est refusé"
-    ))
-  }
-
-  # mode manuel (ADR-0004 — le snapshot est porté à la main, horloge lente) et
-  # type fichier (le cache EST le CSV)
-  mode <- valeur("mode")
-  if (is.na(mode) || mode != "manuel") {
-    manquer("mode", "mode attendu : 'manuel' (snapshot porté, jamais de cron)")
-  }
-  type <- valeur("type")
-  if (is.na(type) || type != "fichier") {
-    manquer("type", "type attendu : 'fichier'")
-  }
-
-  # la licence ODbL (l'analyse consomme l'OSM — ADR-0001)
-  if (valeur("licence") != "odbl") {
-    manquer("licence", "licence attendue : 'odbl' (OSM, ADR-0001)")
-  }
-
-  # les dates — ISO ; la référence (l'instantané de l'analyse) antérieure ou
-  # égale à la publication (le portage)
-  vintage <- valeur("vintage")
-  date_ref <- valeur("date_reference")
-  date_pub <- valeur("date_publication")
-  toutes <- c(vintage, date_ref, date_pub)
-  if (any(is.na(toutes)) ||
-      any(!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", toutes))) {
-    manquer("dates", "vintage / date_reference / date_publication manquants ou mal formés")
-  }
-  if (as.Date(date_pub) < as.Date(date_ref)) {
-    manquer("date_publication", paste0(
-      "la publication (le portage, ", date_pub, ") doit être postérieure ou ",
-      "égale à la référence (l'instantané de l'analyse, ", date_ref, ")"
-    ))
-  }
-
-  invisible(TRUE)
-}
 
 # verifier_contrat_mobilite_demande_reseaux --------------------------------------
 # La VALIDATION du contrat des trois sources de l'étage demande/réseaux
@@ -859,7 +646,7 @@ verifier_contrat_mobilite_snapshot <- function(manifest) {
 # contrat, licence non attendue, mode non attendu, dates mal formées,
 # publication antérieure à la référence — échoue bruyamment en nommant le
 # champ fautif. Le snapshot porté a SA propre validation
-# (verifier_contrat_mobilite_snapshot) ; le manifeste réel et les fixtures
+# de chaque fragment ; le manifeste réel et les fixtures
 # négatives exécutent les deux.
 verifier_contrat_mobilite_demande_reseaux <- function(manifest) {
   manquer <- function(champ, detail) {
@@ -1176,39 +963,6 @@ verifier_contrat_mobilite_dila_bdl <- function(fragment) {
   invisible(TRUE)
 }
 
-# verifier_contrat_mobilite_batiments -------------------------------------------
-# Le contrat du fragment BATIMENTS (issue #140, la correction de la méthode) :
-# UNE source — batiments_residentiels, la couche BDNB portée comme le snapshot
-# (mode « manuel », jamais un cron), Licence Ouverte 2.0 (lov2), son propre
-# millésime (BDNB 2025-07).
-verifier_contrat_mobilite_batiments <- function(fragment) {
-  manquer <- function(champ, detail) {
-    stop(sprintf("Contrat Mobilité Bâtiments violé — %s : %s.", champ, detail),
-         call. = FALSE)
-  }
-  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) {
-    manquer("forme", "le fragment Bâtiments porte UNE source")
-  }
-  if (fragment$id != "batiments_residentiels") {
-    manquer("id", "id attendu : 'batiments_residentiels'")
-  }
-  if (fragment$fichier != "batiments_residentiels_bretagne.csv") {
-    manquer("fichier", "fichier de cache attendu : batiments_residentiels_bretagne.csv")
-  }
-  if (fragment$licence != "lov2") {
-    manquer("licence", "licence attendue : 'lov2' (Licence Ouverte 2.0 — BDNB, Etalab)")
-  }
-  if (fragment$mode != "manuel" || fragment$type != "fichier") {
-    manquer("mode/type", "mode 'manuel' (portée à la main, comme le snapshot) et type 'fichier'")
-  }
-  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
-      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
-      as.Date(fragment$date_publication) < as.Date(fragment$date_reference)) {
-    manquer("dates", "dates ISO bien formées, publication jamais antérieure à la référence")
-  }
-  invisible(TRUE)
-}
-
 # verifier_contrat_mobilite_bornes ----------------------------------------------
 # Le contrat du fragment BORNES (issue #140) : UNE source — bornes-recharges,
 # le fichier consolidé IRVE (Licence Ouverte v2.0, refreshed 2026-07-28 selon
@@ -1326,9 +1080,9 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 17L) {
-    manquer("forme", paste0("le manifeste concaténé porte DIX-SEPT sources (le ",
-                            "snapshot + les quatre de l'étage demande/réseaux ",
+  if (nrow(manifest) != 15L) {
+    manquer("forme", paste0("le manifeste concaténé porte QUINZE sources (les ",
+                            "quatre de l'étage demande/réseaux ",
                              "(#139) + les quatre états OCS-GE routiers (#552) + ",
                               "les quatre du sous-bloc (#140) + la ",
                             "BPE B316 et la table de passage COG partagée + ",
@@ -1337,10 +1091,9 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
-  attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
+  attendus <- c("rp_logement_princ", "osm_reseaux",
                 IDS_OCSGE_RESEAUX, "amenagements_cyclables", "communes_limites",
                 "korrigo",
-                  "batiments_residentiels",
                  "bornes-recharges",
                 "stationnement-velo", "bpe_b316", "cog_passage",
                 "sncf_voyageurs", "dila_bdl")
@@ -1349,14 +1102,10 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   }
 
   # chaque fragment passe SON contrat
-  verifier_contrat_mobilite_snapshot(
-    manifest[manifest$id == "mobilite_snapshot", ])
   verifier_contrat_mobilite_demande_reseaux(manifest)
   verifier_contrat_mobilite_ocsge_reseaux(manifest)
   verifier_contrat_mobilite_korrigo(
     manifest[manifest$id == "korrigo", ])
-  verifier_contrat_mobilite_batiments(
-    manifest[manifest$id == "batiments_residentiels", ])
   verifier_contrat_mobilite_bornes(
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(

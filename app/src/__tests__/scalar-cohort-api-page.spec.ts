@@ -5,6 +5,8 @@ import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScal
   chargerCohortePageScalaireNative, chargerComparaisonsScalaires, indicateursScalairesEnregistres,
   pagesScalairesEnregistrees, remplacerFaitsScalaires, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
+import { cohortLittoralPourFocal } from '../fiche/comparisonContext'
+import type { ScalarComparisonRequest } from '../payload/scalarCohort'
 import { validerCatalogueNavigateur } from '../payload/validate'
 import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { nativeResources } from './helpers/semanticApiFixtures'
@@ -555,5 +557,61 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
         kind: 'explicit_selection', territoryType: 'commune', memberCount: 1, label: 'commune seule',
       } })).resolves.toEqual({ [indicator]: null })
     expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('#1044 a littoral cohort serves its own reference AND direction-aware rank/ties through the scalar adapter', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    // Only the focal's served C/NC class decides the cohort.
+    const reference = territoiresFixture.map((t) => ({ ...t,
+      littoral_code: (t.type === 'commune' && (t.territoire === '22001' || t.territoire === '22002') ? 'C'
+        : t.type === 'commune' ? 'NC' : null) as 'C' | 'NC' | null,
+    }))
+    const focal = reference.find((t) => t.territoire === '22001')!
+    const cohort = cohortLittoralPourFocal(focal, reference)!
+    const members = cohort.map((m) => ({ type: 'commune' as const, id: m.territory_id }))
+    const request: ScalarComparisonRequest = { kind: 'selected', members,
+      scope: { kind: 'explicit_selection', territoryType: 'commune', memberCount: members.length,
+        label: 'communes littorales bretonnes' } }
+
+    const echo = (echoIds: string[]) => (item: Record<string, any>) => ({
+      resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+      shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+      selection: echoIds.map((id) => ({ territory_type: 'commune', territory_id: id })),
+      scope: { kind: 'explicit_selection', member_count: echoIds.length },
+      result: { indicator_id: indicator, status: 'available', unit: page.unit, direction: page.direction,
+        source_facet: indicator, descriptor_version: 'scalar-descriptor-v3',
+        selected_member_count: echoIds.length, eligible_count: echoIds.length, missing_count: 0,
+        median: 12, rank: 1, rank_size: echoIds.length, rank_ties: echoIds.length,
+        focal_in_selection: echoIds.includes('22001'),
+        member_ranks: echoIds.map((id) => ({ territory_id: id, rank: 1,
+          rank_size: echoIds.length, rank_ties: echoIds.length })),
+        comparison_sources: [{ source_id: resource.sources[0], name: 'Source API comparée',
+          vintage_id: 'v2026', version: '2026', reference_date: '2026-06-30', publication_date: '2026-07-01' }] },
+    })
+
+    const fetcher = installCatalogueAndReads([resource], echo(members.map((m) => m.id)))
+    const served = await chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focal,
+      reference, request, { contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' }, true)
+    const requestBody = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')?.[1] as RequestInit).body as string)
+    // The read asked for EXACTLY the focal's C peers, not EPCI/Bretagne.
+    expect(requestBody.items[0].intent).toEqual({ kind: 'selected_comparison',
+      members: [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }] })
+    expect(served[indicator]).toMatchObject({ status: 'available', median: 12, rank: 1,
+      rankSize: 2, rankTies: 2, direction: page.direction, selectedMemberCount: 2,
+      scope: 'communes littorales bretonnes' })
+
+    // A response echoing the WRONG cohort fails closed in the real adapter —
+    // no borrowed reference or rank. Use the other focal so the semantic item
+    // identity differs and the first settled read is never reused.
+    const focalNC = reference.find((t) => t.territoire === '29001')!
+    const ncMembers = cohortLittoralPourFocal(focalNC, reference)!.map((m) => ({ type: 'commune' as const, id: m.territory_id }))
+    const ncRequest: ScalarComparisonRequest = { kind: 'selected', members: ncMembers,
+      scope: { kind: 'explicit_selection', territoryType: 'commune', memberCount: ncMembers.length,
+        label: 'communes non littorales bretonnes' } }
+    installCatalogueAndReads([resource], echo(['22001', '22002'])) // C echo into an NC request
+    await expect(chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focalNC,
+      reference, ncRequest, undefined, true)).rejects.toThrow()
   })
 })

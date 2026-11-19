@@ -13,8 +13,9 @@ import { nativeResources } from './helpers/semanticApiFixtures'
 import { PRODUCER_THEME_METADATA } from './helpers/producerThemeMetadata'
 
 // Producer indicator identities outside the retained Methods product: the old
-// Mobilité access surface was retired from the app in #870. Some declarations
-// remain as page metadata, others only in the producer's indicator-key roster.
+// Mobilité access surface is retired from the app (#870) and from the producer
+// roster (#1048 slice 2). They survive only as retirement receipts in
+// scalar_contracts, never as pages or discoverable resources.
 const INDICATEURS_MOBILITE_RETIRES = [
   'avg_div_b', 'avg_div_car', 'avg_div_t', 'avg_tot_b', 'avg_tot_car', 'avg_tot_t',
   'iso_administration', 'iso_alimentation', 'iso_banque', 'iso_ecole', 'iso_sante',
@@ -100,8 +101,10 @@ describe('registre Méthodes — contrat éditorial app-owned', () => {
         expect(resource!.unit, `${theme}.${key} metadata/API unit`).toBe(pages[key].unit)
       }
       for (const key of excludedIndicators) {
-        expect(producer.indicator_keys, `${theme}.${key} named producer exclusion`).toContain(key)
-        if (Object.hasOwn(pages, key)) expect(pages, `${theme}.${key} page metadata`).toHaveProperty(key)
+        expect(producer.indicator_keys, `${theme}.${key} retired from the roster`).not.toContain(key)
+        expect(producer.scalar_contracts?.[key]?.serving_disposition,
+          `${theme}.${key} named producer exclusion`).toBe('excluded_legacy_accessibility')
+        expect(pages, `${theme}.${key} page metadata`).not.toHaveProperty(key)
         expect(apiResources.some((resource) => resource.resource_id === key),
           `${theme}.${key} retired API route`).toBe(false)
         expect(Object.hasOwn(documented, key)).toBe(false)
@@ -111,7 +114,7 @@ describe('registre Méthodes — contrat éditorial app-owned', () => {
       const documentedProducerKeys = Object.keys(documented)
         .filter((key) => (producer.indicator_keys as string[]).includes(key))
       expect(new Set(producer.indicator_keys as string[]), `${theme} producer indicator-key roster`)
-        .toEqual(new Set([...documentedProducerKeys, ...excludedIndicators, ...producerSupportKeys]))
+        .toEqual(new Set([...documentedProducerKeys, ...producerSupportKeys]))
     }
   })
 

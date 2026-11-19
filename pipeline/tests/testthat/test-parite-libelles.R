@@ -21,6 +21,9 @@ test_that("indicator_labels du fichier épinglé == la colonne libelle du regist
     libelles_registre <- stats::setNames(registre$libelle, registre$key)
 
     declarees <- unlist(meta$indicator_labels, use.names = TRUE)
+    # #1048 (slice 2) : le catalogue Mobilité est RÉTRÉCI aux 17 clés que le
+    # producteur publie encore — la parité est stricte pour les six thèmes,
+    # sans exception ni sur-ensemble toléré.
     expect_identical(
       sort(declarees),
       sort(libelles_registre),
@@ -41,8 +44,13 @@ test_that("parité bidirectionnelle métadonnées épinglées ↔ faits producte
     indicateurs <- lire_indicateurs_producteur_fixture(theme, racine_public)
     meta <- lire_theme_metadata(theme)
 
-    # payload → métadonnées : chaque ligne publiée porte ses libellés
+    # payload → métadonnées : chaque ligne publiée porte ses libellés.
+    # #1048 : le Parquet Mobilité COMMIS est l'état antérieur au retrait — il
+    # porte encore les 29 faits du snapshot. On le ramène au catalogue courant
+    # en écartant explicitement ces clés (jamais un filtre muet).
     cles_publiees <- unique(indicateurs$key)
+    if (theme_sans_lecture(theme))
+      cles_publiees <- setdiff(cles_publiees, INDICATEURS_MOBILITE_RETIRES)
     manquants_libelle <- setdiff(cles_publiees, names(meta$indicator_labels))
     expect_true(length(manquants_libelle) == 0L, info = paste(
       theme, ": indicateur(s) publié(s) sans libellé :",

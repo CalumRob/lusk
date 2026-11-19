@@ -53,9 +53,9 @@ TYPES_NOEUD_TEXTE_RICHE <- c("text", "param", "territoire", "strong", "link")
 # (app/src/payload/types.ts). C'est la base de la règle d'herméticité
 # (ADR-0020) : un thème ne peut lier que SES histoires, jamais celles d'un
 # autre thème — une story d'un autre thème dans les métadonnées est une
-# référence cross-thème, rejetée.
+# référence cross-thème, rejetée. Mobilité n'a plus d'entrée depuis le slice 2
+# (#1048) : ses deux histoires ont quitté le catalogue avec le snapshot.
 CLES_HISTOIRES_PAR_THEME <- list(
-  mobilite = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
   demographie = "trajectoire-demographique",
   habitat = "etat-energetique-du-parc",
   # Issue #370 : `ce-que-la-bretagne-abrite` QUITTE la fiche (la lecture
@@ -68,6 +68,22 @@ CLES_HISTOIRES_PAR_THEME <- list(
   # lecture ; le registre vide l'exprime, jamais une lecture inventée.
   programmes = character(0L)
 )
+
+# THEMES_SANS_LECTURE ----------------------------------------------------------
+# Propriété DÉCLARÉE des thèmes qui publient légitimement une table d'histoires
+# VIDE — la garde #312 (une lecture par (territoire, groupe)) ne s'applique qu'aux
+# thèmes qui déclarent une lecture. L'exemption est un registre, PAS un test sur
+# le nom du thème dans valider_histoires_resolues().
+#   - programmes : aucun story depuis l'issue #408 (le registre vide le dit) ;
+#   - mobilite : les deux lectures du snapshot ont été retirées en #1048 ; le
+#     slice 2 a retiré leurs clés du catalogue, de CLES_HISTOIRES_PAR_THEME et
+#     du registre de résolution. Mobilité reste ici : la garde #312 doit
+#     autoriser sa table d'histoires vide, tout comme celle de Programmes.
+THEMES_SANS_LECTURE <- c("mobilite", "programmes")
+
+# Prédicat NOMMÉ de l'exemption #312/#1048 : une seule définition, partagée par
+# le producteur et les tests — jamais un `if (theme == "mobilite")` recopié.
+theme_sans_lecture <- function(theme) theme %in% THEMES_SANS_LECTURE
 
 # lire_theme_metadata / publier_theme_metadata ---------------------------------
 # Le lecteur du fichier épinglé et le seam de publication vivent dans
@@ -235,20 +251,21 @@ verifier_parite_listes <- function(metadata, indicateurs) {
 # du-parc » (Habitat — la lecture vit dans le sous-groupe du même nom, jamais
 # dans « composition-du-parc » ni « marche »), « sante-et-taille » (Économie —
 # l'unique lecture, `ce-que-la-bretagne-abrite` retirée, #370). Pour les thèmes
-# sans fixture encore publiée (Mobilité, Milieux), le groupe est LE slot de
-# lecture du thème — un nom de fiche stable que les métadonnées publiées
-# (#311) reprennent.
-# Mobilité est le SEUL pool (ADR-0002) : « vingt-minutes-sans-voiture » est le
-# défaut de chaque territoire, « ce-que-le-velo-preserve » le remplace là où
-# le delta est réel (raison « delta-velo-saillant »). Économie n'a pas de pool :
-# sa story vit dans SON groupe (la lecture de spécialisation des
-# communes/EPCIs/départements).
+# sans fixture encore publiée (Milieux), le groupe est LE slot de lecture du
+# thème — un nom de fiche stable que les métadonnées publiées (#311) reprennent.
+# Mobilité ÉTAIT le seul pool ADR-0002 ; le slice 2 (#1048) a retiré ses deux
+# lectures du catalogue, de CLES_HISTOIRES_PAR_THEME et de CE registre : sa
+# table est vide (zéro ligne), alignée sur le sous-groupe supprimé
+# `acces-aux-services`. Le thème reste répertorié pour la parité #316, mais il
+# ne peut plus résoudre aucune story. Économie n'a pas de pool : sa story vit
+# dans SON groupe (la lecture de spécialisation des communes/EPCIs/
+# départements).
 STORIES_RESOLUES_PAR_THEME <- list(
   mobilite = tibble::tibble(
-    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
-    groupe = "acces-aux-services",
-    ordre = c(1L, 2L),
-    salience_reason = c(NA_character_, "delta-velo-saillant")
+    story_key = character(0L),
+    groupe = character(0L),
+    ordre = integer(0L),
+    salience_reason = character(0L)
   ),
   demographie = tibble::tibble(
     story_key = "trajectoire-demographique",

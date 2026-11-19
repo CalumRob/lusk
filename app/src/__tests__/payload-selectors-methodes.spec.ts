@@ -91,7 +91,7 @@ describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () =>
     // osm_reseaux porte le stationnement ; BPE ajoute un seul jeu ; #485
     // ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la matrice
     // publiée du raccordement.
-    expect(jeux.length).toBe(29)
+    expect(jeux.length).toBe(28)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
@@ -131,15 +131,15 @@ describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () =>
     })
   })
 
-  it('joint la source mobilite_snapshot avec sa licence ODbL et ses deux dates (issue #151)', () => {
+  it('joint une source du registre avec sa licence et ses deux dates (issue #151)', () => {
     const { jeux } = sourcesMethodes(payloadAvec(vintagesFixture))
 
-    const snapshot = jeux.find((j) => j.id === 'mobilite_snapshot')
-    expect(snapshot).toMatchObject({
-      version: '2026-02',
-      licence: 'ODbL — © OpenStreetMap contributors',
-      dateReference: '28 février 2026',
-      datePublication: '6 août 2026',
+    const consoenaf = jeux.find((j) => j.id === 'consoenaf')
+    expect(consoenaf).toMatchObject({
+      version: '2025',
+      licence: 'Licence Ouverte 2.0',
+      dateReference: '1 janvier 2025',
+      datePublication: '24 juillet 2026',
     })
   })
 })
@@ -242,7 +242,7 @@ describe('sourcesMethodes — vintages absents (404)', () => {
     // les aires OSM partagent l'identité osm_reseaux ; seul BPE ajoute un jeu ;
     // #485 ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la
     // matrice publiée du raccordement.
-    expect(jeux.length).toBe(29)
+    expect(jeux.length).toBe(28)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()

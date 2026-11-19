@@ -719,6 +719,14 @@ onBeforeUnmount(() => {
   --z-page-header: calc(var(--z-sticky) - 1);
   /* ThemeTabs is bounded to .fiche-en-tete-surface; only AppHeader stays pinned over the reading surface. */
   --cahier-sticky-top: var(--header-height);
+  --paper: var(--editorial-paper);
+  --paper-deep: var(--editorial-paper-deep);
+  --cahier-map-ground: var(--editorial-paper-deep);
+  --ink: var(--editorial-ink);
+  --muted: var(--editorial-muted);
+  --red: var(--editorial-margin);
+  --red-soft: var(--editorial-margin-soft);
+  --cahier-default: var(--muted);
   --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
   --margin-line: var(--editorial-margin-offset);
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);

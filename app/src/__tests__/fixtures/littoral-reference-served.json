@@ -1,0 +1,139 @@
+{
+  "territoires": [
+    {
+      "territoire": "29083",
+      "type": "commune",
+      "nom": "Île-de-Sein",
+      "departement": "29",
+      "epci": null,
+      "classe_densite_code": "7",
+      "classe_densite_libelle_insee": "Rural à habitat très dispersé",
+      "classe_densite_libelle_public": "communes rurales à habitat très dispersé en Bretagne",
+      "littoral_code": "C",
+      "littoral_classement_source": "Mer"
+    },
+    {
+      "territoire": "29084",
+      "type": "commune",
+      "nom": "Île-Molène",
+      "departement": "29",
+      "epci": null,
+      "classe_densite_code": "7",
+      "classe_densite_libelle_insee": "Rural à habitat très dispersé",
+      "classe_densite_libelle_public": "communes rurales à habitat très dispersé en Bretagne",
+      "littoral_code": "C",
+      "littoral_classement_source": "Mer"
+    },
+    {
+      "territoire": "29209",
+      "type": "commune",
+      "nom": "Plouvien",
+      "departement": "29",
+      "epci": null,
+      "classe_densite_code": "5",
+      "classe_densite_libelle_insee": "Bourgs ruraux",
+      "classe_densite_libelle_public": "bourgs ruraux bretons",
+      "littoral_code": "NC",
+      "littoral_classement_source": null
+    },
+    {
+      "territoire": "22",
+      "type": "departement",
+      "nom": "Finistère",
+      "departement": "29",
+      "epci": null,
+      "classe_densite_code": null,
+      "classe_densite_libelle_insee": null,
+      "classe_densite_libelle_public": null,
+      "littoral_code": null,
+      "littoral_classement_source": null
+    }
+  ],
+  "metadata": {
+    "schema_version": "1",
+    "source_records": {
+      "classe_densite_communale": {
+        "dataset": "Grille de densité 2025 — maille communale",
+        "publisher": "INSEE",
+        "url": "https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx",
+        "licence": "Licence Ouverte 2.0",
+        "sha256": "8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978",
+        "vintage": "Classification 2025 · géographie communale au 01/01/2026 · RP 2021",
+        "freshness": "Publication INSEE du 15 mai 2026",
+        "vintages": [
+          {
+            "id": "classe_densite_communale",
+            "label": "Grille de densité communale 2025",
+            "version": "Classification 2025 · géographie communale au 01/01/2026 · RP 2021",
+            "licence": "Licence Ouverte 2.0",
+            "dateReference": "2021-01-01",
+            "datePublication": "2026-05-15"
+          }
+        ],
+        "caveat": "La classe de densité communale est une classification officielle fondée sur le nombre et la concentration spatiale des habitants."
+      },
+      "classe_littorale_communale": {
+        "dataset": "Communes littorales en Bretagne au titre de la loi",
+        "publisher": "DREAL Bretagne",
+        "url": "https://www.data.gouv.fr/datasets/communes-littorales-en-bretagne-au-titre-de-la-loi",
+        "acquisition_url": "https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=dreal_b:l_communes_littorales&OUTPUTFORMAT=csv&propertyName=Code_insee,Commune,Dpt,Classement&SRSNAME=EPSG:4326",
+        "licence": "Licence Ouverte 2.0 (lov2)",
+        "sha256": "d68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc",
+        "vintage": "Liste positive DREAL Bretagne — métadonnées de diffusion du 2023-04-21",
+        "freshness": "Dernière modification déclarée par data.gouv.fr le 21 avril 2023 — ce n'est pas une date de relevé du périmètre juridique",
+        "definition": "Communes définies par la loi Littoral de 1986, complétées par le décret 2004-311.",
+        "coverage": "Liste positive exhaustive pour les quatre départements bretons ; le complément de l'univers communal canonique est Non littoral (NC). La DREAL exclut Plouvien (29209), que le zonage Cerema/ANCT antérieur classait encore littoral après la modification communale de 2015.",
+        "classements": ["Mer", "Estuaire"],
+        "caveat": "Instantané daté de la liste DREAL : ce n'est pas une garantie juridique en vigueur ni un relevé de périmètre à une date certaine. Les limites communales et la liste peuvent évoluer ; la liste positive DREAL est la seule source de C, le complément validé est NC. Plouvien (29209) est exclue par la DREAL depuis la modification communale de 2015, alors que le zonage Cerema/ANCT antérieur la classait encore littorale : ce n'est pas une divergence d'interprétation mais une différence de périmètre datée.",
+        "vintages": [
+          {
+            "id": "classe_littorale_communale",
+            "label": "Communes littorales en Bretagne au titre de la loi",
+            "version": "Liste positive DREAL Bretagne — diffusion 2023-04-21",
+            "licence": "Licence Ouverte 2.0 (lov2)",
+            "dateReference": null,
+            "datePublication": "2023-04-21"
+          }
+        ]
+      }
+    },
+    "territory_reference_label": "Référentiel territorial — classifications communales",
+    "density_classes": {
+      "1": {
+        "code": "1",
+        "libelle_insee": "Grands centres urbains",
+        "libelle_public": "grands centres urbains bretons"
+      },
+      "2": {
+        "code": "2",
+        "libelle_insee": "Centres urbains intermédiaires",
+        "libelle_public": "centres urbains intermédiaires bretons"
+      },
+      "3": {
+        "code": "3",
+        "libelle_insee": "Petites villes",
+        "libelle_public": "petites villes bretonnes"
+      },
+      "4": {
+        "code": "4",
+        "libelle_insee": "Ceintures urbaines",
+        "libelle_public": "ceintures urbaines bretonnes"
+      },
+      "5": {
+        "code": "5",
+        "libelle_insee": "Bourgs ruraux",
+        "libelle_public": "bourgs ruraux bretons"
+      },
+      "6": {
+        "code": "6",
+        "libelle_insee": "Rural à habitat dispersé",
+        "libelle_public": "communes rurales à habitat dispersé en Bretagne"
+      },
+      "7": {
+        "code": "7",
+        "libelle_insee": "Rural à habitat très dispersé",
+        "libelle_public": "communes rurales à habitat très dispersé en Bretagne"
+      }
+    }
+  }
+}

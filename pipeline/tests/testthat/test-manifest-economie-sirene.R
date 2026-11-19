@@ -74,9 +74,9 @@ test_that("les dates : référence = dernier jour du mois précédant le millés
     as.Date(paste0(MANIFEST_ECONOMIE_SIRENE$vintage, "-01")) - 1
   )
   expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, attendue)
-  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, "2026-03-31")
-  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_extraction, "2026-05-01")
-  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_publication, "2026-05-01")
+  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, "2026-09-30")
+  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_extraction, "2026-11-18")
+  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_publication, "2026-11-18")
   expect_true(all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
                         MANIFEST_ECONOMIE_SIRENE$date_reference)))
   expect_true(as.Date(MANIFEST_ECONOMIE_SIRENE$date_extraction) >=
@@ -140,7 +140,7 @@ test_that("le contrat refuse une URL historique data.gouv (stocketablissementhis
     "https://www.data.gouv.fr/api/1/datasets/r/",
     "88fbb6b4-0320-443e-b739-b4376a012c32"
   )
-  mauvais$fichier <- "sirene_snapshot_2026-04.csv"
+  mauvais$fichier <- "sirene_snapshot_2026-10.csv"
   expect_error(verifier_contrat_sirene_snapshot(mauvais), "historique")
 })
 

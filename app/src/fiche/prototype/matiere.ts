@@ -152,11 +152,6 @@ export interface MatiereTheme {
  * production les porte ailleurs (audit #449 P1 : des lectures sans unité).
  */
 const UNITES_PARAMETRES: Readonly<Record<string, string>> = {
-  div_loss_t: 'types de services',
-  div_loss_b: 'types de services',
-  tot_loss_t: 'accès perdus',
-  tot_loss_b: 'accès perdus',
-  pct_iso_full_t: '%',
   part_passoires: '%',
   part_abc: '%',
   part_parc: '%',
@@ -172,7 +167,6 @@ const UNITES_PARAMETRES: Readonly<Record<string, string>> = {
 /** Les clés NON numériques (mots de prose, fenêtres) — jamais des héros. */
 const PARAMETRES_HORS_NOMBRE: ReadonlySet<string> = new Set([
   'classification',
-  'classification_saillance',
   'rang',
   'activity_label',
   'activity_code',
@@ -183,7 +177,6 @@ const CLEFS_POURCENT: ReadonlySet<string> = new Set([
   'part_passoires',
   'part_abc',
   'part_parc',
-  'pct_iso_full_t',
 ])
 
 const ALIAS_TOP_N: readonly string[] = ['activity_label', 'lq', 'n', 'part_parc']

@@ -128,7 +128,17 @@ CREATE TABLE territory_reference (
     department_id text,
     epci_id text,
     density_class_code text,
-    density_class_label text
+    density_class_label text,
+    littoral_code text,
+    littoral_classement_source text,
+    CONSTRAINT territory_reference_littoral_scope_check CHECK (COALESCE(
+      (littoral_code IS NULL AND littoral_classement_source IS NULL)
+      OR (territory_type = 'commune' AND littoral_code = 'C'
+          AND littoral_classement_source IN ('Mer', 'Estuaire'))
+      OR (territory_type = 'commune' AND littoral_code = 'NC'
+          AND littoral_classement_source IS NULL),
+      FALSE
+    ))
 );
 ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
   FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
@@ -243,7 +253,7 @@ CREATE TABLE scalar_comparison_publication (
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE scalar_comparison_group (
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     indicator_id text NOT NULL REFERENCES scalar_descriptor(indicator_id),
@@ -284,7 +294,7 @@ CREATE TABLE scalar_comparison_territory (
 CREATE TABLE comparison_source_lineage (
     comparison_family text NOT NULL CHECK (comparison_family IN
       ('scalar','profile','ordered_series','period_detail','aedar')),
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     facet_id text NOT NULL CHECK (length(trim(facet_id)) > 0),
@@ -311,7 +321,7 @@ CREATE TABLE profile_comparison_publication (
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE profile_comparison_group (
-    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
     territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
     indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id),
@@ -401,7 +411,7 @@ CREATE TABLE ordered_series_comparison_publication (
  PRIMARY KEY(dataset_id,indicator_id));
 CREATE TABLE ordered_series_comparison_group (
  dataset_id text NOT NULL, indicator_id text NOT NULL,
- comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
+ comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
  group_id text NOT NULL CHECK(length(trim(group_id))>0),
  territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
  axis_value text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','mean')),
@@ -932,7 +942,7 @@ CREATE TABLE observed_collection_comparison_publication (
   territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), lineage_row_count bigint NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0),
   lineage_complete boolean NOT NULL DEFAULT false, published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE observed_collection_comparison_group (
-  indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
+  indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
   group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
   detail_key text NOT NULL, observation_period text NOT NULL CHECK(observation_period ~ '^[0-9]{4}$'),
   statistic text NOT NULL CHECK(statistic='median'), median double precision,
@@ -1187,6 +1197,9 @@ CREATE TABLE aedar_comparison_publication (
   density_summary_measure_count integer NOT NULL CHECK(density_summary_measure_count>=0),
   density_summary_typequ_count integer NOT NULL DEFAULT 0 CHECK(density_summary_typequ_count>=0),
   density_summary_row_count bigint NOT NULL CHECK(density_summary_row_count>=0),
+  littoral_summary_status_count integer NOT NULL DEFAULT 0 CHECK(littoral_summary_status_count>=0),
+  littoral_summary_measure_count integer NOT NULL DEFAULT 0 CHECK(littoral_summary_measure_count>=0),
+  littoral_summary_row_count bigint NOT NULL DEFAULT 0 CHECK(littoral_summary_row_count>=0),
   published_at timestamptz NOT NULL DEFAULT now(),
   publication_mode text NOT NULL DEFAULT 'legacy_rank' CHECK(publication_mode IN ('legacy_rank','reference_only')),
   CONSTRAINT aedar_reference_only_has_no_territories CHECK(publication_mode<>'reference_only' OR territory_row_count=0)
@@ -1199,9 +1212,10 @@ CREATE TABLE aedar_comparison_group (
   n_observed bigint CHECK(n_observed IS NULL OR n_observed>=0 AND n_observed<=n_addresses), coverage_status text,
   PRIMARY KEY(comparison_context,group_id,territory_type,typequ,measure),
   CHECK(measure ~ '^count_(5|10|15|20)_(walk|transit|transit_gain|bike_lts2|bike_lts4|car)_(share|min|max|decile[1-9]|mean)$'),
-  CONSTRAINT aedar_reference_context_check CHECK(comparison_context IN ('density_class','same_level')),
+  CONSTRAINT aedar_reference_context_check CHECK(comparison_context IN ('density_class','littoral','same_level')),
   CONSTRAINT aedar_reference_statistic_check CHECK(statistic IN ('median','pooled')),
   CONSTRAINT aedar_reference_scope_check CHECK((comparison_context='density_class' AND territory_type='commune' AND statistic='pooled') OR
+        (comparison_context='littoral' AND territory_type='commune' AND statistic='pooled') OR
         (comparison_context='same_level' AND territory_type IN ('epci','departement') AND statistic='median')),
   CONSTRAINT aedar_reference_median_counts_check CHECK((statistic='median' AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL) OR statistic='pooled'),
   CHECK(value IS NULL OR value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
@@ -1212,6 +1226,24 @@ CREATE TABLE aedar_density_class_summary (
   aedar_content_version text NOT NULL, reference_content_version text NOT NULL,
   input_content_version text NOT NULL CHECK(input_content_version ~ '^[0-9a-f]{64}$'),
   group_id text NOT NULL, measure text NOT NULL,
+  value double precision, status text NOT NULL CHECK(status IN ('available','unavailable')),
+  n_typequ integer, n_addresses bigint CHECK(n_addresses IS NULL OR n_addresses>=0),
+  n_observed bigint CHECK(n_observed IS NULL OR n_observed>=0), coverage_status text,
+  PRIMARY KEY(comparison_content_version,group_id,measure),
+  CHECK(value IS NULL OR value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
+  CHECK(COALESCE((status='available' AND value IS NOT NULL AND n_typequ>0 AND n_addresses>0 AND
+         n_observed>=0 AND n_observed::numeric<=n_typequ::numeric*n_addresses::numeric AND
+         coverage_status='covered') OR
+        (status='unavailable' AND value IS NULL AND n_typequ IS NULL),FALSE))
+);
+-- Sibling of aedar_density_class_summary for the littoral C/NC pooled
+-- summaries. Distinct PK/descriptor; C/NC never enter the density contract.
+CREATE TABLE aedar_littoral_summary (
+  comparison_content_version text NOT NULL REFERENCES aedar_comparison_publication(content_version)
+    ON UPDATE CASCADE ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+  aedar_content_version text NOT NULL, reference_content_version text NOT NULL,
+  input_content_version text NOT NULL CHECK(input_content_version ~ '^[0-9a-f]{64}$'),
+  group_id text NOT NULL CHECK(group_id IN ('C','NC')), measure text NOT NULL,
   value double precision, status text NOT NULL CHECK(status IN ('available','unavailable')),
   n_typequ integer, n_addresses bigint CHECK(n_addresses IS NULL OR n_addresses>=0),
   n_observed bigint CHECK(n_observed IS NULL OR n_observed>=0), coverage_status text,
@@ -1239,47 +1271,87 @@ CREATE TABLE aedar_comparison_territory (
   CHECK((status='measured' AND value IS NOT NULL AND rank>0 AND rank_size>0 AND rank<=rank_size) OR
         (status='not_available' AND value IS NULL AND rank IS NULL AND rank_size IS NULL))
 );
-GRANT SELECT ON aedar_comparison_publication,aedar_comparison_group,aedar_density_class_summary TO lusk_reader;
+GRANT SELECT ON aedar_comparison_publication,aedar_comparison_group,aedar_density_class_summary,aedar_littoral_summary TO lusk_reader;
 REVOKE ALL ON aedar_comparison_territory FROM lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_comparison_publication,aedar_comparison_group,aedar_density_class_summary,aedar_comparison_territory TO lusk_publisher;
+GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_comparison_publication,aedar_comparison_group,aedar_density_class_summary,aedar_littoral_summary,aedar_comparison_territory TO lusk_publisher;
 CREATE FUNCTION check_aedar_comparison_publication() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.publication_mode<>'reference_only'
     OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='aedar_territorial_aggregate' AND content_version=NEW.aedar_content_version)
-   OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
+    OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
     OR NEW.group_row_count<>(SELECT count(*) FROM aedar_comparison_group)
-      OR NEW.territory_row_count<>0
-      OR EXISTS(SELECT 1 FROM aedar_comparison_territory)
-      OR NEW.density_summary_row_count<>(SELECT count(*) FROM aedar_density_class_summary
-          WHERE comparison_content_version=NEW.content_version)
-      OR NEW.density_summary_class_count<>(SELECT count(DISTINCT group_id) FROM aedar_comparison_group
-          WHERE comparison_context='density_class' AND territory_type='commune')
-       OR NEW.density_summary_class_count<>(SELECT count(DISTINCT group_id) FROM aedar_density_class_summary
-           WHERE comparison_content_version=NEW.content_version)
-       OR NEW.density_summary_measure_count<1
-       OR NEW.density_summary_typequ_count<1
-       OR NEW.density_summary_row_count::numeric<>NEW.density_summary_class_count::numeric*NEW.density_summary_measure_count::numeric
+    OR NEW.territory_row_count<>0
+    OR EXISTS(SELECT 1 FROM aedar_comparison_territory)
+    OR NEW.density_summary_row_count<>(SELECT count(*) FROM aedar_density_class_summary
+       WHERE comparison_content_version=NEW.content_version)
+    OR NEW.density_summary_class_count<>(SELECT count(DISTINCT group_id) FROM aedar_comparison_group
+       WHERE comparison_context='density_class' AND territory_type='commune')
+    OR NEW.density_summary_class_count<>(SELECT count(DISTINCT group_id) FROM aedar_density_class_summary
+       WHERE comparison_content_version=NEW.content_version)
+    OR NEW.density_summary_measure_count<1
+    OR NEW.density_summary_typequ_count<1
+    OR NEW.density_summary_row_count::numeric <>
+       NEW.density_summary_class_count::numeric*NEW.density_summary_measure_count::numeric
+    OR NEW.littoral_summary_status_count<0
+    OR NEW.littoral_summary_measure_count<0
+    OR NEW.littoral_summary_row_count<0
   THEN RAISE EXCEPTION 'AEDAR reference publication is incomplete, stale, or contains peer rows'; END IF;
+
   IF EXISTS(SELECT 1 FROM aedar_comparison_group g WHERE
-     (g.comparison_context='density_class' AND (g.territory_type<>'commune' OR g.statistic<>'pooled')) OR
-     (g.comparison_context='same_level' AND (g.territory_type NOT IN ('epci','departement') OR g.statistic<>'median')) OR
-     g.comparison_context NOT IN ('density_class','same_level') OR
-     (g.statistic='median' AND (g.n_addresses IS NOT NULL OR g.n_observed IS NOT NULL OR g.coverage_status IS NOT NULL)))
-   THEN RAISE EXCEPTION 'AEDAR reference group has an invalid scope or fabricated source counts'; END IF;
-    IF EXISTS(SELECT 1 FROM aedar_density_class_summary s WHERE s.comparison_content_version=NEW.content_version
-        GROUP BY s.group_id HAVING count(*)<>NEW.density_summary_measure_count)
-      OR EXISTS(SELECT 1 FROM aedar_density_class_summary s
-        WHERE s.comparison_content_version=NEW.content_version AND
-           (s.aedar_content_version<>NEW.aedar_content_version OR
-            s.reference_content_version<>NEW.reference_content_version OR
-            s.input_content_version<>NEW.input_content_version OR
-            (s.status='available' AND (s.n_typequ<>NEW.density_summary_typequ_count OR
-              s.n_observed::numeric>NEW.density_summary_typequ_count::numeric*s.n_addresses::numeric))))
-      OR EXISTS(SELECT 1 FROM aedar_comparison_group g WHERE g.comparison_context='density_class'
-       AND g.territory_type='commune' AND NOT EXISTS(SELECT 1 FROM aedar_density_class_summary s
-         WHERE s.comparison_content_version=NEW.content_version AND s.group_id=g.group_id))
-   THEN RAISE EXCEPTION 'AEDAR density-class summaries are incomplete'; END IF;
- RETURN NEW;
+      (g.comparison_context='density_class' AND (g.territory_type<>'commune' OR g.statistic<>'pooled')) OR
+      (g.comparison_context='littoral' AND (g.territory_type<>'commune' OR g.statistic<>'pooled')) OR
+      (g.comparison_context='same_level' AND (g.territory_type NOT IN ('epci','departement') OR g.statistic<>'median')) OR
+      g.comparison_context NOT IN ('density_class','littoral','same_level') OR
+      (g.statistic='median' AND (g.n_addresses IS NOT NULL OR g.n_observed IS NOT NULL OR g.coverage_status IS NOT NULL)))
+  THEN RAISE EXCEPTION 'AEDAR reference group has an invalid scope or fabricated source counts'; END IF;
+
+  IF EXISTS(SELECT 1 FROM aedar_density_class_summary s
+      WHERE s.comparison_content_version=NEW.content_version
+      GROUP BY s.group_id HAVING count(*)<>NEW.density_summary_measure_count)
+    OR EXISTS(SELECT 1 FROM aedar_density_class_summary s
+      WHERE s.comparison_content_version=NEW.content_version AND
+        (s.aedar_content_version<>NEW.aedar_content_version OR
+         s.reference_content_version<>NEW.reference_content_version OR
+         s.input_content_version<>NEW.input_content_version OR
+         (s.status='available' AND (s.n_typequ<>NEW.density_summary_typequ_count OR
+           s.n_observed::numeric>NEW.density_summary_typequ_count::numeric*s.n_addresses::numeric))))
+    OR EXISTS(SELECT 1 FROM aedar_comparison_group g
+      WHERE g.comparison_context='density_class' AND g.territory_type='commune'
+      AND NOT EXISTS(SELECT 1 FROM aedar_density_class_summary s
+        WHERE s.comparison_content_version=NEW.content_version AND s.group_id=g.group_id))
+  THEN RAISE EXCEPTION 'AEDAR density-class summaries are incomplete'; END IF;
+
+  IF NEW.littoral_summary_row_count>0 THEN
+    IF NEW.littoral_summary_status_count<1
+      OR NEW.littoral_summary_measure_count<1
+      OR NEW.littoral_summary_row_count::numeric <>
+         NEW.littoral_summary_status_count::numeric*NEW.littoral_summary_measure_count::numeric
+      OR NEW.littoral_summary_row_count<>(SELECT count(*) FROM aedar_littoral_summary
+           WHERE comparison_content_version=NEW.content_version)
+      OR NEW.littoral_summary_status_count<>(SELECT count(DISTINCT group_id) FROM aedar_littoral_summary
+           WHERE comparison_content_version=NEW.content_version)
+      OR EXISTS(SELECT 1 FROM aedar_littoral_summary s
+           WHERE s.comparison_content_version=NEW.content_version
+           GROUP BY s.group_id HAVING count(*)<>NEW.littoral_summary_measure_count)
+      OR EXISTS(SELECT 1 FROM aedar_littoral_summary s
+           WHERE s.comparison_content_version=NEW.content_version AND
+             (s.aedar_content_version<>NEW.aedar_content_version OR
+              s.reference_content_version<>NEW.reference_content_version OR
+              s.input_content_version<>NEW.input_content_version OR
+              (s.status='available' AND (s.n_typequ<>NEW.density_summary_typequ_count OR
+                s.n_observed::numeric>NEW.density_summary_typequ_count::numeric*s.n_addresses::numeric))))
+      OR EXISTS(SELECT 1 FROM aedar_comparison_group g
+           WHERE g.comparison_context='littoral' AND g.territory_type='commune'
+           AND NOT EXISTS(SELECT 1 FROM aedar_littoral_summary s
+             WHERE s.comparison_content_version=NEW.content_version AND s.group_id=g.group_id))
+    THEN RAISE EXCEPTION 'AEDAR littoral summaries are incomplete'; END IF;
+  ELSE
+    IF NEW.littoral_summary_status_count<>0
+      OR EXISTS(SELECT 1 FROM aedar_littoral_summary WHERE comparison_content_version=NEW.content_version)
+      OR EXISTS(SELECT 1 FROM aedar_comparison_group WHERE comparison_context='littoral')
+    THEN RAISE EXCEPTION 'AEDAR pre-extension generation must have zero littoral groups and counters'; END IF;
+  END IF;
+  RETURN NEW;
 END $$;
 CREATE CONSTRAINT TRIGGER aedar_comparison_publication_contract AFTER INSERT OR UPDATE ON aedar_comparison_publication
  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_aedar_comparison_publication();

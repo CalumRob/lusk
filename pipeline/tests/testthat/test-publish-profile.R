@@ -201,7 +201,7 @@ test_that("canonical regional Mobility producers feed complete profiles and supp
     protege_longueur=c(2,8), protege_km_1000=c(2,8/3),
     partage_longueur=c(1,4), partage_km_1000=c(1,4/3), total_longueur=c(3,12))
   offre <- agreger_offre_territoires(
-    data.frame(commune=base$CODGEO,part_proche=c(.2,.8),n_batiments=c(10,30)),
+    data.frame(commune=base$CODGEO,part_proche=c(.2,.8),n_adresses=c(10,30)),
     data.frame(commune=base$CODGEO,nb_bornes=c(0L,1L)), velo, base, cyclable)
   parking <- agreger_stationnement_voiture_territoires(
     data.frame(commune=base$CODGEO,places_voiture=c(10,90)), velo, base)
@@ -401,7 +401,7 @@ test_that("primary multi-vintage facts retain only their matching territory vint
 
 test_that("structure_age projection uses canonical fixture and descriptor order", {
   metadata <- lire_theme_metadata("demographie")
-  canonical <- compute_payload(load_fixture())$indicateurs
+  canonical <- compute_payload_test(load_fixture())$indicateurs
   profile <- project_structure_age_profile(canonical, metadata)
   expect_identical(profile$axes$axis_key[profile$axes$axis_name == "detail"],
     unlist(metadata$indicator_pages$structure_age$comparison$details, use.names = FALSE))
@@ -433,7 +433,7 @@ test_that("profile publisher keeps the committed version when replacement fails"
       stop("fixture write rejected")
     })
   metadata <- lire_theme_metadata("demographie")
-  canonical <- compute_payload(load_fixture())
+  canonical <- compute_payload_test(load_fixture())
   registry <- register_structure_age_profile_publisher(list(), metadata)
   expect_error(publish_registered_profile(registry, "structure_age", canonical, db), "fixture write rejected")
   expect_true(replaced)
@@ -443,7 +443,7 @@ test_that("profile publisher keeps the committed version when replacement fails"
 
 test_that("same profile content rebuilds comparison memberships on reference change and repairs stale markers", {
   metadata <- lire_theme_metadata("demographie")
-  canonical <- compute_payload(load_fixture())
+  canonical <- compute_payload_test(load_fixture())
   profile <- project_structure_age_profile(canonical, metadata)
   reference_version <- "ref-1"
   marker <- data.frame(content_version="initial", reference_content_version="ref-1")
@@ -513,7 +513,7 @@ test_that("same profile content rebuilds comparison memberships on reference cha
 
 test_that("registered publication keeps marker-bound immutable Parquet generations across failures and retries", {
   metadata <- lire_theme_metadata("demographie")
-  canonical <- compute_payload(load_fixture())
+  canonical <- compute_payload_test(load_fixture())
   reference <- unique(data.frame(territory_id=canonical$territoires$territoire,
     territory_type=canonical$territoires$type, epci_id=NA_character_, density_class_code=NA_character_))
   state <- new.env(parent=emptyenv())

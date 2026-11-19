@@ -143,11 +143,10 @@ The real data lives ONLY in the main checkout: `E:\Lusk\pipeline\data\raw` (the 
 cache) and `data/processed` (regenerated intermediates). Both are gitignored — a worktree
 checkout NEVER contains them.
 
-**NEVER create a junction/symlink from a worktree's `pipeline/data` to the main checkout's data.**
-On Windows, recursive deletes — notably `git worktree remove`, but also `rm -rf` and
-`Remove-Item -Recurse` — FOLLOW junctions and wipe the TARGET. This has happened twice and each
-time destroyed the full ~14 GB cache + intermediates, forcing hours of re-download. There is no
-safe junction; do not "test" one.
+**Do not create symlinks, junctions, hard links, or other reparse points inside or pointing into
+a worker worktree, including via setup scripts.** This is not limited to `pipeline/data`. On
+Windows, recursive cleanup has followed junctions and destroyed the real cache. If you find a
+junction or symlink, or a setup step requires one, stop and report it; do not unlink it yourself.
 
 A worktree that needs real data gets its OWN COPY — deleting the worktree then only deletes the
 copy:
@@ -159,15 +158,13 @@ robocopy E:\Lusk\pipeline\data <worktree>\pipeline\data /E /MT:16 /NFL /NDL /NJH
 (~2–5 min for the full cache on NVMe; disk cost ≈14 GB per copy. `data/` is gitignored, so the
 copy never pollutes git.)
 
-**Before ANY `git worktree remove`** (orchestrator OR worker), run the guard — it scans the
-worktree for junctions/symlinks pointing outside it and exits 1 (abort) if any exist:
-
-```powershell
-powershell -File scripts/guard-worktree-remove.ps1 <worktree-path>
-```
-
-`git worktree remove` is FORBIDDEN when the guard fails. Remove the links first
-(`Remove-Item -LiteralPath '<lien>' -Force` — never `-Recurse`, which would follow the link).
+**Worktree removal is human-only.** Workers and orchestrators must never remove, unlink,
+prune, or force-delete a worktree, including through an API or delegated tool. After merge,
+report `BLOCKED — manual worktree cleanup required` with the exact paths. Do not advance to
+the next wave or follow-on implementation until the user has removed those worktrees and a
+read-only check confirms they are gone from both the filesystem and `git worktree list
+--porcelain`. If a check fails or the two disagree, stay blocked. Failed and unmerged worktrees
+remain intact for review. The existing guard's success message alone is not clearance to delete.
 
 As a last line of defence, `pipeline/data` is ACL-protected against deletion
 (`scripts/set-data-acl.ps1`). Trade-off: `download_sources`' corrupt-file replacement (an

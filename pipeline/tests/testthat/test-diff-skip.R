@@ -5,7 +5,7 @@
 # identiques produisent des fichiers identiques.
 
 test_that("un payload identique n'a rien à publier", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   a <- tempfile("pub-a-")
   b <- tempfile("pub-b-")
   on.exit({ unlink(a, recursive = TRUE); unlink(b, recursive = TRUE) })
@@ -17,7 +17,7 @@ test_that("un payload identique n'a rien à publier", {
 })
 
 test_that("une valeur changée est à publier", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   a <- tempfile("pub-a-")
   b <- tempfile("pub-b-")
   on.exit({ unlink(a, recursive = TRUE); unlink(b, recursive = TRUE) })
@@ -41,7 +41,7 @@ test_that("le rapport de run n'entre pas dans la décision commit/skip", {
   statuts <- tibble::tibble(
     id = "serie_historique", mode = "cron", status = "frais"
   )
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   a <- tempfile("pub-a-")
   b <- tempfile("pub-b-")
   on.exit({ unlink(a, recursive = TRUE); unlink(b, recursive = TRUE) })
@@ -55,7 +55,7 @@ test_that("le rapport de run n'entre pas dans la décision commit/skip", {
 })
 
 test_that("un fichier absent d'un seul côté est un changement", {
-  payload <- compute_payload(load_fixture())
+  payload <- compute_payload_test(load_fixture())
   a <- tempfile("pub-a-")
   b <- tempfile("pub-b-")
   on.exit({ unlink(a, recursive = TRUE); unlink(b, recursive = TRUE) })

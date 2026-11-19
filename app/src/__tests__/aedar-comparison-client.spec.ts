@@ -544,3 +544,129 @@ describe('identité sémantique et coalescence (#1002)', () => {
     expect(postCalls()).toHaveLength(4)
   })
 })
+
+/** #1044 — AEDAR must map the littoral preset to its OWN fixed context; a
+ *  fallthrough to Bretagne would serve the wrong reference and wrong ranks. */
+describe('contexte fixe littoral (#1044)', () => {
+  const littoralRequest = { ...fixedCellRequest, intent: { kind: 'fixed_comparison' as const, context: 'littoral' as const },
+    expectedLittoralCode: 'C' as const }
+  const littoralRow = (overrides: Record<string, unknown> = {}) => fixedCellRow({
+    comparison_context: 'littoral', group_id: 'C', statistic: 'pooled',
+    group_value: 8.25, rank: 2, rank_size: 263, rank_ties: 3, ...overrides,
+  })
+  const responseFor = (item: { id: string; resource: string }, id: string, row: Record<string, unknown>) => ({
+    id: item.id, resource: item.resource, status: 'available',
+    data: { ...fixedCellResponse(row), target: { kind: 'territory', type: 'commune', id } },
+  })
+
+  it('sends the littoral intent and admits the served reference AND rank together', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      expect(items[0].intent).toEqual({ kind: 'fixed_comparison', context: 'littoral' })
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) => ({ id: item.id, resource: item.resource,
+          status: 'available', data: fixedCellResponse(littoralRow()) })) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', '22001', littoralRequest)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') return
+    const cell = result.evidence.cells[0]!
+    expect((cell as unknown as Record<string, unknown>).comparison_context).toBe('littoral')
+    expect((cell as unknown as Record<string, unknown>).group_id).toBe('C')
+    expect(cell.statistic).toBe('pooled')
+    expect(cell.group_value).toBe(8.25)
+    expect(aeaDarRank(cell)).toEqual({ position: 2, size: 263, ties: 3 })
+  })
+
+  it('proves the aggregate littoral reference and direction-aware rank come from the same fixed context', async () => {
+    const request = { ...littoralRequest, typequ: [], measures: ['meanVolume'] }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      expect(items[0].intent).toEqual({ kind: 'fixed_comparison', context: 'littoral' })
+      expect('typequ' in items[0].coordinates).toBe(false)
+      expect(items[0].coordinates.measure).toEqual(['meanVolume'])
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) => ({ id: item.id, resource: item.resource,
+          status: 'available', data: { ...fixedCellResponse(littoralRow({ typequ: null, group_value: 11.5 })),
+            comparison: littoralRow({ typequ: null, measure: 'meanVolume', group_value: 11.5,
+              rank: 7, rank_size: 263, rank_ties: 2 }) } })) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', '22001', request)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') return
+    const cell = result.evidence.cells[0]!
+    expect(cell.typequ).toBeNull()
+    expect(cell.statistic).toBe('pooled')
+    expect(cell.group_value).toBe(11.5)
+    expect(aeaDarRank(cell)).toEqual({ position: 7, size: 263, ties: 2 })
+    expect(cell.direction).toBe('high')
+  })
+
+  it('accepts an NC focal whose served class and served group_id are both NC', async () => {
+    const request = { ...littoralRequest, expectedLittoralCode: 'NC' as const }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) =>
+          responseFor(item, '22002', littoralRow({ group_id: 'NC', rank: 4, rank_size: 939, rank_ties: 1 }))) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', '22002', request)
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') return
+    expect((result.evidence.cells[0] as unknown as Record<string, unknown>).group_id).toBe('NC')
+    expect(aeaDarRank(result.evidence.cells[0]!)).toEqual({ position: 4, size: 939, ties: 1 })
+  })
+
+  it('fails closed on a wrong-class echo (C group returned to an NC focal)', async () => {
+    const request = { ...littoralRequest, expectedLittoralCode: 'NC' as const, fresh: true }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) =>
+          responseFor(item, '22002', littoralRow({ group_id: 'C' }))) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    expect(await fetchAedarComparison('commune', '22002', request)).toMatchObject({ status: 'error' })
+  })
+
+  it('names the publication-unavailable state for a littoral read and serves no fallback group', async () => {
+    const request = { ...littoralRequest, fresh: true }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) => ({ id: item.id, resource: item.resource,
+          status: 'publication_unavailable', reason: 'publication_absent', family: 'aedar' })) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await fetchAedarComparison('commune', '22001', request)
+    expect(result.status).toBe('error')
+    if (result.status !== 'error') return
+    expect(result.message).toContain('Publication AEDAR indisponible')
+    expect(result).not.toHaveProperty('evidence') // never a Bretagne/density group
+  })
+
+  it('fails closed when a Bretagne/wrong-context row answers a littoral request', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (isCatalogue(url)) return new Response(JSON.stringify(aggregateCatalogue))
+      const { items } = JSON.parse(String(init?.body))
+      return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v2',
+        results: items.map((item: { id: string; resource: string }) => ({ id: item.id, resource: item.resource,
+          status: 'available', data: fixedCellResponse(littoralRow({ comparison_context: 'bretagne' })) })) }) } as Response
+    })
+    vi.stubGlobal('fetch', fetcher)
+    expect(await fetchAedarComparison('commune', '22001', littoralRequest)).toMatchObject({ status: 'error' })
+  })
+})
+
+// Local alias keeps the assertion readable without importing the display helper.
+function aeaDarRank(cell: { rank?: number | null; rank_size?: number | null; rank_ties?: number | null }) {
+  return cell.rank && cell.rank_size ? { position: cell.rank, size: cell.rank_size, ties: cell.rank_ties ?? null } : null
+}

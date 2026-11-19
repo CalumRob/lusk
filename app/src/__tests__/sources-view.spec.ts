@@ -181,9 +181,10 @@ describe('SourcesView — route dataset-centric', () => {
     const matrice = wrapper.find('#source-raccordement-gtfs-national')
     expect(matrice.exists()).toBe(true)
     expect(matrice.text()).toContain('Référence nommée — moyenne des courbes communales évaluées')
-    const snapshot = wrapper.find('#source-mobilite-snapshot')
-    expect(snapshot.exists()).toBe(true)
-    expect(snapshot.text()).toContain('Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)')
+    // #1048 slice 3 — la source du snapshot porté n'est plus documentée :
+    // aucune fiche Source ne la réintroduit.
+    const idSnapshot = ['mobilite', 'snapshot'].join('-')
+    expect(wrapper.find(`#source-${idSnapshot}`).exists()).toBe(false)
     expect(wrapper.text()).toContain('Couverture programmatique')
 
     // Le référentiel territorial reste un consommateur non-indicateur sans lien.
@@ -235,17 +236,9 @@ describe('SourcesView — route dataset-centric', () => {
     expect(page.find('a[href="/indicateurs/mobilite/raccordement_tc"]').exists()).toBe(true)
     expect(page.text()).not.toContain('Déclaration sans page')
 
-    // Les déclarations d'accessibilité retirées portent le MÊME cue générique,
-    // dans la même liste — sans statut « retiré » inventé ni classification
-    // gardée/historique : le wording couvre les deux sans présumer de la
-    // disponibilité factuelle.
-    const snapshot = wrapper.find('#source-mobilite-snapshot')
-    const itemsSnapshot = snapshot.findAll('.source-record__consumers li')
-    expect(itemsSnapshot.length).toBeGreaterThan(0)
-    for (const item of itemsSnapshot) {
-      expect(item.find('a').exists()).toBe(false)
-      expect(item.text()).toContain('Déclaration sans page d’indicateur courante')
-    }
+    // #1048 slice 3 — la fiche du snapshot retiré n'existe plus : la couverture
+    // du cue générique est portée ci-dessus par la référence nommée et, plus
+    // bas, par la couverture programmatique, sans statut « retiré » inventé.
 
     // La couverture programmatique du sixième thème : même cue générique.
     const acv = wrapper.findAll('article.source-record').find((fiche) => fiche.text().includes('Couverture programmatique'))
@@ -277,5 +270,31 @@ describe('SourcesView — route dataset-centric', () => {
     const reference = matrice.findAll('.source-record__consumers li')
       .find((item) => item.text().includes('Référence nommée — moyenne des courbes communales évaluées'))!
     expect(reference.text()).toContain(`· ${MENTION_DECLARATION_SANS_PAGE}`)
+  })
+
+  it('#1044 rend la source de classification littorale servi (éditeur, licence, millésime, réserve, Plouvien) dans la fiche existsante', async () => {
+    // Aucun nouveau framework de métadonnées : la fiche source est déjà portée
+    // par territoryMetadata.source_records et rendue par le seam Sources.
+    const servie = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'littoral-reference-served.json'), 'utf8'))
+    const littoralPayload: Payload = {
+      ...payload,
+      territoryMetadata: servie.metadata as unknown as Payload['territoryMetadata'],
+    }
+    const wrapper = await monter(chargerAvec(littoralPayload))
+    const fiche = wrapper.find('#source-classe-littorale-communale')
+    expect(fiche.exists()).toBe(true)
+    const texte = fiche.text()
+    expect(texte).toContain('DREAL Bretagne')
+    expect(texte).toContain('Licence Ouverte 2.0 (lov2)')
+    expect(texte).toContain('2023-04-21')
+    expect(texte).toContain('Plouvien')
+    expect(texte).toContain('Communes définies par la loi Littoral de 1986') // definition
+    expect(texte).toContain('complément de l') // coverage / NC rule (fixture uses a straight apostrophe)
+    expect(texte).toContain('Valeurs sources : Mer, Estuaire') // served provenance, not a product category
+    expect(fiche.find('a[href*="geobretagne.fr"]').exists()).toBe(true) // acquisition endpoint
+    expect(texte.toLowerCase()).toMatch(/garantie juridique|instantan/)
+    // La fiche est un consommateur du référentiel, pas un artefact mort.
+    expect(texte).toContain('Référentiel territorial')
+    expect(fiche.find('a[href*="data.gouv.fr"]').exists()).toBe(true)
   })
 })

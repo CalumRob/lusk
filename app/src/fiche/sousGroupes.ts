@@ -47,7 +47,6 @@ import type {
   GroupeIndicateur,
   PointNuage,
   PointNuageMilieux,
-  PointNuageMobilite,
 } from '@/payload/selectors'
 
 /** The subgroup's compact figure — app-owned family + producer key, rows from the payload. */
@@ -71,8 +70,7 @@ export interface LectureSousGroupe {
   /**
    * The template params the template actually REFERENCES, resolved to display
    * strings (formatted numbers, string keys verbatim). Only referenced params
-   * must resolve — a declared-but-unreferenced param (the vélo row's
-   * pct_iso_full_t, by contract) never kills the reading.
+   * must resolve — a declared-but-unreferenced param never kills the reading.
    */
   parametres: Record<string, string>
   /** Optional app-owned figure presentation (e.g. the LQ list). */
@@ -101,20 +99,6 @@ export interface SousGroupeRendu {
   lectureIndisponible: boolean
 }
 
-/**
- * The precomputed building-level distribution of div_loss_t (ADR-0012) — the
- * Mobilité reading's chart matter (kept here since the app-side story mapper
- * that owned it is gone with #314).
- */
-export interface DistributionMobilite {
-  /** Les 10 densités de la signature (une par bin de décile). */
-  dens: (number | null)[]
-  /** Les 10 bornes de déciles de la distribution. */
-  dec: (number | null)[]
-  min: number | null
-  max: number | null
-}
-
 /** The chart of a resolved reading — selected by its producer-resolved story key. */
 export type FigureLecture =
   | {
@@ -124,16 +108,6 @@ export type FigureLecture =
       classification: string
       nom: string
       nuage: PointNuage[]
-    }
-  | {
-      genre: 'distribution'
-      distribution: DistributionMobilite
-      mediane: number
-      medianeVelo: number
-      /** Mode labels resolved from the payload classification vocabulary. */
-      modes: { t: string; b: string }
-      nom: string
-      nuage: PointNuageMobilite[]
     }
   | {
       genre: 'quadrant'
@@ -156,7 +130,6 @@ const CLEFS_POURCENT: ReadonlySet<string> = new Set([
   'part_passoires',
   'part_abc',
   'part_parc',
-  'pct_iso_full_t',
 ])
 
 /** The top-N aliases of the folded Économie reading (the rank is the index, never a column). */
@@ -353,13 +326,11 @@ export function sousGroupesPourTerritoire(
   })
 }
 
-/** The Mobilité distribution signature, from the row's flat bins. */
-
 /**
  * The reading's compact figure — selected by the producer-resolved row's
  * story_key (the factual selection), never by the theme prop. A key without
- * a known figure (the vélo salience, the Économie list readings, Habitat —
- * prose-only) renders text-only: null, honest.
+ * a known figure (the Économie list readings, Habitat — prose-only) renders
+ * text-only: null, honest. Mobilité has no reading since #1048 slice 3.
  */
 export function figureLecturePour(
   payload: Payload,
@@ -385,9 +356,9 @@ export function figureLecturePour(
     }
   }
 
-  // #627 - the retired Mobilité stories (« Vingt minutes sans voiture »,
-  // « Ce que le vélo préserve ») no longer resolve a figure: their app
-  // grammar reading and the snapshot distribution they read are gone.
+  // #627 / #1048 slice 3 — the Mobilité snapshot stories no longer resolve a
+  // figure: their app grammar reading, the distribution and the peer cloud are
+  // all retired. No figure is fabricated for a theme without a lecture.
 
   if (lecture.story_key === 'se-densifier-setaler-ou-sen-aller') {
     const h = histoire as HistoireMilieux
@@ -442,7 +413,7 @@ export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
 /**
  * The reading's source line — exhaustive, never invented: the readings of the
  * light themes cite their vintages-table ids (the shared table, ADR-0005); a
- * reading that wears its own stamp (Mobilité, Économie — issue #74) cites it.
+ * reading that wears its own stamp (Économie — issue #74) cites it.
  * Absent table → no line (honest, nothing to cite).
  */
 export function sourceLecture(payload: Payload, lecture: LectureSousGroupe): string | null {

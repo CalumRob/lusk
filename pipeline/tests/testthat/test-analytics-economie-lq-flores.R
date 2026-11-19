@@ -309,6 +309,28 @@ test_that("une cellule où A88 et A38 DISENT des LQ différentes échoue si on l
 })
 
 # 5. L'orchestrateur + la persistance -------------------------------------------
+test_that("calculer_lq_emploi_flores : un zéro explicite est exclu comme la cellule absente qu'il remplace", {
+  # Le rechargement 2026-08-27 de Flores diffuse des zéros explicites pour les
+  # cellules vides ; la livraison 2025 les omettait. Un secteur sans effectif
+  # n'a pas de LQ : le zéro est exclu du calcul, jamais classé comme une
+  # spécialisation nulle.
+  base <- fixture_flores_lq_a88()
+  zero <- base[base$commune == "22001" &
+                 base$activity_code == "01" &
+                 base$measure == "effectifs_salaries", , drop = FALSE]
+  zero$activity_code <- "02"
+  zero$activity_label <- "Sylviculture et exploitation forestière"
+  zero$value <- 0
+  avec_zero <- dplyr::bind_rows(base, zero)
+
+  reference <- calculer_lq_emploi_flores(base, "A88")
+  resultat <- calculer_lq_emploi_flores(avec_zero, "A88")
+
+  expect_false(any(resultat$lq$activity_code == "02"))
+  expect_equal(resultat$lq, reference$lq)
+  expect_equal(resultat$suppression, reference$suppression)
+})
+
 test_that("construire_analytique_lq_flores persiste lq_emploi_a88 + rapport (A38 via la même fonction)", {
   sortie <- tempfile("analytique-lq-flores-")
   on.exit(unlink(sortie, recursive = TRUE), add = TRUE)

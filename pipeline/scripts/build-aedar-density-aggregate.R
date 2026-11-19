@@ -6,9 +6,7 @@ if(length(args)>0L&&(length(args)!=2L||args[[1L]]!="--output"))
   stop("Usage: Rscript scripts/build-aedar-density-aggregate.R [--output PATH] (from pipeline/)",call.=FALSE)
 
 raw_dir<-Sys.getenv("LUSK_AEDAR_RAW_DIR",unset=file.path("data","raw"))
-origins_path<-Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS",unset="")
-if(!nzchar(origins_path))
-  stop("Set LUSK_AEDAR_ADDRESS_ORIGINS to the complete address-origin Parquet",call.=FALSE)
+origins_path<-aedar_address_origin_path(raw_dir)
 output_path<-if(length(args)) args[[2L]] else Sys.getenv("LUSK_AEDAR_DENSITY_OUTPUT",unset=file.path(raw_dir,"aedar_density_aggregate.parquet"))
 resources<-AEDAR_SOURCE_RESOURCES[AEDAR_SOURCE_RESOURCES$kind=="address",,drop=FALSE]
 mode_paths<-stats::setNames(file.path(raw_dir,resources$filename),resources$mode)

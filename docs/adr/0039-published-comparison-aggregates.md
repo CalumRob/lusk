@@ -100,6 +100,24 @@ stored or published (#810 stance intact). The contract is baked into the API
 image, so the live ranks appear only after an image rebuild and container
 recreate; no app change is required.
 
+**Littoral fixed-context amendment (owner-approved 2026-11-18, #1040):** a fifth
+published fixed comparison context, `littoral`, joins the commune choices
+(density class, EPCI, Bretagne, same-level). It resolves to the focal commune's
+same-status peers — `group_id` `C` or `NC`, `territory_type` `commune` — from the
+DREAL Bretagne classification pinned by #1041. It keeps this ADR's statistic and
+rank law exactly: same-status peers, reference plus direction-aware
+`rank`/`rank_size`/`rank_ties` REQUIRED as for the density preset, no rankless
+path, no borrowed group statistic and no default-context change. This extends
+the fixed-context enumeration here and in ADR-0041 by this one context.
+Implemented for the non-AEDAR families by #1042; the AEDAR extension was
+implemented by #1043 as a THIRD fixed context: the `littoral` C/NC pooled
+reference is projected from the already-pooled littoral artifact (never by
+averaging commune summaries or repeating TYPEQU aggregation in fixed requests),
+published as a SIBLING of the density summary with its own key and counters,
+and resolved with direction-aware request-time ranks over same-status peers
+for aggregate and per-cell facets. No peer/rank rows are published and the
+default context is unchanged.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.

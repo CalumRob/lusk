@@ -17,7 +17,7 @@ import { capturePdfFixture, captureProfilRangsDense } from './helpers/cahierPdfF
 import { cahierExportFixture, sectionOf } from './helpers/cahierExportFixtures'
 import { composerCahierPdfNativedansNavigateur, rendrePngNatif } from './helpers/cahierPdfNativeRuntime'
 
-const OUT = path.resolve('..', 'evidence-1034-final-corrections-review11-20261119')
+const OUT = path.resolve('..', 'evidence-1034-post-merge-review12-20261119')
 
 const MODES = ['car', 'transit', 'bike_lts2', 'bike_lts4', 'walk']
 const CUTS = [5, 10, 15, 20, 25, 30]

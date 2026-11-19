@@ -12,7 +12,7 @@
 # (« Actif »/« Fermé »), jamais en codes nationaux « A »/« F ». La colonne
 # datederniertraitementetablissement porte des horodatages ISO plausibles :
 # le MAXIMUM parmi les lignes RETENUES (actifs bretons exploitables) est
-# 2026-03-31 — la date de référence épinglée par le manifeste — l'auto-
+# 2026-09-30 — la date de référence épinglée par le manifeste — l'auto-
 # vérification de fraîcheur du normaliseur passe. Les lignes exclues portent
 # aussi des dates (le contrôle ne court que sur les lignes retenues, mais la
 # colonne est ainsi exercée partout).

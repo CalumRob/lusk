@@ -1,20 +1,19 @@
 /**
- * The ECharts seam for the story charts (issue #51).
+ * The ECharts seam for the fiche's scatter story charts (issue #51).
  *
- * GraphiqueSoldes (Démographie) and GraphiqueDistributionMobilite import this
- * module with a dynamic import() so the whole ECharts tree (~212 kB gzip)
- * loads only when a chart mounts — the landing/shell bundle never pays for
- * it. The tree-shaken registration (core + the components both charts need +
- * the canvas and SVG renderers) lives here, next to the imports, so the components
- * stay thin consumers of a ready-made echarts.
+ * GraphiqueSoldes (Démographie) and GraphiqueQuadrantMilieux (Milieux) import
+ * this module with a dynamic import() so the ECharts tree loads only when a
+ * chart mounts — the shell never pays for it. Only the series they draw is
+ * registered: the retired Mobilité distribution figure (#1048 slice 3) was the
+ * line-series consumer. The `type: 'line'` in the carte is a MapLibre layer,
+ * a different renderer, not an ECharts series.
  */
-import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
+import { BarChart, ScatterChart } from 'echarts/charts'
 import { AxisPointerComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer, SVGRenderer } from 'echarts/renderers'
 
 echarts.use([
-  LineChart,
   ScatterChart,
   BarChart,
   GridComponent,

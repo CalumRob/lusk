@@ -34,28 +34,43 @@ NIVEAUX_GEOMETRIE <- c(
 # régions voisines (44, 50, 61…), le filtre départemental précis se fait côté
 # pipeline (filtrer_geometrie) — la bbox ne sert qu'à éviter de télécharger la
 # France entière.
-WFS_GEOMETRIE_BBOX <- "47.0,-5.5,49.0,-0.5,urn:ogc:def:crs:EPSG::4326"
+#
+# Le CRS s'écrit `EPSG:4326`, PAS `urn:ogc:def:crs:EPSG::4326` (issue #1070) :
+# GeoPF a cessé d'accepter la forme URN dans le filtre bbox — elle répond
+# HTTP 400 `NoSuchAuthorityCodeException: Authority "URN" is unknown`, alors
+# que la même requête avec `EPSG:4326` répond HTTP 200. Coordonnées et ordre
+# d'axes (lat,min / lon,min / lat,max / lon,max) restent inchangés.
+WFS_GEOMETRIE_BBOX <- "47.0,-5.5,49.0,-0.5,EPSG:4326"
 
 # WFS_GEOMETRIE_BASE -----------------------------------------------------------
 # L'endpoint WFS de data.geopf.fr (IGN) — l'accès aux données Admin Express
 # sans clé (vérifié en direct le 2026-08-04).
 WFS_GEOMETRIE_BASE <- "https://data.geopf.fr/wfs/ows"
 
-# telecharger_geometrie_wfs ----------------------------------------------------
-# Le VRAI fetch : une requête GetFeature par niveau (bbox Bretagne, GeoJSON).
-# Non testé dans la boucle (convention pipeline — comme telecharger_fichier) :
-# il parle au réseau ; les tests injectent un faux. L'échec réseau remonte
-# bruyamment — publier_geometrie s'arrête, la publication ne part jamais à
-# moitié.
-telecharger_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
-                                      bbox = WFS_GEOMETRIE_BBOX) {
-  url <- paste0(
+# url_geometrie_wfs ------------------------------------------------------------
+# La construction de la requête GetFeature, isolée du réseau : le contrat de
+# l'URL (service/version/typeNames/count/outputFormat/bbox) est testable sans
+# parler à GeoPF. Le filtre bbox porte le CRS accepté (voir WFS_GEOMETRIE_BBOX).
+url_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
+                              bbox = WFS_GEOMETRIE_BBOX) {
+  paste0(
     base,
     "?service=WFS&version=2.0.0&request=GetFeature",
     "&typeNames=", utils::URLencode(NIVEAUX_GEOMETRIE[[niveau]], reserved = TRUE),
     "&count=3000&outputFormat=application/json",
     "&bbox=", bbox
   )
+}
+
+# telecharger_geometrie_wfs ----------------------------------------------------
+# Le VRAI fetch : une requête GetFeature par niveau (bbox Bretagne, GeoJSON).
+# Non testé dans la boucle (convention pipeline — comme telecharger_fichier) :
+# les tests vérifient l'URL via url_geometrie_wfs et injectent un faux fetch.
+# L'échec réseau remonte bruyamment — publier_geometrie s'arrête, la publication
+# ne part jamais à moitié.
+telecharger_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
+                                      bbox = WFS_GEOMETRIE_BBOX) {
+  url <- url_geometrie_wfs(niveau, base = base, bbox = bbox)
   reponse <- httr2::request(url) |>
     httr2::req_user_agent("lusk-pipeline (https://github.com/CalumRob/lusk)") |>
     httr2::req_perform()

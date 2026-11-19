@@ -10,22 +10,19 @@ import {
 } from '../payload/fixtures'
 import {
   formaterValeur,
-  histoireMobilitePourTerritoire,
+  histoirePourTerritoire,
   indicateursGroupeesPourTerritoire,
   indicateursPourTerritoire,
-  nuageMobilite,
   ratioOffreCyclable,
 } from '../payload/selectors'
 import type { Payload } from '../payload/types'
 
 /**
  * The Mobilité block selectors — pure, French product strings out of the
- * payload (issue #142, ADR-0012). Fixtures extracted from the REAL committed
- * payload: la commune 22001 (le défaut non-saillant), la commune 22002 (les
- * lignes réelles de la commune saillante 22055 — le vélo remplace le défaut),
- * l'EPCI, le département 22 et la région 53. The block's seam: the component
- * consumes these, never raw JSON. The ORDER is the metadata's indicator_keys
- * (#318) — the fiche's order, payload-owned, never an app-side dictionary.
+ * payload. Slice 3 of #1048 retires the snapshot readings and their peer
+ * cloud: the fiche's Mobilité block is now the 17 retained indicator keys and
+ * no lecture. The ORDER is the metadata's indicator_keys (#318) — the fiche's
+ * order, payload-owned, never an app-side dictionary.
  */
 
 const payloadMobilite: Payload = {
@@ -38,9 +35,7 @@ const payloadMobilite: Payload = {
   themeMetadata: { mobilite: metadonneesThemesFixtures.mobilite },
 }
 
-/** L'ordre de la fiche — le registre indicator_keys de la métadonnée Mobilité
- *  (les clés publiées du registre Mobilité — `nb_buildings` a quitté le
- *  payload). */
+/** L'ordre de la fiche — les clés retenues du registre Mobilité. */
 const ORDRE_METADONNEES = [
   'voitures_menage',
   'reseaux',
@@ -50,30 +45,10 @@ const ORDRE_METADONNEES = [
   'bornes_recharge',
   'places_stationnement_velo_1000',
   'offre_cyclable',
-  'iso_alimentation',
-  'iso_sante',
-  'iso_administration',
-  'iso_ecole',
-  'iso_banque',
-  'share_food_t',
-  'share_food_b',
-  'share_food_c',
-  'share_health_t',
-  'share_health_b',
-  'share_health_c',
-  'share_admin_t',
-  'share_admin_b',
-  'share_admin_c',
-  'share_school_t',
-  'share_school_b',
-  'share_school_c',
-  'share_bank_t',
-  'share_bank_b',
-  'share_bank_c',
 ]
 
 describe('indicateursPourTerritoire — the Mobilité block in the metadata order', () => {
-  it('returns the published keys in the fiche order (the metadata indicator_keys, #318)', () => {
+  it('returns the retained keys in the fiche order (the metadata indicator_keys, #318)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     expect(groupes.map((g) => g.key)).toEqual(ORDRE_METADONNEES)
@@ -86,20 +61,7 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
         'mobilite',
         territoire,
       ).map((g) => g.key)
-      expect(cles[0]).toBe('voitures_menage')
-      expect(cles.slice(1, 6)).toEqual([
-        'reseaux',
-        'reseaux_par_habitant',
-        'surface_reseaux_routiers',
-        'offre_tc',
-        'bornes_recharge',
-      ])
-      expect(cles.slice(6, 9)).toEqual([
-        'places_stationnement_velo_1000',
-        'offre_cyclable',
-        'iso_alimentation',
-      ])
-      expect(cles.slice(9)).toEqual(ORDRE_METADONNEES.slice(9))
+      expect(cles).toEqual(ORDRE_METADONNEES)
     }
   })
 
@@ -109,11 +71,11 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
     expect(lignes.every((l) => l.territoire === '22001' && l.theme === 'mobilite')).toBe(true)
   })
 
-  it('carries the real payload values — the 5 parts d’isolation en % de bâtiments sans accès', () => {
+  it('carries only the retained facts — no snapshot isolation row', () => {
     const lignes = indicateursPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
-    const grille = lignes.filter((l) => l.key.startsWith('iso_'))
-    expect(grille.map((l) => formaterValeur(l))).toEqual(['100', '100', '64', '100', '100'])
+    expect(lignes.every((l) => !l.key.startsWith('iso_') && !l.key.startsWith('share_'))).toBe(true)
+    expect(lignes.filter((l) => l.key === 'offre_tc').map((l) => formaterValeur(l))).toEqual(['0'])
   })
 
   it('keeps the multi-detail keys as one key (voitures_menage ×3, reseaux ×3, offre_cyclable ×5)', () => {
@@ -174,60 +136,16 @@ describe("ratioOffreCyclable — le headline « X % de l'infrastructure routièr
   })
 })
 
-describe('histoireMobilitePourTerritoire — la lecture RÉSOLUE (issue #312)', () => {
-  it('returns the default reading for a non-saillant commune, with its real matter', () => {
-    const histoire = histoireMobilitePourTerritoire(payloadMobilite, '22001')
-
-    expect(histoire).not.toBeNull()
-    expect(histoire?.story_key).toBe('vingt-minutes-sans-voiture')
-    expect(histoire?.groupe).toBe('acces-aux-services')
-    expect(histoire?.salience_reason).toBe('defaut')
-    expect(histoire).toMatchObject({
-      div_loss_t: 38,
-      div_loss_b: 38,
-      delta: 0,
-      classification_saillance: 'non-saillant',
-    })
+describe('le thème Mobilité n’a plus de lecture résolue (#1048 slice 3)', () => {
+  it('ne porte aucune ligne d’histoire dans la fixture', () => {
+    expect(histoiresMobiliteFixture).toEqual([])
   })
 
-  it('gives a saillant territory the vélo reading ALONE — la saillance a remplacé le défaut (ADR-0002, #312)', () => {
-    const histoire = histoireMobilitePourTerritoire(payloadMobilite, '22002')
-
-    expect(histoire).not.toBeNull()
-    expect(histoire?.story_key).toBe('ce-que-le-velo-preserve')
-    expect(histoire?.salience_reason).toBe('delta-velo-saillant')
-    expect(histoire?.delta).toBe(11)
-  })
-
-  it('returns null for a territory without a Mobilité Story (never invents a reading)', () => {
-    expect(histoireMobilitePourTerritoire(payloadMobilite, '29002')).toBeNull()
-    expect(histoireMobilitePourTerritoire(payloadMobilite, '99999')).toBeNull()
+  it('ne restitue aucune lecture pour un territoire du thème', () => {
+    expect(histoirePourTerritoire(payloadMobilite, 'mobilite', '22001')).toBeNull()
+    expect(histoirePourTerritoire(payloadMobilite, 'mobilite', '22002')).toBeNull()
   })
 })
 
-describe('nuageMobilite — le nuage même-échelle des pairs (ADR-0011)', () => {
-  it('gives a commune its EPCI’s communes (self included, comme la Démographie)', () => {
-    const nuage = nuageMobilite(payloadMobilite, '22001')
-
-    expect(nuage?.map((p) => p.territoire).sort()).toEqual(['22001', '22002'])
-    expect(nuage?.find((p) => p.territoire === '22002')).toMatchObject({
-      nom: 'Commune D',
-      divLoss: 24,
-    })
-  })
-
-  it('gives the région all its communes (same scale, ADR-0011)', () => {
-    const nuage = nuageMobilite(payloadMobilite, '53')
-
-    // seules les communes avec une ligne défaut du fixture apparaissent
-    expect(nuage?.map((p) => p.territoire).sort()).toEqual(['22001', '22002'])
-  })
-
-  it('returns null for an unknown territory', () => {
-    expect(nuageMobilite(payloadMobilite, '99999')).toBeNull()
-  })
-})
-
-// #627 - the snapshot stamp selector retired with the Mobilité legacy
-// surface: the slow-clock promise described the retired accessibility
-// analysis, and the production AEDAR evidence owns its provenance.
+// #627 — les sélecteurs d'estampille et de nuage du snapshot ont été retirés
+// avec le produit : la lecture AEDAR porte sa propre provenance.

@@ -146,9 +146,12 @@ test_that("TRIPWIRE — une jointure cassée ajoute un code exclu hors l'inconnu
   expect_error(verifier_exclusions_a17(cassee, "verrou"), "12\\.34Z")
 })
 
-test_that("TRIPWIRE — un rapport vide (l'inconnue n'est plus exclue) échoue aussi", {
+test_that("TRIPWIRE — un rapport vide (aucun code exclu) est un succès, pas une anomalie", {
+  # Depuis la coupe SIRENE 2026-10 l'export ne porte plus « 00.00Z » : zéro
+  # exclusion est le meilleur cas. La règle interdit les codes inconnus, elle
+  # n'exige plus la présence de l'inconnue.
   vide <- exclusions_connues()[0L, ]
-  expect_error(verifier_exclusions_a17(vide, "verrou"), "00\\.00Z")
+  expect_no_error(verifier_exclusions_a17(vide, "verrou"))
 })
 
 test_that("TRIPWIRE — l'inconnue qui porte plus d'un établissement échoue", {

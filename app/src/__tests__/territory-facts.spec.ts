@@ -87,8 +87,8 @@ const payload: Payload = {
   runReport: null,
   vintages: [
     {
-      id: 'mobilite_snapshot',
-      source: 'Snapshot Mobilité',
+      id: 'mobilite_gtfs',
+      source: 'Horaires GTFS du raccordement',
       version: '2026-02',
       licence: 'ODbL',
       date_reference: '2026-02-01',

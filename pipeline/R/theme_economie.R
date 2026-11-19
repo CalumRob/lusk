@@ -31,7 +31,7 @@
 # fragments par source, issue #13) — une ligne par source, jamais de doublon de
 # cache. Chaque source garde son vintage : SIRENE 2026-04 (référence
 # 2026-03-31, publication 2026-05-01), Flores A38/A88 2024 (référence
-# 2024-12-31, publication 2026-03-31), RP Emploi 2023 (référence 2023-01-01,
+# 2024-12-31, rechargement géographie 2026 publié 2026-08-27), RP Emploi 2023 (référence 2023-01-01,
 # publication 2026-06-30), RP Chômage 2023 (référence 2023-01-01, publication
 # 2026-07-15). Le référentiel partagé « epci » n'est PAS une source Économie :
 # la base des EPCI bretonne est la ressource transversale que les
@@ -356,15 +356,20 @@ validations_economie <- list(
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_economie <- function(analytiques, base_epci, vintages,
                                         noms_epci_geo_api = NULL,
-                                        classes_densite = NULL) {
+                                        classes_densite = NULL,
+                                        classes_littoral = NULL,
+                                        reference = NULL) {
+  reference <- exiger_reference_territoires(reference, "construire_payload_economie")
   territoires <- construire_territoires_economie(base_epci, analytiques)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
                                                 noms_epci_geo_api)
   }
-  if (!is.null(classes_densite)) {
-    territoires <- publier_classes_densite(territoires, classes_densite)
-  }
+  territoires <- appliquer_classifications_communales(
+    territoires,
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral
+  )
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(
@@ -376,7 +381,8 @@ construire_payload_economie <- function(analytiques, base_epci, vintages,
     # portés par la résolution partagée (resoudre_histoires)
     histoires = resoudre_histoires(
       compute_histoires_economie(analytiques, vintages), "economie"),
-    territoires = reference_territoires(territoires),
+    # #1056 : la dimension canonique exigée à l'entrée, sans repli.
+    territoires = reference,
     apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
   )
 
@@ -401,7 +407,11 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie_analytiques = file.path(dirname(cache),
                                                              "processed", "economie"),
                              noms_epci_geo_api = NULL,
-                             classes_densite = NULL) {
+                             classes_densite = NULL,
+                             classes_littoral = NULL,
+                              reference = NULL) {
+  # #1057 : valider AVANT toute lecture du cache.
+  reference <- exiger_reference_territoires(reference, "publier_economie")
   if (is.null(vintages)) vintages <- vintages_economie()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -413,7 +423,9 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
     base_epci,
     vintages,
     noms_epci_geo_api = noms_epci_geo_api,
-    classes_densite = classes_densite
+    classes_densite = classes_densite,
+    classes_littoral = classes_littoral,
+    reference = reference
   )
   publish(payload, sortie)
   payload

@@ -59,6 +59,7 @@ Boundary notes for reviewers:
 | --- | --- | --- | --- | --- |
 | `unavailable` | `aedar_reads.py` | `_aedar_comparison_marker` | `aedar` | AEDAR comparison publication is unavailable or stale |
 | `unavailable` | `aedar_reads.py` | `_aedar_density_class_summary_records` | `aedar` | AEDAR density-class summary is missing or incomplete |
+| `unavailable` | `aedar_reads.py` | `_aedar_littoral_summary_records` | `aedar` | AEDAR littoral summary is missing or incomplete |
 | `unavailable` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
 | `unavailable` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
 | `unavailable` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `aedar` | AEDAR territory summary publication is unavailable or stale |
@@ -118,6 +119,8 @@ Boundary notes for reviewers:
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
+| `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR littoral publication is incomplete |
+| `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR littoral publication is incomplete |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_snapshot` | `—` | AEDAR comparison facet declaration is incomplete for the requested measures |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_snapshot` | `—` | Published AEDAR reference identity is unavailable |
 | `fatal` | `aedar_reads.py` | `_aedar_density_class_summary_records` | `—` | AEDAR density-class summary contains an invalid reading |
@@ -125,7 +128,11 @@ Boundary notes for reviewers:
 | `fatal` | `aedar_reads.py` | `_aedar_density_class_summary_records` | `—` | AEDAR density-class summary is missing or incomplete |
 | `fatal` | `aedar_reads.py` | `_aedar_fixed_aggregate_snapshot` | `—` | AEDAR territory summary publication changed within the read snapshot |
 | `fatal` | `aedar_reads.py` | `_aedar_fixed_aggregate_snapshot` | `—` | Published AEDAR reference identity is unavailable |
+| `fatal` | `aedar_reads.py` | `_aedar_fixed_littoral_code` | `—` | Published littoral classification is unavailable for this commune |
 | `fatal` | `aedar_reads.py` | `_aedar_fixed_peer_ids` | `—` | Published AEDAR reference identity is unavailable |
+| `fatal` | `aedar_reads.py` | `_aedar_littoral_summary_records` | `—` | AEDAR littoral summary contains an invalid reading |
+| `fatal` | `aedar_reads.py` | `_aedar_littoral_summary_records` | `—` | AEDAR littoral summary is malformed |
+| `fatal` | `aedar_reads.py` | `_aedar_littoral_summary_records` | `—` | AEDAR littoral summary is missing or incomplete |
 | `fatal` | `aedar_reads.py` | `_aedar_prepare_fixed_aggregate_batch` | `—` | AEDAR territory summary publication changed within the read snapshot |
 | `fatal` | `aedar_reads.py` | `_aedar_prepare_fixed_aggregate_batch` | `—` | Published AEDAR reference identity is unavailable |
 | `fatal` | `aedar_reads.py` | `_aedar_selected_comparison_snapshot` | `—` | AEDAR comparison facet declaration is incomplete for the requested measures |
@@ -256,6 +263,7 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_execute_comparison_publication_read` | `—` | Published comparison schema is unavailable |
 | `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published Bretagne comparison identity is unavailable |
 | `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published Bretagne comparison identity is unavailable |
+| `fatal` | `snapshot_reads.py` | `_fixed_scalar_comparison_context` | `—` | Published littoral classification is unavailable |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Incomplete published series |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Invalid published series axis |
 | `fatal` | `snapshot_reads.py` | `_focal_series_snapshot` | `—` | Series publication is unavailable or incompatible |

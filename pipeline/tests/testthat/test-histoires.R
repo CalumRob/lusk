@@ -1,5 +1,5 @@
 test_that("les soldes : naturel = naissances - décès, migratoire = le résidu", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   expect_equal(h("22001")$solde_naturel, 150 - 80)
@@ -9,7 +9,7 @@ test_that("les soldes : naturel = naissances - décès, migratoire = le résidu"
 })
 
 test_that("les taux annuels : solde / 6 ans / population moyenne x 1000 (ADR-0011)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # 22001 : pop_moyenne = (1900 + 2000) / 2 = 1950 ; solde naturel 70, migratoire 30
@@ -21,7 +21,7 @@ test_that("les taux annuels : solde / 6 ans / population moyenne x 1000 (ADR-001
 })
 
 test_that("les taux des agrégats : soldes sommés sur population moyenne sommée", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # EPCI-X = A1 + D : pop_moyenne = (2325 + 2400) / 2 = 2362,5 ; soldes 50 et 25
@@ -36,7 +36,7 @@ test_that("les taux des agrégats : soldes sommés sur population moyenne sommé
 })
 
 test_that("les soldes : les agrégats somment les communes", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # EPCI-X = A1 + D
@@ -49,7 +49,7 @@ test_that("les soldes : les agrégats somment les communes", {
 })
 
 test_that("la lecture par quadrant : les quatre lectures sur le fixture", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # signes des taux (le fixture couvre deux quadrants : les deux forces même
@@ -61,7 +61,7 @@ test_that("la lecture par quadrant : les quatre lectures sur le fixture", {
 })
 
 test_that("la lecture par quadrant : agrégats et cas limite (zéro = négatif)", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # EPCI-X = A1 + D : soldes 50 et 25 -> les deux taux positifs
@@ -99,13 +99,13 @@ test_that("la lecture par quadrant : cas mixtes (signes opposés)", {
 })
 
 test_that("chaque histoire porte la clé du thème et une classification", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   expect_true(all(p$histoires$story_key == "trajectoire-demographique"))
   expect_true(all(!is.na(p$histoires$classification)))
 })
 
 test_that("chaque histoire porte la fenêtre inter-recensement de la trajectoire", {
-  p <- compute_payload(load_fixture())
+  p <- compute_payload_test(load_fixture())
   # la même fenêtre (POP 2017 -> POP 2023, 6 ans) que le taux / 6 et la
   # population moyenne d'ADR-0011 — publiée pour que l'app date le titre
   expect_true(all(p$histoires$periode == "2017-2023"))

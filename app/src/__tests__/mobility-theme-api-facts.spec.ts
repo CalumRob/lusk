@@ -11,7 +11,7 @@ import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixture
 import { projectRaccordementSemanticComparison } from '../payload/raccordementSemanticProjection'
 
 // Wire fields are producer-owned indicator observations, not storage-family rows.
-const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
+const sources = [{ source_id: 'sql_mobility', name: 'SQL mobility', version: 'sql-v1',
   reference_date: null, publication_date: null }]
 const context: TerritoryComparisonContext = { mode: 'densite', scope: {
   kind: 'communes-densite', label: 'Source-defined group' }, facts: [], buildingDistribution: null, accessRamp: null }
@@ -231,7 +231,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       .toMatchObject({ value: 123, provenance: { source: 'SQL mobility', referenceDate: null } })
     expect(facts.mobility.indicators.find((fact) => fact.key === 'reseaux_par_habitant'))
       .toMatchObject({ detail: 't_km_1000', value: 456, unit: 'km / 1 000 habitants' })
-    // #627 - the retired div_loss readings no longer resolve: the MobilityFacts
+    // #627 - the retired snapshot readings no longer resolve: the MobilityFacts
     // seam carries no losses field to revive.
     expect('losses' in facts.mobility).toBe(false)
   })
@@ -248,7 +248,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect('losses' in facts.mobility).toBe(false)
     const withStaleRows = mobilityFactsFromThemeApi(payload, '22001', {
       theme_id: 'mobilite', resource_reads: [],
-      readings: [{ story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', div_loss_t: 3, div_loss_b: 1 }],
+      readings: [{ story_key: 'ancienne-lecture-retiree', groupe: 'acces-aux-services', value: 3 }],
     })
     expect('losses' in withStaleRows.mobility).toBe(false)
   })
@@ -382,6 +382,28 @@ describe('SQL Mobilité response to Variant E facts', () => {
         expect.objectContaining({ detail: point.axis, value: point.value })),
     })
     expect(compared.mobility.selectedTrajectoryComparison?.scope.kind).not.toBe('density_class')
+  })
+  it('#1044 a littoral cohort is consumed as the explicit selection it is, never a Bretagne/density claim', () => {
+    const selection = [
+      { territory_type: 'commune' as const, territory_id: '22001' },
+      { territory_type: 'commune' as const, territory_id: '22106' },
+      { territory_type: 'commune' as const, territory_id: '22215' },
+    ]
+    const littoralContext: TerritoryComparisonContext = { mode: 'littoral', scope: {
+      kind: 'communes-littoral', label: 'communes littorales bretonnes' }, facts: [], buildingDistribution: null, accessRamp: null }
+    const synthetic = nativeRaccordementReads('22001', 'commune', payload,
+      { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) })
+    const compared = applyThemeComparisonApiFacts(synthetic.facts, synthetic.comparison, littoralContext, selection)
+    expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
+      statistic: 'mean', selectedMemberCount: 3, eligibleCount: 3,
+      scope: { kind: 'selection', territoryIds: ['22001', '22106', '22215'], label: 'communes littorales bretonnes' },
+    })
+    // A wrong echoed member still fails closed for a littoral cohort too.
+    const wrong = structuredClone(synthetic.comparison)
+    wrong.selection[1]!.territory_id = '99999'
+    expect(() => applyThemeComparisonApiFacts(synthetic.facts, wrong, littoralContext, selection))
+      .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
   })
   it('rejects an explicit density selection whose echoed membership or published scope contradicts the request', () => {
     const selection = [
@@ -592,7 +614,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     data.named_reference_evidence = [{ indicator_id: 'raccordement_courbe', id: 'median',
       label: 'Median', role: 'analytical_reference', statistic: 'median_routed_communes', unit: '%',
       points: [{ axis: 't0000', observation_period: 'synthetic-test-period', value: null,
-        status: 'unexpected_status', provenance: [{ source_id: 'mobilite_snapshot', source_name: 'SQL mobility',
+        status: 'unexpected_status', provenance: [{ source_id: 'sql_mobility', source_name: 'SQL mobility',
           version: 'sql-v1', reference_date: null, publication_date: null }] }] }]
     expect(() => mobilityFacts(data, '22001')).toThrow(/Point de référence nommée Mobilité/)
   })
@@ -612,7 +634,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(mobilityFactsFromThemeApi(payload, '22001', null).mobility.indicators).toHaveLength(0)
   })
   it('accepts immutable owned-series lineage using source_name rather than scalar name', () => {
-    const lineage = { revision_id: 'rev-1', source_id: 'mobilite_snapshot', vintage_id: 'v1',
+    const lineage = { revision_id: 'rev-1', source_id: 'sql_mobility', vintage_id: 'v1',
       source_name: 'SQL mobility', dataset_name: 'Raccordement', version: 'sql-v1',
       reference_date: null, publication_date: null, revision_hash: 'hash-1' }
     const data = { ...response(), indicator_metadata: [{ indicator_id: 'raccordement_courbe',

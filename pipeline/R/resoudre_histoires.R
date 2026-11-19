@@ -78,12 +78,20 @@ resoudre_histoires <- function(candidats, theme) {
 # La complétude (« chaque territoire du payload porte au moins une lecture »)
 # est vérifiée par validate_payload, qui a la table des territoires.
 valider_histoires_resolues <- function(histoires, theme) {
+  # Garde #312 : un payload SANS lecture est une corruption pour tout thème qui
+  # en déclare une (Démographie, Habitat, Économie, Milieux). Seuls les thèmes
+  # qui portent la propriété DÉCLARÉE `THEMES_SANS_LECTURE` (Programmes depuis
+  # #408, Mobilité depuis #1048) peuvent publier une table vide. Le test porte
+  # sur le registre, jamais sur le nom du thème en dur.
+  if (nrow(histoires) == 0L && theme_sans_lecture(theme)) {
+    return(invisible(TRUE))
+  }
   registre <- STORIES_RESOLUES_PAR_THEME[[theme]]
   if (is.null(registre)) {
     stop("Payload invalide : thème « ", theme,
          " » sans registre de stories résolues.", call. = FALSE)
   }
-  if (nrow(histoires) == 0) {
+  if (nrow(histoires) == 0L) {
     stop("Payload invalide : aucune histoire résolue pour le thème « ", theme,
          " ».", call. = FALSE)
   }

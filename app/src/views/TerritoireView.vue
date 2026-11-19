@@ -44,6 +44,7 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   CONTROLE_COMPARAISON_KEY,
   PARAM_COMPARAISON,
+  modePourSelectionServie,
   contextesDepuisReference,
   comparaisonTerritorialeEligible,
   developperMembresCommunes,
@@ -574,26 +575,17 @@ function libellePorteeSemantic(
       }
     }
   }
-  const candidates = [
-    ['epci', target.type === 'commune' && target.epci
-      ? territories.filter((item) => item.type === 'commune' && item.epci === target.epci) : []],
-    ['bretagne', territories.filter((item) => item.type === target.type)],
-    // Une sélection explicite égale à la cohorte de la classe de densité
-    // (preset « densite » développé) porte le libellé de la classe.
-    ['densite', target.type === 'commune' && target.classe_densite_code
-      ? territories.filter((item) => item.type === 'commune' &&
-        item.classe_densite_code === target.classe_densite_code) : []],
-  ] as const
-  for (const [mode, members] of candidates) {
-    const expected = members.map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-    if (expected.length === selected.length && expected.every((member, index) => {
-      const actual = selected[index]
-      return typeof actual === 'object' && actual !== null && !Array.isArray(actual) &&
-        (actual as Record<string, unknown>).territory_type === member.territory_type &&
-        (actual as Record<string, unknown>).territory_id === member.territory_id
-    })) return contexts[mode]?.scope.label ?? null
-  }
-  return null
+  // #1044 — the served explicit selection is admitted only when its exact
+  // membership equals one of the focal's OWN cohorts (EPCI, served C/NC class,
+  // Bretagne, density class). A wrong scope/class/member set cannot borrow the
+  // littoral (or any preset) public name.
+  const echo = selected.filter((item): item is { territory_type: string; territory_id: string } =>
+    typeof item === 'object' && item !== null && !Array.isArray(item) &&
+    typeof (item as Record<string, unknown>).territory_type === 'string' &&
+    typeof (item as Record<string, unknown>).territory_id === 'string')
+  if (echo.length !== selected.length) return null
+  const mode = modePourSelectionServie(echo, target, territories)
+  return mode ? contexts[mode]?.scope.label ?? null : null
 }
 
 /** Presets du menu rapide de la puce d'en-tête (la Région n'en a aucun ;
