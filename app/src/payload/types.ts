@@ -297,8 +297,8 @@ export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
  * #1048 slice 3 — the Mobilité snapshot reading is RETIRED. There is no
  * `HistoireMobilite` shape any more: the theme stays canonical but owns no
  * resolved reading, so `Histoire` admits no Mobilité member. The retired
- * fields (div_loss_t/b, delta, pct_iso_full_t, the dens_1..10 / dec_1..10 signature and
- * classification_saillance) and both retired story keys are gone from the
+ * fields (the two snapshot losses, the delta, the isolation depth and the 20-bin
+ * distribution signature, and the salience classification) and both retired story keys are gone from the
  * app contract. A legacy row still served before the republish is ignored by
  * the validator, never read as a figure (CONTEXT.md §Story — retired product
  * concept; §Lecture).
@@ -619,8 +619,8 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
 
 /**
  * The closed salience-reason vocabulary (issue #312): « defaut » for the
- * always-on reading. The retired Mobilité salience reason
- * « delta-velo-saillant » was dropped with its story (#1048 slice 3); the
+ * always-on reading. The retired Mobilité bike-delta salience reason
+ * was dropped with its story (#1048 slice 3); the
  * validator refuses any other value — never an invented reason. Mirrors
  * SALIENCE_DEFAUT in pipeline/R/theme_metadata.R.
  */

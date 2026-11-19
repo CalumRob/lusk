@@ -15,7 +15,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerCatalogueNavigateur, validerThemeMetadata, verifierClassesDensite, verifierClassificationLittorale } from '../payload/validate'
-import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
+import type { HistoireDemographie, HistoireMilieux, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
@@ -282,7 +282,7 @@ function documentsEconomie(overrides: Partial<DocumentsBruts> = {}): DocumentsBr
   })
 }
 
-/** The Mobilité documents (issue #142) — the fixture payload, theme swapped. */
+/** Les documents Mobilité — les faits retenus, sans lecture de snapshot (#1048). */
 function documentsMobilite(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
   return documentsBruts({
     indicateurs: indicateursMobiliteFixture,
@@ -833,101 +833,44 @@ describe('parsePayload — the Économie contract (issue #120, forme RÉSOLUE #3
   })
 })
 
-describe('parsePayload — the Mobilité contract (issue #142, RÉSOLU #312)', () => {
-  it('accepts the Mobilité documents — UNE lecture résolue par territoire', () => {
+describe('parsePayload — le thème Mobilité sans lecture (#1048 slice 3)', () => {
+  it('accepte les faits Mobilité retenus sans aucune ligne d’histoire', () => {
     const payload = parsePayload(documentsMobilite())
 
     expect(payload.indicateurs).toHaveLength(indicateursMobiliteFixture.length)
-    const histoires = payload.histoires.filter((h) => h.theme === 'mobilite')
-    expect(histoires).toHaveLength(histoiresMobiliteFixture.length)
-    // la saillante porte UNE lecture — le vélo a REMPLACÉ le défaut (issue
-    // #312 : le pool n'est jamais émis, ADR-0002)
-    const saillante = histoires.filter((h) => h.territoire === '22002')
-    expect(saillante.map((h) => h.story_key)).toEqual(['ce-que-le-velo-preserve'])
-    expect(saillante[0]).toMatchObject({
+    expect(payload.histoires.filter((h) => h.theme === 'mobilite')).toEqual([])
+  })
+
+  it('ignore une ligne d’histoire résiduelle encore servie avant le republish', () => {
+    const legacy = {
+      territoire: '22001',
+      type: 'commune',
+      theme: 'mobilite',
       groupe: 'acces-aux-services',
-      salience_reason: 'delta-velo-saillant',
-    })
+      story_key: 'story-du-snapshot-retire',
+      salience_reason: 'defaut',
+    }
+    const payload = parsePayload(documentsMobilite({ histoires: [legacy] }))
+
+    expect(payload.histoires).toEqual([])
   })
 
-  it('rejects a Mobilité histoire with an unknown story_key (drift must be loud)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { story_key: string }).story_key = 'la-voiture-reine'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/inconnue du contrat/)
-  })
-
-  it('rejects a Mobilité histoire missing its required reading (div_loss_t absent — loud)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    delete (histoires[0] as Partial<HistoireMobilite>).div_loss_t
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/div_loss_t/)
-  })
-
-  it('rejects a negative delta — la neutralité modale (vélo ≥ à pied) est le contrat', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { delta: number }).delta = -3
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/delta/)
-  })
-
-  it('rejects a vélo Story without the « saillant » classification', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    const velo = histoires.find(
-      (h) => (h as { story_key: string }).story_key === 'ce-que-le-velo-preserve',
-    ) as unknown as { classification_saillance: string }
-    velo.classification_saillance = 'notable'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/saillant/)
-  })
-
-  it('rejects a vélo Story without its flat distribution signature', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    const velo = histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite
-    velo.dens_1 = null
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/dens_1/)
-  })
-
-  it.each([
-    ['nonnumeric', (velo: HistoireMobilite) => { velo.dec_4 = 'bad' as unknown as number }],
-    ['unusable', (velo: HistoireMobilite) => { velo.dens_1 = 0; velo.dens_2 = 0; velo.dens_3 = 0; velo.dens_4 = 0; velo.dens_5 = 0; velo.dens_6 = 0; velo.dens_7 = 0; velo.dens_8 = 0; velo.dens_9 = 0; velo.dens_10 = 0 }],
-    ['invalid range', (velo: HistoireMobilite) => { velo.dens_max = 1; velo.dens_min = 2 }],
-  ])('rejects a vélo Story with a %s flat signature', (_, mutate) => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    mutate(histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite)
-    expect(() => parsePayload(documentsMobilite({ histoires }))).toThrow()
-  })
-
-  it('rejects an unknown saillance classification', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { classification_saillance: string }).classification_saillance = 'super'
-
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/classification_saillance/)
-  })
-
-  it('rejects a duplicate lecture (territoire × groupe) — jamais deux lectures pour le même slot', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+  it('rejette toujours une lecture en double sur un thème qui en porte (Démographie)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresDemographieFixture))
     histoires.push({ ...histoires[0] })
 
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    const erreur = attendErreurValidation(documentsBruts({ histoires }))
     expect(erreur.message).toMatch(/plusieurs lectures/)
   })
 
-  it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
-    ;(histoires[0] as { vintage_date_publication: string }).vintage_date_publication = '2026/08/06'
+  it('rejette toujours un tampon d’histoire malformé sur un thème qui en porte', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture))
+    histoires[0].vintage_date_publication = '2026/08/06'
 
-    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/vintage/)
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/vintage|ISO/)
   })
 })
-
 describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed par la spec #225)', () => {
   it('accepts the Milieux documents — la Story unique « Se densifier, s’étaler, ou s’en aller »', () => {
     const payload = parsePayload(documentsMilieux())

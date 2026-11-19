@@ -85,35 +85,28 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
     ])
   })
 
-  it('accepte une story candidate de saillance déclarée au registre (le pool Mobilité, ADR-0002)', () => {
-    // Le registre story_keys du thème déclare AUSSI les candidates de saillance
-    // — pas seulement la story liée par le sous-groupe : le pool Mobilité
-    // résout « ce-que-le-velo-preserve » là où le delta tire (139 territoires
-    // du payload committé), le candidat partage le slot du défaut
-    // (acces-aux-services). Une story déclarée mais non liée est LÉGITIME
-    // quand le registre la déclare candidate du groupe d'un sous-groupe —
-    // jamais une lecture en double, jamais un slot supplémentaire.
+  it('refuse une candidate de saillance retirée avec le snapshot Mobilité (#1048)', () => {
+    // Le pool de saillance n’existe plus : aucun thème ne déclare de raison
+    // de saillance autre que « defaut », et Mobilité n’a plus de lecture.
     const meta = copieBrute('mobilite')
-    meta.story_keys = ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']
+    meta.story_keys = ['story-de-saillance-retiree']
+    expect(() => validerThemeMetadata(meta, 'theme_mobilite.json')).toThrow(/inconnue du contrat/)
 
-    const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
-    expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
-    // #868 : sans story_keys déclaré (projection navigateur), le registre retombe
-    // sur le portefeuille du thème — la validation accepte la projection servie.
+    // Sans registre déclaré, la projection navigateur retombe sur le
+    // portefeuille du thème — désormais vide, comme le canon producteur.
     const { story_keys: _retire, ...projection } = copieBrute('mobilite')
     expect(() => validerCatalogueNavigateur(projection, 'theme_mobilite.json')).not.toThrow()
-    // #868 RED : le contexte producteur strict refuse la projection (story_keys absent)
     expect(() => validerThemeMetadata(projection, 'theme_mobilite.json')).toThrow(/story_keys/)
   })
 
   it('registre story_keys explicitement vide : aucune lecture non déclarée n’est autorisée (#868)', () => {
-    // RED same-theme : la fixture mobilite a une lecture déclarée (acces-aux-services) ;
-    // un registre [] explicite ne s'étend jamais au portefeuille du thème.
-    const videAvecLecture = copieBrute('mobilite')
+    // Démographie porte une lecture déclarée : un registre [] explicite ne
+    // s’étend jamais au portefeuille du thème.
+    const videAvecLecture = copieBrute('demographie')
     expect(videAvecLecture.subgroups.some((g) => g.reading !== undefined)).toBe(true)
     videAvecLecture.story_keys = []
-    expect(() => validerThemeMetadata(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
-    expect(() => validerCatalogueNavigateur(videAvecLecture, 'theme_mobilite.json')).toThrow(/histoire|story_keys|orphelin/)
+    expect(() => validerThemeMetadata(videAvecLecture, 'theme_demographie.json')).toThrow(/histoire|story_keys|orphelin/)
+    expect(() => validerCatalogueNavigateur(videAvecLecture, 'theme_demographie.json')).toThrow(/histoire|story_keys|orphelin/)
 
     // contrôle : registre vide et AUCUNE lecture déclarée = valide (Programmes, #408)
     const videSansLecture = copieBrute('programmes')
@@ -226,7 +219,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
     // l'herméticité : Programmes n'en possède aucune — toute déclaration est
     // soit cross-thème, soit inconnue du contrat.
     let erreur = attendErreur('programmes', (meta) => {
-      meta.story_keys = ['vingt-minutes-sans-voiture']
+      meta.story_keys = ['trajectoire-demographique']
     })
     expect(erreur.message).toMatch(/cross-th[èe]me/i)
 
@@ -305,7 +298,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette une référence cross-thème (l\u2019herméticité, ADR-0020)', () => {
     // une story d'un autre thème dans story_keys (la Mobilité dans la Démographie)
     const erreur = attendErreur('demographie', (meta) => {
-      meta.story_keys!.push('vingt-minutes-sans-voiture')
+      meta.story_keys!.push('se-densifier-setaler-ou-sen-aller')
     })
     expect(erreur.message).toMatch(/cross-th[èe]me/i)
   })

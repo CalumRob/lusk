@@ -41,33 +41,14 @@ export function handoffExploration(
 
 /**
  * Les constituants PUBLIÉS de chaque grande lecture (#473, l'audit du ticket)
- * : la lecture Mobilité interprète les pertes totales et les cinq parts sans
- * accès de son sous-groupe ; la lecture Milieux trace la trajectoire des états
- * par habitant que « Intensité état » publie (M2→M3). Les quantités calculées
- * pour la SEULE lecture — div_loss_* et la signature dens/dec, les deux taux
- * de solde, le top-N LQ, taux_variation_population — ne sont pas des
- * indicateurs publiés : elles n'apparaissent ici JAMAIS (aucune page
- * inventée), elles sont consignées hors périmètre sur le ticket.
+ * : la lecture Milieux trace la trajectoire des états par habitant que
+ * « Intensité état » publie (M2→M3). Les quantités calculées pour la SEULE
+ * lecture — les deux taux de solde, le top-N LQ, taux_variation_population —
+ * ne sont pas des indicateurs publiés : elles n'apparaissent ici JAMAIS
+ * (aucune page inventée). La lecture du snapshot Mobilité et ses constituants
+ * sont retirés avec le produit (#1048 slice 3).
  */
 const CONSTITUANTS_PUBLIES_PAR_STORY: Readonly<Record<string, readonly string[]>> = {
-  'vingt-minutes-sans-voiture': [
-    'tot_loss_t',
-    'tot_loss_b',
-    'iso_alimentation',
-    'iso_sante',
-    'iso_administration',
-    'iso_ecole',
-    'iso_banque',
-  ],
-  'ce-que-le-velo-preserve': [
-    'tot_loss_t',
-    'tot_loss_b',
-    'iso_alimentation',
-    'iso_sante',
-    'iso_administration',
-    'iso_ecole',
-    'iso_banque',
-  ],
   'se-densifier-setaler-ou-sen-aller': ['artif_par_habitant'],
 }
 
@@ -108,10 +89,6 @@ export function passarellesLecture(
  * Targets without a published page deliberately return null.
  */
 const PAGE_KEY_FOR_TARGET: Readonly<Record<string, string>> = {
-  // The diversity reading is a derived story fact. Its handoff remains honest
-  // by landing on the published total-loss indicator, as the old Cahier did.
-  div_loss_t: 'tot_loss_t',
-  div_loss_b: 'tot_loss_b',
   share_food_t: 'iso_alimentation',
   share_health_t: 'iso_sante',
   share_admin_t: 'iso_administration',

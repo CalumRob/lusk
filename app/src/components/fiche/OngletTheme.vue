@@ -15,7 +15,6 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
@@ -310,11 +309,7 @@ const lignesReseaux = computed(
 
             <div class="lecture-figure">
               <p
-                v-if="
-                  descriptionNuageComputed &&
-                  (groupe.figureLecture?.genre === 'soldes' ||
-                    groupe.figureLecture?.genre === 'distribution')
-                "
+                v-if="descriptionNuageComputed && groupe.figureLecture?.genre === 'soldes'"
                 class="lecture-contexte"
               >
                 {{ descriptionNuageComputed.prepositionCourant }}
@@ -344,16 +339,6 @@ const lignesReseaux = computed(
                 :nuage="groupe.figureLecture.nuage"
                 :cloud-comparison-status="props.cloudComparisonStatus"
               />
-              <GraphiqueDistributionMobilite
-                v-else-if="groupe.figureLecture?.genre === 'distribution'"
-                :distribution="groupe.figureLecture.distribution"
-                :mediane="groupe.figureLecture.mediane"
-                :mediane-velo="groupe.figureLecture.medianeVelo"
-                :modes="groupe.figureLecture.modes"
-                :nom="groupe.figureLecture.nom"
-                :nuage="groupe.figureLecture.nuage"
-              />
-
               <FigureLectureRenderer
                 v-if="groupe.lignesLQ.length"
                 :famille="groupe.lecture?.figure?.family ?? 'list'"

@@ -60,9 +60,8 @@ describe('tolérance des histoires — une table vide ou inconnue ne bloque pas 
       type: 'commune',
       theme: 'mobilite',
       groupe: 'acces-aux-services',
-      story_key: 'vingt-minutes-sans-voiture',
+      story_key: 'story-du-snapshot-retire',
       salience_reason: 'defaut',
-      div_loss_t: 38,
     }
     const payload = parsePayload(documents([...histoiresDemographieFixture, legacy]))
     expect(payload.histoires.every((h) => h.theme !== 'mobilite')).toBe(true)
