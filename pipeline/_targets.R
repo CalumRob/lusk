@@ -1294,9 +1294,17 @@ scalar_scope_targets <- function(scope, cache = CACHE_RUN, sortie = SORTIE_RUN,
                                  mode = MODE_RUN) {
   manifeste_scope <- as.name(paste0("manifeste_", scope$theme))
   sources_scope <- as.name("sources_scalar_scope")
-  suffixes <- gsub("[^A-Za-z0-9_]", "_", scope$sources)
-  fichiers_scope <- lapply(seq_along(scope$sources), function(i) {
-    id <- scope$sources[[i]]
+  # La colonne vertébrale AEDAR n'est pas une source du manifeste : c'est un
+  # fichier épinglé lu directement dans le cache par le producteur Offre TC.
+  # Elle est donc UNE cible `format = "file"` à part entière — un changement du
+  # spine invalide la matérialisation et le garde de baseline compare toujours
+  # contre cet intrant suivi — et reste exclue du téléchargement manifesté et
+  # de la résolution `manifeste_scope$fichier`.
+  spine_declared <- AEDAR_ADDRESS_ORIGIN_FILE %in% scope$sources
+  sources_manifeste <- setdiff(scope$sources, AEDAR_ADDRESS_ORIGIN_FILE)
+  suffixes <- gsub("[^A-Za-z0-9_]", "_", sources_manifeste)
+  fichiers_scope <- lapply(seq_along(sources_manifeste), function(i) {
+    id <- sources_manifeste[[i]]
     tar_target_raw(
       paste0("fichier_scalar_scope_", suffixes[[i]]),
       bquote({
@@ -1308,19 +1316,30 @@ scalar_scope_targets <- function(scope, cache = CACHE_RUN, sortie = SORTIE_RUN,
       format = "file"
     )
   })
+  fichier_spine <- if (isTRUE(spine_declared)) list(
+    tar_target_raw(
+      "fichier_scalar_scope_aedar_address_spine",
+      bquote(file.path(.(cache), .(AEDAR_ADDRESS_ORIGIN_FILE))),
+      format = "file"
+    )
+  ) else list()
+  noms_fichiers_scope <- c(paste0("fichier_scalar_scope_", suffixes),
+                           if (isTRUE(spine_declared))
+                             "fichier_scalar_scope_aedar_address_spine" else character())
   vintages_scope <- as.name(paste0("vintages_table_", scope$theme))
   c(
     list(
       tar_target_raw(
         "sources_scalar_scope",
         bquote(download_sources(
-          .(manifeste_scope)[.(manifeste_scope)$id %in% .(scope$sources), ,
+          .(manifeste_scope)[.(manifeste_scope)$id %in% .(sources_manifeste), ,
                              drop = FALSE],
           cache = .(cache), mode = .(mode)
         ))
       )
     ),
     fichiers_scope,
+    fichier_spine,
     list(
       tar_target_raw(
         "fichier_scalar_base",
@@ -1337,7 +1356,7 @@ scalar_scope_targets <- function(scope, cache = CACHE_RUN, sortie = SORTIE_RUN,
         "scalar_serving_scope",
         as.call(c(
           list(as.name("{")),
-          lapply(paste0("fichier_scalar_scope_", suffixes), as.name),
+          lapply(noms_fichiers_scope, as.name),
           list(
             as.name("fichier_epci_extrait"),
             as.name("fichier_scalar_base"),
