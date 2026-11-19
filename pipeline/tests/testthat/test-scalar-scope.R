@@ -552,3 +552,21 @@ test_that("le producteur ciblé Offre TC produit la forme complète à quatre ni
   # provenance : korrigo uniquement — le spine est un intrant, pas une source
   expect_true(all(grepl("Korrigo", rows$source_name, fixed = TRUE)))
 })
+
+test_that("le graphe d'imports du namespace lusk reste acyclique (#1071)", {
+  ns <- asNamespace("lusk")
+  # parse_scalar_scope() résout LE contrat ; scalar_scope_contract() ne doit
+  # jamais rappeler le parseur (appel mutuel = cycle, hash_imports échoue et
+  # tar_make ne démarre pas). Le parseur partagé est le seul point de découpe.
+  expect_false("parse_scalar_scope" %in% codetools::findGlobals(
+    get("scalar_scope_contract", envir = ns), merge = TRUE))
+  expect_true("scalar_scope_contract" %in% codetools::findGlobals(
+    get("parse_scalar_scope", envir = ns), merge = TRUE))
+
+  # Le graphe EXACT que targets utilise pour hash_imports() — le même que
+  # tar_network() — doit rester un DAG.
+  aretes <- targets:::edges_envir(ns)
+  graphe <- igraph::simplify(igraph::graph_from_data_frame(aretes))
+  expect_true(igraph::is_dag(graphe))
+  expect_length(igraph::find_cycle(graphe)$vertices, 0L)
+})

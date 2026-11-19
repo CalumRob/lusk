@@ -44,11 +44,14 @@ scalar_scope_registry <- function() {
   )
 }
 
-# parse_scalar_scope ------------------------------------------------------------
-# La sélection d'environnement : "<thème>:<id1>,<id2>,…" — le MÊME format pour
+# parse_scalar_scope_selection --------------------------------------------------
+# Le SEUL parseur de la sélection "<thème>:<id1>,<id2>,…" — le MÊME format pour
 # la cible du graphe et le CLI. Toute sélection vide, inconnue ou dupliquée
-# s'arrête bruyamment : jamais un périmètre deviné.
-parse_scalar_scope <- function(selection) {
+# s'arrête bruyamment : jamais un périmètre deviné. Il est partagé par
+# parse_scalar_scope() et scalar_scope_contract() : ni l'un ni l'autre ne
+# rappelle l'autre. Un appel mutuel fermerait le graphe d'imports du namespace,
+# ferait échouer targets::hash_imports et bloquerait tar_make (#1071).
+parse_scalar_scope_selection <- function(selection) {
   if (!is.character(selection) || length(selection) != 1L || is.na(selection) ||
       !nzchar(trimws(selection)))
     stop("Scalar scope selection is empty", call. = FALSE)
@@ -56,9 +59,14 @@ parse_scalar_scope <- function(selection) {
   if (length(parts) != 2L || !nzchar(parts[[1L]]) || !nzchar(parts[[2L]]))
     stop("Scalar scope selection must be <theme>:<indicator>[,<indicator>…]",
          call. = FALSE)
-  theme <- parts[[1L]]
-  ids <- trimws(strsplit(parts[[2L]], ",", fixed = TRUE)[[1L]])
-  scalar_scope_contract(theme, ids)
+  list(theme = parts[[1L]],
+       indicators = trimws(strsplit(parts[[2L]], ",", fixed = TRUE)[[1L]]))
+}
+
+# parse_scalar_scope ------------------------------------------------------------
+parse_scalar_scope <- function(selection) {
+  parsed <- parse_scalar_scope_selection(selection)
+  scalar_scope_contract(parsed$theme, parsed$indicators)
 }
 
 # scalar_scope_contract ---------------------------------------------------------
@@ -82,11 +90,15 @@ assert_scalar_scope_sources <- function(theme, sources) {
 }
 
 scalar_scope_contract <- function(theme, indicator_ids = NULL) {
-  # La sélection complète "<thème>:<ids>" est acceptée telle quelle : c'est le
-  # même contrat que parse_scalar_scope, sans forcer l'appelant à la découper.
+  # La sélection complète "<thème>:<ids>" est acceptée telle quelle : on la
+  # découpe AVEC LE MÊME parseur, sans rappeler parse_scalar_scope (sinon les
+  # deux fonctions forment un cycle dans le graphe d'imports de targets).
   if (is.null(indicator_ids) && is.character(theme) && length(theme) == 1L &&
-      !is.na(theme) && grepl(":", theme, fixed = TRUE))
-    return(parse_scalar_scope(theme))
+      !is.na(theme) && grepl(":", theme, fixed = TRUE)) {
+    parsed <- parse_scalar_scope_selection(theme)
+    theme <- parsed$theme
+    indicator_ids <- parsed$indicators
+  }
   registry <- scalar_scope_registry()
   entries <- registry[[theme]]
   if (is.null(entries))
