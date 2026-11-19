@@ -49,7 +49,7 @@ test_that("parité bidirectionnelle métadonnées épinglées ↔ faits producte
     # porte encore les 29 faits du snapshot. On le ramène au catalogue courant
     # en écartant explicitement ces clés (jamais un filtre muet).
     cles_publiees <- unique(indicateurs$key)
-    if (identical(theme, "mobilite"))
+    if (theme_sans_lecture(theme))
       cles_publiees <- setdiff(cles_publiees, INDICATEURS_MOBILITE_RETIRES)
     manquants_libelle <- setdiff(cles_publiees, names(meta$indicator_labels))
     expect_true(length(manquants_libelle) == 0L, info = paste(

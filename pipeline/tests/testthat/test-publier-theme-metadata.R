@@ -233,7 +233,7 @@ test_that("projection_navigateur : le fichier publié exclut les champs hors nav
     expect_identical(relu$sources, meta$sources, info = theme)
     expect_identical(relu$indicator_keys, meta$indicator_keys, info = theme)
     # les deux clauses factuelles retenues (#827) restent servies
-    if (theme %in% c("mobilite", "programmes")) {
+    if (theme_sans_lecture(theme)) {
       cadrages <- vapply(relu$subgroups, function(g) g$framing %||% "", character(1))
       expect_true(any(nzchar(cadrages)), info = theme)
     }
@@ -335,14 +335,8 @@ test_that("la parité registre ↔ métadonnées : chaque thème déclare les st
     meta <- lire_theme_metadata(theme)
     declarees <- unlist(meta$story_keys, use.names = FALSE)
     resolvables <- STORIES_RESOLUES_PAR_THEME[[theme]]$story_key
-    if (identical(theme, "mobilite")) {
-      # #1048 : le pool ADR-0002 reste épinglé comme preuve de la règle, mais
-      # le producteur n'émet plus de lecture — le catalogue ne déclare aucune
-      # story. La parité est donc ROMPUE ici par décision, pas par dérive.
-      expect_length(declarees, 0L)
-      expect_gt(length(resolvables), 0L)
-      next
-    }
+    # #1048 : Mobilité déclare ZERO story dans le catalogue comme dans le
+    # registre de résolution — la parité porte aussi sur ce cas vide.
     expect_true(setequal(declarees, resolvables), info = theme)
   }
 })

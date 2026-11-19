@@ -91,7 +91,7 @@ materialize_theme_scalar_artifact <- function(payload, metadata, vintages, theme
   # faits et il n'a plus de page. Le projeter ferait échouer la garde de page.
   ids <- setdiff(names(metadata$scalar_contracts),
     scalar_indicators_with_serving_disposition(
-      metadata, "excluded_legacy_accessibility"))
+      metadata, SERVING_DISPOSITION_EXCLUDED_LEGACY))
   if (!length(ids)) return(invisible(NULL))
   if (!is.list(payload) || !is.data.frame(payload$indicateurs) ||
       !is.data.frame(payload$territoires) || !is.data.frame(vintages))

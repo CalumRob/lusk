@@ -83,7 +83,7 @@ valider_histoires_resolues <- function(histoires, theme) {
   # qui portent la propriété DÉCLARÉE `THEMES_SANS_LECTURE` (Programmes depuis
   # #408, Mobilité depuis #1048) peuvent publier une table vide. Le test porte
   # sur le registre, jamais sur le nom du thème en dur.
-  if (nrow(histoires) == 0L && theme %in% THEMES_SANS_LECTURE) {
+  if (nrow(histoires) == 0L && theme_sans_lecture(theme)) {
     return(invisible(TRUE))
   }
   registre <- STORIES_RESOLUES_PAR_THEME[[theme]]

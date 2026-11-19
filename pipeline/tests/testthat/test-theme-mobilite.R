@@ -1673,8 +1673,13 @@ territoires_fixture_indicateurs_mobilite <- function() {
 }
 
 histoires_fixture_indicateurs_mobilite <- function() {
-  nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data",
-                                    "histoires_mobilite.parquet"))
+  # #1048 : le producteur n'émet plus aucune lecture — la table est VIDE.
+  # Le Parquet `histoires_mobilite.parquet` committé est l'état ANTÉRIEUR au
+  # retrait (facts non republiés en slice 2) : il ne doit plus servir de fixture.
+  data.frame(
+    territoire = character(), type = character(), theme = character(),
+    story_key = character(), stringsAsFactors = FALSE
+  )
 }
 
 # fixture_indicateurs_mobilite ---------------------------------------------------

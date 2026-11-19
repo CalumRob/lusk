@@ -88,7 +88,31 @@ test_that("Milieux : chaque lecture résolue porte son groupe et « defaut »", 
                     sign(h$delta_population[definis])))
 })
 
-test_that("Mobilité : la saillance REMPLACE le défaut — une lecture par territoire", {
+test_that("Mobilité : le pool ADR-0002 est retiré — aucune candidate ne peut plus être émise (#1048)", {
+  expect_equal(nrow(STORIES_RESOLUES_PAR_THEME$mobilite), 0L)
+  candidats <- tibble::tibble(
+    territoire = "22001", type = "commune", theme = "mobilite",
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"))
+  expect_error(resoudre_histoires(candidats, "mobilite"), "inconnue")
+  vide <- resoudre_histoires(candidats[0L, ], "mobilite")
+  expect_equal(nrow(vide), 0L)
+})
+
+test_that("le pool ADR-0002 résout encore une saillance pour un thème qui le déclare", {
+  # Mécanique générique conservée : on épingle TEMPORAIREMENT un pool pour
+  # prouver que la règle « la saillance remplace le défaut » tient toujours,
+  # même si Mobilité ne l'utilise plus depuis #1048.
+  ns <- asNamespace("lusk")
+  registre <- get("STORIES_RESOLUES_PAR_THEME", envir = ns)
+  original <- registre
+  pool <- tibble::tibble(
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
+    groupe = "acces-aux-services", ordre = c(1L, 2L),
+    salience_reason = c(NA_character_, "delta-velo-saillant"))
+  registre$mobilite <- pool
+  assignInNamespace("STORIES_RESOLUES_PAR_THEME", registre, ns = "lusk")
+  on.exit(assignInNamespace("STORIES_RESOLUES_PAR_THEME", original, ns = "lusk"),
+          add = TRUE)
   # le pool (vingt-minutes toujours allumé + vélo quand le delta est réel) se
   # résout en UNE lecture par territoire : la story saillante là où elle tire,
   # le défaut ailleurs. Jamais les deux lignes du pool dans le payload.
@@ -131,6 +155,17 @@ test_that("Mobilité : la saillance REMPLACE le défaut — une lecture par terr
 })
 
 test_that("Mobilité : la lecture résolue garde la matière du défaut quand elle ne tire pas", {
+  # Pool épinglé temporairement (Mobilité n'en publie plus depuis #1048).
+  ns <- asNamespace("lusk")
+  registre <- get("STORIES_RESOLUES_PAR_THEME", envir = ns)
+  original <- registre
+  pool <- tibble::tibble(
+    story_key = "vingt-minutes-sans-voiture", groupe = "acces-aux-services",
+    ordre = 1L, salience_reason = NA_character_)
+  registre$mobilite <- pool
+  assignInNamespace("STORIES_RESOLUES_PAR_THEME", registre, ns = "lusk")
+  on.exit(assignInNamespace("STORIES_RESOLUES_PAR_THEME", original, ns = "lusk"),
+          add = TRUE)
   # quand le défaut est choisi, sa matière (div_loss_t/b, delta, la profondeur
   # et la signature) reste portée par la ligne résolue — la même forme qu'avant
   vingt <- tibble::tibble(
