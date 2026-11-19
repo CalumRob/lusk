@@ -146,3 +146,27 @@ test_that("les noms de couches CARTO-PE sont stables (le contrat du WFS)", {
   expect_match(NIVEAUX_GEOMETRIE[["epcis"]], "CARTO-PE")
   expect_match(NIVEAUX_GEOMETRIE[["departements"]], "CARTO-PE")
 })
+
+# WFS bbox / CRS (#1070) ----------------------------------------------------
+# GeoPF rejette la forme URN du CRS dans le filtre bbox (HTTP 400 —
+# NoSuchAuthorityCodeException: Authority "URN" is unknown) ; la forme
+# EPSG:4326 est acceptée (HTTP 200). Le contrat de l'URL est testé sans réseau.
+
+test_that("la bbox WFS porte le CRS EPSG:4326 accepté par GeoPF (#1070)", {
+  expect_identical(WFS_GEOMETRIE_BBOX, "47.0,-5.5,49.0,-0.5,EPSG:4326")
+
+  url <- url_geometrie_wfs("communes")
+  expect_true(endsWith(url, "&bbox=47.0,-5.5,49.0,-0.5,EPSG:4326"))
+  expect_false(grepl("urn:ogc:def:crs", url, fixed = TRUE))
+  # mêmes coordonnées et même ordre d'axes qu'avant le correctif
+  expect_true(grepl("&bbox=47.0,-5.5,49.0,-0.5,", url, fixed = TRUE))
+})
+
+test_that("url_geometrie_wfs construit une GetFeature complète (contrat WFS)", {
+  url <- url_geometrie_wfs("epcis")
+  expect_true(grepl("^https://data.geopf.fr/wfs/ows\\?", url))
+  expect_true(grepl("service=WFS&version=2.0.0&request=GetFeature", url,
+                    fixed = TRUE))
+  expect_true(grepl("outputFormat=application/json", url, fixed = TRUE))
+  expect_true(grepl("&count=3000", url, fixed = TRUE))
+})

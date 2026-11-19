@@ -39,6 +39,26 @@ chemin_artefact_raccordement_national <- function() {
   if (!nzchar(path)) stop("National raccordement envelope pin is missing from package extdata.", call. = FALSE)
   path
 }
+
+# chemin_enveloppe_raccordement ------------------------------------------------
+# Résout le chemin de l'enveloppe à partir de CE QUE LA CIBLE REND (#1070).
+# Depuis #728 la cible `raccordement_<thème>` rend LE CHEMIN DU FICHIER de
+# l'épingle versionnée (format = "file") — plus jamais un répertoire de sortie
+# analytique. Les verrous « données réelles » reçoivent donc tantôt ce chemin
+# de fichier, tantôt un répertoire (les fixtures/appels historiques) : on
+# n'ajoute le nom de fichier QUE dans le second cas. La confusion — traiter le
+# fichier comme une base de répertoire — produisait le jointure fallacieuse
+# `raccordement_national_outbound_v1.rds/raccordement_mobilite.rds`.
+chemin_enveloppe_raccordement <- function(sortie = NULL) {
+  if (is.null(sortie) || !nzchar(sortie)) {
+    return(chemin_artefact_raccordement_national())
+  }
+  if (basename(sortie) == RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER) {
+    sortie
+  } else {
+    file.path(sortie, RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER)
+  }
+}
 chemin_matrice_raccordement_national <- function() {
   path <- system.file("extdata", RACCORDEMENT_NATIONAL_MATRICE_FICHIER,
                       package = "lusk")

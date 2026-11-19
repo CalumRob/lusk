@@ -934,9 +934,11 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
       if (identical(id, "epci")) {
         appels[[param]] <- as.name("fichier_epci_extrait")
       } else if (identical(id, "raccordement")) {
-        # la sentinelle du raccordement (#486) : l'artefact calculé par la
-        # cible du trait — le verrou reçoit SON chemin (format = "file"),
-        # la vérification suit SA fraîcheur
+        # la sentinelle du raccordement : la cible du trait rend le CHEMIN de
+        # l'épingle versionnée (format = "file", #728) — le verrou reçoit ce
+        # fichier et le résout avec chemin_enveloppe_raccordement, jamais en
+        # le traitant comme un répertoire (#1070). La vérification suit SA
+        # fraîcheur.
         appels[[param]] <- as.name(paste0("raccordement_", theme$theme))
       } else if (identical(id, "published")) {
         # Seuls les propriétaires qui conservent leur Parquet de faits par
