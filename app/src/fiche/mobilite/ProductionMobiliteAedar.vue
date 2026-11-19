@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, ref, shallowRef, watch } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
 import { aedarComparisonIntent, fetchAedarComparison } from '../content/aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
@@ -13,6 +13,7 @@ import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } fr
 import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
 import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import type { CahierPagination } from '../prototype/cahierPagination'
+import type { CahierPdfGenerator } from '../prototype/cahierPdfExportController'
 
 const props = withDefaults(defineProps<{
   content: ThemeContent
@@ -38,6 +39,26 @@ const props = withDefaults(defineProps<{
   erreurPage?: boolean
 }>(), { aedarActive: true })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
+
+/**
+ * #1025 — the one production junction between the shared controller and the
+ * real browser composer. The composer chunk is loaded on demand: until it
+ * settles the shared action stays honestly inert (the controller reports
+ * `generator-unavailable`, never a simulated success or download), then the
+ * factory's result is supplied through the same public `pdfGenerator` seam
+ * without remounting the shell. The composer lazy-imports jsPDF/svg2pdf itself,
+ * so no PDF runtime enters the initial bundle. A failed chunk load simply
+ * leaves the action unavailable, which the controller already surfaces.
+ */
+const pdfGenerator = shallowRef<CahierPdfGenerator | null>(null)
+void import('../prototype/cahierPdfComposer')
+  .then(({ creerGenerateurCahierPdf }) => {
+    pdfGenerator.value = creerGenerateurCahierPdf()
+  })
+  .catch(() => {
+    // Honest unavailability is already the controller's state; nothing else to
+    // fabricate here.
+  })
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -280,6 +301,7 @@ const transformed = computed(() => {
     :native-comparison-error="props.nativeComparisonError"
     :retry-native-comparison="props.retryNativeComparison"
     :aedar-reference-status="directReferenceStatus"
+    :pdf-generator="pdfGenerator"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"
