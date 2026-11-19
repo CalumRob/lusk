@@ -31,11 +31,13 @@ UNTRACKED — the whitelist `.gitignore` keeps them out of the repo; never commi
 Layers, cheapest first:
 
 1. **Always-on, zero tokens.** `npm --prefix app run verify:detector` (~1 s warm), which pins
-   `npx --yes impeccable@4.9.2 detect app/src`. "Clean" means no findings beyond the documented
-   baseline of 11 below — never a raw count of zero. Pinning matters: `4.10.0` retired the
-   `[side-tab]` regex rule and reports 0, so an unpinned `npx impeccable detect` silently
-   contradicts this baseline. Workers get this as a dispatch-brief line; reviewers run it scoped
-   to the diff. It parses `.vue` SFCs natively.
+   `npx --yes impeccable@4.9.2 detect app/src`. The 11 findings below are **known debt** recorded
+   for the DESIGN.md v2 campaign (#511), not a clean result and not an acceptance waiver. A scan
+   is clean only when it reports **exactly those 11** (same file/rule/line) and no new finding;
+   a raw zero means the wrong engine ran. Pinning matters: `4.10.0` retired the `[side-tab]` regex
+   rule and reports 0, so an unpinned `npx impeccable detect` silently contradicts this baseline.
+   Workers get this as a dispatch-brief line; reviewers run it scoped to the diff. It parses `.vue`
+   SFCs natively.
 2. **Design standards + review.** Root `DESIGN.md` is the single source of truth for visual
    decisions; `/code-review`'s Standards axis cites it plus detector findings. `code-review` runs on
    EVERY UI-touching merge — orchestrator's job during wave review, not ad hoc.
@@ -58,9 +60,10 @@ Count verified 2026-11-02 (#873 receipts): the 11 findings span 8 files and are 
 (`npx --yes impeccable@4.9.2 detect app/src`) — verified 2026-11-19 to report exactly
 `11 anti-patterns found.` The `4.9.x` line (4.9.0/4.9.1/4.9.2) all report 11; `4.10.0` retired the
 `[side-tab]` regex rule and reports 0, so it is NOT the baseline engine and must not be used for
-this gate. A scan is clean when it reports exactly these 11 (no new file/rule/line); the default
-engine pass scans `.css`/`.mjs`/`.ts`/`.vue` with regex rules only (rendered/element rules are not
-exercised by that pass).
+this gate. These 11 are **known design debt**, not a waiver: a scan is clean only when it reports
+exactly these 11 (no new file/rule/line), and the debt remains open for the #511 campaign until an
+owner actually resolves it. The default engine pass scans `.css`/`.mjs`/`.ts`/`.vue` with regex rules
+only (rendered/element rules are not exercised by that pass).
 
 ### General implementation rule — derive facts from contracts; own presentation in the app
 

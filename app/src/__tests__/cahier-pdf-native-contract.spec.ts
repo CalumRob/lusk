@@ -171,4 +171,25 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(couleurPdf(CAHIER_SHARE_COLOUR.fond)).toBe(PALETTE_PDF.shareTrackGround)
     expect(couleurPdf(CAHIER_SHARE_COLOUR.filet)).toBe(PALETTE_PDF.shareTrackBorder)
   })
+
+  it('an export from a non-production host still links the owned canonical public host', async () => {
+    const { CAHIER_EXPORT_PUBLIC_URL } = await import('../fiche/prototype/cahierExportUrls')
+    const { lirePdf } = await import('./helpers/cahierPdfRuntime')
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    expect(CAHIER_EXPORT_PUBLIC_URL).toBe('https://lusk.calumrobertson.fr/')
+    // No urlAccueil/urlPublique override: the production default applies even
+    // though the generating process runs on a preview/test host.
+    const lecture = await lirePdf((await composerCahierPdfNativedansNavigateur(
+      requete(capturePdfFixture('aedar-car-overview')),
+      { signal: new AbortController().signal },
+    )).blob)
+    expect(lecture.texteComplet).toContain('lusk.calumrobertson.fr')
+    expect(lecture.liens.some((lien) => lien.includes('lusk.calumrobertson.fr'))).toBe(true)
+    expect(lecture.liens.some((lien) => /lusk\.test|lusk-pdf-native|preview/.test(lien))).toBe(false)
+    // The URL owner must never read the runtime host.
+    const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierExportUrls.ts'), 'utf8')
+    const code = source.split('\n').filter((line) => !/^\s*(\*|\/\*)/.test(line)).join('\n')
+    expect(code).not.toMatch(/\blocation\b|\.origin\b/)
+  })
 }, 180000)

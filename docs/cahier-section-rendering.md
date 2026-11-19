@@ -296,11 +296,13 @@ disappears. The screen router owns the shared route identities
 standard figure width and desktop viewport constants come from their figure
 owners.
 
-**Public strings follow the current environment.** `cahierExportUrls.ts` builds
-the home/public links from the active origin and forwards the active query
-string, so a preview PDF links back to that preview. A caller may supply an
-explicit `urlAccueil`/`urlPublique` (as the review harness does); no deployment
-hostname is hardcoded and no capture or test fixture provides these strings.
+**Public strings come from the owner, not the runtime host.** `cahierExportUrls.ts`
+owns the canonical public site (`CAHIER_EXPORT_PUBLIC_URL`); the footer invitation
+and the public link are built from it (or from an explicitly supplied test-only
+override), never from `location` or from a capture. A preview or test hostname
+can therefore never leak into an exported PDF, and no query string is forwarded.
+The harness passes explicit `urlAccueil`/`urlPublique` overrides; production does
+not.
 
 **Map failure is explicit.** Every declared map is read from bytes frozen in
 the capture and bound to a settled object URL; a declared-but-unloaded or
@@ -310,13 +312,12 @@ a controller-compatible `CahierPdfCompositionError.code` (`asset` for maps,
 content, `serialization` for a missing rendered section). A retry uses the same
 frozen bytes and never re-contacts the owner.
 
-**Retired painter — precise follow-up.** `cahierPdfFigures.ts` and the five
-painter-geometry specs that still import `optionsFigurePdf` are outside the
-production import graph; `optionsFigurePdf` now lives in a test helper. This
-round stops extending that dead code rather than deleting it: a follow-up
-should remove the module together with those specs once their remaining
-historical assertions are transcribed or formally retired. No new production
-code may import it.
+**Retired painter — removed.** `cahierPdfFigures.ts` and its painter-geometry
+specs have been deleted; no hand-built figure painter remains in the repo. The
+shared primitives in `cahierFigureNativeGeometry.ts` are consumed by the mounted
+Vue figures and by the native DOM-paint seam, which is the only figure input to
+the PDF. Live table, fact and footer assertions were kept or re-targeted at that
+native seam; the retained source-contract tests assert the mounted SFCs.
 
 - `cahierPdfComparaison.ts` owns the approved comparison subtitle: exact EPCI
   name, the three Bretagne presets, French sort, measured two-line complete
@@ -360,7 +361,7 @@ code may import it.
   `cahierPdfTableau.ts`, consumed by both the composer's pagination and the
   painter). A flat table's legend-key band is exactly zero — never an empty
   mode line folded into `headerHeight`; the measured R1 gap from the last
-  header baseline to the first row is 16.24 pt (the painter's equivalent is
+  header baseline to the first row is 16.24 pt (the native body's equivalent is
   16.2 pt).
   The `¹` footnote marks the compared **`Groupe`** cell once per served cell
   (the flat shape prints the full `Groupe comparé ¹`, the grouped shape its
@@ -374,9 +375,8 @@ code may import it.
   bâtiments près d’un arrêt`) carries the same `Groupe comparé ¹ | Rang`
   presentation: its `Rang` cell is the producer-served ordinal and its scope
   (e.g. `1er/38` among the EPCI communes), never a value inferred from the
-  percentage or the median; the footer names the same group. The share **table** is the rank surface: the user asked for its `Rang` column to be populated, not for a rank badge on the share figure, so the figure keeps the screen's two tracks without one (a populated track keeps its 1 px solid border; only an empty track is dashed, with `Indisponible` centred inside it). The share painter and `hauteurFigurePdf` consume one
-  `GEOMETRIE_PART_PDF` body layout, including wrapped state/notes; there is no
-  fixed 40 mm reserve. Numbers are
+  percentage or the median; the footer names the same group. The share **table** is the rank surface: the user asked for its `Rang` column to be populated, not for a rank badge on the share figure, so the figure keeps the screen's two tracks without one (a populated track keeps its 1 px solid border; only an empty track is dashed, with `Indisponible` centred inside it). The mounted share figure and the native body measurement consume one
+  layout, including wrapped state/notes; there is no fixed 40 mm reserve. Numbers are
   never truncated
   (`CahierPdfTableLayoutError` rejects an impossible cell). Only a narrow
   territory table header may wrap twice then ellipsize; group names never are
@@ -397,20 +397,20 @@ code may import it.
   only paints the resulting primitives. The curve functions consume the
   captured model's narrow `CahierMobiliteCurveInput` shape (axis, points,
   trajectory, comparison, marker), not a widened full screen evidence.
-- `cahierPdfFigures.ts` paints those shared primitives (SVG marks + selectable
-  jsPDF text) from the frozen #1022 projections/native models. It does not own
-  a second axis/geometry/colour policy. The native AEDAR frame is declared once
-  in `cahierFigureNativeGeometry.ts` (`CAHIER_AEDAR_FIGURE_GEOMETRY`, the
-  640×300 viewBox with margins top 22 / right 68 / bottom 62 / left 64) and is
-  imported by `AccessRampFigureCahier.vue`, `CahierGroupedVerticalBarChart.vue`
-  and the painter. The left rail is **measured**, not fixed: the painter feeds
-  `deriveCahierFigureGeometry` the panel's actual rendered CSS-pixel width and
-  the embedded face's real label width, exactly like
-  `useMeasuredCahierFigureGeometry` (16 px title lane + longest rendered y label
-  + 8 px gap, capped by the native minimum plot width). The lane and gap are
-  therefore converted by `640 / renderedWidth`, not left as 640-unit numbers;
-  the derived user-unit rail is then scaled with the panel. The compared bars
-  use the same rule, and their y labels sit on that rail (no painter inset).
+- The native DOM-paint seam paints the mounted figures (SVG marks + selectable
+  text) from the frozen #1022 projections/native models; there is no second
+  axis/geometry/colour policy and no hand-built painter. The native AEDAR frame
+  is declared once in `cahierFigureNativeGeometry.ts`
+  (`CAHIER_AEDAR_FIGURE_GEOMETRY`, the 640×300 viewBox with margins top 22 /
+  right 68 / bottom 62 / left 64) and is imported by
+  `AccessRampFigureCahier.vue` and `CahierGroupedVerticalBarChart.vue`. The left
+  rail is **measured**, not fixed: `deriveCahierFigureGeometry` receives the
+  panel's actual rendered CSS-pixel width and the embedded face's real label
+  width, exactly like `useMeasuredCahierFigureGeometry` (16 px title lane +
+  longest rendered y label + 8 px gap, capped by the native minimum plot width).
+  The lane and gap are therefore converted by `640 / renderedWidth`, not left as
+  640-unit numbers; the derived user-unit rail is then scaled with the panel.
+  The compared bars use the same rule, and their y labels sit on that rail.
   Access-ramp ticks stay bare (`0`, `5`, …) as in R1: the unit is painted once
   on the axis title, and the compact x labels start at the shared
   `xLabelOffsetAccess` that clears the y tick's line box. SVG strokes stay in native
@@ -442,7 +442,7 @@ code may import it.
   (`CAHIER_FIGURE_ROW` in `cahierFigureNativeGeometry.ts`), and the composer
   resolves the source `CahierMobiliteSection.vue` clause
   `column-gap: clamp(24px, 4vw, 56px)` at that viewport, then converts it with
-  the figure's own page scaling (`figureRowGeometry`). `56 px` is therefore the
+  the figure's own page scaling (the `figureRowGeometry` test helper). `56 px` is therefore the
   clamp's **ceiling at the approved 1440 px desktop width**, not the live gap and
   not a transplanted physical distance; each figure is measured at its own half
   width and keeps the native 640x300 aspect. Only a genuinely taller-than-page
@@ -450,7 +450,11 @@ code may import it.
   composition, not a per-section template. Compared-bars plots keep the shared
   `CAHIER_MOBILITE_BARS_GEOMETRY` 640x300 aspect instead of a fixed PDF height,
   and their y rail is measured with the same shared rule as the mounted
-  component instead of a fixed margin.
+  component instead of a fixed margin. The two stationnement value tables do
+  **not** inherit that side-by-side figure grid: each measures ~97.5 mm against
+  an ~87.9 mm half-column, so pairing them would shrink numbers below their
+  measured content. They stay stacked and centred in the body — a recorded
+  measured-layout decision, not an oversight or a per-section template.
 - `cahierPdfFonts.ts` embeds the app's actual families. The binaries are
   derived from the installed `@fontsource-variable` packages by
   `scripts/derive-pdf-fonts.py`; `src/assets/fonts/pdf/manifest.json` records the
@@ -667,10 +671,10 @@ Independent review of `2c7833fb` and the actual running-header diagnosis (`E:/Te
 
 - **Rail units.** The measured rail rule is evaluated entirely in rendered CSS px (actual panel width and embedded-face label width), then returned as native user units. Feeding the 640-unit viewBox as the rendered width left the 16/8 px lane/gap unscaled; at half width the wide stationnement rail moved from 123.48 pt to its literal expected 126.95 pt, and the full-width case from 133.74 pt to 126.95 pt.
 - **Footer.** The comparison footer now stacks a wrapped group note upwards from the approved H-35 alphabetic baseline (12 pt pitch), and the measured zone is reserved before pagination. On 02/04/06/07 the note moved from 805.91–815.09 (3.13 pt overlap with the 811.96–821.14 invitation) to 799.96–809.14 (clear).
-- **Share height.** `GEOMETRIE_PART_PDF` is the single body layout for measurement and paint (rows, wrapped state and notes). The 07 gap before « Valeurs du graphique » fell from 85.57 pt to 23.21 pt, the source 24 px heading margin plus the row's unused pitch; the reservation equals the painted height.
+- **Share height.** one shared body layout drives native measurement and paint (rows, wrapped state and notes). The 07 gap before « Valeurs du graphique » fell from 85.57 pt to 23.21 pt, the source 24 px heading margin plus the row's unused pitch; the reservation equals the painted height.
 - **Ramp origin.** The unit stays once on the axis title, as in R1; graduations are bare (`0`, `5`, …) and the compact x labels use `xLabelOffsetAccess` (14 px) to clear the zero tick's line box. On 02, the zero label is `0` at 59.89–63.87 instead of `0 types` reaching 72.81 into `5 min`.
 - **Share colours.** `CAHIER_SHARE_COLOUR` owns the 18/22/40 % mixes consumed by the share SFC and the PDF palette; the source-token mutation test now also covers `--editorial-paper-deep` and resolves both the SFC role object and the PDF palette.
-- **Curve type.** `curveGeometry`/`curveSeriesPath` and the painter accept `CahierMobiliteCurveInput`; `optionsFigurePdf` passes the captured model directly, with no `as unknown as MobiliteRaccordementEvidence` widening.
+- **Curve type.** `curveGeometry`/`curveSeriesPath` and the native figure geometry accept `CahierMobiliteCurveInput`; the native render context passes the captured model directly, with no `as unknown as MobiliteRaccordementEvidence` widening.
 
 **Wordmark root cause acknowledged.** The old “origins match, so the face is canonical” claim was false: pen origins are immune to the bearing bug. The derivation now refreshes `hmtx.lsb` to the post-skew `glyf.xMin` (manifest `derivation.bearing = "glyf.xMin"`), the embedded program carries the same bearings, and the lockup top uses the measured header offset `0.792 em`. The real running header remains the reference: its `-0.01 em` header tracking is the PDF value; the landing `-0.02 em` is a separate surface. No owner choice is recorded, and A–D remain withdrawn/invalid.
 
@@ -781,9 +785,13 @@ E:/Temp/opencode/956-final-controls2.log
 
 `npm --prefix app run verify:detector` pins `impeccable@4.9.2` and reports exactly
 **11 anti-patterns**, the documented baseline (same file/rule/line findings in the
-eight untouched files). `4.10.0` retired the `[side-tab]` rule and reports zero, so
-it is not the baseline engine. The regex pass does not exercise rendered element
-rules; it is not an accessibility audit. No ignores or suppressions were added.
+eight untouched files). These 11 are **known design debt** for the DESIGN.md v2
+campaign (#511), not a clean result and not an acceptance waiver; a scan is clean
+only when it reports exactly these 11 and no new finding, and the debt stays open
+until an owner resolves it. `4.10.0` retired the `[side-tab]` rule and reports
+zero, so it is not the baseline engine. The regex pass does not exercise rendered
+element rules; it is not an accessibility audit. No ignores or suppressions were
+added.
 
 ### Skip audit
 

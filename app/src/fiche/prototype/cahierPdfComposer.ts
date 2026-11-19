@@ -15,7 +15,7 @@
 import type { jsPDF } from 'jspdf'
 
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
-import { urlAccueilDepuisEnvironnement, urlPubliqueDepuisEnvironnement } from './cahierExportUrls'
+import { CAHIER_EXPORT_PUBLIC_URL } from './cahierExportUrls'
 
 import { MARQUE_LUSK_ERMINE, MARQUE_LUSK_LOCKUP, REMPLISSAGES_MARQUE_LUSK, sommetErmineEm } from '@/components/luskBrandMark'
 
@@ -311,7 +311,10 @@ export async function enregistrerPolices(
 }
 
 function urlParDefaut(capture: CahierExportCapture, hash: string): string | null {
-  return urlPubliqueDepuisEnvironnement(capture, hash)
+  const url = new URL(`/territoire/${capture.identity.territory.type}/${capture.identity.territory.code}`,
+    CAHIER_EXPORT_PUBLIC_URL)
+  url.hash = hash
+  return url.href
 }
 
 function nomFichier(capture: CahierExportCapture): string {
@@ -691,6 +694,13 @@ function assemblerPages(
       for (const parts of large) for (const part of parts) tableGroups.push({ parts: [part], comparisonLabel })
       continue
     }
+    // A paired figure row does not always imply a paired value-table row. The
+    // stationnement/ravitaillement bars share one figure row, but each of their
+    // tables measures ~97.5 mm against an ~87.9 mm half-column: laying them
+    // side by side would shrink numbers below their measured content, which the
+    // no-truncation rule forbids. They therefore stay stacked and centred in
+    // the body rather than aligned one-to-one with their charts. Only tables
+    // that genuinely fit a half column are paired above.
     for (const table of projection.tables) {
       for (const part of build(table, PAGE.largeurCorps)) tableGroups.push({ parts: [part], comparisonLabel })
     }
@@ -1500,7 +1510,7 @@ async function composerDocument(request: CahierExportRequest, options: OptionsCo
   }
   const mesure = new MesureJsPdf(doc)
   const documentPdf = construirePages(request, mesure, nativeBodies)
-  const urlAccueil = options.urlAccueil ?? urlAccueilDepuisEnvironnement()
+  const urlAccueil = options.urlAccueil ?? CAHIER_EXPORT_PUBLIC_URL
   const urlPublique = options.urlPublique
     ?? urlParDefaut(capture, `section-${capture.identity.sectionKey}`)
   const total = documentPdf.pages.length

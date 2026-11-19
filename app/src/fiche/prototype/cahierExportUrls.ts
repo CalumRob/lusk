@@ -1,20 +1,8 @@
 /**
- * Public URL policy for Cahier exports: use the current environment's origin
- * (so a preview PDF links back to that preview) and forward its query string.
- * No deployment hostname is hardcoded here.
+ * Public URL owner for Cahier exports. The composer never derives public-facing
+ * strings from `location` (which may be a test/preview host) or from a capture:
+ * a PDF generated anywhere links to the canonical public site. Callers may pass
+ * an explicit `urlAccueil`/`urlPublique` (the harness does) as a test-only
+ * override; that never changes the production default.
  */
-export function urlAccueilDepuisEnvironnement(): string | null {
-  const location = globalThis.location
-  return location ? new URL('/', location.origin).href : null
-}
-
-export function urlPubliqueDepuisEnvironnement(capture: {
-  identity: { territory: { type: string; code: string } }
-}, hash: string): string | null {
-  const location = globalThis.location
-  if (!location) return null
-  const url = new URL(`/territoire/${capture.identity.territory.type}/${capture.identity.territory.code}`, location.origin)
-  for (const [key, value] of new URLSearchParams(location.search)) url.searchParams.set(key, value)
-  url.hash = hash
-  return url.href
-}
+export const CAHIER_EXPORT_PUBLIC_URL = 'https://lusk.calumrobertson.fr/'
