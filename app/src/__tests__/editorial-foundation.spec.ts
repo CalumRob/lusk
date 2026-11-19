@@ -77,6 +77,17 @@ describe('shared E editorial foundation', () => {
     expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('--margin-line: var(--editorial-margin-offset)')
   })
 
+  it('grounds inline cahier maps in deep paper through the owner token', () => {
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    const mapPanel = read('src/fiche/prototype/CahierMapPanel.vue')
+    const cahierRule = cahier.match(/\.cahier\s*\{([^}]*)\}/u)?.[1] ?? ''
+    const imageRule = mapPanel.match(/\.map-viewport img\s*\{([^}]*)\}/u)?.[1] ?? ''
+
+    expect(cahierRule).toContain('--cahier-map-ground: var(--editorial-paper-deep)')
+    expect(imageRule).toMatch(/background:\s*var\(--cahier-map-ground,\s*var\(--editorial-paper-deep\)\)/u)
+    expect(imageRule).not.toMatch(/#f8fbfb|#fff|#ffffff|\bwhite\b/iu)
+  })
+
   it('keeps typography roles and specialized prototype flourishes outside universal tokens', () => {
     const tokens = read('src/styles/tokens.css')
     expect(tokens).toContain('--font-wordmark: var(--font-serif)')

@@ -711,6 +711,7 @@ onBeforeUnmount(() => {
   --cahier-sticky-top: var(--header-height);
   --paper: var(--editorial-paper);
   --paper-deep: var(--editorial-paper-deep);
+  --cahier-map-ground: var(--editorial-paper-deep);
   --ink: var(--editorial-ink);
   --muted: var(--editorial-muted);
   --red: var(--editorial-margin);

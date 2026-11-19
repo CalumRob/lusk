@@ -64,7 +64,7 @@ const emit = defineEmits<{
   height: 100%;
   border: 0;
   border-radius: inherit;
-  background: #f8fbfb;
+  background: var(--cahier-map-ground, var(--editorial-paper-deep));
   object-fit: cover;
 }
 
