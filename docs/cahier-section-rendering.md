@@ -779,11 +779,19 @@ E:/Temp/opencode/956-final-controls2.log
 
 ### Detector / merge gate
 
-`npx impeccable detect app/src` reports **11 before / 11 after**, identical
-file/rule/line findings in the same eight untouched files; only scanned-file
-count changes (394 → 403). A diff-scoped scan of the 12 changed/new app source
-files reports **zero findings**. The regex scan does not exercise rendered
-element rules; it is not an accessibility audit. No ignores, suppressions or
-unrelated restyling were added. **The clean full-scan gate remains unsatisfied;
-the owner must explicitly resolve the documented baseline exception before
-merge.** No approval or waiver is inferred by this report.
+`npm --prefix app run verify:detector` pins `impeccable@4.9.2` and reports exactly
+**11 anti-patterns**, the documented baseline (same file/rule/line findings in the
+eight untouched files). `4.10.0` retired the `[side-tab]` rule and reports zero, so
+it is not the baseline engine. The regex pass does not exercise rendered element
+rules; it is not an accessibility audit. No ignores or suppressions were added.
+
+### Skip audit
+
+All formerly skipped `it.skip` cases in the Cahier PDF suite were audited against
+the live native path. Six described live behaviour and now run unskipped; the
+remaining cases asserted stale painter-calibrated geometry or wording that no
+longer describes the native seam, so they were deleted rather than left as dead
+skips. The facts they named remain covered by active native-seam tests (tables,
+footnotes, failure mapping, figure geometry) and by the independent risk-claim
+receipts. The only skip left in the focused suite is the opt-in review-PDF
+generator (`LUSK_WRITE_REVIEW_PDFS=1`), which writes artifacts only on request.

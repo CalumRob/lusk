@@ -17,7 +17,6 @@ import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import {
   PAGE_APPROUVEE,
   ROLE_PDF,
-  RYTHME_PX,
   TAILLE_COMPARAISON_PT,
   ptDepuisCssPx,
 } from '@/fiche/prototype/cahierPdfGrammaire'
@@ -149,30 +148,6 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
     expect(PALETTE_PDF.editorialMuted).toBe('#62706c')
   })
 
-  // RETIRED (#1024 native switch): Pins the deleted painter's measured glyph/raster geometry; native DOM paint owns those boxes now.
-  it.skip('garde une seule ligne de légende centrée, marque du propriétaire et rôle caption', async () => {
-    const { artifact, lecture } = await generer(capturePdfFixture('aedar-access'))
-    const ancre = lecture.textes.find((item) => item.str === 'Voiture'
-      && Math.abs(item.taille - ptDepuisCssPx(12)) < 0.05)!
-    expect(ancre).toBeTruthy()
-    const items = lecture.textes.filter((item) => Math.abs(item.y - ancre.y) < 0.6
-      && Math.abs(item.taille - ptDepuisCssPx(12)) < 0.05
-      && item.str.trim().length > 0)
-    const texteLegende = items.map((item) => item.str).join(' ')
-    expect(texteLegende).toContain('Vélo (LTS2)')
-    expect(texteLegende).toContain('Vélo (LTS4)')
-    const gauche = Math.min(...items.map((item) => item.x))
-    const droite = Math.max(...items.map((item) => item.x + item.largeur))
-    expect(Math.abs((gauche + droite) / 2 - PAGE_APPROUVEE.largeurPt / 2)).toBeLessThanOrEqual(5)
-    // `.cahier-figure-legend-mark` owner geometry: 18 × 3 px at the approved scale.
-    const marques = (await cheminsPdf(lecture.octets, lecture.pages)).filter((chemin) => (
-      chemin.kind === 'fill'
-      && Math.abs(chemin.width - ptDepuisCssPx(RYTHME_PX.marqueLargeur)) < 0.2
-      && Math.abs(chemin.height - ptDepuisCssPx(RYTHME_PX.marqueHauteur)) < 0.2
-    ))
-    expect(marques.length).toBeGreaterThanOrEqual(3)
-    void artifact
-  })
 
   it('n’encadre pas la section et n’imprime aucun filet rouge pleine hauteur', async () => {
     const { lecture } = await generer(capturePdfFixture('aedar-access'))
@@ -218,7 +193,7 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
   })
 
   // RETIRED (#1024 native switch): Pins the deleted painter's measured glyph/raster geometry; native DOM paint owns those boxes now.
-  it.skip('imprime le rang servi dans une colonne Rang explicite, jamais en micro-ligne', async () => {
+  it('imprime le rang servi dans une colonne Rang explicite, jamais en micro-ligne', async () => {
     const { lecture } = await generer(captureExplorerRangs())
     // Two value tables: volume ramp + decile distribution.
     const titres = lecture.textes.filter((item) => item.taille >= 7.5
@@ -242,7 +217,7 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
   })
 
   // RETIRED (#1024 native switch): Pins the deleted painter's measured glyph/raster geometry; native DOM paint owns those boxes now.
-  it.skip('garde une terminaison compacte et une continuation sans réduction globale', async () => {
+  it('garde une terminaison compacte et une continuation sans réduction globale', async () => {
     const base = captureExplorerRangs()
     const compact = await generer(base, [base.capabilities.selectableSeries[0]!.id])
     expect(compact.lecture.pages).toBe(1)

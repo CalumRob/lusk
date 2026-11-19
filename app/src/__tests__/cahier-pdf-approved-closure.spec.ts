@@ -133,35 +133,6 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
     })[0]!.rows[0]!.cells.some((cell) => cell.display === valeur)).toBe(true)
   })
 
-  // RETIRED (#1024 native switch): Pins the deleted hand-built per-family painter's calibrated glyph/figure geometry; the native section layout is now the only figure owner.
-  it.skip('élargit le rail avec la face embarquée et ne croise jamais titre et graduations', async () => {
-    const lecture = await generer(captureRampeRangs())
-    // R1 grammar: unit on the axis title once, bare numeric graduations.
-    const ticks = lecture.textes.filter((item) => Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.05
-      && /^\d+$/.test(item.str))
-    expect(ticks.length).toBeGreaterThan(0)
-    expect(lecture.texteComplet).toContain('(ÉTABLISSEMENTS)')
-    const quarante = ticks.find((item) => item.str === '40')!
-    expect(quarante).toBeTruthy()
-    const titres = lecture.textes.filter((item) => Math.abs(item.rotation) > 1.4
-      && item.largeur > 40 && item.taille < 6.4)
-    expect(titres.length).toBe(2)
-    // Panel 2 of the access figure: two equal panels with the painter's 6 mm gap.
-    const gapPt = 6 * 72 / 25.4
-    const panelWidth = (CORPS_PT - gapPt) / 2
-    const panelX = CORPS_X_PT + panelWidth + gapPt
-    const titre = titres.find((item) => item.x > panelX)!
-    const rail = quarante.x + quarante.largeur - panelX
-    // Bare R1 graduations keep the native 64-unit rail; a wider label grows it
-    // through the same measured rule (covered with a long served count in the
-    // layout closure spec). It never exceeds the native maximum rail.
-    expect(rail).toBeGreaterThanOrEqual(64 * panelWidth / 640 - 0.6)
-    expect(rail).toBeLessThanOrEqual(452 * panelWidth / 640 + 0.6)
-    // The title's rotated baseline sits on the title lane; the tick labels start
-    // at least the native label gap to its right.
-    expect(titre.x - panelX).toBeCloseTo(16 * panelWidth / 640, 2)
-    expect(quarante.x).toBeGreaterThan(titre.x + 4 * panelWidth / 640)
-  })
 
   it('peint le séparateur de mode à la largeur CSS native (1 px), pas 0,2 pt', async () => {
     const lecture = await generer(captureExplorerRangs())
@@ -203,7 +174,7 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
   })
 
   // RETIRED (#1024 native switch): Pins the deleted hand-built per-family painter's calibrated glyph/figure geometry; the native section layout is now the only figure owner.
-  it.skip('rend le cas groupé à trois modes (neuf colonnes) et un ¹ par groupe', async () => {
+  it('rend le cas groupé à trois modes (neuf colonnes) et un ¹ par groupe', async () => {
     const capture = captureExplorerRangs()
     const modes = ['car', 'bike_lts2', 'transit']
     const lecture = await generer(capture, modes)

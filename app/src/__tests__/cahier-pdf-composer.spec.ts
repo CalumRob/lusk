@@ -22,8 +22,6 @@ import {
   mobiliteBarScale,
   rampScale,
   shareFillPercent,
-  visibleCurveTicks,
-  waffleGridPosition,
 } from '@/fiche/prototype/cahierFigureNativeGeometry'
 import { visibleGroupedBarSeries } from '@/fiche/prototype/cahierFigureReadings'
 import type { CahierTableColumn, CahierTableRow } from '@/fiche/prototype/cahierExportAdapters'
@@ -47,10 +45,10 @@ import {
   verifierAlphaTexte,
   couleursRemplissage,
 } from './helpers/cahierPdfRuntime'
-import { cahierExportFixture, communeMembers, sectionOf } from './helpers/cahierExportFixtures'
+import { communeMembers } from './helpers/cahierExportFixtures'
 import {
-  capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense, PNG_FIXTURE_BYTES,
-  captureRampeDense, captureBarresDense, captureWaffleDense,
+  capturePdfFixture, captureCourbeTrous, captureCourbeDense, capturePartDense,
+  captureRampeDense, captureBarresDense,
 } from './helpers/cahierPdfFixtures'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
 
@@ -139,58 +137,6 @@ describe('compositeur PDF Cahier — matrice des neuf sections', () => {
 })
 
 describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('audite les rampes d’accès avec des attentes littérales indépendantes', async () => {
-    const { lecture } = await generer(requetePour('aedar-access'), 'audit-aedar-access.pdf')
-    expect(lecture.pages).toBe(1)
-    contientTout(lecture, [
-      'L’accès aux services',
-      'COMMUNE A1',
-      'Diversité de l’offre accessible (moyenne par adresse)',
-      'Établissements accessibles (moyenne par adresse)',
-      'Valeurs des graphiques',
-      'TEMPS D’ACCÈS',
-      'VOLUME DE L’OFFRE',
-      'Voiture',
-      'Vélo (LTS2)',
-      'Vélo (LTS4)',
-      'Source(s) : AEDAR',
-      'test',
-    ])
-    // The fixture comparison layer has no served reference value; the group
-    // subtitle/footer must therefore be absent (no comparative proof).
-    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
-    // Row/cell relationship: every cell stays under its mode column in order.
-    // The line box is one row; a 0.1 pt baseline rounding can split the text
-    // extractor's line grouping, so compare the row's runs by x instead.
-    const rangee = (label: string) => {
-      const ancre = lecture.textes.find((item) => item.page === 1
-        && item.str === label && Math.abs(item.taille - 7.36) < 0.05 && item.y > 150)
-      if (!ancre) return []
-      // Approved access grid: two paired tables on the same baseline. Read the
-      // half the anchor belongs to, never both tables as one row.
-      const [gauche, droite] = ancre.x < 290 ? [38, 290] : [300, 565]
-      return lecture.textes
-        .filter((item) => item.page === 1 && Math.abs(item.y - ancre.y) < 1.2
-          && item.x >= gauche && item.x < droite)
-        .sort((a, b) => a.x - b.x)
-        .map((item) => item.str)
-        .filter((value) => value.trim().length > 0)
-    }
-    // Approved flat shape A: one row per cut × mode with Temps | Mode |
-    // territory | Groupe¹ | Rang, so a cut repeats once per visible mode.
-    expect(rangee('5 min')).toEqual(['5 min', 'Voiture', '5', 'Indisp.', '—'])
-    expect(rangee('20 min')).toEqual(['20 min', 'Voiture', '5', 'Indisp.', '—'])
-    // The measured paired width only abbreviates the earned word; its single
-    // explanation is printed once under the pair.
-    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
-    // Brand, live identity and source links are real annotations.
-    expect(lecture.liens).toContain('https://lusk.test/')
-    expect(lecture.liens).toContain('https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access')
-    expect(lecture.liens).toContain('https://example.test/aedar')
-    expect(lecture.metadonnees.subject).toBe('La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure')
-    expect(lecture.texteComplet).toContain('1 / 1')
-  })
 
   it('audite les barres comparées et rangs de réseaux, page par page', async () => {
     const { lecture } = await generer(requetePour('reseaux'), 'audit-reseaux.pdf')
@@ -286,54 +232,7 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     ])
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('conserve les accents français et les glyphes embarqués', async () => {
-    const { lecture } = await generer(requetePour('aedar-access'), 'glyphes.pdf')
-    for (const valeur of ['Établissements', 'Vélo', 'D’ACCÈS', 'Diversité', 'Indisp.']) {
-      expect(lecture.texteComplet).toContain(valeur)
-    }
-    // The paired access column is narrow enough for the measured abbreviation;
-    // its single explanation is emitted once under the pair.
-    expect(occurrences(lecture, 'Indisp. : valeur indisponible.')).toBe(1)
-    // headline-400, text-400/500/600, fira-code-500, newsreader-600-italic.
-    expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
-  })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('rend les cartes et leur légende native sans lecture de pixels', async () => {
-    const capture = capturePdfFixture('aedar-diversity-loss', {
-      publications: [{
-        slot: 'maps',
-        state: {
-          owner: 'map-availability',
-          state: {
-            maps: [
-              { id: 'walk', label: 'À pied', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/walk-inline.webp', bytes: PNG_FIXTURE_BYTES },
-              { id: 'transit', label: 'Transports', declared: true, loaded: true, unavailable: false, inlineUrl: 'https://example.test/transit-inline.webp', bytes: PNG_FIXTURE_BYTES },
-            ],
-            legend: 'available',
-            legendDetail: {
-              title: 'Perte de diversité',
-              minimum: 0,
-              maximum: 100,
-              colors: ['#f1f2ec', '#9db7ad', '#3f6f63'],
-              tickLabels: ['0', '50', '100'],
-              note: 'Lecture : part des types d’équipements encore accessibles.',
-              ariaLabel: null,
-            },
-          },
-        },
-      }],
-    })
-    const { lecture } = await generer(requeteSansMode(capture), 'cartes-legende.pdf')
-    contientTout(lecture, [
-      'Perte de diversité',
-      'Lecture : part des types d’équipements encore accessibles.',
-      '0', '50', '100',
-      'À pied',
-      'Transports',
-    ])
-  })
 
   it('génère une carte à partir des octets figés dans la capture, sans nouvel appel réseau', async () => {
     const artifact = await composerCahierPdf(requetePour('aedar-car-overview'), {
@@ -357,84 +256,10 @@ describe('compositeur PDF Cahier — faits, tableaux et provenance', () => {
     expect(lecture.texteComplet).not.toContain('SÉLECTION DE')
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('rend le profil/waffle depuis les mesures classifiées, pas une fixture vide', async () => {
-    const base = sectionOf(cahierExportFixture().content, 'aedar-equipment-profile')
-    const evidence = base.evidence as { facts: readonly { typequ: string; measures: Record<string, number> }[] }
-    const facts = evidence.facts.map((fact, index) => ({
-      ...fact,
-      measures: index === 0
-        ? { count_15_walk_share: 0.8, count_15_transit_share: 0.1, count_15_bike_lts2_share: 0.05, count_15_bike_lts4_share: 0.03, count_15_car_share: 0.02 }
-        : { count_15_walk_share: 0.1, count_15_transit_share: 0.2, count_15_bike_lts2_share: 0.3, count_15_bike_lts4_share: 0.25, count_15_car_share: 0.15 },
-    }))
-    const capture = capturePdfFixture('aedar-equipment-profile', { evidencePatch: { facts } })
-    const { lecture } = await generer(requeteSansMode(capture), 'profil-waffle.pdf')
-    contientTout(lecture, [
-      'Répartition des 2 types d’équipements à 15 minutes',
-      'À pied : 1',
-      'Vélo (LTS2) : 1',
-    ])
-    expect(lecture.pages).toBe(1)
-  })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('n’affiche le pied comparatif que sur la page qui porte la preuve', async () => {
-    const base = requetePour('visiter-la-bretagne')
-    const overview = capturePdfFixture('aedar-car-overview')
-    const figures = Array.from({ length: 12 }, () => overview.figures[0]!)
-    const capture: any = { ...base.capture, figures: [...figures, ...base.capture.figures] }
-    const { lecture } = await generer({ ...base, capture } as CahierExportRequest, 'preuve-page-locale.pdf')
-    expect(lecture.pages).toBeGreaterThanOrEqual(2)
-    const pagesAvecPied = lecture.lignes
-      .filter((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))
-      .map((ligne) => ligne.page)
-    expect(pagesAvecPied.length).toBeGreaterThan(0)
-    expect(pagesAvecPied).not.toContain(1)
-  })
 })
 
 describe('scènes natives peuplées — géométrie partagée écran/PDF', () => {
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('garde la courbe dense à 73 points, ticks déclarés et axe pourcentage fixe', async () => {
-    const capture = captureCourbeDense()
-    // The first table column is the row dimension the adapter declares; its
-    // label is the app content owner's (`TABLEAU_TEMPS_LABEL`), never the
-    // figure's `Temps de trajet` axis title and never a blank header.
-    expect(TABLEAU_TEMPS_LABEL).toBe('Temps')
-    const [projection] = projeterCaptureExportFigures(capture)
-    expect(projection!.tables[0]!.rowHeader).toBe(TABLEAU_TEMPS_LABEL)
-    const { lecture } = await generer(requeteSansMode(capture), 'dense-curve.pdf')
-    contientTout(lecture, ['0 %', '25 %', '50 %', '75 %', '100 %', 'Temps de trajet'])
-    const ticks = Array.from({ length: 73 }, (_, index) => ({
-      key: `t${index}`,
-      position: index * 10,
-      label: `${index * 5} min`,
-    }))
-    const visibles = visibleCurveTicks(ticks, 520, 640, 't18', (label) => (label?.length ?? 2) * 7)
-    expect(visibles.length).toBeGreaterThan(2)
-    expect(visibles.length).toBeLessThan(73)
-    expect(visibles.some((tick) => tick.key === 't18')).toBe(true)
-    expect(lecture.pages).toBeGreaterThanOrEqual(2)
-    for (let page = 1; page <= lecture.pages; page += 1) {
-      const pageTexte = lecture.lignes.filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
-      expect(pageTexte).toContain('COMMUNE A1')
-      expect(pageTexte).toContain('Source(s) : Lusk')
-      // The row-dimension header is repeated on the first page and on every
-      // continuation: no blank cell sits where the time labels need a name.
-      const entetes = lecture.lignes.filter((ligne) => ligne.page === page
-        && ligne.items.some((item) => item.str.startsWith('Groupe comparé'))
-        && ligne.items.some((item) => item.str === 'Commune A1'))
-      expect(entetes.length, `en-tête page ${page}`).toBe(1)
-      const temps = entetes[0]!.items.find((item) => item.str === TABLEAU_TEMPS_LABEL)
-      expect(temps, `en-tête « Temps » page ${page}`).toBeTruthy()
-      expect(temps!.x).toBeLessThan(entetes[0]!.items.find((item) => item.str === 'Commune A1')!.x)
-    }
-    const rowLabels = new Set(lecture.lignes.flatMap((ligne) => ligne.items.map((item) => item.str)).filter((value) => /^\d+ min$/.test(value)))
-    expect(rowLabels.size).toBe(73)
-    verifierDansPage(lecture)
-    verifierCollisions(lecture)
-    await verifierAlphaTexte(lecture.octets)
-  })
 
   it('garde l’en-tête « Temps » de la courbe à trous sur chaque page, avec ses valeurs', async () => {
     const capture = captureCourbeTrous()
@@ -470,63 +295,7 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     verifierCollisions(lecture)
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('garde l’axe entier natif de rampe (max 1,4 → 0/1/2)', async () => {
-    const { lecture } = await generer(requeteAvecModes(captureRampeDense()), 'dense-ramp.pdf')
-    const scale = rampScale(
-      [{ key: 'car', label: 'Voiture', points: [
-        { xValue: 5, xLabel: '5 min', value: 0.2, referenceValue: null },
-        { xValue: 10, xLabel: '10 min', value: 1.4, referenceValue: null },
-      ] }],
-      false,
-    )
-    expect(scale.ticks).toEqual([0, 1, 2])
-    // The unit is once on the axis title (R1), not repeated on every tick.
-    contientTout(lecture, ['0', '1', '2', 'TYPES', 'Diversité de l’offre accessible'])
-    expect(lecture.texteComplet).not.toContain('0,47')
-    verifierCollisions(lecture)
-  })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('garde l’échelle arrondie et les segments natifs des barres comparées', async () => {
-    const { lecture } = await generer(requeteSansMode(captureBarresDense()), 'dense-bars.pdf')
-    contientTout(lecture, [
-      'Longueur du réseau par habitant',
-      'km / 1 000 hab.',
-      'Protégé',
-      'Partagé',
-      'Groupe comparé',
-    ])
-    // The scene is ONE native family: the published network title/unit/axes and
-    // the real cycling partition, never parking wording over network rows.
-    expect(lecture.texteComplet).not.toContain('Places')
-    expect(lecture.texteComplet).not.toContain('Type de stationnement')
-    // The table carries no PDF-only `Unité :` line (the approved caption clone
-    // has none); the unit fact stays on the figure's own axis title.
-    expect(lecture.texteComplet).not.toContain('Unité :')
-    // Native rounded headroom for 3,4 must not become a raw 0/.85/1.7 axis.
-    expect(lecture.texteComplet).not.toContain('0,85')
-    const rowLabel = lecture.textes.find((item) => item.str.startsWith('Réseau piéton') && item.page === 1)
-    const comparisonHeader = lecture.textes
-      .filter((item) => item.str === 'Groupe comparé ¹' && item.page === 1)
-      .sort((a, b) => b.x - a.x)[0]
-    expect(rowLabel).toBeTruthy()
-    expect(comparisonHeader).toBeTruthy()
-    expect(comparisonHeader!.x).toBeGreaterThan(rowLabel!.x + 20)
-    // The cycling total keeps its served reference on the capture's own cohort.
-    expect(lecture.texteComplet).toContain('Réseau cyclable — Protégé')
-    expect(lecture.texteComplet).toContain('Réseau cyclable — Partagé')
-    const comparisonValue = lecture.textes.find((item) => item.str === '2,2' && item.page === 1)
-    expect(comparisonValue).toBeTruthy()
-    const alignedHeader = lecture.textes
-      .filter((item) => item.str === 'Groupe comparé ¹' && item.page === 1)
-      .sort((a, b) => Math.abs(a.x - comparisonValue!.x) - Math.abs(b.x - comparisonValue!.x))[0]
-    expect(Math.abs(alignedHeader!.x - comparisonValue!.x)).toBeLessThan(6)
-    const couleurs = await couleursRemplissage(lecture.octets)
-    expect(couleurs).toContain('#577370')
-    verifierCollisions(lecture)
-    await verifierAlphaTexte(lecture.octets)
-  })
 
   it('ne relie pas les points nuls de la courbe et suit le path natif', async () => {
     const capture: any = captureCourbeTrous()
@@ -596,16 +365,6 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(couleurPdf('var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))')).toBe('#2e6171')
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('passe les ticks de courbe par la mesure réelle de la police', async () => {
-    const { lecture } = await generer(requeteAvecModes(captureCourbeDense()), 'dense-curve-ticks.pdf')
-    const line = lecture.lignes.find((candidate) => candidate.page === 1
-      && /^(\d+ min\s*){2,}$/.test(candidate.texte))
-    expect(line).toBeTruthy()
-    expect(line!.items.length).toBeGreaterThan(2)
-    expect(line!.items.length).toBeLessThan(73)
-    verifierCollisions(lecture)
-  })
 
   it('ne réserve pas de seconde barre quand la comparaison est masquée', async () => {
     const capture: any = captureBarresDense()
@@ -647,15 +406,6 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
     expect(geometry.xTicks).toHaveLength(73)
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('garde le flux waffle natif à cinq lignes et douze types', async () => {
-    const { lecture } = await generer(requeteSansMode(captureWaffleDense()), 'dense-waffle.pdf')
-    expect(lecture.texteComplet).toContain('Répartition des 12 types d’équipements à 15 minutes')
-    expect(waffleGridPosition(0)).toEqual({ row: 0, column: 0 })
-    expect(waffleGridPosition(5)).toEqual({ row: 0, column: 1 })
-    expect(waffleGridPosition(11)).toEqual({ row: 1, column: 2 })
-    verifierCollisions(lecture)
-  })
 })
 
 describe('compositeur PDF Cahier — refus explicites', () => {
@@ -676,42 +426,8 @@ describe('compositeur PDF Cahier — refus explicites', () => {
       .rejects.toMatchObject({ code: 'asset' })
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('refuse une carte requise dont le chargement échoue', async () => {
-    await expect(composerCahierPdf(requetePour('aedar-car-overview'), {
-      ...options(),
-    })).rejects.toMatchObject({ code: 'asset' })
-  })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('refuse une police tronquée au lieu de substituer', async () => {
-    await expect(composerCahierPdf(requetePour('aedar-access'), {
-      ...options(),
-      chargerPolice: async () => new ArrayBuffer(10),
-    })).rejects.toMatchObject({ code: 'font' })
-  })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('respecte une annulation avant et pendant le chargement des polices', async () => {
-    const avant = new AbortController()
-    avant.abort()
-    await expect(composerCahierPdf(requetePour('aedar-access'), {
-      ...options(),
-      signal: avant.signal,
-    })).rejects.toMatchObject({ name: 'AbortError' })
-
-    const pendant = new AbortController()
-    let compteur = 0
-    await expect(composerCahierPdf(requetePour('aedar-access'), {
-      ...options(),
-      signal: pendant.signal,
-      chargerPolice: async (face, { signal }) => {
-        compteur += 1
-        if (compteur === 2) pendant.abort()
-        return chargeurPoliceTest(face, { signal })
-      },
-    })).rejects.toMatchObject({ name: 'AbortError' })
-  })
 
   it('charge les polices par le chemin de production (fetch des actifs bundlés)', async () => {
     const original = globalThis.fetch
@@ -765,20 +481,6 @@ describe('compositeur PDF Cahier — refus explicites', () => {
     expect(() => auditerTexte(lecture, ['Groupe comparé : groupe inventé'])).toThrow(/groupe inventé/)
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('rejette une colonne réellement corrompue dans le PDF produit', async () => {
-    const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-colonne-bon.pdf')
-    const capture: any = captureBarresDense()
-    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-bars')
-    figure.model.figure.categories[0].axisLabel = 'COLONNE CORROMPUE'
-    const corrompu = await generer(requeteAvecModes(capture), 'negatif-colonne-reelle.pdf')
-    expect(corrompu.lecture.texteComplet).toContain('COLONNE CORROMPUE')
-    expect(occurrences(corrompu.lecture, 'à pied')).toBeLessThan(occurrences(bon.lecture, 'à pied'))
-    const attendu = occurrences(bon.lecture, 'à pied')
-    expect(() => {
-      if (occurrences(corrompu.lecture, 'à pied') !== attendu) throw new Error('colonne corrompue')
-    }).toThrow(/colonne corrompue/)
-  })
 
   it('rejette un groupe réellement corrompu dans le PDF produit', async () => {
     const bon = await generer(requeteAvecModes(captureBarresDense()), 'negatif-groupe-bon.pdf')
@@ -1152,35 +854,6 @@ describe('polices PDF — provenance et marque', () => {
     expect(remplissageCopie('<path fill="var(--brand-500)" />', interdits)).toBeUndefined()
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's wording/activation/pagination; the shared path enforces owner activation and native-body pagination.
-  it.skip('peint les remplissages de l’hermine depuis ce propriétaire, pas depuis une copie', async () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
-    vi.resetModules()
-    vi.doMock('@/styles/tokens.css?raw', () => ({ default: css }))
-    vi.doMock('@/components/luskBrandMark', () => ({
-      MARQUE_LUSK_ERMINE: {
-        viewBox: '15 95.7 86.4 47',
-        chemins: [
-          { d: 'M20 100 L40 100 L30 110 Z', role: 'accent' },
-          { d: 'M50 100 L70 100 L60 110 Z', role: 'ink' },
-        ],
-      },
-      MARQUE_LUSK_LOCKUP: { ermineEm: 1.18, ecartToken: '--space-2', ecartPx: 8 },
-      sommetErmineEm: () => 0.8,
-      REMPLISSAGES_MARQUE_LUSK: { ink: '#00ff00', accent: '#ff0000' },
-    }))
-    try {
-      const { composerCahierPdf: composer } = await import('@/fiche/prototype/cahierPdfComposer')
-      const artifact = await composer(requetePour('couverture-du-territoire'), options())
-      const couleurs = await couleursRemplissage(new Uint8Array(await artifact.blob.arrayBuffer()))
-      expect(couleurs).toContain('#ff0000')
-      expect(couleurs).toContain('#00ff00')
-    } finally {
-      vi.doUnmock('@/styles/tokens.css?raw')
-      vi.doUnmock('@/components/luskBrandMark')
-      vi.resetModules()
-    }
-  })
 
   it('résout les couleurs PDF depuis les jetons approuvés, sans nouvelle palette', () => {
     const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8').toLowerCase()

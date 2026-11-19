@@ -20,21 +20,13 @@ import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
 import { PAGE_APPROUVEE } from '@/fiche/prototype/cahierPdfGrammaire'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type {
-  CahierCaptureReadiness,
+  
   CahierExportCapture,
   CahierExportRequest,
-  CahierSectionCaptureInput,
 } from '@/fiche/prototype/cahierExportCapture'
-import { captureCahierSection } from '@/fiche/prototype/cahierExportCapture'
-import { buildMobiliteNetworksSection } from '@/fiche/content/mobiliteSections'
 import type {
-  ComparisonScope,
   FactComparison,
-  FactProvenance,
-  NumericFact,
-  TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
-import type { ContentSection } from '@/fiche/content/themeContent'
 import {
   chargeurImageTest,
   chargeurPoliceTest,
@@ -45,16 +37,12 @@ import {
 } from './helpers/cahierPdfRuntime'
 import type { LecturePdf } from './helpers/cahierPdfRuntime'
 import {
-  READY_AEDAR,
+  
   captureBarresStationnement,
   captureExplorerRangs,
   capturePdfFixture,
   captureRampeDense,
-  displayedLayer,
-  loadedMaps,
-  mapAvailability,
 } from './helpers/cahierPdfFixtures'
-import { cahierExportFixture } from './helpers/cahierExportFixtures'
 
 const options = () => ({
   signal: new AbortController().signal,
@@ -199,18 +187,6 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
     })
   })
 
-  // RETIRED (#1024 native switch): Pins the old painter's uppercase wording and page split; the footer fact is checked in the native-path browser receipts.
-  it.skip('n’imprime le pied que sur une page qui porte la preuve, jamais en reste', async () => {
-    const base = requetePour('visiter-la-bretagne')
-    const overview = capturePdfFixture('aedar-car-overview')
-    const figures = Array.from({ length: 12 }, () => overview.figures[0]!)
-    const capture = { ...base.capture, figures: [...figures, ...base.capture.figures] } as CahierExportCapture
-    const lecture = await generer({ ...base, capture })
-    expect(lecture.pages).toBeGreaterThanOrEqual(2)
-    const pagesAvecPied = [...piedParPage(lecture).keys()]
-    expect(pagesAvecPied.length).toBeGreaterThan(0)
-    expect(pagesAvecPied).not.toContain(1)
-  })
 
   it('réserve le texte replié mesuré et pointe la note depuis le ¹, sans chevauchement', async () => {
     const base = requetePour('visiter-la-bretagne')
@@ -308,128 +284,3 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
  * Source contract: the real owner, one unavailable fact beside served
  * ones, then the capture, the projection and the actual PDF footer.
  * ------------------------------------------------------------------ */
-
-const provenanceRecit: FactProvenance = {
-  sourceId: 'osm_reseaux',
-  source: 'OpenStreetMap',
-  version: '2026-08',
-  referenceDate: '2026-08-05',
-  publicationDate: '2026-08-06',
-}
-
-const territoireSource = {
-  type: 'commune' as const,
-  code: '22001',
-  name: 'Commune A1',
-  department: '22',
-  epci: '200000001',
-  epciName: 'EPCI X',
-}
-
-const porteeEpci: ComparisonScope = { kind: 'communes-epci', label: 'communes de EPCI X' }
-
-function faitReseau(detail: string, value: number, comparison: FactComparison | null): NumericFact {
-  return {
-    key: 'reseaux_par_habitant',
-    detail,
-    value,
-    unit: 'km / 1 000 hab.',
-    availability: 'complete',
-    provenance: provenanceRecit,
-    comparison,
-    comparisonBasis: 'territory-median',
-    reason: null,
-  }
-}
-
-function faitsReseau(comparaisons: readonly FactComparison[]): TerritoryFacts {
-  return {
-    territory: territoireSource,
-    theme: 'mobilite',
-    mobility: {
-      namedTrajectoryReferences: [],
-      indicators: [
-        faitReseau('t_km_1000', 10, comparaisons[0]!),
-        faitReseau('b_km_1000', 8, comparaisons[1]!),
-        faitReseau('c_km_1000', 80, comparaisons[2]!),
-      ],
-    },
-  }
-}
-
-function sectionReseau(facts: TerritoryFacts): ContentSection {
-  return buildMobiliteNetworksSection(facts, undefined) as unknown as ContentSection
-}
-
-function capturerReseau(section: ContentSection): CahierExportCapture {
-  const fixture = cahierExportFixture()
-  const readiness: CahierCaptureReadiness = { status: 'ready', reason: 'evidence-ready', availability: 'complete' }
-  const input: CahierSectionCaptureInput = {
-    section,
-    unit: { key: 'partage-de-lespace-public', label: 'Le partage de l’espace public' },
-    territory: fixture.content.territory,
-    readiness,
-    comparisonEligible: true,
-    comparisonStatus: 'ready',
-    comparisonError: null,
-    control: fixture.control,
-    aedar: READY_AEDAR,
-    publications: [
-      mapAvailability(loadedMaps(['walkTransit', 'bike', 'car']), 'none'),
-      displayedLayer('mobilite-comparison-bars', 'bars'),
-    ],
-  }
-  return captureCahierSection(input)
-}
-
-describe('contrat de source — un fait indisponible ne rend pas le groupe indisponible', () => {
-  const median = (value: number): FactComparison => ({
-    direction: 'plus-est-mieux', scope: porteeEpci, rank: null, reference: { kind: 'median', value },
-  })
-  const indisponible: FactComparison = {
-    direction: 'plus-est-mieux', scope: porteeEpci, rank: null, reference: null,
-  }
-
-  // RETIRED (#1024 native switch): Pins the old painter's uppercase wording and page split; the footer fact is checked in the native-path browser receipts.
-  it.skip('capture le libellé servi, le projette et l’imprime en pied de page réel', async () => {
-    const section = sectionReseau(faitsReseau([indisponible, median(9), median(70)]))
-    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
-    // The owner speaks about the comparison it actually serves, even though
-    // its first fact has no reference of its own.
-    expect(section.evidence.figure.comparisonLabel).toBe('Médiane des communes de EPCI X')
-    const capture = capturerReseau(section)
-    const bars = capture.figures.find((figure) => figure.family === 'mobilite-bars')
-    if (!bars || bars.family !== 'mobilite-bars') throw new Error('bars capture expected')
-    expect(bars.model.figure.comparisonLabel).toBe('Médiane des communes de EPCI X')
-
-    const lecture = await generer(requete(capture))
-    const attendu = '¹ Groupe comparé : Médiane des communes de EPCI X'
-    expect(lecture.texteComplet).toContain(attendu)
-    expect(lecture.texteComplet).not.toContain('Comparaison indisponible')
-    for (const lignes of piedParPage(lecture).values()) expect(lignes.join(' ')).toBe(attendu)
-  })
-
-  // RETIRED (#1024 native switch): Pins the old painter's uppercase wording and page split; the footer fact is checked in the native-path browser receipts.
-  it.skip('ne peint aucune note quand aucun fait ne sert de référence', async () => {
-    const section = sectionReseau(faitsReseau([indisponible, indisponible, indisponible]))
-    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
-    expect(section.evidence.figure.comparisonLabel).toBe(
-      'Comparaison indisponible — Médiane des communes de EPCI X',
-    )
-    const capture = capturerReseau(section)
-    const lecture = await generer(requete(capture))
-    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
-    expect(lecture.texteComplet).not.toContain('Comparaison indisponible — Médiane')
-  })
-
-  // RETIRED (#1024 native switch): Pins the old painter's uppercase wording and page split; the footer fact is checked in the native-path browser receipts.
-  it.skip('garde le fait indisponible à sa cellule pendant que les autres faits servent', async () => {
-    const capture = capturerReseau(sectionReseau(faitsReseau([indisponible, median(9), median(70)])))
-    const lecture = await generer(requete(capture))
-    // The served compared cells are painted; the unavailable one keeps its own
-    // honest cell state rather than being replaced by the group sentence.
-    expect(lecture.texteComplet).toContain('Indisponible')
-    expect(lecture.texteComplet).toContain('Médiane des communes de EPCI X')
-    expect(piedParPage(lecture).size).toBeGreaterThan(0)
-  })
-})

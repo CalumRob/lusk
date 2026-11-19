@@ -38,16 +38,13 @@ import {
 import {
   chargeurImageTest,
   chargeurPoliceTest,
-  cheminsPdf,
   lirePdf,
   mesurePdfTest,
-  verifierCollisions,
   type LecturePdf,
 } from './helpers/cahierPdfRuntime'
 import {
   captureBarresStationnement,
   capturePartDense,
-  capturePdfFixture,
 } from './helpers/cahierPdfFixtures'
 
 const CORPS_X_PT = PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT
@@ -73,15 +70,6 @@ async function generer(capture: CahierExportCapture, modes?: readonly string[]):
 }
 
 /** The two share tracks of one page: full-width 5 mm rows. */
-function pistesPart(lecture: LecturePdf) {
-  return cheminsPdf(lecture.octets, lecture.pages).then((chemins) => chemins.filter((chemin) => (
-    chemin.kind === 'stroke'
-    && chemin.height > 13.5
-    && chemin.height < 15
-    && chemin.width > 200
-  )))
-}
-
 describe('#1024 — rang de la colonne « Près d’un arrêt » (table, pas de pastille de figure)', () => {
   it('peint le rang servi de la comparaison dans la colonne Rang du tableau', async () => {
     const capture = capturePartDense()
@@ -134,48 +122,6 @@ describe('#1024 — rang de la colonne « Près d’un arrêt » (table, pas de 
       && item.x > rang.x - 1
       && item.x < rang.x + 30)
     expect(cellules).toHaveLength(1)
-  })
-})
-
-describe('#1024 — grammaire d’état de la piste de partage', () => {
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('peint les deux pistes servies avec un filet plein de 1 px', async () => {
-    const lecture = await generer(capturePartDense())
-    const pistes = await pistesPart(lecture)
-    expect(pistes).toHaveLength(2)
-    for (const piste of pistes) {
-      expect(piste.tirets, 'une piste servie n’est pas en pointillés').toBeFalsy()
-      expect(piste.largeur).toBeCloseTo(ptDepuisCssPx(1), 2)
-    }
-    // The same border ink on both served rows (one state, one colour).
-    expect(pistes[0]!.colour).toBe(pistes[1]!.colour)
-  })
-
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('garde le pointillé pour la seule piste vide', async () => {
-    const capture: any = structuredClone(capturePartDense())
-    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
-    // A served rank without a reference value: the native track stays empty,
-    // and the state reads « Indisponible » inside the dashed frame.
-    figure.model.value.fact.comparison.reference = null
-    const lecture = await generer(capture)
-    const pistes = await pistesPart(lecture)
-    const pleine = pistes.filter((piste) => !piste.tirets)
-    const vide = pistes.filter((piste) => piste.tirets)
-    expect(pleine, 'la piste du territoire reste pleine').toHaveLength(1)
-    expect(vide, 'la seule piste vide est en pointillés').toHaveLength(1)
-    expect(vide[0]!.largeur).toBeCloseTo(ptDepuisCssPx(1), 2)
-    expect(vide[0]!.colour).not.toBe(pleine[0]!.colour)
-    const indisponible = lecture.textes.filter((item) => item.str === 'Indisponible')
-    expect(indisponible.length).toBeGreaterThan(0)
-    // `cheminsPdf` exposes a top-origin y; PDF text origins are bottom-origin.
-    const centrePiste = PAGE_APPROUVEE.hauteurPt - (vide[0]!.y + vide[0]!.height / 2)
-    const dansPiste = indisponible.find((item) => (
-      item.x > vide[0]!.x + 1
-      && item.x < vide[0]!.x + vide[0]!.width - 1
-      && Math.abs(item.y - centrePiste) < vide[0]!.height
-    ))
-    expect(dansPiste, 'l’état vide est peint dans sa piste').toBeTruthy()
   })
 })
 
@@ -236,96 +182,6 @@ describe('#1024 — rangée appairée : la source, pas un littéral transplanté
     expect(centre(titres[0]!) - colonnePt / 2).toBeCloseTo(CORPS_X_PT, 1)
   })
 
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('suit un viewport de capture différent, à requête gelée', async () => {
-    const capture: any = structuredClone(captureBarresStationnement())
-    for (const figure of capture.figures) {
-      if (figure.row) figure.row = { ...figure.row, viewportPx: 1024 }
-    }
-    const lecture = await generer(capture)
-    const titres = [
-      lecture.textes.find((item) => item.str === 'Stationnement vélo et voiture')!,
-      lecture.textes.find((item) => item.str === 'Bornes de recharge et station-services')!,
-    ]
-    const centre = (item: (typeof titres)[number]) => item.x + item.largeur / 2
-    // 1024 px: the source clamp resolves below its 56 px ceiling.
-    const ecartPx = figureRowLayout(1024).gapPx
-    expect(ecartPx).toBeLessThan(CAHIER_FIGURE_ROW.gap.maximumPx)
-    const figurePx = (CONTENU_CSS_PX - ecartPx) / CAHIER_FIGURE_ROW.columns
-    expect(centre(titres[1]!) - centre(titres[0]!)).toBeCloseTo((figurePx + ecartPx) * ptDepuisCssPx(1), 1)
-  })
-})
-
-describe('#1024 — rail des barres mesuré comme le composant natif', () => {
-  /**
-   * The paired stationnement column with large served counts: at half width the
-   * base 68 px rail cannot hold `12 345 678`, so only a measured rail keeps the
-   * label inside the figure.
-   */
-  function captureBarresLarges(): CahierExportCapture {
-    const capture: any = structuredClone(captureBarresStationnement())
-    for (const figure of capture.figures) {
-      if (figure.family !== 'mobilite-bars') continue
-      const model = figure.model.figure
-      model.yAxisTitle = 'Places'
-      model.unit = 'places'
-      model.xAxisTitle = 'Mode'
-      model.categories[0].value.fact.value = 12345678
-      model.categories[0].value.fact.unit = 'places'
-      model.categories[1].value.fact.value = 9876543
-      model.categories[1].value.fact.unit = 'places'
-      for (const category of model.categories) category.value.fact.comparison = null
-    }
-    return capture as CahierExportCapture
-  }
-
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('place les graduations à partir du rail mesuré, jamais hors de la figure', async () => {
-    const lecture = await generer(captureBarresLarges())
-    const numeriques = lecture.textes.filter((item) => (
-      Math.abs(item.taille - ROLE_PDF.tick.taille) < 0.02
-      && /^\d[\d\s\u202f]*$/.test(item.str)
-    ))
-    expect(numeriques.length, 'des graduations numériques sont peintes').toBeGreaterThan(1)
-
-    // Independent derivation: the source row gives the column width, the shared
-    // rule turns the *measured* label into the native rail.
-    const ecartPx = figureRowLayout().gapPx
-    const figurePx = (CONTENU_CSS_PX - ecartPx) / CAHIER_FIGURE_ROW.columns
-    const panel = figurePx * ptDepuisCssPx(1)
-    const ecart = ecartPx * ptDepuisCssPx(1)
-    const railBase = 68 * panel / 640
-
-    for (let index = 0; index < CAHIER_FIGURE_ROW.columns; index += 1) {
-      const bordGauche = CORPS_X_PT + index * (panel + ecart)
-      const parLigne = new Map<number, { x: number; droite: number }>()
-      for (const item of numeriques) {
-        if (item.x < bordGauche - 0.5 || item.x >= bordGauche + panel + 0.5) continue
-        const cle = Math.round(item.y * 2) / 2
-        const ligne = parLigne.get(cle)
-        parLigne.set(cle, {
-          x: Math.min(item.x, ligne?.x ?? item.x),
-          droite: Math.max(item.x + item.largeur, ligne?.droite ?? item.x + item.largeur),
-        })
-      }
-      // A tracked y label is painted glyph by glyph; its line is the tick.
-      const lignes = [...parLigne.values()]
-      expect(lignes.length, `graduations de la colonne ${index + 1}`).toBeGreaterThan(1)
-      const rail = Math.max(...lignes.map((ligne) => ligne.droite)) - bordGauche
-      // The only rail that holds these labels is the measured one: the base
-      // 68 px margin is narrower than the widest label span.
-      const plusLarge = Math.max(...lignes.map((ligne) => ligne.droite - ligne.x))
-      expect(rail).toBeGreaterThan(railBase + 1)
-      expect(rail).toBeGreaterThan(plusLarge - 0.5)
-      for (const ligne of lignes) {
-        // No y label may leave the figure it belongs to.
-        expect(ligne.x).toBeGreaterThanOrEqual(bordGauche - 0.05)
-        // Every tick is right-aligned on that one measured rail.
-        expect(ligne.droite).toBeCloseTo(bordGauche + rail, 1)
-      }
-    }
-    verifierCollisions(lecture)
-  })
 })
 
 describe('#1024 — formes et états déclarés, jamais devinés', () => {
@@ -353,10 +209,4 @@ describe('#1024 — formes et états déclarés, jamais devinés', () => {
     expect(parts[0]!.groups).toHaveLength(0)
   })
 
-  // RETIRED (#1024 native switch): Pins the deleted painter's share/rail/row geometry; the native track and row own these facts.
-  it.skip('peint le tableau d’accès sans comparaison sur trois colonnes 18/46/36', async () => {
-    const lecture = await generer(capturePdfFixture('aedar-access', { publications: [] }))
-    expect(lecture.textes.filter((item) => item.str === 'Groupe')).toHaveLength(0)
-    expect(lecture.textes.filter((item) => item.str === 'Rang')).toHaveLength(0)
-  })
 })
