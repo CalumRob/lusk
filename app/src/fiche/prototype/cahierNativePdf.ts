@@ -156,6 +156,13 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
     .join('\n')
   sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }
 ${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}px; margin-inline:auto }
+/* Prose is hidden on the export surface (argument-copy). Reflow the now
+   empty argument column generically: single-figure spreads become one centred
+   column; paired spreads stay two columns, centred as a pair. No per-section
+   rule and no transplanted physical offset. */
+${scope} .figure-spread:not(.figure-spread--paired) { grid-template-columns:minmax(0,1fr)!important; column-gap:0!important; justify-items:center!important }
+${scope} .figure-spread:not(.figure-spread--paired) > .argument-side { display:none!important }
+${scope} .figure-spread--paired { justify-content:center!important }
 ${neutral}
 ${hidden}
 ${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { display:none!important }` : ''}`

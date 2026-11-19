@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import { jsPDF } from 'jspdf'
 
 import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
@@ -325,7 +326,7 @@ describe('PDF approuvé — tableaux transposés par légende', () => {
         .filter((ligne) => ligne.page === page).map((ligne) => ligne.texte).join(' ')
         .replace(/[’']/g, "'")
       expect(textePage).toContain('COMMUNE A1')
-      expect(textePage).toContain("Types d'équipements par premier mode permettant l'accès à au moins 25% des adresses")
+      expect(textePage).toContain(aedarWaffleTitre().replace(/[’']/g, "'"))
       expect(textePage).toContain('Source(s) :')
     }
     // A complete label appears once across the whole document (no cut row).

@@ -998,10 +998,10 @@ async function dessinerEntete(
   })
   const territory = capture.identity.territory.name
   const largeurTerritory = mesure.largeur(territory, ROLE_PDF.territoireEntete.police, ROLE_PDF.territoireEntete.taille)
-  // `desktop.js` lays the live territory + external-link icon against the right
-  // edge: the icon keeps its own ~6 pt column.
-  const margeIcone = mm(10.7)
-  const tx = PAGE.width - PAGE.margeDroite - margeIcone
+  // Owner decision (#1024): the export header carries the territory name only.
+  // No external-link arrow — not a glyph, not vector ink — and no reserved icon
+  // column. The name itself remains the whole clickable area.
+  const tx = PAGE.width - PAGE.margeDroite
   texte(doc, territory, tx, mm(36.9), {
     police: ROLE_PDF.territoireEntete.police,
     taille: ROLE_PDF.territoireEntete.taille,
@@ -1009,15 +1009,7 @@ async function dessinerEntete(
     align: 'right',
     baseline: 'alphabetic',
   })
-  // Small external-link arrow; the whole territory+arrow is the live link.
-  setStroke(doc, PALETTE_PDF.accentPrimary)
-  doc.setLineWidth(mm(0.7))
-  const ax = PAGE.width - PAGE.margeDroite - mm(4.6)
-  const ay = mm(30.9)
-  doc.line(ax, ay + mm(2.1), ax + mm(2.1), ay)
-  doc.line(ax, ay, ax + mm(2.1), ay)
-  doc.line(ax + mm(2.1), ay, ax + mm(2.1), ay + mm(2.1))
-  if (urlPublique) doc.link(tx - largeurTerritory - mm(1), mm(28.4), largeurTerritory + margeIcone, mm(11), { url: urlPublique })
+  if (urlPublique) doc.link(tx - largeurTerritory - mm(1), mm(28.4), largeurTerritory + mm(1), mm(11), { url: urlPublique })
   // The approved header rule is the live `.page-heading` border-bottom, not a
   // notebook margin: canvas red-soft, 1 CSS px.
   setStroke(doc, PALETTE_PDF.marginSoft)

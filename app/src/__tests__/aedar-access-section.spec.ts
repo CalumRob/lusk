@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_CAR_OVERVIEW_SCALAR_READINGS, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
+import { aedarAccessSection, aedarPendingPrototypeSections, aedarPrototypeSections, AEDAR_CAR_OVERVIEW_SCALAR_READINGS, AEDAR_PROTOTYPE_HORIZON_MINUTES, aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_AGGREGATE_READING_MEASURES, AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
@@ -102,7 +102,7 @@ describe('aedarAccessSection', () => {
     }
     expect(profile.label).toBe('Au moins un quart des adresses')
     expect(profile.evidence?.kind === 'aedar-equipment-profile' && profile.evidence.figureTitle)
-      .toContain('25% des adresses')
+      .toBe(aedarWaffleTitre())
     expect(explorer.kind === 'aedar-equipment-explorer' && explorer.introduction.flat().map((part) => part.value).join(' '))
       .toContain('chaque mode de transport (sélectionnable), la distribution temporelle')
   })

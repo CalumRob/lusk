@@ -4,6 +4,7 @@ import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-ne
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
+import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry, CahierFigureTooltipAnchor } from '@/fiche/cahierFigureGrammaire'
@@ -260,7 +261,7 @@ watch(horizonMinutes, (horizon) => {
     <CahierDialog
       v-if="profile?.status === 'complete'"
       :open="dialogOpen"
-      :title="title ?? evidence.figureTitle"
+      :title="title ?? aedarWaffleTitre(horizonMinutes)"
       labelled-by="aedar-waffle-dialog-title"
       @close="closeDialog"
     >
@@ -294,7 +295,7 @@ watch(horizonMinutes, (horizon) => {
             {{ item.label }} <span class="aedar-waffle-mode-count">{{ item.count }}</span>
           </button>
         </div>
-        <p class="aedar-waffle-table-explanation">Part des adresses résidentielles situées à {{ horizonMinutes }} minutes ou moins par mode de transport. Les catégories d’équipements BPE sont classées selon le mode le plus lent qui permet à au moins {{ percent.format(evidence.threshold) }} des adresses d’y accéder.</p>
+        <p class="aedar-waffle-table-explanation">{{ aedarWaffleTitre(horizonMinutes) }} Les catégories d’équipements BPE sont classées selon le mode le plus lent qui permet à au moins {{ percent.format(evidence.threshold) }} des adresses d’y accéder.</p>
         <div class="aedar-waffle-table-frame">
           <div ref="tableScroll" class="aedar-waffle-table-scroll" @scroll="updateTableScrollAffordance">
           <table class="aedar-waffle-share-table">

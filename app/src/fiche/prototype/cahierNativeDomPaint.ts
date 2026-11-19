@@ -206,8 +206,22 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
     if (node instanceof HTMLAnchorElement && /^https?:/.test(node.href)) doc.link(b.x, b.y, b.w, b.h, { url: node.href })
     if (parseFloat(style.borderTopWidth) && style.borderTopWidth === style.borderRightWidth
       && style.borderTopWidth === style.borderBottomWidth && style.borderTopWidth === style.borderLeftWidth) {
-      fill(style.borderTopColor, () => { doc.setLineWidth(parseFloat(style.borderTopWidth) * scale); path(b, style).stroke() })
+      const largeurBordure = parseFloat(style.borderTopWidth) * scale
+      // A two-tone ring (`.map-viewport--cycling`) is a transparent border plus
+      // a `border-box` gradient, not a border colour the browser resolves to
+      // ink. Paint that gradient's own colour as a real vector ring so every
+      // declared map plate keeps its frame instead of vanishing silently.
+      const bordureTransparente = /^rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)$/.test(style.borderTopColor)
+      // A `border-box` gradient ring paints its own colour stops: take the
+      // first stop of that ring gradient (the protected mode hue), never the
+      // paper-coloured padding-box fill.
+      const arrets = [...style.backgroundImage.matchAll(/rgba?\([^)]+\)/g)].map((m) => m[0]!)
+      const couleurBordure = bordureTransparente && arrets.length >= 4
+        ? arrets[arrets.length - 2]!
+        : style.borderTopColor
+      fill(couleurBordure, () => { doc.setLineWidth(largeurBordure); path(b, style).stroke() })
     }
   }
   for (const root of list) await visit(root)
 }
+

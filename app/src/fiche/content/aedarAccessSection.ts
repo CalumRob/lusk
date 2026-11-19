@@ -17,6 +17,11 @@ import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityL
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
+
+/** Owner title of the equipment-share waffle (dialog, figure and PDF table). */
+export function aedarWaffleTitre(horizonMinutes: number = AEDAR_PROTOTYPE_HORIZON_MINUTES): string {
+  return `Part des adresses résidentielles situées à ${horizonMinutes} minutes ou moins par mode de transport.`
+}
 export const AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU = 'B207'
 
 /** Section labels are stable editorial content, shared by the ready and pending skeletons (#769). */
@@ -419,7 +424,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
       facts: data.facts,
       threshold: AEDAR_EQUIPMENT_BUCKET_THRESHOLD,
       initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
-      figureTitle: `Types d’équipements par premier mode permettant l'accès à au moins ${Math.round(AEDAR_EQUIPMENT_BUCKET_THRESHOLD * 100)}% des adresses`,
+      figureTitle: aedarWaffleTitre(),
       source: aedarEvidenceSource(data),
       prose: [[
         text('Chaque case représente un type BPE, classé une seule fois selon le mode le plus lent qui donne accès à au moins '),

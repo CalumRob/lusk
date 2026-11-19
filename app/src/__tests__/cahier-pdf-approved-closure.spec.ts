@@ -4,6 +4,7 @@
  * output of the composer.
  */
 import { describe, expect, it } from 'vitest'
+import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 
 import { composerCahierPdf, PAIRE_TABLEAUX_PT } from '@/fiche/prototype/cahierPdfComposer'
 import {
@@ -255,7 +256,7 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
       // carries the same wording; the gate counts the caption below the value
       // heading, never every matching run on the page.
       const captions = lecture.textes.filter((item) => item.page === page
-        && item.str.replace(/[’']/g, "'").startsWith("Types d'équipements par premier mode")
+        && item.str.replace(/[’']/g, "'").startsWith(aedarWaffleTitre().replace(/[’']/g, "'"))
         && Math.abs(item.taille - ROLE_PDF.titreTableau.taille) < 0.02
         && (page > 1 || item.y < heading.y))
       expect(captions).toHaveLength(1)
