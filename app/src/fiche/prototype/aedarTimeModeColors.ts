@@ -9,6 +9,15 @@ export const AEDAR_TIME_MODE_COLORS: Readonly<Record<string, string>> = {
   walk: 'color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper))',
 } satisfies Readonly<Record<AedarRampMode, string>>
 
+/**
+ * The owner's own resolution of a mode ink (`AccessRampFigureCahier.vue`,
+ * `timeSeriesColor`): an unknown mode keeps the theme's strong ink instead of
+ * losing its colour. Both the mounted figure and the PDF read this rule.
+ */
+export function aedarTimeModeColor(key: string): string {
+  return AEDAR_TIME_MODE_COLORS[key] ?? 'var(--cahier-theme-strong)'
+}
+
 /** Contrast-safe foreground inks paired with the canonical AEDAR bucket fills. */
 export const AEDAR_TIME_MODE_LABEL_INKS: Readonly<Record<AedarRampMode, string>> = {
   car: 'var(--paper)',

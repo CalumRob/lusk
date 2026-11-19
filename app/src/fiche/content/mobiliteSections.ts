@@ -3,6 +3,7 @@ import { MOBILITE_RESEAU_MODE_LABELS } from './territoryFacts'
 import type {
   ComparisonReference,
   FactAvailability,
+  FactComparison,
   FactProvenance,
   NumericFact,
   SelectedTrajectoryComparison,
@@ -241,21 +242,50 @@ function indicatorsFor(facts: TerritoryFacts, keys: readonly string[]): ContentI
     .map((fact) => contentFact(fact, fact.label ?? fact.key))
 }
 
-function comparisonLabelFor(
+/**
+ * The statistic named by the comparison the figure actually serves: its own
+ * reference kind when one is served, otherwise the published aggregation basis
+ * (which the producer keeps even when the reference is unavailable). A basis
+ * that is neither a territory mean nor a median names no plain statistic, so
+ * the label then keeps the scope alone rather than inventing one.
+ */
+function comparisonStatisticLabel(
+  comparison: FactComparison,
+  basis: NumericFact['comparisonBasis'],
+): string | null {
+  if (comparison.reference) return comparison.reference.kind === 'mean' ? 'Moyenne' : 'Médiane'
+  if (basis === 'territory-median') return 'Médiane'
+  if (basis === 'territory-mean') return 'Moyenne'
+  return null
+}
+
+/**
+ * One comparison sentence for a figure, derived from the comparisons the
+ * figure actually serves. A fact whose own reference is unavailable does not
+ * make the whole figure unavailable while another fact serves the same cohort:
+ * the served reference is what the reader is being compared with. Only when no
+ * fact carries a reference does the label say « indisponible », and it then
+ * takes its statistic from the published basis rather than assuming a median.
+ */
+export function comparisonLabelFor(
   values: readonly ContentFact[],
   territory: TerritoryIdentity,
 ): string | null {
-  const comparison = values.find((value) => value.fact.comparison)?.fact.comparison ?? null
-  if (!comparison) return null
+  const comparisons = values.flatMap((value) => (value.fact.comparison
+    ? [{ comparison: value.fact.comparison, basis: value.fact.comparisonBasis }]
+    : []))
+  if (!comparisons.length) return null
+  const served = comparisons.find(({ comparison }) => comparison.reference !== null) ?? null
+  const chosen = served ?? comparisons[0]!
   const scope = comparisonScopeLabel(
-    comparison.scope.kind,
-    comparison.scope.label,
+    chosen.comparison.scope.kind,
+    chosen.comparison.scope.label,
     territory.epciName,
   )
   if (!scope) return null
-  const statistic = comparison.reference?.kind === 'mean' ? 'Moyenne' : 'Médiane'
-  const label = `${statistic} des ${scope}`
-  return comparison.reference ? label : `Comparaison indisponible — ${label}`
+  const statistic = comparisonStatisticLabel(chosen.comparison, chosen.basis)
+  const label = statistic ? `${statistic} des ${scope}` : scope
+  return served ? label : `Comparaison indisponible — ${label}`
 }
 
 function availabilityFor(values: readonly ContentFact[]): FactAvailability {
@@ -809,7 +839,7 @@ function percentText(fact: NumericFact): string | null {
  * sentence is emitted only when the published scalar and its marker label are
  * both available; otherwise the remaining prose stays grammatical and silent.
  */
-function raccordementProse(
+export function raccordementProse(
   facts: TerritoryFacts,
   markerValue: ContentFact | null,
   markerLabel: string | null,

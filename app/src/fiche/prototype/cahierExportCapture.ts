@@ -40,6 +40,7 @@ import type {
   TextBlock,
 } from '@/fiche/content/themeContent'
 import type { Territoire } from '@/payload/types'
+import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 
 /** One to three selectable series may be kept for a readable PDF table (PRD #1014). */
 export const CAHIER_EXPORT_MAX_MODES = 3
@@ -230,8 +231,6 @@ export interface CahierCaptureComparison {
   readonly none: boolean | null
   /** Owner-observed effective presentation of comparative evidence. */
   readonly display: CahierCaptureComparisonDisplay
-  /** Distinct served statistic/scope labels carried by the section figures, in order. */
-  readonly statisticLabels: readonly string[]
 }
 
 /** Native legend content observed by a map owner; never reconstructed from pixels. */
@@ -256,6 +255,8 @@ export interface CahierCaptureMapItem {
   readonly unavailable: boolean
   /** The actual inline figure asset URL from the owner's existing path contract. */
   readonly inlineUrl: string | null
+  /** Settled owner bytes frozen at capture time; the PDF never re-fetches the owner. */
+  readonly bytes?: ArrayBuffer
 }
 
 export interface CahierCaptureMaps {
@@ -339,10 +340,27 @@ export interface CahierExportPublication {
   readonly state: CahierExportPublicationState
 }
 
+/**
+ * Native sibling row of two figures (the stationnement/ravitaillement pair).
+ *
+ * The capture records *which* native row grammar the source renders and the
+ * host width it is read at; the gap itself is not copied. `figureRowLayout`
+ * resolves the source `clamp()` at that viewport, so a change to
+ * `.mobilite-paired` reaches the PDF through its owner instead of a literal.
+ */
+export interface CahierCaptureFigureRow {
+  readonly key: string
+  readonly columns: number
+  /** The desktop host width the export reproduces (`CAHIER_FIGURE_ROW`). */
+  readonly viewportPx: number
+}
+
 interface CahierCaptureFigureBase {
   readonly family: CahierCaptureFamily
   /** Stable slot inside the section (the paired terrain column, the sole figure, …). */
   readonly slot: string
+  /** Present when the source renders this figure in a multi-column row. */
+  readonly row?: CahierCaptureFigureRow
 }
 
 export interface CahierCarOverviewFigureCapture extends CahierCaptureFigureBase {
@@ -503,6 +521,13 @@ export type CahierCaptureFigure =
   | CahierCurveFigureCapture
 
 export interface CahierExportCapture {
+  readonly nativeRender?: import('./cahierNativeRenderContext').CahierNativeRenderInput
+  /** The reader's current equipment/horizon selection, frozen for the export. */
+  readonly nativeSelection?: {
+    readonly typequ: string | null
+    readonly horizonMinutes: import('@/fiche/content/aedarEquipmentBuckets').AedarEquipmentHorizon | null
+    readonly modes: readonly AedarRampMode[]
+  }
   readonly identity: CahierCaptureIdentity
   readonly generation: CahierCaptureGeneration
   readonly readiness: CahierCaptureReadiness
@@ -514,6 +539,7 @@ export interface CahierExportCapture {
 }
 
 export interface CahierSectionCaptureInput {
+  readonly nativeRender?: import('./cahierNativeRenderContext').CahierNativeRenderInput
   readonly section: ContentSection
   readonly unit: { readonly key: string; readonly label: string }
   readonly territory: TerritoryIdentity
@@ -579,6 +605,8 @@ export function cahierCaptureFamily(kind: ContentEvidence['kind']): CahierCaptur
 function deepPlain<T>(value: T): T {
   if (value === null || typeof value !== 'object') return value
   if (Array.isArray(value)) return value.map((item) => deepPlain(item)) as unknown as T
+  if (value instanceof ArrayBuffer) return value.slice(0) as unknown as T
+  if (ArrayBuffer.isView(value)) return value as unknown as T
   if (value instanceof Date) return new Date(value.getTime()) as unknown as T
   if (value instanceof Map) {
     const entries = [...value.entries()].map(([key, item]) => [deepPlain(key), deepPlain(item)] as const)
@@ -618,7 +646,14 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus ?? 'unobserved')
     : null
+  const explorer = publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
+  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
+    ? explorer.state.state.typequ ?? null
+    : null
   const capture: CahierExportCapture = {
+    ...(input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
+    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
+      modes: [...(input.aedar?.modes ?? [])] },
     identity: {
       sectionKey: section.key,
       evidenceKind: evidence?.kind ?? null,
@@ -661,7 +696,6 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
         status: comparisonStatus,
         referenceStatus,
       }),
-      statisticLabels: comparisonStatisticLabels(evidence, publications),
     },
     sources: captureSources(evidence),
     aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
@@ -860,40 +894,6 @@ function servedComparisonCounts(evidence: ContentEvidence | null): {
     selectedMemberCount: evidence.comparison.selectedMemberCount,
     eligibleContributorCount: evidence.comparison.eligibleCount,
   }
-}
-
-/** Distinct served statistic/scope labels the section figures actually carry. */
-function comparisonStatisticLabels(
-  evidence: ContentEvidence | null,
-  publications: readonly CahierExportPublication[],
-): readonly string[] {
-  if (!evidence) return []
-  const labels: string[] = []
-  const add = (label: string | null | undefined): void => {
-    if (label && !labels.includes(label)) labels.push(label)
-  }
-  switch (evidence.kind) {
-    case 'aedar-car-overview':
-    case 'aedar-access':
-    case 'mobilite-share':
-    case 'mobilite-raccordement':
-      add(evidence.comparisonLabel)
-      break
-    case 'mobilite-networks':
-      add(evidence.figure.comparisonLabel)
-      break
-    case 'mobilite-stationnement-ravitaillement':
-      for (const column of evidence.columns) add(column.bars.comparisonLabel)
-      break
-    case 'aedar-equipment-explorer':
-      add(evidence.comparisonRequest?.label)
-      add(explorerPublication(publications)?.comparison?.label)
-      break
-    case 'aedar-diversity-loss':
-    case 'aedar-equipment-profile':
-      break
-  }
-  return labels
 }
 
 function captureComparisonGroup(options: {
@@ -1311,8 +1311,16 @@ function captureFigures(options: {
       }]
     case 'mobilite-stationnement-ravitaillement':
       return evidence.columns.map((column) => ({
-        family: 'mobilite-bars',
+        family: 'mobilite-bars' as const,
         slot: column.key,
+        // `CahierMobiliteSection.vue` `.mobilite-paired`: two equal columns with
+        // `column-gap: clamp(24px, 4vw, 56px)`. The row declares the grammar and
+        // the desktop viewport; `figureRowLayout` owns the resolved gap.
+        row: {
+          key: 'mobilite-paired',
+          columns: CAHIER_FIGURE_ROW.columns,
+          viewportPx: CAHIER_FIGURE_ROW.desktopViewportPx,
+        },
         model: { figure: column.bars, ratio: column.ratio },
       }))
     case 'mobilite-share':
@@ -1362,17 +1370,23 @@ function captureFigures(options: {
 
 export function projeterRequeteExport(
   capture: CahierExportCapture,
-  modes: readonly string[],
+  requestedModes?: readonly string[],
 ): CahierExportProjection {
   const offered = capture.capabilities.selectableSeries
+  // No argument means "use the single frozen selection" (figure + tables).
+  // An explicit empty choice on a chooser-bearing section stays invalid.
+  const modes = requestedModes === undefined ? (capture.nativeSelection?.modes ?? [])
+    : requestedModes.length ? [...requestedModes]
+      : (offered.length === 0 ? (capture.nativeSelection?.modes ?? []) : [])
   if (offered.length === 0) {
-    if (modes.length > 0) {
+    if ((requestedModes?.length ?? 0) > 0) {
       return invalidProjection('unknown-mode',
         'Cette section ne propose aucune série à choisir pour le PDF.')
     }
     return {
       status: 'ready',
-      request: Object.freeze({ capture, modes: Object.freeze([]), modeIds: Object.freeze([]) }),
+      request: Object.freeze({ capture, modes: Object.freeze(offered.filter((item) => (modes as readonly string[]).includes(item.id))),
+        modeIds: Object.freeze([...modes]) }),
     }
   }
   if (modes.length === 0) {

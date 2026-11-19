@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Clock3 } from 'lucide-vue-next'
+
+import { CAHIER_TRAVEL_TIME_LABEL } from '@/fiche/content/cahierFigureWording'
 </script>
 
 <template>
   <span class="cahier-travel-time-label type-figure-label">
     <Clock3 class="cahier-travel-time-label__icon" :size="16" stroke-width="2" aria-hidden="true" />
-    Temps de trajet
+    {{ CAHIER_TRAVEL_TIME_LABEL }}
   </span>
 </template>
 

@@ -25,6 +25,7 @@ import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
 import CahierActionButton from './CahierActionButton.vue'
 import { useCahierExportPublication } from './cahierExportVenue'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 
 const props = withDefaults(defineProps<{
   evidence: AedarEquipmentExplorerEvidence
@@ -47,7 +48,8 @@ const emit = defineEmits<{
 
 const HORIZONS = AEDAR_EQUIPMENT_BUCKET_HORIZONS
 
-const selectedTypequ = ref(props.evidence.initialTypequ)
+const nativeRender = useCahierNativeRender()
+const selectedTypequ = ref(nativeRender?.typequ ?? props.evidence.initialTypequ)
 const selectedDetail = ref<AedarFact | null>(null)
 const detailStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('loading')
 const detailRetry = ref(0)

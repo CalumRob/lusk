@@ -1,0 +1,148 @@
+{
+  "subset": "latin",
+  "faces": [
+    {
+      "id": "mozilla-headline-400",
+      "family": "Mozilla Headline",
+      "weight": 400,
+      "style": "normal",
+      "file": "mozilla-headline-400.ttf",
+      "bytes": 34476,
+      "sha256": "87583146a592d4f533670870701f9a30e416d5bc76717b074c92a1fb3b158b5b",
+      "source": "node_modules/@fontsource-variable/mozilla-headline/files/mozilla-headline-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/mozilla-headline",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "mozilla-headline-600",
+      "family": "Mozilla Headline",
+      "weight": 600,
+      "style": "normal",
+      "file": "mozilla-headline-600.ttf",
+      "bytes": 34468,
+      "sha256": "dbfdcfc7664f7b8e94479d8f7447c1f286bc6d4a04e58d4b895301a91c08e67d",
+      "source": "node_modules/@fontsource-variable/mozilla-headline/files/mozilla-headline-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/mozilla-headline",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "mozilla-text-400",
+      "family": "Mozilla Text",
+      "weight": 400,
+      "style": "normal",
+      "file": "mozilla-text-400.ttf",
+      "bytes": 40792,
+      "sha256": "64a000f5c53e137d0ccad9f4fe71fe8b93fa710dd9f59bf8f531e24e3ee30d4e",
+      "source": "node_modules/@fontsource-variable/mozilla-text/files/mozilla-text-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/mozilla-text",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "mozilla-text-500",
+      "family": "Mozilla Text",
+      "weight": 500,
+      "style": "normal",
+      "file": "mozilla-text-500.ttf",
+      "bytes": 40776,
+      "sha256": "b0dcc39e7e5f1d349226659234f3cc6f71ec76ea3bd083fa55d1e402dfac785b",
+      "source": "node_modules/@fontsource-variable/mozilla-text/files/mozilla-text-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/mozilla-text",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "mozilla-text-600",
+      "family": "Mozilla Text",
+      "weight": 600,
+      "style": "normal",
+      "file": "mozilla-text-600.ttf",
+      "bytes": 40780,
+      "sha256": "5c920e2859061c41f4efed0807f2537d58e4b43850c07343bd39af15fc61ae0d",
+      "source": "node_modules/@fontsource-variable/mozilla-text/files/mozilla-text-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/mozilla-text",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "fira-code-400",
+      "family": "Fira Code",
+      "weight": 400,
+      "style": "normal",
+      "file": "fira-code-400.ttf",
+      "bytes": 56612,
+      "sha256": "a7dfef33b22b5f19d96d30c5133224fa446f2e9d176e90d3fcfd44d9434ae045",
+      "source": "node_modules/@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/fira-code",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "fira-code-500",
+      "family": "Fira Code",
+      "weight": 500,
+      "style": "normal",
+      "file": "fira-code-500.ttf",
+      "bytes": 56544,
+      "sha256": "ed735c130a57b6c8a454ca7a564773f56c8d4621cdcc67c2925a74cab2e8a3a5",
+      "source": "node_modules/@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/fira-code",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "fira-code-600",
+      "family": "Fira Code",
+      "weight": 600,
+      "style": "normal",
+      "file": "fira-code-600.ttf",
+      "bytes": 56612,
+      "sha256": "1f2f89a11aea6582377d15829b637070b669751fb4120bfd7f3aaddcf31a5b9f",
+      "source": "node_modules/@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/fira-code",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "fira-code-700",
+      "family": "Fira Code",
+      "weight": 700,
+      "style": "normal",
+      "file": "fira-code-700.ttf",
+      "bytes": 56776,
+      "sha256": "bc802dc33cc28ad59ee24f55fe07127a64148406b3360b0b1911ef1c00af6196",
+      "source": "node_modules/@fontsource-variable/fira-code/files/fira-code-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/fira-code",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1"
+    },
+    {
+      "id": "newsreader-600-italic",
+      "family": "Newsreader",
+      "weight": 600,
+      "style": "italic",
+      "file": "newsreader-600-italic.ttf",
+      "bytes": 52520,
+      "sha256": "9fa8cf8dc0984fa15e35a87980d78a3751aae462acde23e4378b64b078f2687f",
+      "source": "node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2",
+      "sourcePackage": "@fontsource-variable/newsreader",
+      "license": "LICENSE",
+      "licenseSpdx": "OFL-1.1",
+      "derivation": {
+        "kind": "synthetic-oblique",
+        "matrix": [
+          1,
+          0,
+          0.25,
+          1,
+          0,
+          0
+        ],
+        "italicAngle": -14,
+        "bearing": "glyf.xMin"
+      }
+    }
+  ]
+}

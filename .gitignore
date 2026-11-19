@@ -67,3 +67,7 @@
 # PRs #451/#452/#455/#491.
 # Prototypes are local exploration artifacts, not repository documentation.
 /docs/prototypes/
+# Local PDF review receipts: generated PNGs/PDFs and harness logs, never versioned.
+/evidence-1034-*/
+/tmp-*.log
+/tmp-*.txt

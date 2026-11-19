@@ -514,7 +514,10 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     if (hidden.family !== 'aedar-ramps') throw new Error('ramps expected')
     expect(hidden.comparisonDisplayed).toBe(false)
     expect(hidden.comparisonLabel).toBeNull()
-    expect(hidden.tables[0]?.columns.every((column) => column.kind === 'focal')).toBe(true)
+    // The flat shape keeps its `Mode` row-dimension column; what must disappear
+    // is the compared group column.
+    expect(hidden.tables[0]?.columns.some((column) => column.kind === 'comparison')).toBe(false)
+    expect(hidden.tables[0]?.columns.find((column) => column.kind === 'focal')?.key).toBe('territory')
     expect(hidden.ramps[0]?.series.every((series) =>
       series.points.every((point) => point.referenceValue === null && point.referenceRank === null))).toBe(true)
     await cut.trigger('focus')
@@ -1476,11 +1479,16 @@ describe('Cahier export capture — mounted shared path (#1021)', () => {
     const tooltip = chart.get('.cahier-grouped-vertical-bar-chart__tooltip')
     const table = projection.tables.find((candidate) => candidate.key === 'distribution')!
     const categoryKey = projection.distribution.figure.categories[0]!.key
-    const columnIndex = table.columns.findIndex((column) => column.key === categoryKey)
+    // Approved shape B: the tooltip's series is a COLUMN group, the category is
+    // the ROW. Each reading must land in its own mode column, not the transpose.
+    const tableRow = table.rows.find((candidate) => candidate.key === categoryKey)!
     for (const row of tooltip.findAll('.cahier-figure-tooltip-row')) {
       const label = row.get('dt').text()
-      const series = projection.distribution.figure.series.find((candidate) => candidate.label === label)!
-      const tableRow = table.rows.find((candidate) => candidate.key === series.key)!
+      const series = projection.distribution.figure.series.find((candidate) => (
+        candidate.label === label && !candidate.comparisonFor
+      ))!
+      const columnIndex = table.columns.findIndex((column) => column.key === `mode:${series.key}`)
+      expect(columnIndex).toBeGreaterThanOrEqual(0)
       expect(row.get('dd').text()).toBe(tableRow.cells[columnIndex]?.display)
     }
     wrapper.unmount()

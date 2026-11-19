@@ -2,13 +2,20 @@
 import { computed, ref } from 'vue'
 
 import type {
-  CahierFigureAxisTick,
   CahierFigureTooltipAnchor,
   CahierGroupedVerticalBarFigureData,
   CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
+import {
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
+  groupedBarGeometry,
+  groupedBarScale,
+  groupedBarTickLabel,
+  groupedBarTicks,
+} from './cahierFigureNativeGeometry'
 import {
   groupedBarAccessibleLabel,
   groupedBarCategoryAria,
@@ -24,33 +31,37 @@ const props = withDefaults(defineProps<{ figure: CahierGroupedVerticalBarFigureD
   hiddenSeriesKeys: () => [],
 })
 
-const BASE_FIGURE_GEOMETRY = {
-  width: 640,
-  height: 300,
-  margin: { top: 22, right: 68, bottom: 62, left: 64 },
-} as const satisfies CahierFigureGeometry
-const BAR_GAP = 2
-const MAX_BAR_WIDTH = 12
 const plotElement = ref<HTMLElement | null>(null)
+/** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
 function formatAxisTick(value: number): string {
-  return props.figure.formatAxisTick?.(value)
-    ?? new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+  return groupedBarTickLabel(props.figure, value)
 }
 
 const categoryCount = computed(() => props.figure.categories.length)
 const visibleSeries = computed(() => visibleGroupedBarSeries(props.figure, props.hiddenSeriesKeys))
 const seriesCount = computed(() => visibleSeries.value.length)
-const finiteValues = computed(() => visibleSeries.value.flatMap((series) =>
-  series.values.flatMap((value) => value === null || !Number.isFinite(value) ? [] : [value]),
-))
-const yDomain = computed(() => cahierIntegerYAxisScale(finiteValues.value))
+const yDomain = computed(() => groupedBarScale(visibleSeries.value))
 const yTickLabels = computed(() => yDomain.value.ticks.map(formatAxisTick))
 const figureGeometry = useMeasuredCahierFigureGeometry(
   plotElement,
   yTickLabels,
-  BASE_FIGURE_GEOMETRY,
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
 )
+const barGeometry = computed(() => groupedBarGeometry(
+  figureGeometry.value,
+  categoryCount.value,
+  seriesCount.value,
+  yDomain.value,
+))
+const ticks = computed(() => groupedBarTicks(
+  props.figure,
+  figureGeometry.value,
+  barGeometry.value,
+  yDomain.value,
+  formatAxisTick,
+))
 const plotWidth = computed(() => figureGeometry.value.width -
   figureGeometry.value.margin.left - figureGeometry.value.margin.right)
 const plotHeight = computed(() => figureGeometry.value.height -
@@ -65,33 +76,19 @@ function yFor(value: number): number {
 const groupWidth = computed(() => plotWidth.value / Math.max(1, categoryCount.value))
 
 function barWidth(): number {
-  if (seriesCount.value === 0) return 0
-  const available = groupWidth.value * 0.84 - (seriesCount.value - 1) * BAR_GAP
-  return Math.max(1.5, Math.min(MAX_BAR_WIDTH, available / seriesCount.value))
+  return barGeometry.value.barWidth
 }
 
 function barX(categoryIndex: number, seriesIndex: number): number {
-  const width = barWidth()
-  const clusterWidth = width * seriesCount.value + BAR_GAP * (seriesCount.value - 1)
-  return figureGeometry.value.margin.left + categoryIndex * groupWidth.value +
-    (groupWidth.value - clusterWidth) / 2 + seriesIndex * (width + BAR_GAP)
+  return barGeometry.value.x(categoryIndex, seriesIndex)
 }
 
 function barHeight(value: number): number {
-  return Math.max(1, Math.abs(yFor(value) - yFor(0)))
+  return barGeometry.value.height(value)
 }
 
-const xTicks = computed<CahierFigureAxisTick[]>(() => props.figure.categories.map((category, index) => ({
-  key: category.key,
-  position: figureGeometry.value.margin.left + (index + 0.5) * groupWidth.value,
-  label: category.axisLabel,
-})))
-
-const yTicks = computed<CahierFigureAxisTick[]>(() => yDomain.value.ticks.map((value) => ({
-  key: value,
-  position: yFor(value),
-  label: formatAxisTick(value),
-})))
+const xTicks = computed(() => ticks.value.x)
+const yTicks = computed(() => ticks.value.y)
 
 const selectedCategoryIndex = ref<number | null>(null)
 
@@ -152,6 +149,7 @@ function categoryHitboxStyle(index: number): Record<string, string> {
       <div ref="plotElement" class="cahier-grouped-vertical-bar-chart__plot cahier-figure-plot">
         <svg
           class="cahier-grouped-vertical-bar-chart__svg"
+          :style="figureStrokeStyle"
           :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
           preserveAspectRatio="xMidYMid meet"
           role="img"
@@ -177,7 +175,7 @@ function categoryHitboxStyle(index: number): Record<string, string> {
             </template>
           </g>
         </svg>
-        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="xTicks" :y-ticks="yTicks" :x-label-offset="8" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="xTicks" :y-ticks="yTicks" :x-label-offset="CAHIER_FIGURE_AXIS.xLabelOffsetGrouped" />
         <div class="cahier-grouped-vertical-bar-chart__hitboxes" role="group" :aria-label="`Détails par ${figure.xAxisTitle.toLocaleLowerCase('fr-FR')}`">
           <button
             v-for="(category, index) in figure.categories"
@@ -210,8 +208,8 @@ function categoryHitboxStyle(index: number): Record<string, string> {
 .cahier-grouped-vertical-bar-chart { width: 100%; min-width: 0; }
 .cahier-grouped-vertical-bar-chart__plot { position: relative; width: 100%; }
 .cahier-grouped-vertical-bar-chart__svg { display: block; width: 100%; height: auto; overflow: visible; }
-.cahier-grouped-vertical-bar-chart__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: 1; }
-.cahier-grouped-vertical-bar-chart__grid .cahier-grouped-vertical-bar-chart__axis { stroke: var(--cahier-theme-strong); stroke-width: 1.5; }
+.cahier-grouped-vertical-bar-chart__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: var(--cahier-figure-stroke-grid-width); }
+.cahier-grouped-vertical-bar-chart__grid .cahier-grouped-vertical-bar-chart__axis { stroke: var(--cahier-theme-strong); stroke-width: var(--cahier-figure-stroke-axis-width); }
 .cahier-grouped-vertical-bar-chart__bar { fill-opacity: 0.78; shape-rendering: crispEdges; }
 .cahier-grouped-vertical-bar-chart__hitboxes { position: absolute; inset: 0; }
 .cahier-grouped-vertical-bar-chart__category-hitbox { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; cursor: help; }

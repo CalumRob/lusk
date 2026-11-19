@@ -7,22 +7,29 @@
  * so a PDF table cannot tell a different story from the screen.
  */
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
+import {
+  TABLEAU_GROUPE_LABEL,
+  TABLEAU_MODE_LABEL,
+  TABLEAU_STATISTIQUE_LABEL,
+  TABLEAU_TEMPS_LABEL,
+} from '@/fiche/content/cahierTableauWording'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import {
   AEDAR_RAMP_MODES,
 } from '@/fiche/content/aedarTimeRampFacts'
 import type {
   AedarRampMode,
-  MobiliteRaccordementEvidence,
 } from '@/fiche/content/themeContent'
 import type { ComparisonRank, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
 import type { CahierGroupedVerticalBarFigureData } from '@/fiche/cahierFigureGrammaire'
 import { formatServedRank, formatServedRankAria } from '@/fiche/figureGrammaire'
+import { aedarTimeModeColor } from './aedarTimeModeColors'
 import type {
   CahierExportCapture,
   CahierExportRequest,
   CahierCaptureFamily,
   CahierCaptureFigure,
+  CahierCaptureFigureRow,
 } from './cahierExportCapture'
 import {
   CAHIER_UNAVAILABLE_LABEL,
@@ -44,6 +51,7 @@ import {
   mobiliteCurveReadings,
   mobiliteCurveUnavailableNotes,
   mobiliteCurveVisiblePercent,
+  mobiliteFiniteValue,
   mobiliteRatioAriaLabel,
   mobiliteRatioDisplayValue,
   mobiliteRatioNumber,
@@ -76,6 +84,12 @@ export interface CahierTableColumn {
   readonly unit: string | null
   readonly kind: 'focal' | 'comparison' | 'raw'
   readonly seriesKey: string | null
+  /**
+   * Legend-key group header of the approved grouped table (the mode/series
+   * label and colour). `null`/absent means a flat table: no group header row.
+   */
+  readonly groupLabel?: string | null
+  readonly groupColor?: string | null
 }
 
 export interface CahierTableCell {
@@ -88,6 +102,8 @@ export interface CahierTableCell {
   readonly rank: ComparisonRank | null
   readonly rankDisplay: string | null
   readonly rankAria: string | null
+  /** Native mark colour of the cell's own series (approved mode label ink). */
+  readonly color?: string | null
 }
 
 export interface CahierTableRow {
@@ -99,6 +115,27 @@ export interface CahierTableRow {
 export interface CahierFigureTable {
   readonly key: string
   readonly title: string
+  /** Native figcaption's second line (the selected equipment type), when any. */
+  readonly subtitle?: string | null
+  /**
+   * Row-dimension header of the approved table shapes (`Temps`, `Statistique`,
+   * or the panel's own x-axis title for compared bars). Absent for a plain
+   * scalar table that has no row dimension.
+   */
+  readonly rowHeader?: string | null
+  /**
+   * Explicit approved shape declared by the adapter. The PDF never infers the
+   * shape from a column key or a label: `flat` paints one header row, `grouped`
+   * paints the legend-key row above the sub-header.
+   */
+  readonly layout: 'flat' | 'grouped'
+  /**
+   * Approved fixed `colgroup` of shape A (access ramps, `desktop.js:215`):
+   * `14/32/18/18/18 %` with comparison, `18/46/36 %` without.
+   */
+  readonly colgroup?: 'access-approved'
+  /** Vertical-rule policy: legend-key groups, one key per column, or none. */
+  readonly columnSeparators: 'group' | 'legend-key' | 'none'
   readonly columns: readonly CahierTableColumn[]
   readonly rows: readonly CahierTableRow[]
   readonly notes: readonly string[]
@@ -124,6 +161,12 @@ export interface CahierFigureProjectionBase {
   readonly slot: string
   readonly title: string
   readonly accessibleLabel: string
+  /**
+   * The native sibling row this figure belongs to, stamped from the capture at
+   * projection time; `null` when the source renders the figure alone. This is
+   * the only source the composer reads for a paired row.
+   */
+  readonly row?: CahierCaptureFigureRow | null
   /** All numeric tables of the figure, in the screen's reading order. */
   readonly tables: readonly CahierFigureTable[]
   readonly comparisonDisplayed: boolean
@@ -341,7 +384,6 @@ export interface CahierCurveProjection extends CahierFigureProjectionBase {
     readonly comparisonRankDisplay: string | null
     readonly comparisonRankAria: string | null
   }[]
-  readonly axis: MobiliteRaccordementEvidence['axis']
   readonly marker: {
     readonly detail: string
     readonly label: string
@@ -398,6 +440,7 @@ function cell(options: {
   rank?: ComparisonRank | null
   rankDisplay?: string | null
   rankAria?: string | null
+  color?: string | null
 }): CahierTableCell {
   return {
     columnKey: options.columnKey,
@@ -408,6 +451,7 @@ function cell(options: {
     rank: options.rank ?? null,
     rankDisplay: options.rankDisplay ?? null,
     rankAria: options.rankAria ?? null,
+    ...(options.color ? { color: options.color } : {}),
   }
 }
 
@@ -419,36 +463,111 @@ function rampTable(options: {
   series: readonly TimeRampSeries[]
   territoryName: string
   comparisonDisplayed: boolean
+  /**
+   * `grouped` = approved shape B (`desktop.js:appendSandboxTables`): rows are
+   * the time cuts, columns grouped by legend key with a territory/Groupe¹/Rang
+   * triplet per mode. `flat` = approved shape A
+   * (`desktop.js:appendTimeRampTables`): one row per cut × mode with the columns
+   * `Temps | Mode | territory | Groupe¹ | Rang`.
+   */
+  layout: 'flat' | 'grouped'
+  subtitle?: string | null
 }): CahierFigureTable {
-  const { key, title, timeRamp, series, territoryName, comparisonDisplayed } = options
+  const { key, title, timeRamp, series, territoryName, comparisonDisplayed, layout, subtitle } = options
   const cuts = series[0]?.points ?? []
-  const columns: CahierTableColumn[] = [
-    ...series.map((entry) => ({
-      key: entry.key,
-      label: entry.label,
-      unit: timeRamp.yAxis.unit || null,
-      kind: 'focal' as const,
-      seriesKey: entry.key,
-    })),
-    ...(comparisonDisplayed
-      ? series.map((entry) => ({
-        key: `${entry.key}:comparison`,
-        label: `${GROUPE_COMPARE_LABEL} — ${entry.label}`,
-        unit: timeRamp.yAxis.unit || null,
-        kind: 'comparison' as const,
-        seriesKey: entry.key,
-      }))
-      : []),
-  ]
-  const rows = cuts.map((cut) => {
-    const readings = timeRampTooltipRows({
+  const readings = (cut: TimeRampSeries['points'][number]) => new Map(
+    timeRampTooltipRows({
       timeRamp,
       series,
       cut,
       territoryName,
       comparisonLayerSupported: comparisonDisplayed,
+    }).map((reading) => [reading.seriesKey, reading]),
+  )
+  const unit = timeRamp.yAxis.unit || null
+  if (layout === 'flat') {
+    // Shape A keeps the mode as a row dimension, so the column set is fixed
+    // (5 columns) whatever the number of visible modes.
+    const columns: CahierTableColumn[] = [
+      { key: 'mode', label: TABLEAU_MODE_LABEL, unit: null, kind: 'raw', seriesKey: null },
+      { key: 'territory', label: territoryName, unit, kind: 'focal', seriesKey: null },
+      ...(comparisonDisplayed
+        ? [{ key: 'groupe', label: GROUPE_COMPARE_LABEL, unit, kind: 'comparison' as const, seriesKey: null }]
+        : []),
+    ]
+    const rows = cuts.flatMap((cut) => {
+      const bySeries = readings(cut)
+      return series.map((entry) => {
+        const reading = bySeries.get(entry.key)
+        return {
+          key: `${key}:cut:${cut.xValue}:mode:${entry.key}`,
+          label: cut.xLabel,
+          cells: [
+            cell({
+              columnKey: 'mode',
+              value: null,
+              display: entry.label,
+              unit: null,
+              raw: true,
+              color: aedarTimeModeColor(entry.key),
+            }),
+            cell({
+              columnKey: 'territory',
+              value: reading?.numericValue ?? null,
+              display: reading?.value ?? CAHIER_UNAVAILABLE_LABEL,
+              unit,
+            }),
+            ...(comparisonDisplayed ? [cell({
+              columnKey: 'groupe',
+              value: reading?.referenceValue ?? null,
+              display: reading?.comparison?.value ?? CAHIER_UNAVAILABLE_LABEL,
+              unit,
+              rank: reading?.referenceRank ?? null,
+              rankDisplay: reading?.comparison?.rank ?? null,
+              rankAria: reading?.comparison?.rankAria ?? null,
+            })] : []),
+          ],
+        }
+      })
     })
-    const bySeries = new Map(readings.map((reading) => [reading.seriesKey, reading]))
+    return {
+      key,
+      title,
+      ...(subtitle ? { subtitle } : {}),
+      rowHeader: TABLEAU_TEMPS_LABEL,
+      columns,
+      rows,
+      notes: [],
+      unit,
+      layout: 'flat',
+      colgroup: 'access-approved',
+      columnSeparators: 'none',
+    }
+  }
+  const columns: CahierTableColumn[] = [
+    ...series.map((entry) => ({
+      key: entry.key,
+      label: territoryName,
+      unit,
+      kind: 'focal' as const,
+      seriesKey: entry.key,
+      groupLabel: entry.label,
+      groupColor: aedarTimeModeColor(entry.key),
+    })),
+    ...(comparisonDisplayed
+      ? series.map((entry) => ({
+        key: `${entry.key}:comparison`,
+        label: TABLEAU_GROUPE_LABEL,
+        unit,
+        kind: 'comparison' as const,
+        seriesKey: entry.key,
+        groupLabel: entry.label,
+        groupColor: aedarTimeModeColor(entry.key),
+      }))
+      : []),
+  ]
+  const rows = cuts.map((cut) => {
+    const bySeries = readings(cut)
     return {
       key: `${key}:cut:${cut.xValue}`,
       label: cut.xLabel,
@@ -459,7 +578,7 @@ function rampTable(options: {
             columnKey: entry.key,
             value: reading?.numericValue ?? null,
             display: reading?.value ?? CAHIER_UNAVAILABLE_LABEL,
-            unit: timeRamp.yAxis.unit || null,
+            unit,
           })
         }),
         ...(comparisonDisplayed ? series.map((entry) => {
@@ -468,7 +587,7 @@ function rampTable(options: {
             columnKey: `${entry.key}:comparison`,
             value: reading?.referenceValue ?? null,
             display: reading?.comparison?.value ?? CAHIER_UNAVAILABLE_LABEL,
-            unit: timeRamp.yAxis.unit || null,
+            unit,
             rank: reading?.referenceRank ?? null,
             rankDisplay: reading?.comparison?.rank ?? null,
             rankAria: reading?.comparison?.rankAria ?? null,
@@ -477,7 +596,18 @@ function rampTable(options: {
       ],
     }
   })
-  return { key, title, columns, rows, notes: [], unit: timeRamp.yAxis.unit || null }
+  return {
+    key,
+    title,
+    ...(subtitle ? { subtitle } : {}),
+    rowHeader: TABLEAU_TEMPS_LABEL,
+    columns,
+    rows,
+    notes: [],
+    unit,
+    layout: 'grouped',
+    columnSeparators: 'group',
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -534,6 +664,7 @@ export function projectRamps(
       series,
       territoryName: capture.identity.territory.name,
       comparisonDisplayed,
+      layout: 'flat',
     })
   })
   const accessibleLabel = ramps.map((_ramp, index) => {
@@ -598,7 +729,11 @@ export function projectOverview(
     }
   })
   const columns: CahierTableColumn[] = [
-    { key: 'value', label: figure.model.scalarFigureTitle, unit: null, kind: 'focal', seriesKey: null },
+    // The approved generator prints the figure title once as the caption and
+    // uses the focal territory as this column's header (`rennes.js`:
+    // `heading(scalarFigureTitle)` then `['Mesure', 'Rennes', ...]`). Using the
+    // caption here would print the same owner string twice in a row.
+    { key: 'value', label: capture.identity.territory.name, unit: null, kind: 'focal', seriesKey: null },
     ...(comparisonDisplayed ? [{
       key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: null, kind: 'comparison' as const, seriesKey: null,
     }] : []),
@@ -632,6 +767,8 @@ export function projectOverview(
     rows,
     notes: [],
     unit: null,
+    layout: 'flat',
+    columnSeparators: 'none',
   }
   return {
     family: 'aedar-car-overview',
@@ -727,6 +864,10 @@ export function projectProfile(
       rows,
       notes: [reading.summary],
       unit: '%',
+      // One legend key per value column: approved shape B's vertical mode
+      // separators (#1014 §5) apply even though this plate has no group header.
+      layout: 'flat',
+      columnSeparators: 'legend-key',
     }],
     comparisonDisplayed: false,
     unavailable: reading.profile?.status === 'complete'
@@ -834,42 +975,58 @@ export function projectExplorer(
   const distribution = freezeGroupedBarsProjection(distFigure, quantile.hiddenSeriesKeys)
   const comparisonVisible = distributionDisplayed
     && distFigure.series.some((series) => series.comparisonFor)
-  const distributionColumns: CahierTableColumn[] = distFigure.categories.flatMap((category) => [
+  // Approved shape B (`desktop.js:appendSandboxTables`): rows are the panel's
+  // x-axis categories, columns are grouped by legend key, and each group keeps
+  // its focal value, compared group and served rank adjacent. The previous
+  // model (rows = modes, columns = deciles) was the exact transpose.
+  const territoryName = capture.identity.territory.name
+  // Approved `appendSandboxTables`: `orderedBars` follows the visible ramp
+  // series order, then any remaining visible legend key. The two tables of the
+  // same panel therefore read their groups in the same order.
+  const ordreSeries = new Map(volumeSeries.map((series, index) => [series.key, index]))
+  const distributionSeries = [...distFigure.series
+    .filter((series) => !series.comparisonFor && !quantile.hiddenSeriesKeys.includes(series.key))]
+    .sort((a, b) => (ordreSeries.get(a.key) ?? Number.MAX_SAFE_INTEGER)
+      - (ordreSeries.get(b.key) ?? Number.MAX_SAFE_INTEGER))
+  const distributionColumns: CahierTableColumn[] = distributionSeries.flatMap((series) => [
     {
-      key: category.key,
-      label: category.axisLabel,
+      key: `mode:${series.key}`,
+      label: territoryName,
       unit: model.distributionValueUnit,
       kind: 'focal' as const,
-      seriesKey: null,
+      seriesKey: series.key,
+      groupLabel: series.label,
+      groupColor: series.color,
     },
     ...(comparisonVisible ? [{
-      key: `${category.key}:comparison`,
-      label: `${GROUPE_COMPARE_LABEL} — ${category.axisLabel}`,
+      key: `mode:${series.key}:comparison`,
+      label: TABLEAU_GROUPE_LABEL,
       unit: model.distributionValueUnit,
       kind: 'comparison' as const,
-      seriesKey: null,
+      seriesKey: series.key,
+      groupLabel: series.label,
+      groupColor: series.color,
     }] : []),
   ])
-  const distributionRows = distFigure.series
-    .filter((series) => !series.comparisonFor && !quantile.hiddenSeriesKeys.includes(series.key))
-    .map((series) => ({
-      key: series.key,
-      label: series.label,
-      cells: distFigure.categories.flatMap((category, categoryIndex) => {
-        const reading = groupedBarTooltipRows(
-          distFigure,
-          categoryIndex,
-          quantile.hiddenSeriesKeys,
-        ).find((candidate) => candidate.seriesKey === series.key)
+  const distributionRows = distFigure.categories.map((category, categoryIndex) => {
+    const bySeries = new Map(
+      groupedBarTooltipRows(distFigure, categoryIndex, quantile.hiddenSeriesKeys)
+        .map((reading) => [reading.seriesKey, reading]),
+    )
+    return {
+      key: category.key,
+      label: category.label,
+      cells: distributionSeries.flatMap((series) => {
+        const reading = bySeries.get(series.key)
         const focal = cell({
-          columnKey: category.key,
+          columnKey: `mode:${series.key}`,
           value: reading?.numericValue ?? null,
           display: reading?.value ?? CAHIER_UNAVAILABLE_LABEL,
           unit: model.distributionValueUnit,
         })
         if (!comparisonVisible) return [focal]
         return [focal, cell({
-          columnKey: `${category.key}:comparison`,
+          columnKey: `mode:${series.key}:comparison`,
           value: reading?.comparisonValue ?? null,
           display: reading?.comparison?.value ?? CAHIER_UNAVAILABLE_LABEL,
           unit: model.distributionValueUnit,
@@ -878,22 +1035,31 @@ export function projectExplorer(
           rankAria: reading?.comparison?.rankAria ?? null,
         })]
       }),
-    }))
+    }
+  })
   const distributionTable: CahierFigureTable = {
     key: 'distribution',
     title: figure.model.distributionFigureTitle,
+    subtitle: figure.effective.typequLabel ?? null,
+    rowHeader: TABLEAU_STATISTIQUE_LABEL,
     columns: distributionColumns,
     rows: distributionRows,
-    notes: [distFigure.description],
+    // The approved table is the figcaption clone only; the figure's accessible
+    // description stays in `accessibleLabel`, not as a PDF-only table note.
+    notes: [],
     unit: model.distributionValueUnit,
+    layout: 'grouped',
+    columnSeparators: 'group',
   }
   const volumeTable = rampTable({
     key: 'volume',
     title: figure.model.volumeFigureTitle,
     timeRamp: volumeRamp,
     series: volumeSeries,
-    territoryName: figure.effective.typequLabel ?? typequ,
+    territoryName: capture.identity.territory.name,
     comparisonDisplayed: volumeDisplayed,
+    layout: 'grouped',
+    subtitle: figure.effective.typequLabel ?? null,
   })
   return {
     family: 'aedar-equipment-explorer',
@@ -925,6 +1091,21 @@ export function projectExplorer(
     volume,
     distribution,
   }
+}
+
+/**
+ * Row label of a compared-bars table. The category and the tooltip reading are
+ * distinct presentation facts, but a total row repeats the category name; the
+ * joined caption must not read `Réseau piéton — Réseau piéton`.
+ */
+function rowLabelFor(
+  category: { readonly label: string },
+  reading: { readonly label: string; readonly raw: boolean },
+): string {
+  const base = reading.label === category.label
+    ? reading.label
+    : `${category.label} — ${reading.label}`
+  return `${base}${reading.raw ? ' (valeur brute)' : ''}`
 }
 
 export function projectBars(
@@ -974,7 +1155,7 @@ export function projectBars(
       }
       rows.push({
         key: reading.key,
-        label: `${category.label} — ${reading.label}${reading.raw ? ' (valeur brute)' : ''}`,
+        label: rowLabelFor(category, reading),
         cells,
       })
     }
@@ -1038,7 +1219,16 @@ export function projectBars(
       key: `${figure.slot}:ratio`,
       label: ratio.label,
       cells: [
-        cell({ columnKey: 'focal', value: ratio.value, display: ratio.display, unit: ratio.unit }),
+        // The screen scalar placeholder is `—`; the value table uses the one
+        // approved table unavailable label for both cells of the missing ratio.
+        cell({
+          columnKey: 'focal',
+          value: ratio.value,
+          display: mobiliteFiniteValue(ratio.value) === null
+            ? CAHIER_UNAVAILABLE_LABEL
+            : ratio.display,
+          unit: ratio.unit,
+        }),
         ...(ratio.comparisonDisplayed
           ? [cell({
             columnKey: 'comparison',
@@ -1054,7 +1244,16 @@ export function projectBars(
     })
   }
   const columns: CahierTableColumn[] = [
-    { key: 'focal', label: evidence.xAxisTitle, unit: evidence.unit, kind: 'focal', seriesKey: null },
+    // The value column is the focal territory, never the axis dimension: the
+    // x-axis title names the row dimension and is painted above the row
+    // labels (`rowHeader`), exactly like the approved grouped table.
+    {
+      key: 'focal',
+      label: capture.identity.territory.name,
+      unit: evidence.unit,
+      kind: 'focal',
+      seriesKey: null,
+    },
     ...(showComparison || ratio?.comparisonDisplayed
       ? [{
         key: 'comparison', label: GROUPE_COMPARE_LABEL, unit: evidence.unit, kind: 'comparison' as const, seriesKey: null,
@@ -1073,10 +1272,13 @@ export function projectBars(
     tables: [{
       key: figure.slot,
       title: evidence.figureTitle,
+      rowHeader: evidence.xAxisTitle,
       columns,
       rows,
       notes,
       unit: evidence.unit,
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: showComparison || (ratio?.comparisonDisplayed ?? false),
     unavailable: [
@@ -1170,6 +1372,8 @@ export function projectShare(
       rows,
       notes,
       unit: mobiliteShareDisplayUnit(evidence),
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: displayed,
     unavailable: [
@@ -1267,6 +1471,11 @@ export function projectCurve(
     tables: [{
       key: 'curve',
       title: evidence.figureTitle,
+      // The row dimension is the trajectory time, named by the app content
+      // owner's approved table label (`Temps`, `desktop.js:274`) — not the
+      // figure's own x-axis title (`Temps de trajet`), which describes the
+      // chart axis, and not a painter-side family branch.
+      rowHeader: TABLEAU_TEMPS_LABEL,
       columns: [
         { key: 'focal', label: evidence.territoryName, unit, kind: 'focal', seriesKey: null },
         ...(displayed ? [{
@@ -1279,6 +1488,8 @@ export function projectCurve(
         ...(comparisonStateText ? [comparisonStateText] : []),
       ],
       unit,
+      layout: 'flat',
+      columnSeparators: 'none',
     }],
     comparisonDisplayed: displayed,
     unavailable,
@@ -1289,7 +1500,6 @@ export function projectCurve(
     comparisonStateText,
     unit,
     points: readings,
-    axis: evidence.axis,
     marker: marker ? {
       detail: marker.detail,
       label: marker.label,
@@ -1351,7 +1561,11 @@ export function projeterRequeteExportFigures(
   request: CahierExportRequest,
 ): readonly CahierFigureProjection[] {
   const capture = request.capture
-  return capture.figures.map((figure) => projeterFigureExport(capture, figure, request))
+  return capture.figures.map((figure) => ({
+    ...projeterFigureExport(capture, figure, request),
+    // The capture's own row declaration is the single source of the pairing.
+    row: figure.row ?? null,
+  }))
 }
 
 /** Convenience for tests/consumers that hold a capture without mode projection. */

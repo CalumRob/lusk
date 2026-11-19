@@ -21,6 +21,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
+import { COULEUR_CYCLE_PARTAGE } from './cahierColorRoles'
 import { useCahierExportPublication } from './cahierExportVenue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
@@ -141,7 +142,7 @@ function networkTooltipRows(mode: ModeKey): readonly CahierTooltipRow[] {
       marker: 'dot',
       markerColor: segment.key === 'protege_km_1000'
         ? 'var(--cahier-cycle-protected, var(--cahier-mode-bike, var(--mode-bike)))'
-        : 'var(--cahier-cycle-shared, #8c4c9e)',
+        : `var(--cahier-cycle-shared, ${COULEUR_CYCLE_PARTAGE})`,
       comparison: comparisonForFact(segment.value, props.evidence?.figure.comparisonLabel ?? null, unit),
     })
     if (segment.rawValue) {
@@ -204,6 +205,7 @@ useCahierExportPublication(() => ({
       unavailable: unavailableInlineModes.value.has(mode.key),
       // The plate draws the inline asset; the inspection gallery is not export content.
       inlineUrl: mapUrl(mode.key),
+      bytes: inlineMapBytes.get(mode.key),
     })),
     legend: 'none',
     legendDetail: null,
@@ -241,7 +243,11 @@ const unavailableInlineModes = ref(new Set<ModeKey>())
 const loadedInlineModes = ref(new Set<ModeKey>())
 const unavailableInspectionModes = ref(new Set<ModeKey>())
 const failedInspectionMode = ref<ModeKey | null>(null)
-function inlineLoaded(mode: ModeKey): void { loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode) }
+const inlineMapBytes = new Map<ModeKey, ArrayBuffer>()
+function inlineLoaded(mode: ModeKey, bytes: ArrayBuffer | null): void {
+  loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode)
+  if (bytes) inlineMapBytes.set(mode, bytes)
+}
 function inlineFailed(mode: ModeKey): void { unavailableInlineModes.value = new Set([...unavailableInlineModes.value, mode]) }
 function inspectionFailed(key: string): void {
   if (!isModeKey(key)) return
@@ -295,7 +301,7 @@ async function inspect(mode: ModeKey): Promise<void> {
             :cycling="mode.key === 'bike'"
             @focus="setActiveMode(mode.key)"
             @blur="clearActiveMode"
-            @loaded="inlineLoaded(mode.key)"
+            @loaded="inlineLoaded(mode.key, $event)"
             @unavailable="inlineFailed(mode.key)"
             @inspect="inspect(mode.key)"
           />
@@ -323,8 +329,9 @@ async function inspect(mode: ModeKey): Promise<void> {
 
 <style scoped>
 .map-breakout {
+  /* Cycle alias ownership (including the shared hue) lives in
+     cahierColorRoles.ts and is applied at the Cahier root. */
   --cahier-cycle-protected: var(--cahier-mode-bike);
-  --cahier-cycle-shared: #8c4c9e;
   margin: 0;
   padding: 0 0 var(--space-3);
 }

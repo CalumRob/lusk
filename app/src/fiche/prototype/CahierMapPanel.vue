@@ -12,9 +12,20 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   inspect: []
-  loaded: []
+  loaded: [bytes: ArrayBuffer | null]
   unavailable: []
 }>()
+
+/** Freeze the already-displayed asset's bytes for the export capture. */
+async function onLoad(event: Event): Promise<void> {
+  const image = event.target as HTMLImageElement
+  try {
+    const response = await fetch(image.currentSrc || image.src)
+    emit('loaded', response.ok ? await response.arrayBuffer() : null)
+  } catch {
+    emit('loaded', null)
+  }
+}
 </script>
 
 <template>
@@ -30,7 +41,7 @@ const emit = defineEmits<{
       v-if="!props.unavailable && props.imageUrl"
       :src="props.imageUrl"
       :alt="props.imageAlt"
-      @load="emit('loaded')"
+      @load="onLoad"
       @error="emit('unavailable')"
     />
     <span v-if="!props.loaded && !props.unavailable" role="status" class="map-loading">Chargement de la carte…</span>
@@ -59,6 +70,11 @@ const emit = defineEmits<{
 }
 
 .map-viewport img {
+  /* Absolutely fill the circular plate: an in-flow grid item would size its
+     auto track to the raster's intrinsic width, so a small frozen asset would
+     shrink to a disc inside the plate instead of filling and clipping to it. */
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;

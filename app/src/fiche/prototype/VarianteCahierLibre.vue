@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
 /**
  * [PROTOTYPE #511 — JETABLE] Variante D — « Cahier libre ».
  *
@@ -20,8 +21,6 @@ import {
 import type {
   ContentSection,
   ExplorationTarget,
-  SingleUnitThemeContent,
-  ThemeContent,
 } from '@/fiche/content/themeContent'
 import {
   routePourCibleExploration,
@@ -44,9 +43,11 @@ import type {
 } from './cahierExportCapture'
 import { provideCahierExportVenue } from './cahierExportVenue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
+import { supportsStagedNativeRender, useCahierNativeRender } from './cahierNativeRenderContext'
+import type { CahierPresentationContent } from './cahierNativeRenderContext'
 
 const props = withDefaults(defineProps<{
-  content: ThemeContent | SingleUnitThemeContent
+  content: CahierPresentationContent
   pagination: CahierPagination
   presentation?: 'ruled' | 'plain'
   layoutVariant?: 'standard' | 'indexed-sections'
@@ -82,6 +83,7 @@ const props = withDefaults(defineProps<{
 }>(), { aedarChapterActive: true, pdfGenerator: null })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
 const route = useRoute()
+const nativeRender = useCahierNativeRender()
 
 /** #860 (ruling 2026-11-03) — le contrôle de comparaison fourni par la fiche
  *  s'assied dans le page-heading collant, à gauche du titre thème·territoire.
@@ -132,14 +134,18 @@ const captureSections = computed(() => {
     unitKey: string
     unitLabel: string
     body: boolean
+    unit: CahierPresentationContent['units'][number]
+    index: number
   }>()
   for (const currentUnit of units.value) {
-    for (const section of currentUnit.sections) {
+    for (const [index, section] of currentUnit.sections.entries()) {
       records.set(section.key, {
         section,
         unitKey: currentUnit.key,
         unitLabel: currentUnit.label,
         body: Boolean(rendererFor(section).body),
+        unit: currentUnit,
+        index,
       })
     }
   }
@@ -198,6 +204,21 @@ function buildExportCapture(
   const family = record.section.evidence ? cahierCaptureFamily(record.section.evidence.kind) : null
   const aedarEvidence = family?.startsWith('aedar-') ?? false
   return captureCahierSection({
+    ...(!nativeRender && supportsStagedNativeRender(record.section.evidence?.kind) ? {
+      nativeRender: {
+        content: {
+          theme: props.content.theme,
+          label: props.content.label,
+          territory: props.content.territory,
+          introduction: [],
+          sourceRegister: [],
+          units: [{ key: record.unit.key, label: record.unit.label, introduction: [], sections: [record.section] }],
+        },
+        presentation: props.presentation ?? 'ruled',
+        layoutVariant: props.layoutVariant ?? 'standard',
+        sectionIndex: record.index,
+      },
+    } : {}),
     section: record.section,
     unit: { key: record.unitKey, label: record.unitLabel },
     territory: props.content.territory,
@@ -427,18 +448,7 @@ onBeforeUnmount(() => {
       'cahier--sans-grille': props.presentation === 'plain',
       'cahier--indexed-sections': props.layoutVariant === 'indexed-sections',
     }"
-    :style="{
-      '--cahier-theme': 'var(--theme-mobilite-line)',
-      '--cahier-theme-strong': 'var(--theme-mobilite-strong)',
-      '--cahier-ground': 'var(--theme-mobilite-soft)',
-      '--cahier-theme-emphasis': 'var(--theme-mobilite)',
-      '--cahier-region-emphasis': 'var(--brand-200)',
-      '--cahier-mode-foot': 'var(--mode-transit)',
-      '--cahier-mode-bike': 'var(--mode-bike)',
-      '--cahier-mode-car': 'var(--mode-car)',
-      '--cahier-cycle-protected': 'var(--cahier-mode-bike)',
-      '--cahier-cycle-shared': '#8c4c9e',
-    }"
+    :style="CAHIER_COLOR_ROLES"
   >
       <div class="cahier-reader">
       <aside class="cahier-spine" aria-label="Sommaire du cahier">
@@ -546,14 +556,14 @@ onBeforeUnmount(() => {
 
               <div class="figure-stack">
                 <section
-              v-for="(section, sectionIndex) in currentUnit.sections"
+                v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
               class="concept-group"
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
             >
               <div class="concept-group-heading cahier-baseline-group">
-                <span v-if="props.layoutVariant !== 'indexed-sections'">{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
+                <span v-if="props.layoutVariant !== 'indexed-sections'">{{ String((nativeRender?.sectionIndex ?? sectionIndex) + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
                   class="concept-group-heading-copy"
@@ -563,7 +573,7 @@ onBeforeUnmount(() => {
                 </div>
                 <h3 v-else>{{ section.label }}</h3>
                 <CahierPdfAction
-                  v-if="rendererFor(section).body"
+                  v-if="!nativeRender && rendererFor(section).body"
                   class="concept-group-pdf-action"
                   :section-key="section.key"
                   :section-label="section.label"
@@ -579,7 +589,7 @@ onBeforeUnmount(() => {
               </div>
 
               <section
-                :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && sectionIndex % 2 === 1 }]"
+                :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >

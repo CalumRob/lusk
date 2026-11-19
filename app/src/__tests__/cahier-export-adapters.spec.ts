@@ -278,7 +278,11 @@ describe('Cahier export adapters — nine-section admission and request immutabi
     const ramps = projections[0]!
     if (ramps.family !== 'aedar-ramps') throw new Error('ramps expected')
     expect(ramps.ramps[0]?.series.map((series) => series.key)).toEqual(['walk'])
-    expect(ramps.tables[0]?.columns.map((column) => column.key)).toEqual(['walk', 'walk:comparison'])
+    // Approved flat shape A: one row per cut × mode, five fixed columns.
+    expect(ramps.tables[0]?.columns.map((column) => column.key)).toEqual(['mode', 'territory', 'groupe'])
+    expect(ramps.tables[0]?.rowHeader).toBe('Temps')
+    expect(ramps.tables[0]?.rows.map((row) => row.label)).toEqual(['5 min', '10 min', '15 min', '20 min'])
+    expect(ramps.tables[0]?.rows[0]?.cells[0]).toMatchObject({ display: 'À pied', raw: true })
   })
 })
 
@@ -305,15 +309,18 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     expect(walk.points[0]?.referenceValue).toBeNull()
     expect(walk.points[0]?.referenceDisplay).toBe('Indisponible')
     const table = projection.tables[0]!
+    // Flat approved shape A: Temps (row dimension) | Mode | territory | Groupe.
+    expect(table.rowHeader).toBe('Temps')
     expect(table.columns.map((column) => [column.key, column.kind])).toEqual([
-      ['transit', 'focal'], ['walk', 'focal'], ['transit:comparison', 'comparison'], ['walk:comparison', 'comparison'],
+      ['mode', 'raw'], ['territory', 'focal'], ['groupe', 'comparison'],
     ])
-    expect(table.rows[2]).toMatchObject({
-      key: 'diversity:cut:15',
-      label: '15 min',
-    })
-    expect(table.rows[2]?.cells[0]).toMatchObject({ value: 5, display: '5', unit: null })
-    expect(table.rows[2]?.cells[2]).toMatchObject({ rank: null, raw: false })
+    expect(table.rows).toHaveLength(8)
+    // One row per cut × mode: the 15 min cut still carries its two modes.
+    expect(table.rows[4]).toMatchObject({ key: 'diversity:cut:15:mode:transit', label: '15 min' })
+    expect(table.rows[4]?.cells[0]).toMatchObject({ display: 'Transports en commun', raw: true })
+    expect(table.rows[4]?.cells[1]).toMatchObject({ value: 5, display: '5', unit: null })
+    expect(table.rows[4]?.cells[2]).toMatchObject({ rank: null, raw: false })
+    expect(table.rows[5]).toMatchObject({ key: 'diversity:cut:15:mode:walk', label: '15 min' })
   })
 
   it('projects the car-overview scalars and their served direct reference', () => {
@@ -518,14 +525,23 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     expect(Object.isFrozen(projection.distribution.figure.series)).toBe(true)
     expect(Object.isFrozen(projection.distribution.figure.series[0]?.values)).toBe(true)
     const distributionTable = projection.tables.find((table) => table.key === 'distribution')!
-    expect(distributionTable.columns).toHaveLength(22)
-    expect(distributionTable.rows.map((row) => row.key)).toEqual(['car'])
-    expect(distributionTable.rows[0]?.cells[0]).toMatchObject({ value: 0, display: '0' })
+    // Approved shape B: rows are the published categories, columns are one
+    // [territory | Groupe] group per visible mode.
+    expect(distributionTable.rowHeader).toBe('Statistique')
+    expect(distributionTable.columns.map((column) => column.key))
+      .toEqual(['mode:car', 'mode:car:comparison'])
+    expect(distributionTable.columns[0]).toMatchObject({ label: 'Commune A1', kind: 'focal', groupLabel: 'Voiture' })
+    expect(distributionTable.columns[1]).toMatchObject({ label: 'Groupe', kind: 'comparison', groupLabel: 'Voiture' })
+    expect(distributionTable.rows.map((row) => row.key)).toEqual([
+      'min', 'decile1', 'decile2', 'decile3', 'decile4', 'decile5',
+      'decile6', 'decile7', 'decile8', 'decile9', 'max',
+    ])
+    expect(distributionTable.rows[0]?.cells[0]).toMatchObject({ columnKey: 'mode:car', value: 0, display: '0' })
     expect(distributionTable.rows[0]?.cells[1]).toMatchObject({
+      columnKey: 'mode:car:comparison',
       value: 7.4, display: '7,4', rank: { position: 1, size: 3, ties: 2 }, rankDisplay: '=1er/3',
     })
-    expect(distributionTable.rows[0]?.cells[2]).toMatchObject({ value: 0.04, display: '0' })
-    expect(distributionTable.rows[0]?.cells[21]).toMatchObject({
+    expect(distributionTable.rows[10]?.cells[1]).toMatchObject({
       value: 9.1, rank: { position: 2, size: 3, ties: 1 }, rankDisplay: '2e/3',
     })
 
@@ -537,9 +553,10 @@ describe('Cahier export adapters — AEDAR families (#1022)', () => {
     const hiddenProjection = projeterRequeteExportFigures(requestFor(hidden, ['car']))[0]!
     if (hiddenProjection.family !== 'aedar-equipment-explorer') throw new Error('explorer expected')
     const hiddenTable = hiddenProjection.tables.find((table) => table.key === 'distribution')!
-    expect(hiddenTable.columns).toHaveLength(11)
+    expect(hiddenTable.columns).toHaveLength(1)
     expect(hiddenTable.columns.every((column) => column.kind === 'focal')).toBe(true)
-    expect(hiddenTable.rows[0]?.cells).toHaveLength(11)
+    expect(hiddenTable.rows).toHaveLength(11)
+    expect(hiddenTable.rows[0]?.cells).toHaveLength(1)
     expect(hiddenProjection.distribution.figure.series.map((series) => series.key))
       .toEqual(['car', 'car-reference'])
     expect(hiddenProjection.distribution.hiddenSeriesKeys).toEqual(['car-reference'])
@@ -601,7 +618,8 @@ describe('Cahier export adapters — Mobilité families (#1022)', () => {
       ['focal', 'focal'], ['comparison', 'comparison'],
     ])
     expect(table.columns[1]?.label).toBe(GROUPE_COMPARE_LABEL)
-    expect(table.columns[0]?.label).toBe(figure.xAxisTitle)
+    expect(table.columns[0]?.label).toBe(capture.identity.territory.name)
+    expect(table.rowHeader).toBe(figure.xAxisTitle)
     expect(table.rows.map((row) => [row.key, row.cells[0]?.display, row.cells[0]?.unit, row.cells[0]?.raw]))
       .toEqual([
         ['bike:total', '8', 'km / 1 000 hab.', false],

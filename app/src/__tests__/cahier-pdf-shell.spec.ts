@@ -161,7 +161,7 @@ describe('shared PDF action on the mounted Cahier shell (#1023)', () => {
     expect(generate).toHaveBeenCalledOnce()
     const request = generate.mock.calls[0]![0]
     expect(request.capture.identity.sectionKey).toBe('aedar-equipment-profile')
-    expect(request.modeIds).toEqual([])
+    expect(request.modeIds).toEqual(request.capture.nativeSelection?.modes ?? [])
     expect(
       wrapper.get('[data-section="aedar-equipment-profile"] .cahier-pdf-action__button').text(),
     ).toBe('PDF généré')

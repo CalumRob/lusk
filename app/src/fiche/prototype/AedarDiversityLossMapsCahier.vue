@@ -66,6 +66,7 @@ useCahierExportPublication(() => ({
       inlineUrl: map.inlineAvailable
         ? aedarDiversityLossMapAssetUrl(props.evidence.territory.code, map.mode, 'inline')
         : null,
+      bytes: mapBytes.get(map.mode),
     })),
     legend: props.evidence.legend
       ? 'available'
@@ -86,8 +87,10 @@ useCahierExportPublication(() => ({
   },
 }))
 
-function markLoaded(mode: string): void {
+const mapBytes = new Map<string, ArrayBuffer>()
+function markLoaded(mode: string, bytes: ArrayBuffer | null): void {
   loadedModes.value = new Set(loadedModes.value).add(mode)
+  if (bytes) mapBytes.set(mode, bytes)
 }
 
 function markUnavailable(mode: string): void {
@@ -149,7 +152,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
                 :number="String(props.evidence.maps.findIndex((candidate) => candidate.mode === map.mode) + 1).padStart(2, '0')"
                 :loaded="loadedModes.has(map.mode)"
                 :unavailable="unavailableModes.has(map.mode)"
-                @loaded="markLoaded(map.mode)"
+                @loaded="markLoaded(map.mode, $event)"
                 @unavailable="markUnavailable(map.mode)"
                 @inspect="inspectMap(map)"
               />

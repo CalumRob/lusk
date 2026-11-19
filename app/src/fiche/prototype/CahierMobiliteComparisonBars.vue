@@ -12,12 +12,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type {
   CahierFigureAxisTick,
-  CahierFigureGeometry,
   CahierFigureTooltipAnchor,
   CahierTooltipRow,
   FigureLegendEntry,
 } from '@/fiche/cahierFigureGrammaire'
-import { valeursGraduationPourDomaine } from '@/fiche/cahierFigureGrammaire'
 import { GROUPE_COMPARE_LABEL } from '@/fiche/content/comparisonWording'
 import type {
   MobiliteBarCategoryEvidence,
@@ -37,13 +35,25 @@ import {
   mobiliteFiniteValue,
   mobiliteRatioValueLabel,
 } from './cahierMobiliteReadings'
+import {
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
+  CAHIER_MOBILITE_BARS_GEOMETRY,
+  mobiliteBarGeometry,
+  mobiliteBarScale,
+  mobiliteBarStackedSegments,
+  mobiliteBarComparisonSegments,
+  mobiliteBarXticks,
+  mobiliteBarYTicks,
+} from './cahierFigureNativeGeometry'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
-import { useCahierExportPublication } from './cahierExportVenue'
+import { useCahierExportPublication, useCahierExportSlot } from './cahierExportVenue'
+import { useCahierNativeRender } from './cahierNativeRenderContext'
 
 type ComparisonState = {
   status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
@@ -58,13 +68,9 @@ const props = defineProps<{
   ratio?: MobiliteRatioEvidence | null
 }>()
 
-const BASE_FIGURE_GEOMETRY = {
-  width: 640,
-  height: 300,
-  margin: { top: 22, right: 24, bottom: 62, left: 68 },
-} as const satisfies CahierFigureGeometry
-const BAR_GAP = 3
-const MAX_BAR_WIDTH = 20
+const BASE_FIGURE_GEOMETRY = CAHIER_MOBILITE_BARS_GEOMETRY
+/** Same stroke owner as the ramp/curve; the SVG binds it locally (#1024). */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 const UNAVAILABLE_LABEL = 'Indisponible'
 const finiteValue = mobiliteFiniteValue
 const toneColor = mobiliteBarToneColor
@@ -72,7 +78,8 @@ const segmentColor = mobiliteBarSegmentColor
 const referenceValue = mobiliteBarReferenceValue
 const ratioValueLabel = mobiliteRatioValueLabel
 
-const comparisonVisible = ref(true)
+const renderSlot = useCahierExportSlot()?.slotPath ?? ''
+const comparisonVisible = ref(useCahierNativeRender()?.barToggles[renderSlot] ?? true)
 // #1021 — this figure owns its comparison visibility and its drawn reference;
 // the capture reads that effective observation, never a default.
 useCahierExportPublication(() => ({
@@ -133,21 +140,7 @@ const hasComparisonReference = computed(() =>
 const comparisonAligned = computed(() => showComparison.value && hasComparisonReference.value)
 const categoryCount = computed(() => props.figure.categories.length)
 const slotCount = computed(() => comparisonAligned.value ? 2 : 1)
-const finiteValues = computed(() => props.figure.categories.flatMap((category) => {
-  const values = [finiteValue(category.value.fact.value)]
-  if (comparisonAligned.value) values.push(referenceValue(category))
-  return values.filter((value): value is number => value !== null)
-}))
-const yScale = computed(() => {
-  const maximum = Math.max(0, ...finiteValues.value)
-  if (maximum <= 0) return { maximum: 1, ticks: [0, 1] }
-  const ticks = valeursGraduationPourDomaine(maximum)
-  const step = ticks.length > 1 ? ticks[1]! - ticks[0]! : maximum
-  // Round the domain up to a full graduation step so the exact data maximum
-  // never crowds the last regular tick label.
-  const roundedMaximum = Math.max(step, Math.ceil(maximum / step) * step)
-  return { maximum: roundedMaximum, ticks: valeursGraduationPourDomaine(roundedMaximum) }
-})
+const yScale = computed(() => mobiliteBarScale(props.figure, comparisonAligned.value))
 const yTicks = computed(() => yScale.value.ticks)
 const yMaximum = computed(() => yScale.value.maximum)
 const yTickLabels = computed(() => yTicks.value.map(formatAxisTick))
@@ -162,6 +155,12 @@ const plotHeight = computed(() => figureGeometry.value.height -
   figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
 const plotBottom = computed(() => figureGeometry.value.margin.top + plotHeight.value)
 const groupWidth = computed(() => plotWidth.value / Math.max(1, categoryCount.value))
+const barGeometry = computed(() => mobiliteBarGeometry(
+  figureGeometry.value,
+  categoryCount.value,
+  yScale.value,
+  slotCount.value,
+))
 
 function yFor(value: number): number {
   return figureGeometry.value.margin.top +
@@ -169,54 +168,30 @@ function yFor(value: number): number {
 }
 
 function barWidth(): number {
-  const available = groupWidth.value * 0.72 - (slotCount.value - 1) * BAR_GAP
-  return Math.max(4, Math.min(MAX_BAR_WIDTH, available / slotCount.value))
+  return barGeometry.value.barWidth
 }
 
 function barX(categoryIndex: number, slot: number): number {
-  const width = barWidth()
-  const clusterWidth = width * slotCount.value + BAR_GAP * (slotCount.value - 1)
-  return figureGeometry.value.margin.left + categoryIndex * groupWidth.value +
-    (groupWidth.value - clusterWidth) / 2 + slot * (width + BAR_GAP)
+  return barGeometry.value.x(categoryIndex, slot)
 }
 
 function barHeight(value: number): number {
-  return Math.max(0, Math.abs(yFor(value) - yFor(0)))
+  return barGeometry.value.height(value)
 }
 
-const xTicks = computed<CahierFigureAxisTick[]>(() => props.figure.categories.map((category, index) => ({
-  key: category.key,
-  position: figureGeometry.value.margin.left + (index + 0.5) * groupWidth.value,
-  label: category.axisLabel,
-})))
+const xTicks = computed<readonly CahierFigureAxisTick[]>(() => mobiliteBarXticks(
+  props.figure,
+  figureGeometry.value,
+  barGeometry.value,
+))
 
-const yAxisTicks = computed<CahierFigureAxisTick[]>(() => yTicks.value.map((value) => ({
-  key: value,
-  position: yFor(value),
-  label: formatAxisTick(value),
-})))
+const yAxisTicks = computed<readonly CahierFigureAxisTick[]>(() => mobiliteBarYTicks(
+  yScale.value,
+  figureGeometry.value,
+))
 
 function stackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: number) {
-  const total = finiteValue(category.value.fact.value)
-  if (total === null || total <= 0) return []
-  const segments = category.segments.map((segment) => ({ ...segment, numeric: finiteValue(segment.value.fact.value) }))
-  if (!segments.length || segments.some((segment) => segment.numeric === null)) return []
-  let offset = 0
-  return segments.map((segment) => {
-    const value = segment.numeric as number
-    const height = (Math.max(0, value) / total) * barHeight(total)
-    const y = plotBottom.value - offset - height
-    offset += height
-    return {
-      key: segment.key,
-      label: segment.label,
-      x: barX(categoryIndex, 0),
-      y,
-      width: barWidth(),
-      height,
-      fill: segmentColor(segment),
-    }
-  })
+  return mobiliteBarStackedSegments(category, categoryIndex, figureGeometry.value, barGeometry.value)
 }
 
 /**
@@ -225,35 +200,8 @@ function stackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: n
  * evidence builder has already proven one eligible population and an additive
  * total within machine-float slack.
  */
-function comparisonSegmentFill(segment: { key: string }): string {
-  return `color-mix(in srgb, ${segmentColor(segment)} 45%, var(--paper))`
-}
-
 function comparisonStackedSegments(category: MobiliteBarCategoryEvidence, categoryIndex: number) {
-  if (!category.comparisonSplit) return []
-  const total = referenceValue(category)
-  if (total === null || total < 0) return []
-  const segments = category.segments.map((segment) => ({
-    ...segment,
-    numeric: finiteValue(segment.value.fact.comparison?.reference?.value),
-  }))
-  if (!segments.length || segments.some((segment) => segment.numeric === null)) return []
-  let offset = 0
-  return segments.map((segment) => {
-    const value = segment.numeric as number
-    const height = total === 0 ? 0 : (Math.max(0, value) / total) * barHeight(total)
-    const y = plotBottom.value - offset - height
-    offset += height
-    return {
-      key: segment.key,
-      label: segment.label,
-      x: barX(categoryIndex, 1),
-      y,
-      width: barWidth(),
-      height,
-      fill: comparisonSegmentFill(segment),
-    }
-  })
+  return mobiliteBarComparisonSegments(category, categoryIndex, figureGeometry.value, barGeometry.value)
 }
 
 function tooltipRows(category: MobiliteBarCategoryEvidence): readonly CahierTooltipRow[] {
@@ -365,6 +313,7 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
         <div ref="plotElement" class="mobilite-comparison-bars__plot cahier-figure-plot">
           <svg
             class="mobilite-comparison-bars__svg"
+            :style="figureStrokeStyle"
             :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
             preserveAspectRatio="xMidYMid meet"
             role="img"
@@ -526,8 +475,8 @@ const ratioComparisonStatus = computed(() => props.comparison.status)
 .mobilite-comparison-bars { display: grid; gap: var(--space-3); min-width: 0; }
 .mobilite-comparison-bars__plot { position: relative; width: 100%; }
 .mobilite-comparison-bars__svg { display: block; width: 100%; height: auto; overflow: visible; }
-.mobilite-comparison-bars__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: 1; }
-.mobilite-comparison-bars__grid .mobilite-comparison-bars__axis { stroke: var(--cahier-theme-strong); stroke-width: 1.5; }
+.mobilite-comparison-bars__grid line { stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent); stroke-width: var(--cahier-figure-stroke-grid-width); }
+.mobilite-comparison-bars__grid .mobilite-comparison-bars__axis { stroke: var(--cahier-theme-strong); stroke-width: var(--cahier-figure-stroke-axis-width); }
 .mobilite-comparison-bars__bar { fill-opacity: .78; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__segment { fill-opacity: .9; shape-rendering: crispEdges; }
 .mobilite-comparison-bars__comparison { fill-opacity: .62; shape-rendering: crispEdges; }

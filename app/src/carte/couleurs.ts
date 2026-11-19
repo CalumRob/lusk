@@ -145,7 +145,7 @@ function rgbVersHex({ r, g, b }: Rgb): string {
 /** The tokens.css §2 mix recipe: color-mix(in oklab, ancre P%, base) — the
  *  anchor's P % share over the base, mixed in OKLab. Throws on an invalid hex
  *  (a drift guard). */
-function melangerOklab(ancre: string, base: string, partAncre: number): string {
+export function melangerOklab(ancre: string, base: string, partAncre: number): string {
   const A = rgbVersOklab(hexVersRgb(ancre))
   const B = rgbVersOklab(hexVersRgb(base))
   return rgbVersHex(

@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import CahierMobiliteShareTrack from '@/fiche/prototype/CahierMobiliteShareTrack.vue'
+import { CAHIER_SHARE_COLOUR, CAHIER_SHARE_TRACK_STYLE } from '@/fiche/prototype/cahierColorRoles'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 
 function shareFigure(overrides: Partial<MobiliteShareEvidence> = {}): MobiliteShareEvidence {
@@ -71,6 +72,17 @@ describe('CahierMobiliteShareTrack — approved two-row coverage figure (#1006)'
     expect(tracks).toHaveLength(2)
     expect(tracks[0]!.attributes('role')).toBe('img')
     expect(tracks[1]!.attributes('role')).toBe('img')
+
+    // The SFC and the PDF palette consume the same owner expressions (#1024).
+    const style = wrapper.get('.mobilite-share-track').attributes('style') ?? ''
+    expect(style).toContain(CAHIER_SHARE_COLOUR.fond)
+    expect(style).toContain(CAHIER_SHARE_COLOUR.filet)
+    expect(style).toContain(CAHIER_SHARE_COLOUR.filetVide)
+    expect(Object.keys(CAHIER_SHARE_TRACK_STYLE)).toEqual([
+      '--mobilite-share-complement',
+      '--mobilite-share-border',
+      '--mobilite-share-border-empty',
+    ])
 
     // The published share, then its quiet unlabelled remainder.
     const territorySegments = rows[0]!.findAll('[data-segment]')

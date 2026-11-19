@@ -232,11 +232,13 @@ describe('AccessRampFigureCahier time ramp', () => {
     })
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: fractionalRamp, territoryName: 'Territoire test' } })
 
+    // The unit lives once on the axis title (R1), never repeated per tick.
     expect(wrapper.findAll('.cahier-figure-tick-label--y').map((tick) => tick.text())).toEqual([
-      '0 types',
-      '5 types',
-      '9 types',
+      '0',
+      '5',
+      '9',
     ])
+    expect(wrapper.find('.access-ramp-cahier').text()).toContain('Diversité accessible (types)')
   })
 
   it('colors each mode line in its mode family and lists the modes in the legend', async () => {

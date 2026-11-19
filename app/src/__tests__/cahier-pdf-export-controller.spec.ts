@@ -80,7 +80,9 @@ describe('shared PDF export controller machine (#1023)', () => {
     expect(generate).toHaveBeenCalledOnce()
     const request = generate.mock.calls[0]![0]
     expect(request.capture).toBe(capture)
-    expect(request.modeIds).toEqual([])
+    // Modes come from the single frozen selection in the capture, even when
+    // the section has no chooser of its own.
+    expect(request.modeIds).toEqual(capture.nativeSelection?.modes ?? [])
     expect(controller.etat.value).toBe('done')
     expect(clickedAnchor?.download).toBe('section.pdf')
     expect(createObjectURL).toHaveBeenCalledOnce()

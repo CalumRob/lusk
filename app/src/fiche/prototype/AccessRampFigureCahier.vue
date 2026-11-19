@@ -11,10 +11,18 @@ import type { TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territor
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { CAHIER_FIGURE_AXIS } from '@/fiche/cahierFigureGrammaire'
 import {
-  formatTimeRampNumber,
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
+  CAHIER_FIGURE_STROKE,
+  cahierFigureStrokeVars,
+  rampGeometry,
+  rampPaths,
+  rampScale,
+  rampTickLabel,
+} from './cahierFigureNativeGeometry'
+import { aedarTimeModeColor } from './aedarTimeModeColors'
+import {
   timeRampAccessibleReading,
   timeRampTooltipRows,
 } from './cahierFigureReadings'
@@ -35,16 +43,10 @@ const props = withDefaults(defineProps<{
 }>(), { showModeLegend: true, comparisonVisible: null })
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
-const WIDTH = 640
-const HEIGHT = 300
-const BASE_FIGURE_GEOMETRY = {
-  width: WIDTH,
-  height: HEIGHT,
-  margin: { top: 22, right: 68, bottom: 62, left: 64 },
-} as const
 const plotElement = ref<HTMLElement | null>(null)
+/** The shared stroke owner is injected as CSS custom properties on the plot. */
+const figureStrokeStyle = cahierFigureStrokeVars(CAHIER_FIGURE_STROKE)
 
-const formatNumber = formatTimeRampNumber
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
   car: 'access-ramp-line--car',
   bike_lts2: 'access-ramp-line--bike-light',
@@ -56,7 +58,7 @@ function timeSeriesLineClass(key: string): string {
   return TIME_MODE_LINE_CLASS[key] ?? ''
 }
 function timeSeriesColor(key: string): string {
-  return AEDAR_TIME_MODE_COLORS[key] ?? 'var(--cahier-theme-strong)'
+  return aedarTimeModeColor(key)
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set<string>(AEDAR_DEFAULT_VISIBLE_RAMP_MODES))
@@ -76,40 +78,33 @@ function toggleTimeMode(key: string): void {
   if (props.selectedModes) emit('update:selectedModes', [...selected] as AedarRampMode[])
   else selectedTimeModes.value = selected
 }
-const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
-  series.points.flatMap((point) => comparisonVisible.value ? [point.value, point.referenceValue] : [point.value]),
-)))
-const measuredYTickLabels = computed(() => timeYAxis.value.ticks.map((value) =>
-  `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`))
-const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
+const timeYAxis = computed(() => rampScale(visibleTimeSeries.value, comparisonVisible.value))
+const figureGeometry = useMeasuredCahierFigureGeometry(
+  plotElement,
+  // The unit belongs to the axis title (`y-title` below), exactly as on the
+  // approved R1 artifacts; repeating it on every tick widened `0` into the
+  // first x label without adding a fact.
+  computed(() => timeYAxis.value.ticks.map((value) => rampTickLabel(value))),
+  CAHIER_AEDAR_FIGURE_GEOMETRY,
+)
+const rampGeom = computed(() => rampGeometry(
+  timePoints.value,
+  timeYAxis.value,
+  figureGeometry.value,
+))
 const plotHeight = computed(() => figureGeometry.value.height -
   figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
-const timeX = (value: number) => {
-  const { width, margin } = figureGeometry.value
-  return margin.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * (width - margin.left - margin.right)
-}
-const timeY = (value: number) => {
-  const { height, margin } = figureGeometry.value
-  return margin.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) *
-    (height - margin.top - margin.bottom)
-}
-const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
-const timeYTicks = computed(() => timeYAxis.value.ticks.map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
+const timeX = (value: number) => rampGeom.value.x(value)
+const timeTicks = computed(() => rampGeom.value.xTicks)
+const timeYTicks = computed(() => rampGeom.value.yTicks)
 
 function timePaths(points: readonly TimeRampPoint[], reference = false): string[] {
-  const paths: string[] = []
-  let current: string[] = []
-  for (const point of points) {
-    const value = reference ? point.referenceValue : point.value
-    if (value === null) {
-      if (current.length) paths.push(current.join(' '))
-      current = []
-    } else {
-      current.push(`${current.length ? 'L' : 'M'} ${timeX(point.xValue).toFixed(2)} ${timeY(value).toFixed(2)}`)
-    }
-  }
-  if (current.length) paths.push(current.join(' '))
-  return paths
+  return [...rampPaths(
+    points,
+    (point) => reference ? point.referenceValue : point.value,
+    (value) => rampGeom.value.x(value),
+    (value) => rampGeom.value.y(value),
+  )]
 }
 
 const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
@@ -128,7 +123,7 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
   }] : []),
 ])
 const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
-  (props.timeRamp?.series ?? []).map((series) => [series.key, AEDAR_TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)']),
+  (props.timeRamp?.series ?? []).map((series) => [series.key, aedarTimeModeColor(series.key)]),
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
 const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / figureGeometry.value.width)) * 100}%`, y: '12%' } : undefined)
@@ -175,7 +170,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
   >
     <template #plot>
       <div ref="plotElement" class="access-ramp-plot cahier-figure-plot">
-        <svg class="access-ramp-svg" :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
+        <svg class="access-ramp-svg" :style="figureStrokeStyle" :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
           <g class="access-ramp-grid" aria-hidden="true">
             <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="tick.position" :y2="tick.position" />
             <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="figureGeometry.margin.top" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
@@ -188,7 +183,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
           </g>
         </svg>
-        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="CAHIER_FIGURE_AXIS.xLabelOffsetAccess" />
         <div class="access-ramp-cut-hitboxes" aria-label="Détails par temps d'accès">
           <button v-for="(point, index) in timePoints" :key="point.xValue" class="access-ramp-cut-hitbox" type="button" :style="timeHitboxStyle(index)" :aria-label="`Temps d'accès : ${point.xLabel}`" @mouseenter="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @mouseleave="selectedTimeCut = null" @focus="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @blur="selectedTimeCut = null" @click="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" />
         </div>
@@ -220,12 +215,12 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-grid line {
   stroke: color-mix(in srgb, var(--cahier-theme) 17%, transparent);
-  stroke-width: 1;
+  stroke-width: var(--cahier-figure-stroke-grid-width);
 }
 
 .access-ramp-grid .access-ramp-axis {
   stroke: var(--cahier-theme-strong);
-  stroke-width: 1.5;
+  stroke-width: var(--cahier-figure-stroke-axis-width);
 }
 
 .access-ramp-grid .access-ramp-median {
@@ -245,15 +240,15 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-line {
   fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.5;
+  stroke-linecap: var(--cahier-figure-stroke-series-cap);
+  stroke-linejoin: var(--cahier-figure-stroke-series-join);
+  stroke-width: var(--cahier-figure-stroke-series-width);
 }
 
 .access-ramp-line--comparison {
-  stroke-dasharray: 10 6;
-  opacity: 0.68;
-  stroke-width: 2.5;
+  stroke-dasharray: var(--cahier-figure-stroke-comparison-dash);
+  opacity: var(--cahier-figure-stroke-comparison-opacity);
+  stroke-width: var(--cahier-figure-stroke-comparison-width);
 }
 
 .access-ramp-line--territory {

@@ -11,7 +11,12 @@ import type {
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { buildPartageSubtitle, buildMobiliteRaccordementSection, buildMobiliteShareSection } from '@/fiche/content/mobiliteSections'
+import {
+  buildPartageSubtitle,
+  buildMobiliteNetworksSection,
+  buildMobiliteRaccordementSection,
+  buildMobiliteShareSection,
+} from '@/fiche/content/mobiliteSections'
 import type { ThemeMetadata } from '@/payload/types'
 import liveNetworks from './fixtures/rennes-network-live.json'
 
@@ -649,5 +654,54 @@ describe('compared protected/shared means — #997', () => {
     const category = bike(indicators)
     expect(category.comparisonSplit).toBeUndefined()
     expect(category.comparisonSplitNote).toContain('ne partagent pas la même unité')
+  })
+})
+
+describe('comparisonLabelFor — la comparaison réellement servie, jamais le premier fait', () => {
+  const servedScope: ComparisonScope = { kind: 'communes-epci', label: 'communes de EPCI X' }
+
+  function served(value: number, kind: 'mean' | 'median' = 'median'): FactComparison {
+    return { direction: 'plus-est-mieux', scope: servedScope, rank: null, reference: { kind, value } }
+  }
+
+  function unavailable(scope: ComparisonScope = servedScope): FactComparison {
+    return { direction: 'plus-est-mieux', scope, rank: null, reference: null }
+  }
+
+  function reseauFacts(comparisons: readonly FactComparison[]): NumericFact[] {
+    return ['t_km_1000', 'b_km_1000', 'c_km_1000'].map((detail, index) => ({
+      ...fact('reseaux_par_habitant', 10 + index, 'km / 1 000 hab.', detail),
+      comparison: comparisons[index]!,
+    }))
+  }
+
+  function labelOf(indicators: NumericFact[]): string | null {
+    const section = buildMobiliteNetworksSection(factsWith(indicators), metadata)
+    if (section.evidence?.kind !== 'mobilite-networks') throw new Error('Réseaux evidence expected')
+    return section.evidence.figure.comparisonLabel
+  }
+
+  it('nomme la comparaison servie quand un premier fait ne porte aucune référence', () => {
+    expect(labelOf(reseauFacts([unavailable(), served(11.5), served(84.5)])))
+      .toBe('Médiane des communes de EPCI X')
+  })
+
+  it('nomme l’indisponibilité seulement quand aucun fait ne sert de référence', () => {
+    const indicators = reseauFacts([unavailable(), unavailable(), unavailable()])
+    expect(labelOf(indicators)).toBe('Comparaison indisponible — Médiane des communes de EPCI X')
+  })
+
+  it('garde la statistique publiée par le socle quand la référence manque, sans supposer une médiane', () => {
+    const indicators = reseauFacts([unavailable(), unavailable(), unavailable()])
+      .map((candidate) => ({ ...candidate, comparisonBasis: 'territory-mean' as const }))
+    expect(labelOf(indicators)).toBe('Comparaison indisponible — Moyenne des communes de EPCI X')
+  })
+
+  it('suit la statistique et la portée de la référence réellement servie', () => {
+    const bretagne: ComparisonScope = { kind: 'communes-bretagne', label: 'communes bretonnes' }
+    expect(labelOf(reseauFacts([unavailable(), served(11.5, 'mean'), served(84.5)])))
+      .toBe('Moyenne des communes de EPCI X')
+    expect(labelOf(reseauFacts([unavailable(), { ...served(11.5, 'mean'), scope: bretagne }, served(84.5)])))
+      .toBe('Moyenne des communes bretonnes')
   })
 })

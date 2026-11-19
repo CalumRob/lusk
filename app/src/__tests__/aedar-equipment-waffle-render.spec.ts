@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import AedarEquipmentWaffleCahier from '@/fiche/prototype/AedarEquipmentWaffleCahier.vue'
+import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 
@@ -170,7 +171,7 @@ describe('AedarEquipmentWaffleCahier', () => {
 
     const dialog = wrapper.get('dialog[open]')
     expect(dialog.attributes('aria-labelledby')).toBeTruthy()
-    expect(dialog.get('#aedar-waffle-dialog-title').text()).toBe('Types d’équipements accessibles par premier mode')
+    expect(dialog.get('#aedar-waffle-dialog-title').text()).toBe(aedarWaffleTitre())
     expect(dialog.find('.cahier-dialog__kicker').exists()).toBe(false)
     expect(dialog.find('.cahier-dialog__header h2').exists()).toBe(false)
     expect(dialog.find('.cahier-dialog__header .aedar-waffle-search').exists()).toBe(true)

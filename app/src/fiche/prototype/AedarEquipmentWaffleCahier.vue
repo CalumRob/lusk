@@ -4,10 +4,12 @@ import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-ne
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
+import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry, CahierFigureTooltipAnchor } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
+import { waffleGridPosition } from './cahierFigureNativeGeometry'
 import { aedarWaffleModeRows, aedarWaffleReading, aedarWaffleShareLabel } from './aedarFigureReadings'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -221,6 +223,8 @@ watch(horizonMinutes, (horizon) => {
           class="aedar-waffle-tile"
           :data-bucket="type.bucket"
           :data-typequ="type.typequ"
+          :data-waffle-row="waffleGridPosition(index).row"
+          :data-waffle-column="waffleGridPosition(index).column"
           :style="{ order: index, '--aedar-bucket-color': bucketColors[type.bucket] }"
           :aria-label="`${type.label}, ${type.typequ}, ${type.bucketLabel}. Afficher le détail.`"
           type="button"
@@ -257,7 +261,7 @@ watch(horizonMinutes, (horizon) => {
     <CahierDialog
       v-if="profile?.status === 'complete'"
       :open="dialogOpen"
-      :title="title ?? evidence.figureTitle"
+      :title="title ?? aedarWaffleTitre(horizonMinutes)"
       labelled-by="aedar-waffle-dialog-title"
       @close="closeDialog"
     >
@@ -291,7 +295,7 @@ watch(horizonMinutes, (horizon) => {
             {{ item.label }} <span class="aedar-waffle-mode-count">{{ item.count }}</span>
           </button>
         </div>
-        <p class="aedar-waffle-table-explanation">Part des adresses résidentielles situées à {{ horizonMinutes }} minutes ou moins par mode de transport. Les catégories d’équipements BPE sont classées selon le mode le plus lent qui permet à au moins {{ percent.format(evidence.threshold) }} des adresses d’y accéder.</p>
+        <p class="aedar-waffle-table-explanation">{{ aedarWaffleTitre(horizonMinutes) }} Les catégories d’équipements BPE sont classées selon le mode le plus lent qui permet à au moins {{ percent.format(evidence.threshold) }} des adresses d’y accéder.</p>
         <div class="aedar-waffle-table-frame">
           <div ref="tableScroll" class="aedar-waffle-table-scroll" @scroll="updateTableScrollAffordance">
           <table class="aedar-waffle-share-table">
