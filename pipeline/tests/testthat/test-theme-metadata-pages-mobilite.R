@@ -72,6 +72,23 @@ test_that("l'énumération des pages Mobilité est connue — les pages multi-me
   expect_false(any(INDICATEURS_MOBILITE_RETIRES %in% cles))
 })
 
+test_that("les thèmes sans lecture ne déclarent ni histoire ni lecture dans leur catalogue (#1048)", {
+  # Un seul prédicat nommé porte l'exemption #312/#1048 — aucun test ne
+  # recopie `if (theme == "mobilite")`.
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    if (theme_sans_lecture(theme)) {
+      expect_identical(length(unlist(meta$story_keys, use.names = FALSE)), 0L,
+                       info = theme)
+      expect_false(any(vapply(meta$subgroups, function(g) !is.null(g$reading),
+                              logical(1L))), info = theme)
+    } else {
+      expect_true(length(unlist(meta$story_keys, use.names = FALSE)) > 0L,
+                  info = theme)
+    }
+  }
+})
+
 test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses onze pages scalaires complètes (#461, #1048)", {
   meta <- lire_theme_metadata("mobilite")
   expect_no_error(valider_theme_metadata(meta))

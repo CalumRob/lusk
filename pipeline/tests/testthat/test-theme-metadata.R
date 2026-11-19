@@ -26,10 +26,36 @@ lire_metadata <- function(nom) {
   )
 }
 
+# La fixture Mobilité historique porte encore les deux histoires du snapshot.
+# On épingle TEMPORAIREMENT leur registre pour éprouver la règle ADR-0002,
+# depuis que #1048 l'a retiré du contrat — sans réintroduire de branche par
+# nom de thème dans les tests.
+avec_registre_mobilite <- function(expr) {
+  ns <- asNamespace("lusk")
+  registre <- get("CLES_HISTOIRES_PAR_THEME", envir = ns)
+  resolution <- get("STORIES_RESOLUES_PAR_THEME", envir = ns)
+  resolution_original <- resolution
+  pool <- tibble::tibble(
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
+    groupe = "acces-aux-services", ordre = c(1L, 2L),
+    salience_reason = c(NA_character_, "delta-velo-saillant"))
+  resolution$mobilite <- pool
+  assignInNamespace("CLES_HISTOIRES_PAR_THEME",
+    c(registre, list(mobilite = c("vingt-minutes-sans-voiture",
+                                  "ce-que-le-velo-preserve"))), ns = "lusk")
+  assignInNamespace("STORIES_RESOLUES_PAR_THEME", resolution, ns = "lusk")
+  on.exit({
+    assignInNamespace("CLES_HISTOIRES_PAR_THEME", registre, ns = "lusk")
+    assignInNamespace("STORIES_RESOLUES_PAR_THEME", resolution_original, ns = "lusk")
+  }, add = TRUE)
+  force(expr)
+}
+
 test_that("valider_theme_metadata : les fixtures valides passent", {
   for (nom in c("theme-demographie-valide.json", "theme-economie-valide.json",
                 "theme-mobilite-valide.json", "theme-programmes-valide.json")) {
-    expect_no_error(valider_theme_metadata(lire_metadata(nom)))
+    avec_registre_mobilite(
+      expect_no_error(valider_theme_metadata(lire_metadata(nom))))
   }
 })
 
@@ -43,9 +69,11 @@ test_that("valider_theme_metadata : le pool Mobilité déclare sa candidate de s
   # supplémentaire. La bijection (territoire × groupe) reste garantie : le
   # candidat partage le groupe du défaut, une lecture résolue par slot.
   meta <- lire_metadata("theme-mobilite-valide.json")
-  expect_identical(unlist(meta$story_keys, use.names = FALSE),
-                   c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"))
-  expect_no_error(valider_theme_metadata(meta))
+  avec_registre_mobilite({
+    expect_identical(unlist(meta$story_keys, use.names = FALSE),
+                     c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"))
+    expect_no_error(valider_theme_metadata(meta))
+  })
 })
 
 test_that("valider_theme_metadata : les sources de référence existent dans les vintages du thème", {
@@ -101,7 +129,7 @@ test_that("valider_theme_metadata : le sixième thème — Programmes et subvent
   # l'herméticité : Programmes n'en possède aucune — toute déclaration est
   # soit cross-thème, soit inconnue du contrat.
   meta <- lire_metadata("theme-programmes-valide.json")
-  meta$story_keys <- list("vingt-minutes-sans-voiture")
+  meta$story_keys <- list("trajectoire-demographique")
   expect_error(valider_theme_metadata(meta), "cross-thème")
 
   meta <- lire_metadata("theme-programmes-valide.json")
@@ -166,9 +194,10 @@ test_that("valider_theme_metadata : un texte riche invalide est rejeté", {
 })
 
 test_that("valider_theme_metadata : une référence cross-thème est rejetée", {
-  # une story d'un autre thème dans story_keys (la Mobilité dans la Démographie)
+  # une story d'un autre thème dans story_keys (Habitat dans la Démographie) —
+  # les deux histoires Mobilité ont quitté le contrat en #1048.
   meta <- lire_metadata("theme-demographie-valide.json")
-  meta$story_keys <- c(meta$story_keys, "vingt-minutes-sans-voiture")
+  meta$story_keys <- c(meta$story_keys, "etat-energetique-du-parc")
   expect_error(valider_theme_metadata(meta), "cross-thème")
 })
 
@@ -666,12 +695,11 @@ test_that("sous-groupes : la décomposition #370 + #408 + #1048 — treize sous-
     # chaque famille déclarée est l'une des huit de la grammaire (ADR-0023)
     expect_true(all(familles %in% FAMILLES_FIGURE), info = theme)
     # le registre des sous-groupes et la résolution restent en parité : le
-    # groupe de chaque story résolue est un sous-groupe déclaré. Mobilité est
-    # le seul pool ADR-0002 conservé comme preuve de la règle après #1048 : son
-    # groupe a disparu du catalogue avec le snapshot, il ne peut plus être émis.
+    # groupe de chaque story résolue est un sous-groupe déclaré. Mobilité a un
+    # registre VIDE depuis #1048 : la parité porte sur zéro groupe, pas sur une
+    # exemption.
     registre <- STORIES_RESOLUES_PAR_THEME[[theme]]
-    if (!identical(theme, "mobilite"))
-      expect_true(all(registre$groupe %in% cles), info = theme)
+    expect_true(all(registre$groupe %in% cles), info = theme)
     expect_no_error(valider_theme_metadata(meta))
   }
 })
@@ -713,7 +741,8 @@ test_that("le catalogue Mobilité ne porte plus aucune référence au snapshot r
   expect_length(meta$indicator_directions, 0L)
   # Les 29 reçus de retrait restent, eux, déclarés dans scalar_contracts.
   expect_setequal(
-    scalar_indicators_with_serving_disposition(meta, "excluded_legacy_accessibility"),
+    scalar_indicators_with_serving_disposition(meta,
+      SERVING_DISPOSITION_EXCLUDED_LEGACY),
     INDICATEURS_MOBILITE_RETIRES)
 })
 
@@ -896,7 +925,7 @@ test_that("verifier_parite_trajectoires : les sorties producteur de fixture couv
     if (!any(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))) next
 
     faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
-    if (identical(theme, "mobilite")) {
+    if (theme_sans_lecture(theme)) {
       # The retained Mobility Parquet remains unchanged, but its incumbent
       # raccordement curve has the prior axis. Rebuild the owner-owned rows
       # from the byte-pinned producer artifact for the current trajectory

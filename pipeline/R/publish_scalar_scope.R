@@ -78,7 +78,7 @@ scalar_scope_contract <- function(theme, indicator_ids = NULL) {
 # politique de retrait legacy est la même que le publisher retenu.
 retained_scalar_indicator_ids <- function(metadata) {
   excluded <- scalar_indicators_with_serving_disposition(
-    metadata, "excluded_legacy_accessibility")
+    metadata, SERVING_DISPOSITION_EXCLUDED_LEGACY)
   ids <- setdiff(names(metadata$scalar_contracts), excluded)
   if (!length(ids))
     stop("Producer scalar metadata has no retained indicator", call. = FALSE)

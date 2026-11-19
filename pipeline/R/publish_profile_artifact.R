@@ -152,7 +152,7 @@ profile_serving_owners <- function(metadata) {
   owners[!vapply(owners, function(owner) {
     source_id <- (metadata$sources %||% list())[[owner]]
     source <- (metadata$source_records %||% list())[[source_id]]
-    identical(source$serving_disposition, "excluded_legacy_accessibility")
+    identical(source$serving_disposition, SERVING_DISPOSITION_EXCLUDED_LEGACY)
   }, logical(1))]
 }
 
