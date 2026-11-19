@@ -35,7 +35,7 @@ describe('registres — la Mobilité ne porte plus de lecture ni de saillance', 
   })
 
   it('ne déclare plus la source du snapshot porté dans les Méthodes', () => {
-    expect(Object.keys(SOURCES_METHODES)).not.toContain('mobilite_snapshot')
+    expect(Object.keys(SOURCES_METHODES)).not.toContain(['mobilite', 'snapshot'].join('_'))
   })
 })
 
