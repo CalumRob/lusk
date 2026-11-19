@@ -12,6 +12,12 @@ import os
 from pathlib import Path
 
 
+# Producer-owned serving disposition (#1048): retired ids stay in the metadata
+# as audit-only receipts but never enter discovery. Single source of truth for
+# the literal the pipeline also declares.
+SERVING_DISPOSITION_EXCLUDED_LEGACY = "excluded_legacy_accessibility"
+
+
 @dataclass(frozen=True)
 class IndicatorDeclaration:
     theme_id: str
@@ -241,13 +247,10 @@ def _producer_capabilities(metadata, theme_id, indicator_ids):
             # discoverable resources: tolerate them here instead of failing
             # every consumer of the producer catalogue at import time.
             if indicator_id not in known_indicators:
-                if contract.get("serving_disposition") == "excluded_legacy_accessibility":
+                if contract.get("serving_disposition") == SERVING_DISPOSITION_EXCLUDED_LEGACY:
                     continue
                 raise ValueError(
                     f"Unknown producer scalar contract indicator: {theme_id}/{indicator_id}")
-            if not isinstance(contract, dict):
-                raise ValueError(
-                    f"Invalid producer scalar contract: {theme_id}/{indicator_id}")
             if ("counts_available" in contract
                     and type(contract["counts_available"]) is not bool):
                 raise ValueError(
@@ -434,7 +437,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
             by_key[key] = declaration
             declarations.append(declaration)
 
-            if disposition == "excluded_legacy_accessibility":
+            if disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY:
                 continue
             if disposition != "retained":
                 raise ValueError(f"unknown producer serving disposition: {disposition}")
@@ -602,5 +605,5 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 measure_facets=measure_facets))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
-                     if item.disposition == "excluded_legacy_accessibility")
+                     if item.disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY)
     return ResourceCatalogue(tuple(declarations), tuple(resources), excluded)
