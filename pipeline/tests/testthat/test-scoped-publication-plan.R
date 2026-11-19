@@ -276,3 +276,89 @@ test_that("the projection source set unions scalar and profile sources", {
   expect_identical(scoped_source_difference(sources, sources)$datasets$source_id,
                    character())
 })
+
+# Scoped publication vs. explicit retirement (#1071) -----------------------------
+# A forward scoped publish REFRESHES the scope ids: they remain in the published
+# scalar projection and are NOT added to the explicit retirement policy. Only a
+# recovery (restoring the generation without the scope) adds them, so the
+# registered scalar publisher removes them by omission. The 29 legacy
+# retirements always arrive via plan$target_snapshot$retired_indicator_ids and
+# are independent of direction. These tests fail if the recovery-only guard is
+# dropped or inverted by a future refactor.
+
+scoped_publish_retirement_plan <- function(direction, scope_id = "scoped_scalar") {
+  empty_sources <- list(
+    datasets = data.frame(source_id = character(), name = character(),
+                          stringsAsFactors = FALSE),
+    vintages = data.frame(
+      source_id = character(), vintage_id = character(), version = character(),
+      reference_date = as.Date(character()),
+      publication_date = as.Date(character()), stringsAsFactors = FALSE))
+  scalar <- scoped_scalar_fixture()
+  list(
+    direction = direction,
+    scope_ids = scope_id,
+    target_dir = tempdir(),
+    profile_owners = character(),
+    reading_owners = character(),
+    target_snapshot = list(
+      scalar = if (identical(direction, "forward")) scalar
+               else retained_baseline_scalar(scalar, scope_id),
+      retired_indicator_ids = c("retired_legacy_a", "retired_legacy_b")),
+    target_sources = empty_sources,
+    retire_sources = empty_sources)
+}
+
+scoped_publish_captured_snapshot <- function(plan) {
+  captured <- new.env(parent = emptyenv())
+  empty_sources <- list(
+    datasets = data.frame(source_id = character(), name = character(),
+                          stringsAsFactors = FALSE),
+    vintages = data.frame(
+      source_id = character(), vintage_id = character(), version = character(),
+      reference_date = as.Date(character()),
+      publication_date = as.Date(character()), stringsAsFactors = FALSE))
+  local_mocked_bindings(
+    .package = "lusk",
+    with_publication_transaction = function(con, expr) force(expr),
+    publish_retained_scalar_snapshot = function(con, snapshot, sortie) {
+      captured$snapshot <- snapshot
+      list()
+    },
+    publier_declared_profiles_postgres = function(...) NULL,
+    scoped_source_retirement = function(plan, absent_sources) empty_sources,
+    retire_unreferenced_source_rows = function(con, datasets, vintages) NULL)
+  publish_scoped_retained_backend(NULL, plan)
+  captured$snapshot
+}
+
+test_that("a forward scoped publish refreshes scope ids without retiring them", {
+  snapshot <- scoped_publish_captured_snapshot(
+    scoped_publish_retirement_plan("forward"))
+  expect_setequal(snapshot$retired_indicator_ids,
+                  c("retired_legacy_a", "retired_legacy_b"))
+  expect_false("scoped_scalar" %in% snapshot$retired_indicator_ids)
+  expect_true("scoped_scalar" %in% snapshot$scalar$descriptors$indicator_id)
+})
+
+test_that("a recovery scoped publish retires scope ids on top of the baseline", {
+  snapshot <- scoped_publish_captured_snapshot(
+    scoped_publish_retirement_plan("recovery"))
+  expect_setequal(snapshot$retired_indicator_ids,
+                  c("retired_legacy_a", "retired_legacy_b", "scoped_scalar"))
+  expect_false("scoped_scalar" %in% snapshot$scalar$descriptors$indicator_id)
+})
+
+test_that("a published indicator listed as retired is never retired by the adapter", {
+  projection <- scoped_scalar_fixture()
+  published <- projection$descriptors$indicator_id
+  live <- c(published, "legacy_only")
+  # Even if a published id were defensively present in the policy, the
+  # completeness guard accepts it and the adapter's retiring set — the
+  # intersection of OMITTED live ids with the policy — excludes it.
+  expect_no_error(assert_complete_scalar_snapshot(
+    live, projection, c("legacy_only", "scoped_scalar")))
+  retired <- intersect(setdiff(live, published),
+                       c("legacy_only", "scoped_scalar"))
+  expect_identical(retired, "legacy_only")
+})

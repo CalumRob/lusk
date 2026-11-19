@@ -24,22 +24,34 @@
 #     aux niveaux des contrats retenus ;
 #   - aucune ligne de la base ne peut référencer un territoire hors univers.
 
+# Un thème porte plusieurs CONTRATS ciblés fermés : chaque contrat garde la
+# même forme (indicators / sources / produce). Le contrat par défaut d'un thème
+# est le premier — l'ancien périmètre ravitaillement reste inchangé. Le contrat
+# Offre TC ajoute la colonne vertébrale d'adresses AEDAR : ce n'est PAS une
+# source de provenance de l'indicateur (le metadata ne déclare que korrigo),
+# mais un fichier épinglé dont dépend son dénominateur (issue #1069).
 scalar_scope_registry <- function() {
   list(
     mobilite = list(
-      indicators = c("stations_service", "stations_service_1000",
-                     "bornes_recharge_1000", "bornes_ev_par_station_service"),
-      sources = c("bpe_b316", "bornes-recharges", "stationnement-velo"),
-      produce = produire_ravitaillement_mobilite
+      list(indicators = c("stations_service", "stations_service_1000",
+                          "bornes_recharge_1000", "bornes_ev_par_station_service"),
+           sources = c("bpe_b316", "bornes-recharges", "stationnement-velo"),
+           produce = produire_ravitaillement_mobilite),
+      list(indicators = "offre_tc",
+           sources = c("korrigo", AEDAR_ADDRESS_ORIGIN_FILE),
+           produce = produire_offre_tc_mobilite)
     )
   )
 }
 
-# parse_scalar_scope ------------------------------------------------------------
-# La sélection d'environnement : "<thème>:<id1>,<id2>,…" — le MÊME format pour
+# parse_scalar_scope_selection --------------------------------------------------
+# Le SEUL parseur de la sélection "<thème>:<id1>,<id2>,…" — le MÊME format pour
 # la cible du graphe et le CLI. Toute sélection vide, inconnue ou dupliquée
-# s'arrête bruyamment : jamais un périmètre deviné.
-parse_scalar_scope <- function(selection) {
+# s'arrête bruyamment : jamais un périmètre deviné. Il est partagé par
+# parse_scalar_scope() et scalar_scope_contract() : ni l'un ni l'autre ne
+# rappelle l'autre. Un appel mutuel fermerait le graphe d'imports du namespace,
+# ferait échouer targets::hash_imports et bloquerait tar_make (#1071).
+parse_scalar_scope_selection <- function(selection) {
   if (!is.character(selection) || length(selection) != 1L || is.na(selection) ||
       !nzchar(trimws(selection)))
     stop("Scalar scope selection is empty", call. = FALSE)
@@ -47,28 +59,70 @@ parse_scalar_scope <- function(selection) {
   if (length(parts) != 2L || !nzchar(parts[[1L]]) || !nzchar(parts[[2L]]))
     stop("Scalar scope selection must be <theme>:<indicator>[,<indicator>…]",
          call. = FALSE)
-  theme <- parts[[1L]]
-  ids <- trimws(strsplit(parts[[2L]], ",", fixed = TRUE)[[1L]])
-  scalar_scope_contract(theme, ids)
+  list(theme = parts[[1L]],
+       indicators = trimws(strsplit(parts[[2L]], ",", fixed = TRUE)[[1L]]))
+}
+
+# parse_scalar_scope ------------------------------------------------------------
+parse_scalar_scope <- function(selection) {
+  parsed <- parse_scalar_scope_selection(selection)
+  scalar_scope_contract(parsed$theme, parsed$indicators)
 }
 
 # scalar_scope_contract ---------------------------------------------------------
 # Résout et VALIDE un périmètre enregistré. La sélection doit être un
 # sous-ensemble non vide des indicateurs enregistrés du thème — jamais un
 # indicateur arbitraire.
+# Une source de périmètre est soit une source du manifeste du thème, soit la
+# colonne vertébrale d'adresses — fichier épinglé hors manifeste mais déclaré
+# comme dépendance de la cible Offre TC. Toute autre chaîne est refusée ici,
+# avant toute matérialisation : un contrat ne peut pas nommer une source qu'il
+# ne sait pas résoudre.
+assert_scalar_scope_sources <- function(theme, sources) {
+  manifest <- get0(paste0("MANIFEST_", toupper(theme)), ifnotfound = NULL)
+  allowed <- if (is.data.frame(manifest)) as.character(manifest$id) else character()
+  allowed <- c(allowed, AEDAR_ADDRESS_ORIGIN_FILE)
+  unknown <- setdiff(as.character(sources), allowed)
+  if (length(unknown))
+    stop("Scalar scope names undeclared sources for ", theme, ": ",
+         paste(sort(unknown), collapse = ", "), call. = FALSE)
+  invisible(TRUE)
+}
+
 scalar_scope_contract <- function(theme, indicator_ids = NULL) {
+  # La sélection complète "<thème>:<ids>" est acceptée telle quelle : on la
+  # découpe AVEC LE MÊME parseur, sans rappeler parse_scalar_scope (sinon les
+  # deux fonctions forment un cycle dans le graphe d'imports de targets).
+  if (is.null(indicator_ids) && is.character(theme) && length(theme) == 1L &&
+      !is.na(theme) && grepl(":", theme, fixed = TRUE)) {
+    parsed <- parse_scalar_scope_selection(theme)
+    theme <- parsed$theme
+    indicator_ids <- parsed$indicators
+  }
   registry <- scalar_scope_registry()
-  contract <- registry[[theme]]
-  if (is.null(contract))
+  entries <- registry[[theme]]
+  if (is.null(entries))
     stop("No registered scalar scope for theme: ", theme, call. = FALSE)
-  if (is.null(indicator_ids)) indicator_ids <- contract$indicators
+  if (!is.list(entries) || !length(entries) || !is.list(entries[[1L]]) ||
+      !all(c("indicators", "sources", "produce") %in% names(entries[[1L]])))
+    entries <- list(entries)
+  if (is.null(indicator_ids)) indicator_ids <- entries[[1L]]$indicators
   if (!is.character(indicator_ids) || !length(indicator_ids) || anyNA(indicator_ids) ||
       any(!nzchar(indicator_ids)) || anyDuplicated(indicator_ids))
     stop("Scalar scope indicator selection is invalid", call. = FALSE)
-  unknown <- setdiff(indicator_ids, contract$indicators)
+  registered <- unique(unlist(lapply(entries, function(entry) entry$indicators),
+                              use.names = FALSE))
+  unknown <- setdiff(indicator_ids, registered)
   if (length(unknown))
     stop("Scalar scope names unregistered indicators for ", theme, ": ",
          paste(sort(unknown), collapse = ", "), call. = FALSE)
+  matching <- entries[vapply(entries, function(entry)
+    all(indicator_ids %in% entry$indicators), logical(1))]
+  if (!length(matching))
+    stop("Scalar scope selection spans incompatible registered contracts for ",
+         theme, ": ", paste(indicator_ids, collapse = ", "), call. = FALSE)
+  contract <- matching[[1L]]
+  assert_scalar_scope_sources(theme, contract$sources)
   list(theme = theme, indicators = indicator_ids, sources = contract$sources,
        produce = contract$produce)
 }
@@ -353,6 +407,62 @@ produire_ravitaillement_mobilite <- function(cache, indicator_ids, metadata,
                                            rangs_combines, territoires, vintages)
   lignes <- lignes[is.na(lignes$detail) & lignes$key %in% indicator_ids, ,
                    drop = FALSE]
+  data.frame(
+    territory_id = as.character(lignes$territoire),
+    territory_type = as.character(lignes$type),
+    indicator_id = as.character(lignes$key),
+    value = as.numeric(lignes$value),
+    unit = as.character(lignes$unit),
+    source_name = as.character(lignes$vintage_source),
+    source_version = as.character(lignes$vintage_version),
+    reference_date = as.character(lignes$vintage_date_reference),
+    publication_date = as.character(lignes$vintage_date_publication),
+    stringsAsFactors = FALSE
+  )
+}
+
+# produire_offre_tc_mobilite -----------------------------------------------------
+# Le producteur ENREGISTRÉ de l'offre TC (#1048 slice 4) : ses DEUX entrées
+# légères — les arrêts Korrigo et la colonne vertébrale d'adresses AEDAR — et
+# RIEN du builder monolithique. L'agrégation aux QUATRE niveaux et la règle de
+# part (Σ part × n_adresses ÷ Σ n_adresses, multiplicite 1) sont celles que
+# INDICATEURS_MOBILITE déclare pour offre_tc : elles viennent de
+# agreger_offre_territoires, jamais d'une seconde arithmétique. Les deux autres
+# blocs de cette fonction sont alimentés par des tableaux vides typés : aucune
+# ligne n'est produite pour eux, seul le bloc offre_tc est retenu.
+produire_offre_tc_mobilite <- function(cache, indicator_ids, metadata, vintages) {
+  if (!identical(as.character(indicator_ids), "offre_tc"))
+    stop("Registered Offre TC producer covers only: offre_tc", call. = FALSE)
+  fiches_korrigo <- MANIFEST_MOBILITE$fichier[MANIFEST_MOBILITE$id == "korrigo"]
+  if (length(fiches_korrigo) != 1L)
+    stop("Mobility source is missing from the manifest: korrigo", call. = FALSE)
+  base_epci <- lire_epci(file.path(cache, "extracted",
+                                   "EPCI_au_01-01-2025.xlsx"))
+  arrets <- normaliser_stops_gtfs(
+    lire_stops_gtfs(file.path(cache, fiches_korrigo)))
+  adresses <- normaliser_adresses_residentielles(
+    lire_adresses_residentielles(file.path(cache, AEDAR_ADDRESS_ORIGIN_FILE)))
+  offre_tc_communes <- calculer_part_proches_arret_communes(arrets, adresses)
+  vide_bornes <- tibble::tibble(commune = character(), nb_bornes = integer())
+  vide_velo <- tibble::tibble(
+    commune = character(), population = numeric(), places = numeric(),
+    places_1000 = numeric(), annee = character())
+  agregat <- agreger_offre_territoires(
+    offre_tc_communes, vide_bornes, vide_velo,
+    base_epci[c("CODGEO", "EPCI", "DEP")])
+  agregat <- agregat[agregat$key == "offre_tc", c("code", "value"), drop = FALSE]
+  territoires <- construire_territoires_mobilite(
+    base_epci,
+    list(mobilite_communes = offre_tc_communes[c("commune", "n_adresses")]))
+  tables <- list(offre_tc = aligner_indicateur_mobilite(
+    territoires, agregat, "offre_tc", "%"))
+  rangs <- compute_ranks(territoires, tables, scalaires = list(),
+                         directions = DIRECTIONS_MOBILITE)
+  rangs_combines <- dplyr::bind_rows(lapply(rangs, function(rang)
+    rang %>% dplyr::mutate(detail = NA_character_)))
+  lignes <- assembler_indicateurs_mobilite(dplyr::bind_rows(tables),
+                                           rangs_combines, territoires, vintages)
+  lignes <- lignes[is.na(lignes$detail) & lignes$key == "offre_tc", , drop = FALSE]
   data.frame(
     territory_id = as.character(lignes$territoire),
     territory_type = as.character(lignes$type),

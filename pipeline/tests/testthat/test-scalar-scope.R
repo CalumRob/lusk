@@ -364,6 +364,7 @@ test_that("la matérialisation ciblée refuse une base périmée (#989)", {
 test_that("la cible du graphe ne dépend que des sources légères du périmètre (#989)", {
   env <- charger_pieces_graphe("scalar_scope_targets")
   env$tar_target_raw <- targets::tar_target_raw
+  env$AEDAR_ADDRESS_ORIGIN_FILE <- AEDAR_ADDRESS_ORIGIN_FILE
   scope <- scalar_scope_contract("mobilite")
   pieces <- env$scalar_scope_targets(scope, cache = "data/raw",
                                      sortie = "../public/data", mode = "full")
@@ -392,4 +393,180 @@ test_that("la cible du graphe ne dépend que des sources légères du périmètr
   commande <- paste(deparse(scope_target$command$expr), collapse = "\n")
   expect_true(grepl("materialize_scoped_scalar_artifact", commande,
                     fixed = TRUE))
+})
+
+# Offre TC : contrat enregistré et intrant suivi (#1071 / #1069) ----------------
+# L'offre TC rejoint le périmètre ciblé avec SON contrat : korrigo comme source
+# de provenance, la colonne vertébrale AEDAR comme fichier épinglé du
+# dénominateur, la multiplicité et la règle d'agrégation déclarées dans
+# INDICATEURS_MOBILITE. Aucune source du ravitaillement ne doit "fuir" dans ce
+# contrat, et le spine doit être une cible `format = "file"` de la fermeture.
+
+test_that("offre_tc est accepté par le contrat de périmètre enregistré (#1071)", {
+  contract <- parse_scalar_scope("mobilite:offre_tc")
+  expect_identical(contract$theme, "mobilite")
+  expect_identical(contract$indicators, "offre_tc")
+  expect_setequal(contract$sources, c("korrigo", AEDAR_ADDRESS_ORIGIN_FILE))
+  expect_identical(contract$produce, produire_offre_tc_mobilite)
+
+  # la forme courte "<thème>:<id>" est acceptée sans découpage manuel
+  expect_identical(scalar_scope_contract("mobilite:offre_tc")$indicators,
+                   "offre_tc")
+  expect_identical(scalar_scope_contract("mobilite", "offre_tc")$indicators,
+                   "offre_tc")
+
+  # le périmètre ravitaillement, lui, reste exactement inchangé
+  default <- scalar_scope_contract("mobilite")
+  expect_setequal(default$indicators,
+                  c("stations_service", "stations_service_1000",
+                    "bornes_recharge_1000", "bornes_ev_par_station_service"))
+  expect_setequal(default$sources,
+                  c("bpe_b316", "bornes-recharges", "stationnement-velo"))
+  expect_false(setequal(contract$sources, default$sources))
+
+  # la multiplicité déclarée de l'indicateur est bien UN
+  expect_identical(
+    INDICATEURS_MOBILITE$multiplicite[INDICATEURS_MOBILITE$key == "offre_tc"],
+    1L)
+})
+
+test_that("une liste de sources délibérément erronée est refusée (#1071)", {
+  expect_error(
+    assert_scalar_scope_sources("mobilite", c("korrigo", "source_inexistante")),
+    "undeclared sources")
+  local_mocked_bindings(
+    .package = "lusk",
+    scalar_scope_registry = function() list(mobilite = list(
+      list(indicators = "offre_tc",
+           sources = c("korrigo", "source_inexistante"),
+           produce = produire_offre_tc_mobilite))))
+  expect_error(parse_scalar_scope("mobilite:offre_tc"), "undeclared sources")
+})
+
+test_that("la fermeture Offre TC porte le spine AEDAR en cible fichier (#1069)", {
+  env <- charger_pieces_graphe("scalar_scope_targets")
+  env$tar_target_raw <- targets::tar_target_raw
+  env$AEDAR_ADDRESS_ORIGIN_FILE <- AEDAR_ADDRESS_ORIGIN_FILE
+  pieces <- env$scalar_scope_targets(parse_scalar_scope("mobilite:offre_tc"),
+    cache = "data/raw", sortie = "../public/data", mode = "full")
+  noms <- vapply(pieces, function(piece) piece$settings$name, character(1))
+
+  expect_true("fichier_scalar_scope_korrigo" %in% noms)
+  expect_true("fichier_scalar_scope_aedar_address_spine" %in% noms)
+  expect_false("fichier_scalar_scope_bpe_b316" %in% noms)
+  expect_false("fichier_scalar_scope_bornes_recharges" %in% noms)
+
+  spine <- pieces[[which(noms == "fichier_scalar_scope_aedar_address_spine")]]
+  expect_identical(spine$settings$format, "file")
+  commande <- paste(deparse(spine$command$expr), collapse = "\n")
+  expect_true(grepl(AEDAR_ADDRESS_ORIGIN_FILE, commande, fixed = TRUE))
+
+  # le spine n'est PAS téléchargé comme une source du manifeste
+  telechargement <- paste(deparse(pieces[[1L]]$command$expr), collapse = "\n")
+  expect_false(grepl(AEDAR_ADDRESS_ORIGIN_FILE, telechargement, fixed = TRUE))
+
+  # la matérialisation dépend effectivement de la cible fichier du spine
+  final <- pieces[[length(pieces)]]
+  expect_true("fichier_scalar_scope_aedar_address_spine" %in% final$deps)
+  expect_true("fichier_scalar_scope_korrigo" %in% final$deps)
+
+  # le périmètre ravitaillement n'acquiert PAS ce intrant supplémentaire
+  ordinaire <- env$scalar_scope_targets(scalar_scope_contract("mobilite"),
+    cache = "data/raw", sortie = "../public/data", mode = "full")
+  noms_ordinaires <- vapply(ordinaire, function(piece) piece$settings$name,
+                            character(1))
+  expect_false("fichier_scalar_scope_aedar_address_spine" %in% noms_ordinaires)
+})
+
+test_that("l'agrégation Offre TC réutilisée est celle à quatre niveaux déclarée (#1071)", {
+  expect_error(
+    produire_offre_tc_mobilite(tempdir(), "stations_service", NULL, NULL),
+    "covers only: offre_tc")
+
+  base <- base_scalar_scope_fixture()
+  offre_tc <- tibble::tribble(
+    ~commune, ~n_adresses, ~part_proche,
+    "22001", 100, 0.5,
+    "22002", 300, 0.8,
+    "29001", 200, 0.2,
+    "29002", 400, 0.6)
+  vide_bornes <- tibble::tibble(commune = character(), nb_bornes = integer())
+  vide_velo <- tibble::tibble(
+    commune = character(), population = numeric(), places = numeric(),
+    places_1000 = numeric(), annee = character())
+  agregat <- agreger_offre_territoires(
+    offre_tc, vide_bornes, vide_velo, base[c("CODGEO", "EPCI", "DEP")])
+  tc <- agregat[agregat$key == "offre_tc", ]
+
+  # communes / EPCIs / départements / région — les QUATRE niveaux du contrat
+  expect_setequal(tc$code,
+                  c(base$CODGEO, "200000001", "200000002", "22", "29", "53"))
+  lire <- function(code) tc$value[tc$code == code]
+  expect_equal(lire("22001"), 0.5)
+  # moyenne PONDÉRÉE par les adresses, jamais moyenne des parts
+  expect_equal(lire("200000001"), (0.5 * 100 + 0.8 * 300) / 400)
+  expect_equal(lire("22"), (0.5 * 100 + 0.8 * 300) / 400)
+  expect_equal(lire("53"),
+               (0.5 * 100 + 0.8 * 300 + 0.2 * 200 + 0.6 * 400) / 1000)
+})
+
+test_that("le producteur ciblé Offre TC produit la forme complète à quatre niveaux (#1071)", {
+  base_epci <- tibble::tribble(
+    ~CODGEO, ~EPCI, ~DEP, ~LIBGEO, ~LIBEPCI,
+    "22001", "200000001", "22", "A", "CA A",
+    "22002", "200000001", "22", "B", "CA A",
+    "29001", "200000002", "29", "C", "CA B",
+    "29002", NA, "29", "D", NA)
+  communes <- tibble::tibble(
+    commune = base_epci$CODGEO,
+    n_adresses = c(100, 300, 200, 400),
+    n_proches = c(50, 240, 40, 240),
+    part_proche = c(0.5, 0.8, 0.2, 0.6))
+  local_mocked_bindings(
+    .package = "lusk",
+    lire_epci = function(path) base_epci,
+    lire_stops_gtfs = function(path) tibble::tibble(
+      stop_lat = numeric(), stop_lon = numeric()),
+    normaliser_stops_gtfs = function(x) x,
+    lire_adresses_residentielles = function(path) NULL,
+    normaliser_adresses_residentielles = function(x) NULL,
+    calculer_part_proches_arret_communes = function(stops, adresses,
+                                                    distance = NULL) communes)
+  rows <- produire_offre_tc_mobilite(
+    tempdir(), "offre_tc", lire_theme_metadata("mobilite"), vintages_mobilite())
+
+  expect_setequal(names(rows),
+                  c("territory_id", "territory_type", "indicator_id", "value",
+                    "unit", "source_name", "source_version", "reference_date",
+                    "publication_date"))
+  expect_setequal(rows$indicator_id, "offre_tc")
+  expect_setequal(rows$territory_type,
+                  c("commune", "epci", "departement", "region"))
+  expect_setequal(rows$territory_id,
+                  c(base_epci$CODGEO, "200000001", "200000002", "22", "29", "53"))
+  expect_setequal(rows$unit, "%")
+  lire <- function(code) rows$value[rows$territory_id == code]
+  expect_equal(lire("200000001"), (0.5 * 100 + 0.8 * 300) / 400)
+  expect_equal(lire("53"),
+               (0.5 * 100 + 0.8 * 300 + 0.2 * 200 + 0.6 * 400) / 1000)
+  # provenance : korrigo uniquement — le spine est un intrant, pas une source
+  expect_true(all(grepl("Korrigo", rows$source_name, fixed = TRUE)))
+})
+
+test_that("le graphe d'imports du namespace lusk reste acyclique (#1071)", {
+  ns <- asNamespace("lusk")
+  # parse_scalar_scope() résout LE contrat ; scalar_scope_contract() ne doit
+  # jamais rappeler le parseur (appel mutuel = cycle, hash_imports échoue et
+  # tar_make ne démarre pas). Le parseur partagé est le seul point de découpe.
+  expect_false("parse_scalar_scope" %in% codetools::findGlobals(
+    get("scalar_scope_contract", envir = ns), merge = TRUE))
+  expect_true("scalar_scope_contract" %in% codetools::findGlobals(
+    get("parse_scalar_scope", envir = ns), merge = TRUE))
+
+  # Le graphe EXACT que targets utilise pour hash_imports() — le même que
+  # tar_network() — doit rester un DAG.
+  aretes <- targets:::edges_envir(ns)
+  graphe <- igraph::simplify(igraph::graph_from_data_frame(aretes))
+  expect_true(igraph::is_dag(graphe))
+  expect_length(igraph::find_cycle(graphe)$vertices, 0L)
 })
