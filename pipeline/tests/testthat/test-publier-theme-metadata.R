@@ -275,8 +275,9 @@ test_that("publier_theme_metadata valide encore les contrats canoniques avant le
 # dans les DEUX contextes. (Le test cross-thème ci-dessous échoue indépendamment et
 # ne couvrait pas ce contournement.)
 test_that("registre story_keys explicitement vide : aucune lecture non déclarée n'est autorisée (#868)", {
-  # mobilite a une lecture same-theme déclarée (acces-aux-services)
-  avec_lecture <- lire_theme_metadata("mobilite")
+  # Le catalogue Mobilité n'a plus de lecture depuis #1048 : on prend un thème
+  # qui en déclare encore une (Démographie) pour éprouver la règle.
+  avec_lecture <- lire_theme_metadata("demographie")
   expect_true(any(vapply(avec_lecture$subgroups, function(g) !is.null(g$reading), logical(1))))
   vide_avec_lecture <- avec_lecture
   vide_avec_lecture$story_keys <- list() # [] explicite
@@ -334,6 +335,14 @@ test_that("la parité registre ↔ métadonnées : chaque thème déclare les st
     meta <- lire_theme_metadata(theme)
     declarees <- unlist(meta$story_keys, use.names = FALSE)
     resolvables <- STORIES_RESOLUES_PAR_THEME[[theme]]$story_key
+    if (identical(theme, "mobilite")) {
+      # #1048 : le pool ADR-0002 reste épinglé comme preuve de la règle, mais
+      # le producteur n'émet plus de lecture — le catalogue ne déclare aucune
+      # story. La parité est donc ROMPUE ici par décision, pas par dérive.
+      expect_length(declarees, 0L)
+      expect_gt(length(resolvables), 0L)
+      next
+    }
     expect_true(setequal(declarees, resolvables), info = theme)
   }
 })

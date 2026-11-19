@@ -23,18 +23,10 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
       metadata$scalar_contracts$stations_service <- NULL
       metadata$scalar_contracts$stations_service_1000 <- NULL
       metadata$scalar_contracts$bornes_recharge_1000 <- NULL
-      # #1048 : l'artefact conservé est l'état AVANT retrait — il porte encore
-      # les faits du snapshot. On projette donc une copie du canon où la
-      # disposition de retrait est effacée, pour que la garde d'exclusion du
-      # snapshot RETENU ait quelque chose à exclure (jamais un test tautologique).
-      for (id in scalar_indicators_with_serving_disposition(
-        metadata, "excluded_legacy_accessibility")) {
-        metadata$scalar_contracts[[id]]$serving_disposition <- NULL
-      }
-      # Les clés sans page (les 15 `share_*`) n'ont jamais eu de contrat de
-      # matérialisation : le snapshot ne les publiait que comme directions.
-      metadata$scalar_contracts <- metadata$scalar_contracts[
-        names(metadata$scalar_contracts) %in% names(metadata$indicator_pages)]
+      # #1048 : les 15 `share_*` n'ont jamais eu de contrat de matérialisation
+      # (le snapshot ne les publiait que comme directions) ; les autres contrats
+      # déclarés `excluded_legacy_accessibility` sont des reçus de retrait, pas
+      # des offres. Le fixture ne projette donc que les contrats retenus.
     }
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
   }
@@ -101,16 +93,42 @@ test_that("legacy service-share source declarations are excluded from retained s
   expect_true(all(snapshot$scalar$provenance$indicator_id %in%
     snapshot$scalar$descriptors$indicator_id))
 
+  # Contôle NON tautologique : on injecte dans l'artefact Mobilité deux ids
+  # retirés, comme le faisait l'artefact conservé avant #1048. La publication
+  # retenue doit les éliminer ; l'assemblage legacy doit les contenir.
+  legacy_dir <- file.path(artifacts, "scalar-serving", "mobilite")
+  legacy <- read_scalar_serving_artifact(legacy_dir)
+  source_id <- "bornes_recharge"
+  injected <- c(share_food_t = "share_food_t", nb_buildings = "nb_buildings")
+  for (grain in c("descriptors", "facts", "provenance")) {
+    rows <- legacy[[grain]]
+    modele <- rows[rows$indicator_id == source_id, , drop=FALSE]
+    stopifnot(nrow(modele) > 0L)
+    doublons <- do.call(rbind, lapply(unname(injected), function(id) {
+      d <- modele; d$indicator_id <- id
+      if (grain == "descriptors") d$comparison_facet <- id
+      d
+    }))
+    legacy[[grain]] <- rbind(rows, doublons)
+  }
+  write_scalar_serving_artifact(legacy, legacy_dir)
+
   legacy_cohorts <- lapply(c("economie", "demographie", "mobilite", "habitat"),
     function(theme) read_scalar_serving_artifact(file.path(artifacts, "scalar-serving", theme)))
   legacy_scalar <- assemble_scalar_snapshot(legacy_cohorts[[1L]], legacy_cohorts[-1L])
   legacy_comparison <- project_scalar_comparisons(legacy_scalar, reference$rows,
     scalar_content_version(legacy_scalar), reference$content_version)
-  legacy_retired <- intersect(excluded, legacy_scalar$descriptors$indicator_id)
-  expect_gt(length(legacy_retired), 0L)
+  legacy_retired <- intersect(unname(injected), legacy_scalar$descriptors$indicator_id)
+  expect_setequal(legacy_retired, unname(injected))
   expect_true(any(legacy_scalar$facts$indicator_id %in% legacy_retired))
   expect_true(any(legacy_scalar$provenance$indicator_id %in% legacy_retired))
   expect_true(any(legacy_comparison$groups$indicator_id %in% legacy_retired))
+  # Le snapshot RETENU reconstruit sur cet artefact empoisonné les élimine
+  # des trois grains — la garde porte bien sur l'exclusion, pas sur l'absence.
+  snapshot_apres <- project_retained_scalar_snapshot(root, reference, artifacts)
+  expect_false(any(snapshot_apres$scalar$descriptors$indicator_id %in% injected))
+  expect_false(any(snapshot_apres$scalar$facts$indicator_id %in% injected))
+  expect_false(any(snapshot_apres$scalar$provenance$indicator_id %in% injected))
 })
 
 test_that("retained scalar retirement is metadata-derived and leaves undeclared omissions strict", {

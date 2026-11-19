@@ -76,9 +76,9 @@ CLES_HISTOIRES_PAR_THEME <- list(
 # le nom du thème dans valider_histoires_resolues().
 #   - programmes : aucun story depuis l'issue #408 (le registre vide le dit) ;
 #   - mobilite : les deux lectures du snapshot ont été retirées en #1048 ; le
-#     slice 2 (#1048) retirera leurs clés du catalogue épinglé, ce qui permettra
-#     d'aligner CLES_HISTOIRES_PAR_THEME$mobilite sur un vecteur vide et de
-#     retirer Mobilité de ce registre.
+#     slice 2 a retiré leurs clés du catalogue épinglé. Mobilité reste dans ce
+#     registre (la table d'histoires publiée est vide, ce que la garde #312 doit
+#     autoriser) ; son pool de RÉSOLUTION reste épinglé pour la preuve ADR-0002.
 THEMES_SANS_LECTURE <- c("mobilite", "programmes")
 
 # lire_theme_metadata / publier_theme_metadata ---------------------------------
@@ -252,9 +252,12 @@ verifier_parite_listes <- function(metadata, indicateurs) {
 # (#311) reprennent.
 # Mobilité est le SEUL pool (ADR-0002) : « vingt-minutes-sans-voiture » est le
 # défaut de chaque territoire, « ce-que-le-velo-preserve » le remplace là où
-# le delta est réel (raison « delta-velo-saillant »). Économie n'a pas de pool :
-# sa story vit dans SON groupe (la lecture de spécialisation des
-# communes/EPCIs/départements).
+# le delta est réel (raison « delta-velo-saillant »). Le slice 2 (#1048) a
+# retiré ces lectures du CATALOGUE, pas du registre de résolution : ce pool
+# reste épinglé pour prouver la règle ADR-0002 et ne peut plus être émis — le
+# producteur ne publie plus de candidats. Économie n'a pas de pool : sa story
+# vit dans SON groupe (la lecture de spécialisation des communes/EPCIs/
+# départements).
 STORIES_RESOLUES_PAR_THEME <- list(
   mobilite = tibble::tibble(
     story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),

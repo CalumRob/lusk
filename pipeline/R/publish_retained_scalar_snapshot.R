@@ -3,7 +3,7 @@
 # members of this snapshot.
 # #1048 (slice 2) : la disposition de retrait vit DANS LE CONTRAT SCALAIRE de
 # chaque indicateur, pas dans un source_record. Le snapshot porté (et sa fiche
-# de source `mobilite_snapshot`) a disparu du catalogue : les 29 ids retirés ne
+# de source dédiée) a disparu du catalogue : les 29 ids retirés ne
 # sont plus déclarés comme sources de référence, mais leurs contrats scalaires
 # restent épinglés avec `excluded_legacy_accessibility` — c'est cette déclaration
 # que le backend lit pour retirer les faits à la publication. Les indicateurs

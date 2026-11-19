@@ -1,11 +1,12 @@
 # test-theme-metadata-pages-mobilite ---------------------------------------------
-# Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les VINGT
-# indicateurs publiés du thème portent chacun leur page scalaire complète —
-# surface_reseaux_routiers, offre_tc, bornes_recharge, places_stationnement_velo_1000,
-# places_stationnement_voiture_1000, bornes_ev_par_station_service,
-# stationnement_velo_par_voiture, tot_loss_t, tot_loss_b et les cinq sœurs
-# iso_* et les six moyennes d'accès du résumé — par des descripteurs épinglés
-# → le seam de publication → les artefacts committés.
+# Les Pages d'indicateur scalaires de la Mobilité (issue #461, rétréci par
+# #1048 slice 2) : les ONZE indicateurs scalaires encore publiés portent chacun
+# leur page scalaire complète — surface_reseaux_routiers, offre_tc,
+# bornes_recharge, les deux stationnements, le ratio EV/fuel, le vélo/voiture,
+# les trois densités de ravitaillement et raccordement_tc — par des descripteurs
+# épinglés → le seam de publication → les artefacts committés. Les 29 pages du
+# snapshot porté ont disparu avec le catalogue ; leurs reçus de retrait vivent
+# dans scalar_contracts (`serving_disposition`).
 #
 # L'énumération est le devoir (le même verrou que les trajectoires #438, les
 # distributions #440, les listes #439 et les relations #441) : une page ajoutée
@@ -13,13 +14,10 @@
 # scalaire qui gonfle ou fond en silence.
 
 PAGES_SCALAIRES_MOBILITE <- c(
-  "nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
+  "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
   "stations_service", "stations_service_1000", "bornes_recharge_1000",
-  "tot_loss_t", "tot_loss_b",
-  "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque",
-  "avg_tot_car", "avg_tot_b", "avg_tot_t", "avg_div_car", "avg_div_b", "avg_div_t",
   "raccordement_tc"
 )
 
@@ -42,25 +40,24 @@ test_that("le périmètre régional publié reflète le résolveur canonique", {
   expect_identical(meta$comparison_scopes$bretagne$label, resolu$label)
 })
 
-test_that("les directions d'accès servies viennent du registre R, pas d'un défaut API (#569)", {
+test_that("le registre de directions d'accès du snapshot retiré a disparu du catalogue (#569, #1048)", {
   meta <- lire_theme_metadata("mobilite")
-  # Les 15 clés `share_*` ne sont plus définies dans le producteur (#1048) : le
-  # catalogue épinglé (slice 2) en reste la source pendant la transition.
-  cles <- names(meta$indicator_directions)
-  expect_length(cles, 15L)
-  expect_true(all(grepl("^share_", cles)))
-  expect_identical(
-    unlist(meta$indicator_directions[cles], use.names = FALSE),
-    unlist(DIRECTIONS_MOBILITE[cles], use.names = FALSE)
-  )
+  # Les 15 clés `share_*` n'étaient que des directions : le slice 2 retire le
+  # registre avec les pages. La garde n'est pas une exemption — elle vérifie
+  # que R et le canon sont ensemble sur l'absence de ces clés.
+  expect_length(meta$indicator_directions, 0L)
+  expect_false(any(grepl("^share_", names(meta$indicator_directions))))
+  expect_false(any(grepl("^share_", names(DIRECTIONS_MOBILITE))))
+  # Le validateur croise toujours les directions déclarées : en réintroduire
+  # une échoue FORT au lieu de réapparaître en silence.
   meta$indicator_directions$share_health_t <- "low"
   expect_error(
     valider_theme_metadata(meta, directions_module = DIRECTIONS_MOBILITE),
-    "indicator_directions.share_health_t"
+    "indicator_directions"
   )
 })
 
-test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les vingt scalaires (#461)", {
+test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les onze scalaires (#461, #1048)", {
   meta <- lire_theme_metadata("mobilite")
   cles <- names(meta$indicator_pages)
   expect_setequal(
@@ -72,9 +69,10 @@ test_that("l'énumération des pages Mobilité est connue — les pages multi-me
   scalaires <- cles[vapply(meta$indicator_pages, function(p)
     identical(p$family, "scalar"), logical(1L))]
   expect_setequal(scalaires, PAGES_SCALAIRES_MOBILITE)
+  expect_false(any(INDICATEURS_MOBILITE_RETIRES %in% cles))
 })
 
-test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses vingt pages scalaires complètes (#461)", {
+test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses onze pages scalaires complètes (#461, #1048)", {
   meta <- lire_theme_metadata("mobilite")
   expect_no_error(valider_theme_metadata(meta))
   expect_true("region" %in% unlist(meta$indicator_pages$voitures_menage$levels))
@@ -303,7 +301,7 @@ test_that("les profils Mobilité Bretagne sont déclarés complets pour les agr�
                                   use.names = FALSE))
 })
 
-test_that("publier_theme_metadata : les vingt pages passent le seam et survivent au round-trip (#461)", {
+test_that("publier_theme_metadata : les onze pages passent le seam et survivent au round-trip (#461, #1048)", {
   meta <- lire_theme_metadata("mobilite")
   sortie <- file.path(tempdir(), "pages-scalaires-mobilite")
   dir.create(sortie, showWarnings = FALSE)
@@ -317,7 +315,13 @@ test_that("publier_theme_metadata : les vingt pages passent le seam et survivent
     expect_identical(page$family, "scalar", info = cle)
     expect_true(page$direction %in% c("high", "low"), info = cle)
   }
-  expect_length(meta$scalar_contracts, length(PAGES_SCALAIRES_MOBILITE))
+  # #1048 : 11 contrats de page retenus + 29 reçus de retrait (dont les 15
+  # `share_*` qui n'ont jamais eu de page scalaire).
+  expect_length(meta$scalar_contracts,
+                length(PAGES_SCALAIRES_MOBILITE) + length(INDICATEURS_MOBILITE_RETIRES))
+  expect_setequal(
+    setdiff(names(meta$scalar_contracts), INDICATEURS_MOBILITE_RETIRES),
+    PAGES_SCALAIRES_MOBILITE)
   expect_length(meta$profile_contracts, 4L)
   expect_identical(meta$map_layers, list(
     offre_tc = TRUE,
