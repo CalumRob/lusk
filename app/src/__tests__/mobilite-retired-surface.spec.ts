@@ -64,7 +64,7 @@ describe('tolérance des histoires — une table vide ou inconnue ne bloque pas 
       salience_reason: 'defaut',
     }
     const payload = parsePayload(documents([...histoiresDemographieFixture, legacy]))
-    expect(payload.histoires.every((h) => h.theme !== 'mobilite')).toBe(true)
+    expect(payload.histoires.every((h) => (h.theme as string) !== 'mobilite')).toBe(true)
     expect(payload.histoires).toHaveLength(histoiresDemographieFixture.length)
   })
 

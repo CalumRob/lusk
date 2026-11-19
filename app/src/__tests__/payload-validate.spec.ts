@@ -838,7 +838,7 @@ describe('parsePayload — le thème Mobilité sans lecture (#1048 slice 3)', ()
     const payload = parsePayload(documentsMobilite())
 
     expect(payload.indicateurs).toHaveLength(indicateursMobiliteFixture.length)
-    expect(payload.histoires.filter((h) => h.theme === 'mobilite')).toEqual([])
+    expect(payload.histoires.filter((h) => (h.theme as string) === 'mobilite')).toEqual([])
   })
 
   it('ignore une ligne d’histoire résiduelle encore servie avant le republish', () => {
