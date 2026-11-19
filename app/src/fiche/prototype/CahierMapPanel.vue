@@ -70,6 +70,11 @@ async function onLoad(event: Event): Promise<void> {
 }
 
 .map-viewport img {
+  /* Absolutely fill the circular plate: an in-flow grid item would size its
+     auto track to the raster's intrinsic width, so a small frozen asset would
+     shrink to a disc inside the plate instead of filling and clipping to it. */
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
