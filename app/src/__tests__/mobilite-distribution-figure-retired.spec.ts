@@ -29,10 +29,14 @@ describe('figure de distribution Mobilité — retirée avec son snapshot (#1048
 
   it('aucun fichier source ne réintroduit la figure ni ses champs retirés', () => {
     const coupables: string[] = []
+    // Walk recursively: the figure's former importers lived in fiche/prototype,
+    // a nested directory the old flat scan never reached.
     const parcourir = (directory: string): void => {
-      for (const entree of fichiers(directory)) {
-        const chemin = `${directory}/${entree}`
-        if (entree.endsWith('.ts') || entree.endsWith('.vue')) {
+      for (const entree of readdirSync(src(directory), { withFileTypes: true })) {
+        const chemin = `${directory}/${entree.name}`
+        if (entree.isDirectory()) {
+          parcourir(chemin)
+        } else if (entree.name.endsWith('.ts') || entree.name.endsWith('.vue')) {
           const contenu = lire(chemin)
           if (RETIRES.some((jeton) => contenu.includes(jeton))) coupables.push(chemin)
         }
@@ -40,7 +44,6 @@ describe('figure de distribution Mobilité — retirée avec son snapshot (#1048
     }
     parcourir('components/fiche')
     parcourir('fiche')
-    parcourir('fiche/content')
     parcourir('payload')
     expect(coupables).toEqual([])
   })
