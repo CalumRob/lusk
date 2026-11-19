@@ -98,4 +98,57 @@ export function reflowVisibleFigureTracks(root: HTMLElement): void {
       figure.element.style.setProperty('justify-self', 'center', 'important')
     }
   }
+  // A reflowed figure is more than its plates: a title/caption band above them
+  // and a legend/scale band below. Those bands keep their own authored
+  // alignment and can sit off the axis the plates were centred on. Centre every
+  // full-width band on that same body axis by a pure horizontal translation.
+  // Generic — no per-section selectors — and only for figure blocks that are
+  // actually on the body axis, so an uncentred (unreflowed) block is untouched.
+  const axes: { layout: HTMLElement; axis: number }[] = []
+  const pinned = new Set<Element>(plans.flatMap((plan) => plan.figures.map((figure) => figure.element)))
+  for (const plan of plans) {
+    void plan.layout.offsetWidth
+    const boxes = plan.figures.map((figure) => figure.element.getBoundingClientRect())
+    axes.push({ layout: plan.layout,
+      axis: (Math.min(...boxes.map((box) => box.left)) + Math.max(...boxes.map((box) => box.right))) / 2 })
+  }
+  for (const layout of layouts) {
+    if (axes.some((entry) => entry.layout === layout)) continue
+    // An attribute-scoped layout whose export prose is hidden is reflowed by
+    // the export surface even when its own tracks stay authored (the owner's
+    // figure grid collapses its emptied track itself).
+    const hiddenProse = [...layout.querySelectorAll<HTMLElement>(surface.proseSelector)]
+      .some((element) => getComputedStyle(element).display === 'none')
+    if (!hiddenProse) continue
+    const plates = [...layout.querySelectorAll<HTMLImageElement>('img')]
+      .filter((img) => getComputedStyle(img).display !== 'none')
+      .map((img) => img.getBoundingClientRect())
+      .filter((box) => box.width > 1 && box.height > 1)
+    if (!plates.length) continue
+    axes.push({ layout,
+      axis: (Math.min(...plates.map((box) => box.left)) + Math.max(...plates.map((box) => box.right))) / 2 })
+  }
+  for (const { layout, axis } of axes) {
+    const layoutBox = layout.getBoundingClientRect()
+    if (Math.abs(axis - (layoutBox.left + layoutBox.width / 2)) > 1) continue
+    const block = layout.closest('figure') ?? layout
+    const bands = new Set<HTMLElement>()
+    for (const parent of new Set<Element>([block, layout])) {
+      for (const child of [...parent.children]) {
+        if (!(child instanceof HTMLElement) || pinned.has(child)) continue
+        if (getComputedStyle(child).display === 'none') continue
+        // A plate block carries raster ink; a band does not.
+        if (child.querySelector('img')) continue
+        if (!(child.innerText ?? child.textContent ?? '').trim()) continue
+        bands.add(child)
+      }
+    }
+    for (const band of bands) {
+      const box = band.getBoundingClientRect()
+      const dx = axis - (box.left + box.width / 2)
+      if (Math.abs(dx) <= 0.5) continue
+      band.style.setProperty('transform', `translateX(${dx}px)`, 'important')
+      band.style.setProperty('text-align', 'center', 'important')
+    }
+  }
 }

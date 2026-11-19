@@ -310,6 +310,13 @@ pinning every figure's pre-pass width, height and mutual gap. Only the block's
 position changes; no figure is stretched or shrunk. No layout class name
 participates and there is one mechanism only.
 
+The same pass also centres the figure's *bands* — the title/caption, any
+subtitle or unit line, and the legend/scale band — on the axis of the reflowed
+plate grid. Bands are recognised generically as the non-figure, text-bearing
+children of the figure block and the layout; each is translated horizontally
+only, with no per-section selectors. A figure block whose plates are not on the
+body axis is left untouched, so unreflowed sections keep their exact rendering.
+
 Declarations: the five AEDAR section bodies and the Mobilité
 `mobilite-section-spread` wrappers; the diversity-loss layout and the access
 evidence grid declare it on their inner container. Legitimate non-declarations:

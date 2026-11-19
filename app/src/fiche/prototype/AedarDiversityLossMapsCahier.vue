@@ -207,9 +207,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 <style scoped>
 .aedar-diversity-loss { display: grid; gap: var(--space-4); width: 100%; margin: 0; container-type: inline-size; }
 .aedar-diversity-loss__introduction { width: 100%; }
-/* The 2x2 map grid is centred in the body; a 72%-wide left-pinned title sat
-   off-centre above it. Full width centres the title over the reflowed block. */
-.aedar-diversity-loss > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
+.aedar-diversity-loss > .cahier-figure-title { width: 72%; margin: 0; text-align: center; }
 .aedar-diversity-loss__layout { --aedar-loss-columns: repeat(2, minmax(0, 1fr)) minmax(12rem, .8fr); display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-5), 4vw, var(--space-8)) clamp(var(--space-3), 2vw, var(--space-6)); }
 .aedar-diversity-loss__comparisons { display: grid; grid-column: 1 / -1; gap: clamp(var(--space-5), 4vw, var(--space-8)); }
 /* auto-fit collapses the trailing prose track when the export shell hides

@@ -81,4 +81,54 @@ describe('real-data PDF defect regressions (#1025)', () => {
     vi.restoreAllMocks()
   })
 
+  it('centres every band of a reflowed figure on the pinned plate axis', () => {
+    document.body.innerHTML = `<div id="root"><figure id="block">
+      <figcaption id="title">Titre de la figure</figcaption>
+      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr 1fr">
+        <div id="prose"><p class="argument-copy">Texte</p></div>
+        <figure id="plate"><svg></svg></figure>
+        <div id="legend">Légende : faible — forte</div>
+      </div>
+    </figure></div>`
+    const root = document.getElementById('root') as HTMLElement
+    const title = document.getElementById('title') as HTMLElement
+    const legend = document.getElementById('legend') as HTMLElement
+    const prose = document.getElementById('prose') as HTMLElement
+    const boxes = new WeakMap<Element, { x: number; width: number }>([
+      [document.getElementById('spread')!, { x: 100, width: 200 }], // body axis = 200
+      [document.getElementById('plate')!, { x: 100, width: 200 }], // plate axis = 200
+      [title, { x: 40, width: 100 }],   // centre 90  -> dx +110
+      [legend, { x: 50, width: 60 }],   // centre 80  -> dx +120
+      [prose, { x: 0, width: 100 }],
+    ])
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const b = boxes.get(this) ?? { x: 0, width: 0 }
+      return { x: b.x, y: 0, top: 0, left: b.x, right: b.x + b.width,
+        bottom: 80, width: b.width, height: 80, toJSON() {} } as DOMRect
+    })
+    reflowVisibleFigureTracks(root)
+    expect(prose.style.display).toBe('none')
+    // The title band lives outside the reflowed layout; the legend band lives
+    // inside it. Both are centred generically on the same axis as the plates.
+    expect(title.style.textAlign).toBe('center')
+    expect(title.style.transform).toBe('translateX(110px)')
+    expect(legend.style.textAlign).toBe('center')
+    expect(legend.style.transform).toBe('translateX(120px)')
+    vi.restoreAllMocks()
+  })
+
+  it('leaves every band untouched when the container is not reflowed', () => {
+    document.body.innerHTML = `<div id="root"><figure id="block">
+      <figcaption id="title">Titre</figcaption>
+      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr">
+        <figure id="plate"><svg></svg></figure>
+      </div>
+    </figure></div>`
+    const root = document.getElementById('root') as HTMLElement
+    const title = document.getElementById('title') as HTMLElement
+    reflowVisibleFigureTracks(root)
+    expect(title.style.transform).toBe('')
+    expect(title.style.textAlign).toBe('')
+  })
+
 })
