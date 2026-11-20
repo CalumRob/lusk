@@ -358,3 +358,90 @@ atomic transaction. The operator still needs the private publisher role, the
 maintenance window, and the guard; the verified canonical recovery copy above
 is the approved backup path. This document does not perform the production
 publication.
+
+## One-off offre_tc serving bridge (#1071, epic #1048)
+
+The normal scoped path above is unchanged and remains the first choice: it
+requires `LUSK_SCALAR_BASELINE_SORTIE`, the exact generation the serving DB was
+published from. For the one-off publication of the **address-based `offre_tc`**
+and the **29 owner-retired legacy accessibility ids**, that counterpart
+generation no longer exists (the live markers are from a generation whose
+artifacts were not kept). Rebuilding it would mean regenerating or overwriting
+the serving tables, which the guard deliberately forbids.
+
+For **that one publication only**, `pipeline/R/publish_serving_bridge.R` builds a
+new scalar snapshot in R from the **live serving rows** plus the freshly built
+`offre_tc` facts (`produire_offre_tc_mobilite()`), removes the 29 retirements,
+and writes rows + markers through the **existing registered publishers and
+adapters** in **one publication transaction**. The Hash chain is not
+reimplemented in SQL: the new scalar token is `scalar_content_version()`
+(`md5(saveRDS(projection, version = 3))`), the comparison token comes from
+`project_scalar_comparisons()`, and the chained declared-profile binding
+(`required_scalar_version`) and Habitat `linked_content_version` are rebound
+from the verified live tokens.
+
+### Guards (all refuse with zero writes)
+
+1. **Round-trip proof** â€” every indicator other than `offre_tc` and the 29
+   retired ids must be identical as data (facts, descriptors, provenance)
+   between the live rows read back and the new projection.
+2. **Live markers** â€” the five tokens supplied by the operator
+   (`LUSK_BRIDGE_EXPECT_SCALAR`, `_COMPARISON`, `_PROFILE`, `_HABITAT`,
+   `_REFERENCE`) must equal the live marker inventory, including the chained
+   input fields.
+3. **`--dry-run`** prints the new tokens and the per-indicator diff and writes
+   nothing.
+4. **Dump acknowledgement** â€” the write command refuses unless
+   `LUSK_BRIDGE_DUMP_CONFIRMED=<path-or-id>` confirms a verified `pg_dump` of the
+   affected tables. The tool does not take or restore the dump.
+5. **Credentials** â€” host/database/role come from `LUSK_PUBLISH_HOST`,
+   `LUSK_PUBLISH_DATABASE`, `LUSK_PUBLISH_USER` (optional `_PORT`); the password
+   comes only from the private libpq passfile (`PGPASSFILE`, never inside the
+   repository).
+
+The fresh facts are supplied as a private RDS/CSV path in
+`LUSK_BRIDGE_OFFRE_TC_FACTS` (the producer row shape: territory, indicator,
+value, unit and source/vintage stamps). The retirement policy is derived from
+the canonical metadata contracts, not copied into the tool.
+
+### Operator sequence
+
+```powershell
+# From pipeline/, after a verified dump and the maintenance window:
+$env:LUSK_BRIDGE_EXPECT_SCALAR = '<live scalar token>'
+$env:LUSK_BRIDGE_EXPECT_COMPARISON = '<live comparison token>'
+$env:LUSK_BRIDGE_EXPECT_PROFILE = '<live declared-profile token>'
+$env:LUSK_BRIDGE_EXPECT_HABITAT = '<live Habitat selected-reading token>'
+$env:LUSK_BRIDGE_EXPECT_REFERENCE = '<live territory-reference token>'
+$env:LUSK_BRIDGE_OFFRE_TC_FACTS = '<private path to fresh offre_tc producer rows>'
+$env:LUSK_PUBLISH_HOST = '<serving host>'; $env:LUSK_PUBLISH_DATABASE = 'lusk'
+$env:LUSK_PUBLISH_USER = 'lusk_publisher'; $env:PGPASSFILE = '<private pgpass>'
+
+Rscript scripts/publish-serving-tables.R --offre-tc-bridge-dry-run
+# review: changes only to offre_tc values + the 29 retirements
+$env:LUSK_BRIDGE_DUMP_CONFIRMED = '<dump path or id>'
+Rscript scripts/publish-serving-tables.R --offre-tc-bridge
+```
+
+### Limits â€” what this is NOT
+
+- It is **not** a new publication path and does **not** change the #1068 scoped
+  guard or `#publish` semantics. `publish_scoped_retained_backend()` still
+  requires `LUSK_SCALAR_BASELINE_SORTIE`; this bridge is a separate, guarded,
+  one-off command for the lost-baseline case only.
+- It does **not** repair or recreate the lost artifacts, and does **not** add
+  per-indicator/per-theme versioning to the serving tables (the underlying
+  design problem, left for a follow-up). The scalar tables remain whole-table
+  snapshots.
+- It rewrites only the scalar snapshot/comparison and the two chained
+  descriptor fields. Demographic, economy, Milieux, owned-series, profile
+  *facts* and the Habitat selected-reading rows are neither expectations nor
+  writes; their markers stay as they were.
+- It has **no built-in rollback**: recovery is the operator's verified dump.
+  A failure mid-write rolls the whole transaction back.
+- Tests never touch the serving database. The pure fixtures run by default;
+  the write proof is a separate guarded test that skips unless
+  `LUSK_BRIDGE_TEST_*` names the disposable `lusk_it_contract` target and the
+  shared mutex is held (see `api/tests/integration/README.md`). The operator
+  performs the real publication and captures the retirement receipt.
+
