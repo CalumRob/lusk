@@ -266,6 +266,19 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     }
   })
 
+  it('keeps the overview action pending while its displayed comparison is still loading', () => {
+    const publications = readyPublications('aedar-car-overview')
+    // The group label is already displayed from the direct reference, but the
+    // aggregate read the overview ranks consume is still in flight (#1023 C).
+    expect(blockReason(capturePdfFixture('aedar-car-overview', {
+      comparisonStatus: 'loading', publications,
+    }))).toBe('comparison-loading')
+    // Settled to ready: the action enables and the served ranks can be captured.
+    expect(evaluerDisponibiliteExportPdf(capturePdfFixture('aedar-car-overview', {
+      comparisonStatus: 'ready', publications,
+    }))).toEqual({ ready: true })
+  })
+
   it('blocks a pending source clock while allowing explicit unavailable scalar cells', () => {
     expect(blockReason(capturePdfFixture('aedar-car-overview', {
       evidencePatch: { sourcePending: true },

@@ -143,9 +143,8 @@ if (process.env.CAHIER_PDF_GATE_SELFTEST === '1') {
   process.exit(0)
 }
 
-await page.goto(`${origin}/territoire/${type}/${code}?theme=mobilite#${chapters[0].anchor}`, {
-  waitUntil: 'domcontentloaded', timeout: 60000,
-})
+// The activation timeline performs the first navigation itself, so a cold
+// load is measured with no stale DOM from a previous goto.
 
 async function readActions() {
   return page.evaluate(() => [...document.querySelectorAll('.cahier-pdf-action')].map((action) => {
@@ -374,6 +373,58 @@ async function audit(file, key, expectedValues = [], expectedIdentity = '', expe
   }
 }
 
+// The guarantee comes from the production action (#1023 C): it must never be
+// exportable while the comparison it captures is still busy. Drive that
+// timeline from a cold page load and gate every premature-ready tick.
+async function driveActivationTimeline(territory) {
+  const key = 'aedar-car-overview'
+  const [territoryType, territoryCode] = territory.split('/')
+  const t0 = Date.now()
+  const marks = { territory, comparisonPendingAt: null, firstReadyAt: null, ranksAt: null, prematureReadyTicks: 0, prematureRun: 0 }
+  await page.goto(`${origin}/territoire/${territoryType}/${territoryCode}?theme=mobilite#figure-lecture`, {
+    waitUntil: 'domcontentloaded', timeout: 60000,
+  })
+  for (let i = 0; i < 120; i += 1) {
+    const s = await page.evaluate((sectionKey) => {
+      const section = document.querySelector(`[data-section="${sectionKey}"]`)
+      const button = section?.querySelector('.cahier-pdf-action__button')
+      const reason = section?.querySelector('.cahier-pdf-action__reason')?.textContent?.trim() ?? ''
+      return {
+        ready: !!button && button.getAttribute('aria-disabled') !== 'true',
+        ariaDisabled: button?.getAttribute('aria-disabled') ?? null,
+        reason, comparisonBusy: /comparaison.*chargement/i.test(reason),
+        ranks: section?.querySelectorAll('.cahier-rank-ink').length ?? 0,
+      }
+    }, key)
+    if (s.comparisonBusy && marks.comparisonPendingAt === null) marks.comparisonPendingAt = Date.now() - t0
+    if (s.ranks > 0 && marks.ranksAt === null) marks.ranksAt = Date.now() - t0
+    if (s.ready && marks.firstReadyAt === null) marks.firstReadyAt = Date.now() - t0
+    // A single pre-hydration render can expose the button before the capture
+    // is evaluated. Require a sustained window (>= 2 samples) to flag it; the
+    // original half-loaded window lasted several seconds.
+    if (s.ready && s.ranks === 0) {
+      marks.prematureRun += 1
+      if (marks.prematureRun >= 2) marks.prematureReadyTicks += 1
+      marks.prematureSample = { at: Date.now() - t0, ariaDisabled: s.ariaDisabled, reason: s.reason }
+    } else {
+      marks.prematureRun = 0
+    }
+    if (s.ready && s.ranks > 0) break
+    await page.waitForTimeout(250)
+  }
+  if (marks.prematureReadyTicks > 0) {
+    gateFailures.push(`activation: action exported ${marks.prematureReadyTicks} tick(s) before served ranks arrived`)
+  }
+  if (marks.ranksAt === null || marks.firstReadyAt === null) {
+    gateFailures.push('activation: overview never reached a complete, exportable state')
+  }
+  if (marks.comparisonPendingAt === null) {
+    gateFailures.push('activation: the busy comparison never offered its honest pending reason')
+  }
+  console.log('ACTIVATION ' + JSON.stringify(marks))
+  return marks
+}
+
 // Production-path interaction checks that do not alter served data. The
 // comparison loading/empty states are deliberately NOT driven here: reaching
 // them would require replacing the read-only API response for the comparison
@@ -444,7 +495,9 @@ const territories = (process.env.CAHIER_PDF_TERRITORIES || `${type}/${code}`)
   .split(',').map((value) => value.trim()).filter(Boolean)
 const results = []
 let interactions = {}
+let activation = {}
 try {
+  activation = await driveActivationTimeline(territories[0])
   interactions = await driveInteractions()
   console.log('INTERACTIONS ' + JSON.stringify(interactions))
   for (const [check, passed] of Object.entries(interactions)) {
@@ -510,6 +563,7 @@ try {
   }))
   const receipt = {
     territories,
+    activation,
     interactions,
     origin,
     canonicalHost,

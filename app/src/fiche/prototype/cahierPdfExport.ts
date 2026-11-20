@@ -215,6 +215,17 @@ function comparisonBlockReason(
     }
   }
 
+  // A comparison can already be DISPLAYED (its group label comes from the
+  // settled direct reference) while the aggregate read the very same overview
+  // scalars consume is still loading. In that window the ranks are not yet
+  // published: exporting then captures half-loaded comparison facts, prints
+  // `—` and paints the loading affordance. Wait for completeness (#1023 C).
+  // `error` is a settled observation and keeps its existing honest handling;
+  // only an in-flight read blocks here.
+  if (comparisonRelevant(comparison) && comparison.status === 'loading') {
+    return 'comparison-loading'
+  }
+
   // The direct-reference status is the owner's separate observation. An
   // `unobserved` direct reference must never be read as `no-served-reference`.
   return referenceBlockReason(comparison)
