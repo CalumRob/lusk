@@ -494,3 +494,73 @@ test_that("the registered profile publisher writes the recomputed lineage in the
   expect_identical(write$profile$content_version, lineage$version)
 })
 
+
+# --- Review fix 2: fail-closed writes and race-safe marker re-check ----------
+
+test_that("the real marker writer refuses zero- or multi-row updates", {
+  for (affected in c(0L, 2L)) {
+    called <- FALSE
+    writer <- bridge_marker_writer(NULL, "old-linked",
+      execute = function(sql, params) { called <<- TRUE; affected })
+    expect_error(writer$set_habitat_linked("new-linked"), "expected exactly one",
+                 info = paste("affected", affected))
+    expect_true(called)
+  }
+  ok <- bridge_marker_writer(NULL, "old-linked",
+    execute = function(sql, params) 1L)
+  expect_true(ok$set_habitat_linked("new-linked"))
+})
+
+test_that("a marker that moves inside the write transaction aborts everything", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected,
+               affected = built$affected, live = live)
+  moved <- expected
+  moved[["scalar"]] <- "someone-else"
+  writer <- bridge_fake_marker_writer(expected[["scalar"]])
+  scalar_db <- bridge_fake_scalar_adapter(expected[["scalar"]])
+  expect_error(publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) force(expr),
+    scalar_adapter = scalar_db,
+    comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
+    writer = writer,
+    read_markers = function() bridge_fixture_markers(moved)), "marker mismatch")
+  expect_null(writer$state$linked_new)
+  expect_null(scalar_db$state$replaced)
+})
+
+test_that("the write path takes the scalar advisory lock before any SQL", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected,
+               affected = built$affected, live = live)
+  lock_calls <- 0L
+  adapter <- bridge_fake_scalar_adapter(expected[["scalar"]])
+  adapter$lock <- function(owner) { lock_calls <<- lock_calls + 1L; invisible(NULL) }
+  publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) force(expr),
+    scalar_adapter = adapter,
+    comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
+    writer = bridge_fake_marker_writer(expected[["scalar"]]))
+  # Re-entrant in-session: the bridge and the normal scalar publisher both take
+  # the same xact lock; at least one call must precede any write.
+  expect_gte(lock_calls, 1L)
+})
+

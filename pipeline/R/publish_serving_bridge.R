@@ -449,13 +449,14 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
 # is written by the NORMAL registered profile publisher together with its
 # recomputed hash lineage. The WHERE clause uses the verified live linked token,
 # so a concurrent move breaks the UPDATE and the whole transaction rolls back.
-bridge_marker_writer <- function(con, old_linked) {
+bridge_marker_writer <- function(con, old_linked, execute = NULL) {
+  exec <- if (is.null(execute)) function(sql, params) DBI::dbExecute(con, sql, params = params) else execute
   list(
     set_habitat_linked = function(new_linked) {
-      changed <- DBI::dbExecute(con, paste(
+      changed <- exec(paste(
         "UPDATE selected_reading_descriptor SET linked_content_version=$1",
         "WHERE linked_content_version=$2"),
-        params = list(new_linked, old_linked))
+        list(new_linked, old_linked))
       if (!identical(as.integer(changed), 1L))
         stop("Habitat linked-token rebind affected ", changed,
              " rows; expected exactly one. REFUSED, rolling back.", call. = FALSE)
@@ -468,18 +469,28 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
                                     scalar_adapter = NULL,
                                     comparison_adapter = NULL,
                                     profile_adapter = NULL,
-                                    writer = NULL) {
+                                    writer = NULL, read_markers = NULL, read_live = NULL) {
   if (is.null(scalar_adapter)) scalar_adapter <- scalar_postgres_adapter(con)
   if (is.null(comparison_adapter)) comparison_adapter <- scalar_comparison_postgres_adapter(con)
   if (is.null(profile_adapter)) profile_adapter <- profile_postgres_adapter(con)
-  if (is.null(writer))
-    writer <- bridge_marker_writer(
-      con, plan$markers$selected_descriptor$linked_content_version[[1L]])
+  if (is.null(read_markers)) read_markers <- function() plan$markers
   registry <- register_scalar_publisher(list(), "bridge_scalar_snapshot",
     project = function(canonical) canonical,
     publish = function(projection, db, version) db$replace(projection, version))
 
   transaction(con, {
+    # The scalar publisher's own advisory lock helper (pg_advisory_xact_lock
+    # 594,1) serialises this whole write, is re-entrant in-session and is held
+    # until commit. Re-read the markers under that lock: a token that moved
+    # since the dry-run aborts before the first write.
+    scalar_adapter$lock("scalar_observation")
+    fresh_markers <- read_markers()
+    assert_bridge_markers(fresh_markers, expected)
+    if (!is.null(read_live))
+      assert_bridge_round_trip(read_live(), plan$projection, plan$affected)
+    if (is.null(writer))
+      writer <- bridge_marker_writer(
+        con, fresh_markers$selected_descriptor$linked_content_version[[1L]])
     # The normal scalar publisher owns the whole-table replace and the explicit
     # retirement policy (including the retired indicators' comparison lineage).
     scalar <- publish_registered_scalar(
@@ -536,7 +547,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 read_markers = NULL,
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
-                                publish = publish_bridge_snapshot) {
+                                publish = publish_bridge_snapshot, lock = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
   if (is.null(con)) {
@@ -546,6 +557,19 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
     con <- connect(config)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
   }
+  # Hold the scalar advisory lock (same key as the registered scalar publisher)
+  # from BEFORE the guard reads until after the write, so no token can move
+  # between inspection and commit. Injected fake connections in pure tests do
+  # not execute SQL.
+  if (is.null(lock)) lock <- function(con) {
+    if (inherits(con, "fake-con")) invisible(NULL)
+    else DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
+  }
+  lock(con)
+  on.exit({
+    if (!inherits(con, "fake-con"))
+      try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
+  }, add = TRUE)
   scope <- bridge_scope()
   if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)
 
@@ -579,7 +603,9 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   if (identical(mode, "dry-run")) return(invisible(plan))
   assert_bridge_publish_opt_in(env)
   assert_bridge_dump_confirmed(env)
-  publish(con, plan, retired_ids, expected)
+  publish(con, plan, retired_ids, expected,
+          read_markers = read_markers,
+          read_live = function() read_live_scalar_projection(con, reader = live_reader))
 }
 
 
