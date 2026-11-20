@@ -5,7 +5,19 @@ address a Cellule from producer declarations alone, without parsing a key,
 guessing a label or hardcoding a default.
 """
 
-from api.resource_catalogue import default_resource_catalogue
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from api import main
+from api.resource_catalogue import (default_resource_catalogue,
+                                    discover_indicator_resources,
+                                    validate_resource_item)
+from api.resource_requests import ResourceReadItem
+
+METADATA = Path(__file__).parents[2] / "pipeline/inst/extdata/theme-metadata"
 
 
 def _public(resource_id):
@@ -122,6 +134,72 @@ def test_valid_combinations_are_explicit_not_inferred():
     assert {"detail": "<15", "sex": "F"} in age
     assert {"detail": "80+", "sex": "M"} in age
     assert _public("densite")["cellule"]["valid_combinations"] == [{}]
+
+
+def _restricted_catalogue(tmp_path):
+    """A producer declaration where only one age/sex combination exists."""
+    for metadata in METADATA.glob("theme_*.json"):
+        (tmp_path / metadata.name).write_bytes(metadata.read_bytes())
+    path = tmp_path / "theme_demographie.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    metadata["indicator_pages"]["structure_age"]["cellule"] = {
+        "valid_combinations": [{"detail": "<15", "sex": "F"}],
+    }
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+    return discover_indicator_resources(tmp_path)
+
+
+def _age_request(detail, sex):
+    return ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "coordinates": {"detail": [detail], "sex": [sex]},
+        "intent": {"kind": "facts"},
+    })
+
+
+def test_undeclared_coordinate_combination_is_rejected_by_name(tmp_path):
+    catalogue = _restricted_catalogue(tmp_path)
+    assert validate_resource_item(_age_request("<15", "F"), catalogue).resource_id == "structure_age"
+    with pytest.raises(ValueError, match="coordinate combination is not declared"):
+        validate_resource_item(_age_request("<15", "M"), catalogue)
+
+
+def test_public_read_reports_undeclared_combination_before_opening_a_connection(tmp_path):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    class NoConnectionPool:
+        @contextmanager
+        def connection(self):
+            raise AssertionError("undeclared combination must fail before any connection")
+            yield
+
+    catalogue = _restricted_catalogue(tmp_path)
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
+    previous_repository = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
+    main.app.dependency_overrides[main.get_repository] = lambda: SimpleNamespace(
+        connections=NoConnectionPool())
+    try:
+        response = TestClient(main.app).post("/api/resources/read", json={
+            "resource": "structure_age",
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "coordinates": {"detail": ["<15"], "sex": ["M"]},
+            "intent": {"kind": "facts"},
+        })
+    finally:
+        if previous_catalogue is None:
+            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
+        if previous_repository is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_repository
+
+    assert response.status_code == 422
+    assert "coordinate combination is not declared" in response.json()["detail"]
 
 
 def test_cellule_declaration_names_every_coordinate_value_with_a_readable_label():
