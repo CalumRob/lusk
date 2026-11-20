@@ -519,7 +519,11 @@ describe('export surface producer drift (#1025)', () => {
     // CALL the very resolver the template binds: a returned object that strips
     // `exportLayout` for prose sections fails here, even though every grep and
     // registry-only assertion still passes.
+    // Exercise both the prose and no-prose shapes: the fixture's sections carry
+    // `lecture: null`, while a real prose section has a truthy Lecture. A
+    // resolver that strips the layout only for prose must fail too.
     const sections = cahierExportFixture({}).content.units.flatMap((unit) => unit.sections)
+      .flatMap((base) => [base, { ...base, lecture: { marelle: base.label, prose: [] } } as typeof base])
     expect(sections.length, 'fixture has no sections').toBeGreaterThan(0)
     const withLayout: string[] = []
     const without: string[] = []
