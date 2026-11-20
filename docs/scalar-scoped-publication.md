@@ -402,7 +402,11 @@ from the verified live tokens.
    `LUSK_PUBLISH_DATABASE`, `LUSK_PUBLISH_USER` (optional `_PORT`); the password
    comes only from the private libpq passfile (`PGPASSFILE`, never inside the
    repository).
-7. **FK pre-flight** — a read-only `pg_constraint` inventory refuses with zero
+7. **Write schema** — the connection's `search_path` must put the serving schema
+   first: all tables the publishers replace are checked with
+   `to_regclass(current_schema() || '.' || table)` and a missing one refuses with
+   zero writes. The dry-run prints the resolved schema.
+8. **FK pre-flight** — a read-only `pg_constraint` inventory refuses with zero
    writes if a table the bridge does not manage has rows referencing a
    wholesale-replaced scalar table. The dry-run prints the inventory and which
    metadata-derived retirement ids are actually present live (normally none).

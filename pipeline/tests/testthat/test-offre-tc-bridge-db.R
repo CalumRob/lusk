@@ -50,7 +50,6 @@ if (!bridge_db_proof_configured()) {
         startsWith(tolower(passfile), paste0(tolower(repository), "/")))
       stop("Guarded proof requires the mutex, cleanup opt-in and a private passfile outside the repo")
     expect_true(requireNamespace("DBI", quietly = TRUE))
-    expect_true(requireNamespace("DBI", quietly = TRUE))
     expect_true(requireNamespace("RPostgres", quietly = TRUE))
 
     connection <- DBI::dbConnect(RPostgres::Postgres(), host = host, port = port,
@@ -134,7 +133,6 @@ if (!bridge_db_proof_configured()) {
       "reference_content_version,row_count,published_at) VALUES",
       "('habitat',$1,$2,1,now())"), params = list(habitat_version, reference_version))
 
-    seed_markers <- retained_backend_markers(connection)
     expected <- c(scalar = scalar_version, comparison = comparison$content_version,
                   profile = profile_version, habitat = habitat_version,
                   reference = reference_version)

@@ -202,7 +202,7 @@ bridge_parse_text_array <- function(x) {
   if (length(values) == 1L && !is.na(values) &&
       startsWith(values, "{") && endsWith(values, "}")) {
     inner <- substr(values, 2L, nchar(values) - 1L)
-    # Serving levels are a closed enum (commune/epci/departement/region). A
+    # Serving levels are a closed enum declared by the scalar descriptor contracts.
     # quoted or escaped element is outside that contract and must STOP rather
     # than be silently mis-split by this simple parser.
     if (grepl('["\\\\]', inner))
@@ -405,6 +405,27 @@ assert_bridge_markers <- function(markers, expected) {
     add("selected_reading_descriptor[habitat].descriptor_version",
         descriptor$descriptor_version[[1L]], expected[["habitat"]])
   }
+  # The profile comparison marker chains to declared_profile; a missing or
+  # duplicate row is not a neutral state. Its own content_version is a hash of
+  # comparison rows and cannot be derived from the five tokens alone, so it is
+  # guarded by the profile publisher at write time instead.
+  profile_comparison <- markers$profile_comparison
+  if (nrow(profile_comparison) != 1L) {
+    add("profile_comparison_publication", NA_character_, "exactly one row")
+  } else {
+    add("profile_comparison_publication.profile_content_version",
+        profile_comparison$profile_content_version[[1L]], expected[["profile"]])
+  }
+  # The Habitat linked token must chain to the five operator tokens; check the
+  # trailing <profile>-<scalar>-<reference> segment, whatever the canonical prefix.
+  if (nrow(descriptor) == 1L) {
+    chain_suffix <- paste0("-", expected[["profile"]], "-", expected[["scalar"]],
+                           "-", expected[["reference"]])
+    actual <- as.character(descriptor$linked_content_version[[1L]])
+    if (length(actual) != 1L || is.na(actual) || !endsWith(actual, chain_suffix))
+      add("selected_reading_descriptor[habitat].linked_content_version",
+          actual, chain_suffix)
+  }
   profile <- markers$profile_descriptor
   if (nrow(profile) != 1L) {
     add("profile_descriptor[distribution_dpe]", NA_character_, "exactly one marker")
@@ -583,8 +604,11 @@ bridge_print_report <- function(plan, mode) {
   cat("offre_tc serving bridge (", mode, ")\n", sep = "")
   cat("new scalar token:", plan$tokens$scalar, "\n")
   cat("new comparison token:", plan$tokens$comparison, "\n")
+  cat("new declared-profile token:", plan$profile_lineage$version, "\n")
+  cat("new profile comparison token:", plan$profile_lineage$comparison_version, "\n")
   cat("new Habitat linked token:", plan$tokens$linked, "\n")
   fk <- plan$fk_inventory
+  cat("write schema:", plan$write_schema %||% "<unknown>", "\n")
   cat("FK pre-flight:", if (is.data.frame(fk)) nrow(fk) else "unknown",
       "target-schema reference(s) checked\n")
   present <- plan$retired_present %||% character()
@@ -608,7 +632,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
                                 publish = publish_bridge_snapshot, lock = NULL, unlock = NULL,
-                                 identity_reader = NULL, fk_reader = NULL) {
+                                 identity_reader = NULL, fk_reader = NULL, schema_reader = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
   # Resolve the registered scope once and require the operator to select exactly
@@ -647,6 +671,11 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
       constraint_name = character(), has_rows = logical(), stringsAsFactors = FALSE)
     else bridge_fk_inventory(con)
   }
+  if (is.null(schema_reader)) schema_reader <- function(con) {
+    if (inherits(con, "fake-con")) "serving_it_fake"
+    else bridge_assert_write_schema(con)
+  }
+  write_schema <- schema_reader(con)
   fk_inventory <- fk_reader(con)
   assert_bridge_no_foreign_scalar_fks(fk_inventory)
 
@@ -688,7 +717,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                 indicator_id = built$indicator_id,
                 retired_present = intersect(retired_ids,
                   unique(as.character(live$facts$indicator_id))),
-                fk_inventory = fk_inventory,
+                fk_inventory = fk_inventory, write_schema = write_schema,
                 live_profile_rows = live_profile_rows)
   bridge_print_report(plan, mode)
 
@@ -1232,5 +1261,40 @@ assert_bridge_post_write_scalar <- function(after, projection, pre_live, affecte
   assert_bridge_round_trip(after, projection, affected)
   assert_bridge_round_trip(pre_live, after, affected)
   invisible(after)
+}
+
+
+# Every table the bridge / registered publishers delete or re-insert must resolve
+# in the connection's current schema. Without this, a wrong search_path makes the
+# FK inventory empty and the pre-flight passes vacuously.
+BRIDGE_WRITE_TABLES <- c(
+  "scalar_descriptor", "scalar_observation", "scalar_observation_source",
+  "scalar_descriptor_source", "scalar_comparison_group",
+  "scalar_comparison_territory", "scalar_comparison_publication",
+  "profile_descriptor", "profile_descriptor_source", "profile_axis",
+  "profile_observation", "profile_observation_source",
+  "profile_comparison_group", "profile_comparison_territory",
+  "profile_comparison_publication", "selected_reading_descriptor",
+  "selected_reading_publication", "source_dataset", "source_vintage",
+  "table_publication", "territory_reference")
+
+bridge_assert_write_schema <- function(con, query = NULL, schema = NULL,
+                                       tables = BRIDGE_WRITE_TABLES) {
+  if (is.null(query)) query <- function(sql, params = list())
+    bridge_db_query(con, sql, params = params)
+  if (is.null(schema)) schema <- query("SELECT current_schema() AS schema")$schema[[1L]]
+  if (!is.character(schema) || length(schema) != 1L || is.na(schema) || !nzchar(schema))
+    stop("Bridge could not resolve the current write schema", call. = FALSE)
+  missing <- character()
+  for (table in tables) {
+    row <- query("SELECT to_regclass(current_schema() || '.' || $1) AS reg",
+                 params = list(table))
+    if (!is.data.frame(row) || !nrow(row) || is.na(row$reg[[1L]]))
+      missing <- c(missing, table)
+  }
+  if (length(missing))
+    stop("Bridge refuses with zero writes: write tables missing from current schema (",
+         schema, "): ", paste(missing, collapse = ", "), call. = FALSE)
+  invisible(schema)
 }
 

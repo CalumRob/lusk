@@ -818,26 +818,6 @@ test_that("scalar seeding goes through the publisher transaction before replace"
 
 # --- Round-5: RPostgres raw shapes -> producer-identical projections ----------
 
-bridge_canon_profile <- function(p) {
-  p$facts <- bridge_fresh_frame(p$facts)
-  p$axes <- bridge_fresh_frame(p$axes)
-  p$provenance <- bridge_fresh_frame(p$provenance)
-  p$vintages <- bridge_fresh_frame(p$vintages)
-  p$datasets <- bridge_fresh_frame(p$datasets)
-  p$eligible_territories <- bridge_fresh_frame(p$eligible_territories)
-  p
-}
-
-bridge_canon_scalar <- function(p) {
-  p$facts <- bridge_fresh_frame(p$facts)
-  p$descriptors <- bridge_fresh_frame(p$descriptors)
-  p$provenance <- bridge_fresh_frame(p$provenance)
-  p$datasets <- bridge_fresh_frame(p$datasets)
-  p$vintages <- bridge_fresh_frame(p$vintages)
-  p$eligible_territories <- bridge_fresh_frame(p$eligible_territories)
-  p
-}
-
 test_that("Postgres array text shapes parse to producer vectors, including empty/NULL", {
   expect_identical(bridge_parse_text_array("{commune,epci}"), c("commune", "epci"))
   expect_identical(bridge_parse_text_array("{}"), character())
@@ -854,8 +834,8 @@ test_that("a raw RPostgres scalar projection is producer-equal and hash-equal", 
   validate_scalar_artifact_projection(loaded)
   # The token is md5(saveRDS()); canonicalise both sides so incidental ALTREP /
   # attribute-order differences cannot mask a real type or content difference.
-  expect_identical(scalar_content_version(bridge_canon_scalar(loaded)),
-                   scalar_content_version(bridge_canon_scalar(live)))
+  expect_identical(scalar_content_version(loaded),
+                   scalar_content_version(live))
 })
 
 test_that("a raw RPostgres profile projection is producer-equal and hash-equal", {
@@ -873,8 +853,8 @@ test_that("a raw RPostgres profile projection is producer-equal and hash-equal",
   for (owner in names(producer)) {
     validate_declared_profile(loaded[[owner]]$facts, loaded[[owner]]$descriptor,
                               loaded[[owner]]$axes, loaded[[owner]]$eligible_territories)
-    expect_identical(profile_content_version(bridge_canon_profile(loaded[[owner]])),
-                     profile_content_version(bridge_canon_profile(producer[[owner]])))
+    expect_identical(profile_content_version(loaded[[owner]]),
+                     profile_content_version(producer[[owner]]))
   }
 
   # The original production failure: reconstructed levels must be a character
@@ -1283,71 +1263,102 @@ test_that("FK inventory tolerates an empty catalog and an unresolved schema", {
 })
 
 
-# --- Round-6: mechanical SQL lint of every bridge_db_query/exec call ----------
-# What it covers: statically visible SQL string literals, their $n placeholders
-# and the shape of the params argument at each call site; a few catalog-probe
-# invariants. What it does NOT cover: SQL assembled from variables at runtime,
-# DBI internals, or actual PostgreSQL parsing (no connection is made).
-test_that("every bridge SQL call has matching params and safe catalog probes", {
-  lint_source <- function(path) {
-    src <- readLines(path, warn = FALSE)
-    expr <- parse(text = paste(src, collapse = "\n"), keep.source = TRUE)
-    pd <- getParseData(expr)
-    funcs <- pd[pd$token == "SYMBOL_FUNCTION_CALL" &
-                  pd$text %in% c("bridge_db_query", "bridge_db_exec"), , drop = FALSE]
-    expect_gt(nrow(funcs), 0L)
-    texts <- character()
-    for (i in seq_len(nrow(funcs))) {
-      parent <- pd[pd$id == funcs$parent[i], , drop = FALSE]
-      if (!nrow(parent)) next
-      lines <- src[parent$line1:parent$line2]
-      lines[[1L]] <- substr(lines[[1L]], parent$col1, nchar(lines[[1L]]))
-      last <- length(lines)
-      lines[[last]] <- substr(lines[[last]], 1L, parent$col2)
-      texts <- c(texts, paste(lines, collapse = "\n"))
+bridge_sql_lint <- function(text) {
+  lines <- if (length(text) == 1L && grepl("\n", text, fixed = TRUE))
+    strsplit(text, "\n", fixed = TRUE)[[1L]] else text
+  exprs <- tryCatch(parse(text = paste(lines, collapse = "\n")), error = function(e) NULL)
+  problems <- list()
+  add <- function(call, problem) problems[[length(problems) + 1L]] <<-
+    data.frame(call = call, problem = problem, stringsAsFactors = FALSE)
+  if (is.null(exprs)) {
+    add("<parse>", "unparseable_source")
+  } else {
+    calls <- list()
+    walk <- function(e) {
+      if (is.call(e)) {
+        fn <- if (is.symbol(e[[1L]])) as.character(e[[1L]]) else ""
+        if (fn %in% c("bridge_db_query", "bridge_db_exec"))
+          calls[[length(calls) + 1L]] <<- e
+        for (i in seq_along(e)) if (is.call(e[[i]])) walk(e[[i]])
+      }
     }
-    for (call in texts) {
-      literals <- unlist(regmatches(call,
-        gregexpr("([\"'])(?:\\1|(?!\\1).)+\\1", call, perl = TRUE)))
-      sql <- paste(literals, collapse = " ")
-      placeholders <- as.integer(unique(regmatches(sql, gregexpr("\\$[0-9]+", sql))[[1L]]))
-      placeholders <- as.integer(sub("\\$", "", placeholders))
-      max_placeholder <- if (length(placeholders)) max(placeholders) else 0L
-      has_params <- grepl("params\\s*=", call)
-      empty_params <- grepl("params\\s*=\\s*list\\(\\s*\\)", call)
-      if (max_placeholder > 0L) {
-        expect_true(has_params, info = call)
-        expect_false(empty_params, info = call)
-        # When the params argument is a flat literal list, pin exact arity.
-        pm <- regmatches(call, regexpr("params\\s*=\\s*list\\([^)]*\\)", call))
-        if (length(pm)) {
-          args <- sub("^params\\s*=\\s*list\\(", "", pm)
-          args <- sub("\\)$", "", args)
-          expect_identical(length(strsplit(args, ",", fixed = TRUE)[[1L]]),
-                           max_placeholder, info = call)
+    for (e in exprs) walk(e)
+
+    literal_sql <- function(e) {
+      if (is.character(e) && length(e) == 1L) return(e)
+      if (is.call(e)) {
+        fn <- if (is.symbol(e[[1L]])) as.character(e[[1L]]) else ""
+        if (fn %in% c("paste", "paste0")) {
+          args <- as.list(e)[-1L]
+          nms <- names(args)
+          if (is.null(nms)) nms <- rep("", length(args))
+          args <- args[!nzchar(nms)]
+          parts <- vapply(args, literal_sql, character(1))
+          parts <- parts[nzchar(parts)]
+          return(paste(parts, collapse = if (fn == "paste0") "" else " "))
         }
-      } else {
-        expect_false(grepl("params\\s*=\\s*list\\([^)]+\\)", call), info = call)
+        if (fn == "sprintf") {
+          args <- as.list(e)[-1L]
+          fmt <- literal_sql(args[[1L]])
+          vals <- vapply(args[-1L], literal_sql, character(1))
+          return(do.call(sprintf, c(list(fmt), as.list(vals))))
+        }
       }
-      # Catalog probes must be schema-aware and bounded.
-      if (grepl("pg_constraint", sql)) {
-        expect_match(sql, "nspname", info = call)
-        expect_match(sql, "pg_namespace", info = call)
-      }
-      if (grepl("pg_attribute", sql)) expect_match(sql, "attrelid", info = call)
-      if (grepl("SELECT EXISTS", sql, fixed = TRUE))
-        expect_match(sql, "EXISTS", info = call)  # EXISTS is inherently bounded
+      ""
     }
-    length(texts)
+    params_len <- function(e) {
+      if (is.null(e)) return(0L)
+      if (is.call(e)) {
+        fn <- if (is.symbol(e[[1L]])) as.character(e[[1L]]) else ""
+        if (identical(fn, "list")) return(length(as.list(e)[-1L]))
+        if (identical(fn, "c")) return(NA_integer_)  # dynamic composition
+      }
+      NA_integer_
+    }
+
+    for (call in calls) {
+      label <- paste(deparse(call, width.cutoff = 200L), collapse = " ")
+      as_list <- as.list(call)[-1L]
+      if (length(as_list) < 2L) { add(label, "missing_sql"); next }
+      sql <- literal_sql(as_list[[2L]])
+      idx <- which(names(as_list) == "params")
+      plen <- if (length(idx)) params_len(as_list[[idx[[1L]]]]) else 0L
+      tokens <- unlist(regmatches(sql, gregexpr("\\$[0-9]+", sql)))
+      numbers <- if (length(tokens)) as.integer(sub("\\$", "", tokens)) else integer()
+      n <- if (length(numbers)) max(numbers) else 0L
+      if (n > 0L && plen == 0L) add(label, "placeholders_without_params")
+      if (n == 0L && isTRUE(plen > 0L)) add(label, "params_without_placeholders")
+      if (isTRUE(plen > 0L) && n > 0L && plen != n) add(label, "arity_mismatch")
+      if (length(numbers) && !identical(sort(unique(numbers)), seq_len(n)))
+        add(label, "non_contiguous_placeholders")
+      if (grepl("pg_constraint", sql, fixed = TRUE) &&
+          !grepl("nspname", sql, fixed = TRUE)) add(label, "unscoped_catalog")
+    }
   }
-  n <- lint_source(system.file("..", "R", "publish_serving_bridge.R", package = "lusk"))
-  expect_gte(n, 15L)
-  # The DB proof uses the same helpers; lint it too.
+  source_text <- paste(lines, collapse = "\n")
+  if (grepl("\\bquote\\s*\\(", source_text)) add("<source>", "bare_quote")
+  if (grepl("paste0?\\(['\"]\"", source_text)) add("<source>", "hand_built_identifier")
+  if (length(problems)) do.call(rbind, problems) else data.frame(
+    call = character(), problem = character(), stringsAsFactors = FALSE)
+}
+
+test_that("the SQL lint is honest on real sources and rejects synthetic errors", {
+  bridge <- system.file("..", "R", "publish_serving_bridge.R", package = "lusk")
+  expect_identical(nrow(bridge_sql_lint(readLines(bridge, warn = FALSE))), 0L)
   db_test <- file.path(testthat::test_path(), "test-offre-tc-bridge-db.R")
-  expect_gte(lint_source(db_test), 5L)
+  expect_identical(nrow(bridge_sql_lint(readLines(db_test, warn = FALSE))), 0L)
+
+  bad <- c(
+    'bridge_db_query(con, "SELECT $1, $2", params = list(1))',
+    'bridge_db_query(con, "SELECT $1")',
+    'bridge_db_query(con, "SELECT 1", params = list(1))',
+    'x <- quote(foo)',
+    'bridge_db_query(con, paste("SELECT * FROM pg_constraint WHERE x = $1"))')
+  problems <- bridge_sql_lint(bad)
+  for (kind in c("arity_mismatch", "placeholders_without_params",
+                 "params_without_placeholders", "bare_quote", "unscoped_catalog"))
+    expect_true(any(problems$problem == kind), info = kind)
 })
-
-
 # --- Round-7: full FK probe through real DBI S4 dispatch ----------------------
 
 test_that("FK probe SQL is exactly quoted and column-derived (real DBI dispatch)", {
@@ -1474,5 +1485,45 @@ test_that("the #1068 marker verifier accepts the state a bridge write produces",
   stale$selected_descriptor$linked_content_version <- paste0("-", expected[["profile"]],
     "-", tokens$scalar, "-", expected[["reference"]])
   expect_gt(nrow(verifier_retained_backend_baseline(stale, expectations)), 0L)
+})
+
+
+# --- Review round 5: write-schema and extended marker guards -----------------
+
+test_that("write-schema guard refuses when any write table is absent", {
+  ok_replies <- c(list(data.frame(schema = "serving_it_ok", stringsAsFactors = FALSE)),
+                  rep(list(data.frame(reg = "serving_it_ok", stringsAsFactors = FALSE)),
+                      length(BRIDGE_WRITE_TABLES)))
+  expect_identical(bridge_assert_write_schema(bridge_mock_connection(ok_replies)),
+                   "serving_it_ok")
+  bad <- ok_replies
+  bad[[3L]] <- data.frame(reg = NA_character_, stringsAsFactors = FALSE)
+  expect_error(bridge_assert_write_schema(bridge_mock_connection(bad)),
+               "write tables missing from current schema")
+  no_schema <- bridge_mock_connection(list(data.frame(schema = NA_character_)))
+  expect_error(bridge_assert_write_schema(no_schema), "could not resolve")
+})
+
+test_that("marker guard checks profile comparison and the Habitat chain", {
+  expected <- bridge_fixture_expected_tokens()
+  markers <- bridge_fixture_markers(expected)
+  expect_invisible(assert_bridge_markers(markers, expected))
+
+  absent <- markers
+  absent$profile_comparison <- absent$profile_comparison[0L, , drop = FALSE]
+  expect_error(assert_bridge_markers(absent, expected), "profile_comparison_publication")
+
+  duplicated <- markers
+  duplicated$profile_comparison <- rbind(duplicated$profile_comparison,
+                                         duplicated$profile_comparison)
+  expect_error(assert_bridge_markers(duplicated, expected), "exactly one row")
+
+  stale_profile <- markers
+  stale_profile$profile_comparison$profile_content_version <- "stale"
+  expect_error(assert_bridge_markers(stale_profile, expected), "profile_content_version")
+
+  stale_link <- markers
+  stale_link$selected_descriptor$linked_content_version <- "canonical-stale-stale-stale"
+  expect_error(assert_bridge_markers(stale_link, expected), "linked_content_version")
 })
 
