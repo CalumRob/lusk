@@ -68,14 +68,16 @@ default:
 
 - `coordinates` names each coordinate axis and declares every value with a
   readable `label` and its `unit` (the producer's per-detail unit wins over the
-  indicator's scalar unit). A value with no separate declaration is its own
-  label — a year, a DPE class or an F/M key is not reformulated at runtime.
+  indicator's scalar unit). Where the producer declares no separate wording,
+  the value's own key is a valid label — a year, a DPE class or the F/M keys are
+  not reformulated at runtime. A series coordinate universe comes only from the
+  producer's declared series axis, never from a comparison facet.
 - `valid_combinations` lists the addressable coordinate combinations. It is the
   full cross product where every combination exists, or the producer's explicit
   narrower set where it does not. A read naming a combination outside that set
   fails with `422 coordinate combination is not declared for this resource`
-  instead of returning an empty cohort; an axis with no static producer value
-  list still defers membership to the published descriptor as before.
+  instead of returning an empty cohort. A resource with no declaration keeps
+  the existing axis-by-axis admission and the descriptor's own membership.
 - `default_point` is the declared comparison point of a profile or series, so a
   consumer never hardcodes one. A scalar has no coordinates and no default; a
   profile backed by a linked scalar facet has no detail default of its own.
@@ -83,9 +85,13 @@ default:
 The declaration is derived from the same producer metadata the publisher
 validates the descriptor against. The published descriptor remains the factual
 source for label, unit and ordinal; this is a declaration, not a second source
-of truth. The two raccordement duration resources are not declared yet: their
-published axis keys are t-codes while discovery still carries the minute input
-grid, and no source is silently reconciled here.
+of truth. AEDAR source grains, the TYPEQU universe, the AEDAR summary family and
+observed collections are declared by #1076, not here. Where a producer marks a
+page `cellule.defer_coordinate_declaration`, discovery emits no `cellule` and
+the descriptor owns the coordinate space: that is the case for the two
+raccordement duration resources (published t-code axis versus discovery's
+minute input grid, decision #1096) and for data-driven annual axes. No source
+is silently reconciled.
 
 `POST /api/resources/read` accepts the shared semantic item (`resource`, typed
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
