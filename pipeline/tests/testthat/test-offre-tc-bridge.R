@@ -953,3 +953,97 @@ test_that("a failed publication transaction rolls back before the caller continu
   expect_identical(rolled_back, 1L)
 })
 
+
+# --- Round-7: in-transaction re-guard ordering and exemption set --------------
+
+bridge_ordering_stub_reader <- function(pre_rows, post_rows, profile_rows) {
+  state <- new.env(parent = emptyenv())
+  state$written <- FALSE
+  reader <- bridge_fake_reader(pre_rows, profile_rows = profile_rows)
+  pick <- function(field) function(con) {
+    if (isTRUE(state$written)) post_rows[[field]] else pre_rows[[field]]
+  }
+  reader$facts <- pick("facts")
+  reader$descriptors <- pick("descriptors")
+  reader$provenance <- pick("provenance")
+  reader$datasets <- pick("datasets")
+  reader$vintages <- pick("vintages")
+  reader$territories <- function(con) pre_rows$territories
+  reader$reference_rows <- function(con) pre_rows$reference_rows
+  list(reader = reader, state = state)
+}
+
+test_that("the in-transaction re-guard exempts offre_tc and the retirements", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  pre_rows <- bridge_db_rows_from_projection(live)
+  post_rows <- bridge_db_rows_from_projection(built$projection)
+  profile_rows <- bridge_db_rows_from_profile_projections(
+    bridge_live_profile_fixture(expected[["scalar"]]))
+  stub <- bridge_ordering_stub_reader(pre_rows, post_rows, profile_rows)
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path,
+    list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+         setNames("dump", BRIDGE_DUMP_ACK_ENV)))
+  expect_silent(capture.output(written <- run_offre_tc_bridge(
+    "publish", env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = stub$reader,
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(con, plan, retired, tokens, ...) {
+      stub$state$written <- TRUE
+      expect_true(setequal(plan$affected,
+        union(retained_scalar_retirement_ids(), bridge_offre_tc_id())))
+      publish_bridge_snapshot(con, plan, retired, tokens, ...,
+        transaction = function(con, expr) force(expr),
+        scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+        comparison_adapter = bridge_fake_comparison_adapter("comparison-live", plan$tokens$scalar),
+        profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], plan$tokens$scalar),
+        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+    })))
+  expect_identical(written$scalar$content_version,
+                   scalar_content_version(built$projection))
+})
+
+test_that("the in-transaction re-guard still refuses a changed kept indicator", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  post_rows <- bridge_db_rows_from_projection(built$projection)
+  post_rows$facts$value[post_rows$facts$indicator_id == "kept_scalar"][[1L]] <- 999
+  profile_rows <- bridge_db_rows_from_profile_projections(
+    bridge_live_profile_fixture(expected[["scalar"]]))
+  stub <- bridge_ordering_stub_reader(bridge_db_rows_from_projection(live), post_rows,
+                                      profile_rows)
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path,
+    list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+         setNames("dump", BRIDGE_DUMP_ACK_ENV)))
+  expect_error(capture.output(run_offre_tc_bridge(
+    "publish", env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = stub$reader,
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(con, plan, retired, tokens, ...) {
+      stub$state$written <- TRUE
+      publish_bridge_snapshot(con, plan, retired, tokens, ...,
+        transaction = function(con, expr) force(expr),
+        scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+        comparison_adapter = bridge_fake_comparison_adapter("comparison-live", plan$tokens$scalar),
+        profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], plan$tokens$scalar),
+        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+    })),
+    "unrelated indicator\\(s\\) changed: kept_scalar")
+})
+

@@ -488,8 +488,12 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
     scalar_adapter$lock("scalar_observation")
     fresh_markers <- read_markers()
     assert_bridge_markers(fresh_markers, expected)
-    if (!is.null(read_live))
+    if (!is.null(read_live)) {
+      if (is.null(plan$affected))
+        stop("Bridge plan is missing the round-trip exemption set (offre_tc + retirements)",
+             call. = FALSE)
       assert_bridge_round_trip(read_live(), plan$projection, plan$affected)
+    }
     if (is.null(writer))
       writer <- bridge_marker_writer(
         con, fresh_markers$selected_descriptor$linked_content_version[[1L]])
@@ -621,7 +625,8 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                diff = diff, tokens = tokens, markers = markers,
                expected = expected, retired_ids = retired_ids,
                profiles = profiles, profile_lineage = lineage,
-               live_profile_rows = live_profile_rows)
+               affected = built$affected,
+                live_profile_rows = live_profile_rows)
   bridge_print_report(plan, mode)
 
   if (identical(mode, "dry-run")) return(invisible(plan))
