@@ -32,16 +32,18 @@ class SemanticResourceReader:
     def _aedar_resolve(item, resource):
         """Resolve the declared Cellule address or deprecated alias to internal selectors.
 
-        The reader's single address seam, backed by the same ``aedar_resolve``
-        admission uses; preflight and read both call it, hence single and batch
-        reads share it. The resolved ``measure`` lives only on this in-memory
-        copy; a measure-key string is not a declared address.
+        Returns ``(resolved_item, family)``. The reader's single address seam,
+        backed by the same ``aedar_resolve`` admission uses; preflight and read
+        both call it, hence single and batch reads share it. The resolved
+        ``measure`` lives only on this in-memory copy; a measure-key string is
+        not a declared address. The family is inferred once, here, and consumed
+        by the comparison dispatch.
         """
         from api.aedar_models import AEDARAddressError, aedar_resolve
         if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
-            return item
+            return item, None
         try:
-            typequ, measures, _family, is_alias = aedar_resolve(
+            typequ, measures, family, is_alias = aedar_resolve(
                 resource.resource_kind, item.coordinates, item.intent.kind)
         except AEDARAddressError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -58,24 +60,26 @@ class SemanticResourceReader:
         if (measures and not is_alias and item.fields is None and item.intent.kind == "facts"
                 and resource.resource_kind == "aedar_source_grain"):
             update["fields"] = ["measures." + measures[0]]
-        return item.model_copy(update=update)
+        return item.model_copy(update=update), family
 
     @staticmethod
-    def _aedar_comparison(conn, item, resource, typequ, measures, *, preflight, snapshot_state=None):
+    def _aedar_comparison(conn, item, resource, typequ, measures, family, *,
+                          preflight, snapshot_state=None):
         """One comparison dispatch for both AEDAR resources, preflight and read.
 
         Summary readings (declared summary family or the deprecated alias) and
         per-cell readings use the same snapshot pair; only the selector values
-        differ. Returning a work estimate only in preflight keeps the two phases
-        on the same path and charges a fixed summary comparison for its peer
-        group exactly like the aggregate reading.
+        differ. ``family`` comes from the single address resolver — it is never
+        re-inferred from the rewritten key. Returning a work estimate only in
+        preflight keeps the two phases on the same path and charges a fixed
+        summary comparison for its peer group exactly like the aggregate one.
         """
         from api.aedar_reads import (_aedar_comparison_snapshot,
                                      _aedar_fixed_peer_ids_cached,
                                      _aedar_requested_rank_fields,
                                      _aedar_selected_comparison_snapshot)
-        from api.aedar_models import AEDAR_SUMMARY_FAMILY, aedar_measure_family
-        aggregate = aedar_measure_family(measures) == AEDAR_SUMMARY_FAMILY
+        from api.aedar_models import AEDAR_SUMMARY_FAMILY
+        aggregate = family == AEDAR_SUMMARY_FAMILY
         kwargs = {"preflight_only": True} if preflight else {"snapshot_state": snapshot_state}
         if item.intent.kind == "fixed_comparison":
             result = _aedar_comparison_snapshot(
@@ -354,7 +358,7 @@ class SemanticResourceReader:
                    *, work_budget: int = 200_000, snapshot_state=None) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
-        item = self._aedar_resolve(item, resource)
+        item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f != "axis_comparisons"]
@@ -386,7 +390,7 @@ class SemanticResourceReader:
             typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
             if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
                 return self._aedar_comparison(
-                    conn, item, resource, typequ, measures,
+                    conn, item, resource, typequ, measures, aedar_family,
                     preflight=True, snapshot_state=snapshot_state)
             _aedar_territory_summary_resource_snapshot(
                 conn, item.target.type, item.target.id, measures, item.fields,
@@ -409,7 +413,7 @@ class SemanticResourceReader:
             typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
             if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
                 work = self._aedar_comparison(
-                    conn, item, resource, typequ, measures,
+                    conn, item, resource, typequ, measures, aedar_family,
                     preflight=True, snapshot_state=snapshot_state)
             elif item.intent.kind == "facts":
                 _aedar_territorial_aggregate_snapshot(conn, item.target.type,
@@ -596,7 +600,7 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
-        item = self._aedar_resolve(item, resource)
+        item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import read_axis_comparisons
             # Preserve an explicitly requested scalar facet and its scalar
@@ -629,7 +633,7 @@ class SemanticResourceReader:
             typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
             if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
                 data = self._aedar_comparison(
-                    conn, item, resource, typequ, measures,
+                    conn, item, resource, typequ, measures, aedar_family,
                     preflight=False, snapshot_state=snapshot_state)
             elif resource.resource_kind == "aedar_territory_summary":
                 data = _aedar_territory_summary_resource_snapshot(

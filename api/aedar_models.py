@@ -166,13 +166,23 @@ def aedar_resolve(resource_kind, coordinates, intent_kind):
     coords = coordinates or {}
     is_alias = "measure" in coords
     if is_alias:
+        # Frozen pre-#1076 axes and domains. The aggregate accepted only
+        # `typequ`/`measure` (plus the intent `context`), the summary only
+        # `measure`; no declared coordinate may ride along and be discarded.
+        allowed_axes = {"typequ", "measure"} if resource_kind == "aedar_source_grain" else {"measure"}
+        unknown = set(coords) - allowed_axes
+        if unknown:
+            raise AEDARAddressError(
+                f"deprecated measure alias accepts no other coordinate: {sorted(unknown)}")
         measures = list(coords["measure"])
+        domain = (AEDAR_COMPARISON_MEASURE_KEYS if resource_kind == "aedar_source_grain"
+                  else set(AEDAR_AGGREGATE_READINGS))
+        if not measures or not set(measures) <= domain:
+            raise AEDARAddressError("measure is not declared for this AEDAR resource")
         family = aedar_measure_family(measures)
         if family is None:
-            if set(measures) <= AEDAR_COMPARISON_MEASURE_KEYS:
-                raise AEDARAddressError(
-                    "Coordinate measure mixes aggregate readings with per-cell measures")
-            raise AEDARAddressError("Coordinate measure is not declared for AEDAR")
+            raise AEDARAddressError(
+                "Coordinate measure mixes aggregate readings with per-cell measures")
         typequ = coords.get("typequ")
     else:
         typequ, measures, family = resolve_aedar_address(resource_kind, coords)
@@ -184,11 +194,13 @@ def aedar_resolve(resource_kind, coordinates, intent_kind):
     if intent_kind in {"fixed_comparison", "selected_comparison"}:
         if not coords:
             raise AEDARAddressError("an AEDAR comparison requires its Cellule coordinates")
+        if not measures:
+            raise AEDARAddressError("an AEDAR comparison requires a measure")
         if aggregate_reading and typequ:
             raise AEDARAddressError("Aggregate readings are registry-wide and take no typequ coordinate")
         if not aggregate_reading and not typequ:
             raise AEDARAddressError("a per-cell AEDAR Cellule requires its typequ coordinate")
-        if intent_kind == "fixed_comparison" and (not measures or len(measures) != 1):
+        if intent_kind == "fixed_comparison" and len(measures) != 1:
             raise AEDARAddressError("AEDAR comparison requires one measure coordinate")
     return typequ, measures, family, is_alias
 
