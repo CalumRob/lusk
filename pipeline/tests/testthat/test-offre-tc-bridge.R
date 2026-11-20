@@ -1222,3 +1222,62 @@ test_that("the live-shaped no-retirement scenario publishes cleanly", {
   expect_identical(written$scalar$content_version, result$tokens$scalar)
 })
 
+
+# --- Review round 5: schema-scoped FK inventory ------------------------------
+
+test_that("FK inventory ignores other schemas and probes quoted qualified tables", {
+  target <- "serving_it_abc"
+  catalog <- data.frame(
+    referencing_table = c("outside_owner", "inside_owner"),
+    referenced_table = c("scalar_descriptor", "scalar_descriptor"),
+    constraint_name = c("fk_other", "fk_inside"),
+    referencing_oid = c(101L, 202L),
+    conkey = I(list(1L, 1L)),
+    schema = c("other_it_schema", target), stringsAsFactors = FALSE)
+  probes <- character()
+  quote_stub <- function(id) {
+    if (inherits(id, "Id")) paste0('"', id@name[["schema"]], '"."', id@name[["table"]], '"') else paste0('"', id, '"')
+  }
+  query_stub <- function(sql, params = list()) {
+    sql <- paste(sql, collapse = " ")
+    if (grepl("current_schema", sql)) return(data.frame(schema = target))
+    if (grepl("pg_constraint", sql)) {
+      expect_match(sql, "rn\\.nspname")
+      expect_match(sql, "dn\\.nspname")
+      return(catalog)
+    }
+    if (grepl("pg_attribute", sql)) return(data.frame(attname = "indicator_id"))
+    if (grepl("EXISTS", sql)) {
+      probes <<- c(probes, sql)
+      return(data.frame(has_rows = TRUE))
+    }
+    stop("unexpected catalog query: ", sql)
+  }
+  inventory <- bridge_fk_inventory(NULL, query = query_stub, quote = quote_stub)
+  expect_identical(nrow(inventory), 1L)
+  expect_identical(inventory$referencing_table, "inside_owner")
+  expect_length(probes, 1L)
+  expect_match(probes[[1L]], "serving_it_abc", fixed = TRUE)
+  expect_false(grepl("outside_owner", probes[[1L]], fixed = TRUE))
+  expect_match(probes[[1L]], 't."indicator_id" IS NOT NULL', fixed = TRUE)
+  expect_error(assert_bridge_no_foreign_scalar_fks(inventory), "outside table")
+})
+
+test_that("FK inventory tolerates an empty catalog and an unresolved schema", {
+  target <- "serving_it_empty"
+  query_stub <- function(sql, params = list()) {
+    sql <- paste(sql, collapse = " ")
+    if (grepl("current_schema", sql)) return(data.frame(schema = target))
+    if (grepl("pg_constraint", sql)) return(data.frame(
+      referencing_table = character(), referenced_table = character(),
+      constraint_name = character(), referencing_oid = integer(),
+      conkey = I(list()), schema = character(), stringsAsFactors = FALSE))
+    stop("unexpected query")
+  }
+  inventory <- bridge_fk_inventory(NULL, query = query_stub)
+  expect_identical(nrow(inventory), 0L)
+  expect_invisible(assert_bridge_no_foreign_scalar_fks(inventory))
+  expect_error(bridge_fk_inventory(NULL, query = function(sql, params = list())
+    data.frame(schema = NA_character_)), "could not resolve the target schema")
+})
+

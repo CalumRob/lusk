@@ -1104,24 +1104,57 @@ assert_bridge_no_foreign_scalar_fks <- function(inventory) {
 
 # Read-only FK inventory from the live catalog. has_rows is evaluated per FK via
 # a quoted-identifier EXISTS query; no DDL or mutation is issued here.
-bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES) {
+bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES,
+                                query = NULL, schema = NULL, quote = NULL) {
+  if (is.null(query)) query <- function(sql, params = list())
+    DBI::dbGetQuery(con, sql, params = params)
+  if (is.null(schema))
+    schema <- query("SELECT current_schema() AS schema")$schema[[1L]]
+  if (!is.character(schema) || length(schema) != 1L || is.na(schema) || !nzchar(schema))
+    stop("Bridge FK pre-flight could not resolve the target schema", call. = FALSE)
+
   placeholders <- paste0("$", seq_along(managed), collapse = ",")
-  fks <- DBI::dbGetQuery(con, paste0(
+  # Scope BOTH sides of every FK to the schema being published. Without this,
+  # a shared disposable DB with 76 leftover it_* schemas yields probes against
+  # tables that do not exist in the target schema.
+  fks <- query(paste0(
     "SELECT referencing.relname AS referencing_table, referenced.relname AS referenced_table,",
-    " c.conname AS constraint_name FROM pg_constraint c",
+    " c.conname AS constraint_name, c.conrelid AS referencing_oid, c.conkey::integer[] AS conkey,",
+    " rn.nspname AS schema",
+    " FROM pg_constraint c",
     " JOIN pg_class referencing ON referencing.oid = c.conrelid",
+    " JOIN pg_namespace rn ON rn.oid = referencing.relnamespace",
     " JOIN pg_class referenced ON referenced.oid = c.confrelid",
-    " WHERE c.contype = 'f' AND referenced.relname IN (", placeholders, ")"),
-    params = as.list(managed))
+    " JOIN pg_namespace dn ON dn.oid = referenced.relnamespace",
+    " WHERE c.contype = 'f' AND rn.nspname = $", length(managed) + 1L,
+    " AND dn.nspname = $", length(managed) + 1L,
+    " AND referenced.relname IN (", placeholders, ")"),
+    params = c(as.list(managed), list(schema)))
+  required <- c("referencing_table", "referenced_table", "constraint_name",
+                "referencing_oid", "conkey", "schema")
+  if (!is.data.frame(fks) || !all(required %in% names(fks)))
+    stop("Bridge FK pre-flight catalog query returned an unexpected shape", call. = FALSE)
+  fks <- fks[fks$schema == schema, , drop = FALSE]
   if (!nrow(fks)) return(data.frame(
     referencing_table = character(), referenced_table = character(),
     constraint_name = character(), has_rows = logical(), stringsAsFactors = FALSE))
+
   fks$has_rows <- vapply(seq_len(nrow(fks)), function(i) {
-    quoted <- as.character(DBI::dbQuoteIdentifier(con, fks$referencing_table[[i]]))
-    DBI::dbGetQuery(con, paste0("SELECT EXISTS (SELECT 1 FROM ", quoted,
-                                ") AS has_rows"))$has_rows[[1L]]
+    # Resolve the constrained columns from pg_attribute; never assume names.
+    columns <- query(paste(
+      "SELECT attname FROM pg_attribute WHERE attrelid = $1",
+      " AND attnum = ANY($2::smallint[]) ORDER BY attnum"),
+      params = list(fks$referencing_oid[[i]], fks$conkey[[i]]))$attname
+    table_id <- DBI::Id(schema = schema, table = fks$referencing_table[[i]])
+    quoted <- quote(table_id)
+    predicate <- if (length(columns))
+      paste(paste0("t.", vapply(columns, function(col) quote(col), character(1)),
+                   " IS NOT NULL"), collapse = " OR ") else "TRUE"
+    query(paste0("SELECT EXISTS (SELECT 1 FROM ", quoted, " t WHERE ",
+                 predicate, ") AS has_rows"))$has_rows[[1L]]
   }, logical(1))
-  fks
+  fks[, c("referencing_table", "referenced_table", "constraint_name", "has_rows"),
+      drop = FALSE]
 }
 
 # Bounded timeouts set INSIDE the write transaction (SET LOCAL), release on commit.
