@@ -61,6 +61,32 @@ eligibility is not declared for them) and `counts_available: false`. Invalid
 capability types and declarations naming unknown indicators fail discovery;
 the API does not guess or repair producer declarations.
 
+Retained scalar, declared-profile and owned-series resources also carry a
+`cellule` declaration, the producer-owned addressing space an Atelier reader
+uses to bind a Cellule without parsing a key, guessing a label or hardcoding a
+default:
+
+- `coordinates` names each coordinate axis and declares every value with a
+  readable `label` and its `unit` (the producer's per-detail unit wins over the
+  indicator's scalar unit). A value with no separate declaration is its own
+  label — a year, a DPE class or an F/M key is not reformulated at runtime.
+- `valid_combinations` lists the addressable coordinate combinations. It is the
+  full cross product where every combination exists, or the producer's explicit
+  narrower set where it does not. A read naming a combination outside that set
+  fails with `422 coordinate combination is not declared for this resource`
+  instead of returning an empty cohort; an axis with no static producer value
+  list still defers membership to the published descriptor as before.
+- `default_point` is the declared comparison point of a profile or series, so a
+  consumer never hardcodes one. A scalar has no coordinates and no default; a
+  profile backed by a linked scalar facet has no detail default of its own.
+
+The declaration is derived from the same producer metadata the publisher
+validates the descriptor against. The published descriptor remains the factual
+source for label, unit and ordinal; this is a declaration, not a second source
+of truth. The two raccordement duration resources are not declared yet: their
+published axis keys are t-codes while discovery still carries the minute input
+grid, and no source is silently reconciled here.
+
 `POST /api/resources/read` accepts the shared semantic item (`resource`, typed
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item
