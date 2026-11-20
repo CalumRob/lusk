@@ -449,8 +449,14 @@ and the R test verifies the mutex is held before it connects.
   **identical data**: the reconstructed projections are proved equal to the live
   rows before the write and re-read and compared again inside the transaction;
   only `required_scalar_version` and the hashes derived from it change.
-  Demographic, economy, Milieux, owned-series rows and the Habitat selected-reading
-  rows are neither expectations nor written; their markers stay as they were.
+  Because `scalar_observation` is one whole-table snapshot, the scalar fact rows
+  of the Demography, Economy, Milieux and Habitat owners (and the owned-series
+  scalar facet) are also deleted and re-inserted — with **identical data**, as the
+  round-trip proof requires — and the global `scalar_observation` marker advances
+  with the new snapshot. Their own typed-reading / owned-series markers are not
+  read as expectations and are not rewritten. The Habitat **selected reading**
+  rows are not rewritten, but its `selected_reading_descriptor.linked_content_version`
+  **is** written by the bridge because that token chains from the scalar version.
 - **Known limitation:** the fresh-recompute tests establish parity with the
   producer *functions* applied to the bridge's own live-row reconstruction. They
   are **not** parity against a canonical artifact — those generation artifacts

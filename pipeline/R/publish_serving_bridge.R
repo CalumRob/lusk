@@ -443,7 +443,6 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
   new_tokens <- c(profile = expected[["profile"]], scalar = scalar_version,
                   reference = reference_version)
   list(scalar = scalar_version, comparison = comparison$content_version,
-       profile = expected[["profile"]], habitat = expected[["habitat"]],
        reference = reference_version,
        linked = bridge_rebind_linked_version(live_linked, live_tokens, new_tokens),
        comparison_projection = comparison)
@@ -921,4 +920,43 @@ bridge_profile_live_rows <- function(reader, con) list(
   facts = reader$profile_facts(con),
   axes = reader$profile_axes(con),
   provenance = reader$profile_provenance(con))
+
+
+# --- Round-3: robust disposable-schema cleanup -------------------------------
+# Uses a FRESH connection: the publication connection may be broken (the
+# observed bad_weak_ptr). Registers immediately after CREATE SCHEMA in the DB
+# proof so no failure between create and the first assertion can leak a schema.
+bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
+                                     execute = NULL, close = NULL,
+                                     cleanup_flag = Sys.getenv("LUSK_BRIDGE_TEST_CLEANUP", unset = "")) {
+  if (!identical(cleanup_flag, "1")) {
+    stop("Refusing cleanup without the explicit LUSK_BRIDGE_TEST_CLEANUP=1 opt-in",
+         call. = FALSE)
+  }
+  if (length(schema) != 1L || is.na(schema) ||
+      !grepl("^serving_it_[A-Za-z0-9_]+$", schema))
+    stop("Refusing cleanup: schema is not this run's serving_it_* schema: ", schema,
+         call. = FALSE)
+  if (is.null(open)) open <- function(config) do.call(DBI::dbConnect,
+    c(list(drv = RPostgres::Postgres()), config))
+  if (is.null(query)) query <- function(con, sql, params = list())
+    DBI::dbGetQuery(con, sql, params = params)
+  if (is.null(execute)) execute <- function(con, sql) DBI::dbExecute(con, sql)
+  if (is.null(close)) close <- function(con) DBI::dbDisconnect(con)
+
+  con <- open(config)
+  on.exit(try(close(con), silent = TRUE), add = TRUE)
+  check <- query(con, paste(
+    "SELECT current_database() AS database, EXISTS (",
+    "SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner",
+    "WHERE n.nspname=$1 AND r.rolname=current_user) AS owned"),
+    params = list(schema))
+  if (!is.data.frame(check) || nrow(check) != 1L ||
+      !identical(as.character(check$database[[1L]]), "lusk_it_contract") ||
+      !isTRUE(check$owned[[1L]]))
+    stop("Refusing cleanup: schema identity is not this guarded test schema",
+         call. = FALSE)
+  execute(con, paste0("DROP SCHEMA \"", schema, "\" CASCADE"))
+  invisible(TRUE)
+}
 

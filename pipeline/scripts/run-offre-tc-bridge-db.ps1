@@ -15,6 +15,14 @@ $env:LUSK_BRIDGE_TEST_HOST = $HostName
 $env:LUSK_BRIDGE_TEST_DATABASE = $Database
 $env:LUSK_BRIDGE_TEST_USER = $User
 $env:LUSK_BRIDGE_TEST_CLEANUP = '1'
+$env:TESTTHAT_PARALLEL = 'FALSE'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+
+# Rscript must start in pipeline/ so .Rprofile activates the populated renv
+# library and pkgload::load_all('.') resolves the pipeline package.
+$pipelineDir = Split-Path -Parent $PSScriptRoot
+Write-Host "bridge DB proof: running from $pipelineDir"
 
 $mutex = New-Object System.Threading.Mutex($false, 'Local\LuskIntegrationContractDb')
 $acquired = $false
@@ -22,9 +30,10 @@ try {
   $acquired = $mutex.WaitOne([TimeSpan]::FromMinutes(45))
   if (-not $acquired) { throw 'Timed out waiting for Local\LuskIntegrationContractDb' }
   $env:LUSK_BRIDGE_TEST_MUTEX_HELD = '1'
-  Push-Location $PSScriptRoot
+  Push-Location $pipelineDir
   try {
-    & Rscript -e "testthat::test_local(filter='offre-tc-bridge-db', stop_on_failure=TRUE)"
+    # Stream R's stdout and stderr to the caller; do not capture or swallow.
+    & Rscript -e "testthat::test_local(filter='offre-tc-bridge-db', stop_on_failure=TRUE)" 2>&1 | ForEach-Object { Write-Output $_ }
     $code = $LASTEXITCODE
   } finally {
     Pop-Location

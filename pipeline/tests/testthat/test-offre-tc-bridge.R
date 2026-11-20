@@ -705,3 +705,61 @@ test_that("re-read profile rows that moved during the write abort the transactio
       provenance = moved$profile_provenance)), "profile round-trip")
 })
 
+
+# --- Round-3: harness defects exposed by the real DB proof --------------------
+
+test_that("the DB proof resolves schema.sql independently of the working directory", {
+  expected <- bridge_db_schema_path()
+  expect_true(file.exists(expected))
+  expect_match(normalizePath(expected, winslash = "/"), "/api/schema.sql$")
+  withr::local_dir(tempdir())
+  expect_identical(bridge_db_schema_path(), expected)
+  expect_identical(bridge_db_repo_root(), dirname(dirname(expected)))
+})
+
+test_that("schema cleanup runs after an early error and drops only this run's schema", {
+  dropped <- character()
+  opened <- closed <- 0L
+  open_stub <- function(config) { opened <<- opened + 1L
+    structure(list(), class = "fake-cleanup-con") }
+  query_stub <- function(con, sql, params = list())
+    data.frame(database = "lusk_it_contract", owned = TRUE, stringsAsFactors = FALSE)
+  execute_stub <- function(con, sql) { dropped <<- c(dropped, sql); 1L }
+  close_stub <- function(con) { closed <<- closed + 1L; invisible(TRUE) }
+
+  expect_error(local({
+    schema <- "serving_it_999_abcdef"
+    on.exit(bridge_db_cleanup_schema(
+      schema, bridge_pure_config(), open = open_stub, query = query_stub,
+      execute = execute_stub, close = close_stub, cleanup_flag = "1"), add = TRUE)
+    stop("boom between CREATE SCHEMA and the first assertion")
+  }), "boom between CREATE SCHEMA")
+
+  expect_identical(opened, 1L)
+  expect_identical(closed, 1L)
+  expect_identical(dropped, 'DROP SCHEMA "serving_it_999_abcdef" CASCADE')
+})
+
+test_that("schema cleanup refuses unsafe schemas, wrong databases and missing opt-in", {
+  dropped <- character()
+  common <- list(
+    open = function(config) structure(list(), class = "fake-cleanup-con"),
+    query = function(con, sql, params = list())
+      data.frame(database = "lusk_it_contract", owned = TRUE, stringsAsFactors = FALSE),
+    execute = function(con, sql) { dropped <<- c(dropped, sql); 1L },
+    close = function(con) invisible(TRUE))
+  expect_error(do.call(bridge_db_cleanup_schema, c(list(
+    schema = "public", config = bridge_pure_config(), cleanup_flag = "1"), common)),
+    "Refusing cleanup")
+  expect_error(do.call(bridge_db_cleanup_schema, c(list(
+    schema = "serving_it_1_abcd", config = bridge_pure_config(), cleanup_flag = "0"), common)),
+    "Refusing cleanup")
+  bad_query <- common
+  bad_query$query <- function(con, sql, params = list())
+    data.frame(database = "lusk", owned = TRUE, stringsAsFactors = FALSE)
+  expect_error(do.call(bridge_db_cleanup_schema, c(list(
+    schema = "serving_it_1_abcd", config = bridge_pure_config(), cleanup_flag = "1"), bad_query)),
+    "Refusing cleanup")
+  expect_length(dropped, 0L)
+})
+

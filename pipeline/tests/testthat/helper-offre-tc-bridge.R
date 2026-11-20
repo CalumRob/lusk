@@ -463,8 +463,35 @@ bridge_test_env_values <- function(expected, facts_path = "facts.rds", extra = l
     extra)
 }
 
-bridge_profile_live_rows <- function(reader, con) list(
-  facts = reader$profile_facts(con),
-  axes = reader$profile_axes(con),
-  provenance = reader$profile_provenance(con))
+
+# --- Round-3: robust repo-root resolution for the guarded DB proof ------------
+# testthat runs tests with cwd = pipeline/tests/testthat, NOT pipeline/. Resolve
+# from testthat's own test path (or the cwd as a fallback) by walking up to the
+# directory that actually contains api/schema.sql.
+.bridge_db_repo_root_cache <- NULL
+bridge_db_repo_root <- function(start = NULL) {
+  explicit <- !is.null(start)
+  if (!explicit && !is.null(.bridge_db_repo_root_cache))
+    return(.bridge_db_repo_root_cache)
+  if (!explicit) start <- tryCatch(testthat::test_path(), error = function(e) getwd())
+  current <- normalizePath(start, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(current, "api", "schema.sql"))) {
+      if (!explicit) .bridge_db_repo_root_cache <<- current
+      return(current)
+    }
+    parent <- dirname(current)
+    if (identical(parent, current)) break
+    current <- parent
+  }
+  stop("Cannot locate the repository root containing api/schema.sql from '",
+       start, "'; testthat must run with the project checkout intact", call. = FALSE)
+}
+
+bridge_db_schema_path <- function() {
+  path <- file.path(bridge_db_repo_root(), "api", "schema.sql")
+  if (!file.exists(path))
+    stop("Serving schema is missing: ", path, call. = FALSE)
+  path
+}
 

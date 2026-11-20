@@ -41,7 +41,7 @@ if (!bridge_db_proof_configured()) {
     host <- Sys.getenv("LUSK_BRIDGE_TEST_HOST", unset = "192.168.1.120")
     port <- as.integer(Sys.getenv("LUSK_BRIDGE_TEST_PORT", unset = "5432"))
     passfile <- normalizePath(Sys.getenv("PGPASSFILE"), winslash = "/", mustWork = TRUE)
-    repository <- normalizePath("..", winslash = "/", mustWork = TRUE)
+    repository <- bridge_db_repo_root()
     expect_identical(database, "lusk_it_contract")
     expect_identical(user, "lusk_it_contract_pub")
     expect_identical(Sys.getenv("LUSK_BRIDGE_TEST_MUTEX_HELD"), "1")
@@ -52,7 +52,7 @@ if (!bridge_db_proof_configured()) {
 
     connection <- DBI::dbConnect(RPostgres::Postgres(), host = host, port = port,
                                  dbname = database, user = user, passfile = passfile)
-    on.exit(DBI::dbDisconnect(connection), add = TRUE)
+    on.exit(try(DBI::dbDisconnect(connection), silent = TRUE), add = TRUE)
     identity <- DBI::dbGetQuery(connection, paste(
       "SELECT current_database() AS database, current_user AS role"))
     expect_identical(identity$database[[1L]], "lusk_it_contract")
@@ -62,25 +62,18 @@ if (!bridge_db_proof_configured()) {
     schema <- paste0("serving_it_", Sys.getpid(), "_",
                      sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
     quoted_schema <- as.character(DBI::dbQuoteIdentifier(connection, schema))
-    created <- FALSE
-    on.exit({
-      if (created) {
-        check <- DBI::dbGetQuery(connection, paste(
-          "SELECT current_database() AS database, EXISTS (",
-          "SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner",
-          "WHERE n.nspname=$1 AND r.rolname=current_user) AS owned"),
-          params = list(schema))
-        if (identical(check$database[[1L]], "lusk_it_contract") &&
-            isTRUE(check$owned[[1L]]) && grepl("^serving_it_[A-Za-z0-9_]+$", schema))
-          DBI::dbExecute(connection, paste0("DROP SCHEMA ", quoted_schema, " CASCADE"))
-      }
-    }, add = TRUE)
+    open_fresh <- function(cfg) do.call(DBI::dbConnect, c(
+      list(drv = RPostgres::Postgres()),
+      list(host = host, port = port, dbname = cfg$dbname, user = cfg$user,
+           passfile = passfile)))
 
     DBI::dbExecute(connection, paste0("CREATE SCHEMA ", quoted_schema))
-    created <- TRUE
+    # Register cleanup IMMEDIATELY, on a FRESH connection: the publication
+    # connection may be broken (observed bad_weak_ptr) and any failure between
+    # here and the first assertion must still drop this run's schema.
+    on.exit(bridge_db_cleanup_schema(schema, config, open = open_fresh), add = TRUE)
     DBI::dbExecute(connection, paste0("SET search_path TO ", quoted_schema))
-    ddl <- paste(readLines(file.path("..", "api", "schema.sql"), warn = FALSE),
-                 collapse = "\n")
+    ddl <- paste(readLines(bridge_db_schema_path(), warn = FALSE), collapse = "\n")
     for (statement in split_postgres_sql(ddl)) DBI::dbExecute(connection, statement)
 
     # Seed the OLD (pre-bridge) serving state through the registered publishers.
