@@ -29,6 +29,98 @@ class SemanticResourceReader:
         self._cohort_scopes = {}
 
     @staticmethod
+    def _aedar_resolve(item, resource):
+        """Resolve the declared Cellule address or deprecated alias to internal selectors.
+
+        Returns ``(resolved_item, family)``. The reader's single address seam,
+        backed by the same ``aedar_resolve`` admission uses; preflight and read
+        both call it, hence single and batch reads share it. The resolved
+        ``measure`` lives only on this in-memory copy; a measure-key string is
+        not a declared address. The family returned here is what the comparison
+        dispatch consumes; the lower-level AEDAR snapshots still derive their
+        own family as before.
+        """
+        from api.aedar_models import AEDARAddressError, aedar_resolve
+        if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
+            return item, None
+        try:
+            typequ, measures, family, is_alias = aedar_resolve(
+                resource.resource_kind, item.coordinates, item.intent.kind)
+        except AEDARAddressError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        coordinates = dict(item.coordinates or {})
+        for axis in ("typequ", "horizon", "mode", "statistic", "kind", "measure"):
+            coordinates.pop(axis, None)
+        if typequ is not None:
+            coordinates["typequ"] = typequ
+        if measures is not None:
+            coordinates["measure"] = measures
+        update = {"coordinates": coordinates or None}
+        # A declared Cellule with no explicit field projection projects just its
+        # one measure. The alias keeps its pre-#1076 envelope byte-for-byte.
+        if (measures and not is_alias and item.fields is None and item.intent.kind == "facts"
+                and resource.resource_kind == "aedar_source_grain"):
+            update["fields"] = ["measures." + measures[0]]
+        return item.model_copy(update=update), family
+
+    @staticmethod
+    def _aedar_comparison(conn, item, resource, typequ, measures, family, *,
+                          preflight, snapshot_state=None):
+        """One comparison dispatch for both AEDAR resources, preflight and read.
+
+        Summary readings (declared summary family or the deprecated alias) and
+        per-cell readings use the same snapshot pair; only the selector values
+        differ. ``family`` comes from the single address resolver — it is never
+        re-inferred from the rewritten key. Returning a work estimate only in
+        preflight keeps the two phases on the same path and charges a fixed
+        summary comparison for its peer group exactly like the aggregate one.
+        """
+        from api.aedar_reads import (_aedar_comparison_snapshot,
+                                     _aedar_fixed_peer_ids_cached,
+                                     _aedar_requested_rank_fields,
+                                     _aedar_selected_comparison_snapshot)
+        from api.aedar_models import AEDAR_SUMMARY_FAMILY
+        aggregate = family == AEDAR_SUMMARY_FAMILY
+        kwargs = {"preflight_only": True} if preflight else {"snapshot_state": snapshot_state}
+        if item.intent.kind == "fixed_comparison":
+            result = _aedar_comparison_snapshot(
+                conn, item.target.type, item.target.id, item.intent.context,
+                typequ[0] if typequ else None, measures[0], item.fields,
+                resource.measure_facets, **kwargs)
+            if not preflight:
+                return result
+            if aggregate and snapshot_state is not None:
+                key = (item.target.type, item.target.id, item.intent.context)
+                batch = snapshot_state.setdefault("aedar_fixed_aggregates", {}).setdefault(
+                    key, {"measures": [], "rank_measures": [], "peer_ids": None})
+                if measures[0] not in batch["measures"]:
+                    batch["measures"].append(measures[0])
+                if _aedar_requested_rank_fields(item.fields, aggregate=True):
+                    if measures[0] not in batch["rank_measures"]:
+                        batch["rank_measures"].append(measures[0])
+            if aggregate or _aedar_requested_rank_fields(item.fields, aggregate=False):
+                peer_ids = _aedar_fixed_peer_ids_cached(
+                    conn, item.target.type, item.target.id, item.intent.context, snapshot_state)
+                if aggregate and snapshot_state is not None:
+                    batch = snapshot_state.get("aedar_fixed_aggregates", {}).get(
+                        (item.target.type, item.target.id, item.intent.context))
+                    if batch is not None:
+                        batch["peer_ids"] = peer_ids
+                return 1 + len(peer_ids)
+            return 1
+        result = _aedar_selected_comparison_snapshot(
+            conn, item.target.type, item.target.id,
+            [(member.type, member.id) for member in item.intent.members],
+            typequ, measures, item.fields, resource.measure_facets, **kwargs)
+        if not preflight:
+            return result
+        if aggregate:
+            territory_count = len({member.id for member in item.intent.members} | {item.target.id})
+            return territory_count * len(measures) + len(measures)
+        return (max(1, len(item.intent.members)) * max(1, len(typequ))
+                + max(1, len(typequ)) * max(1, len(measures)))
+
+    @staticmethod
     def _has_dual_scalar_series(resource):
         return (resource.resource_kind == "indicator"
                 and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
@@ -267,6 +359,7 @@ class SemanticResourceReader:
                    *, work_budget: int = 200_000, snapshot_state=None) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f != "axis_comparisons"]
@@ -294,7 +387,12 @@ class SemanticResourceReader:
         if resource.resource_kind == "aedar_territory_summary":
             from api.aedar_reads import _aedar_territory_summary_resource_snapshot
             from api.aedar_models import AEDAR_AGGREGATE_READINGS
-            measures = (item.coordinates or {}).get("measure")
+            coordinates = item.coordinates or {}
+            typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
+            if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+                return self._aedar_comparison(
+                    conn, item, resource, typequ, measures, aedar_family,
+                    preflight=True, snapshot_state=snapshot_state)
             _aedar_territory_summary_resource_snapshot(
                 conn, item.target.type, item.target.id, measures, item.fields,
                 resource.fields, preflight_only=True)
@@ -311,98 +409,26 @@ class SemanticResourceReader:
             self._cohort_scopes[id(item)] = cohort
             return estimate
         if resource.resource_kind == "aedar_source_grain":
-            from api.aedar_reads import (_aedar_comparison_snapshot,
-                _aedar_fixed_peer_ids_cached, _aedar_requested_rank_fields,
-                _aedar_selected_comparison_snapshot,
-                _aedar_territorial_aggregate_snapshot)
+            from api.aedar_reads import _aedar_territorial_aggregate_snapshot
             coordinates = item.coordinates or {}
-            typequ = coordinates.get("typequ")
-            measures = coordinates.get("measure")
-            # (a) Request-shape validation runs first: a malformed request must
-            # fail with 422 rather than be misreported as a publication problem.
-            from api.aedar_models import (AEDAR_AGGREGATE_READINGS,
-                                          AEDAR_COMPARISON_MEASURE_KEYS, AEDAR_MEASURE_KEYS)
-            if measures:
-                if not set(measures) <= AEDAR_COMPARISON_MEASURE_KEYS:
-                    raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
-                if item.intent.kind == "facts" and not set(measures) <= AEDAR_MEASURE_KEYS:
-                    raise HTTPException(422, "Aggregate readings are comparison facets, not facts")
-            aggregate = bool(measures) and set(measures) <= set(AEDAR_AGGREGATE_READINGS)
-            if measures and not aggregate and not set(measures) <= AEDAR_MEASURE_KEYS:
-                raise HTTPException(422, "Coordinate measure mixes aggregate readings with per-cell measures")
-            if item.intent.kind == "fixed_comparison":
-                if not measures or len(measures) != 1:
-                    raise HTTPException(422, "AEDAR comparison requires one measure coordinate")
-                if aggregate and typequ:
-                    raise HTTPException(422, "Aggregate readings are registry-wide and take no typequ coordinate")
-                if not aggregate and not (typequ and len(typequ) == 1):
-                    raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
-            if item.intent.kind == "selected_comparison":
-                if not measures:
-                    raise HTTPException(422, "AEDAR selected comparison requires measure coordinates")
-                if aggregate and typequ:
-                    raise HTTPException(422, "Aggregate readings are registry-wide and take no typequ coordinate")
-                if not aggregate and not typequ:
-                    raise HTTPException(422, "AEDAR selected comparison requires typequ and measure coordinates")
-            # (b) Publication preflight runs second: an absent, stale or
-            # incompatible publication fails closed with 503, matching the
-            # retired legacy routes and the documented endpoint contract, so a
-            # valid request is never reported as malformed.
-            if item.intent.kind == "fixed_comparison":
-                _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
-                    item.intent.context, typequ[0] if typequ else None, measures[0], item.fields,
-                    resource.measure_facets, preflight_only=True)
-                if aggregate and snapshot_state is not None:
-                    key = (item.target.type, item.target.id, item.intent.context)
-                    batch = snapshot_state.setdefault("aedar_fixed_aggregates", {}).setdefault(
-                        key, {"measures": [], "rank_measures": [], "peer_ids": None})
-                    if measures[0] not in batch["measures"]:
-                        batch["measures"].append(measures[0])
-                    if _aedar_requested_rank_fields(item.fields, aggregate=True):
-                        if measures[0] not in batch["rank_measures"]:
-                            batch["rank_measures"].append(measures[0])
-            elif item.intent.kind == "selected_comparison":
-                _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
-                    [(member.type, member.id) for member in item.intent.members],
-                    typequ, measures, item.fields, resource.measure_facets,
-                    preflight_only=True, snapshot_state=snapshot_state)
+            typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
+            if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+                work = self._aedar_comparison(
+                    conn, item, resource, typequ, measures, aedar_family,
+                    preflight=True, snapshot_state=snapshot_state)
             elif item.intent.kind == "facts":
                 _aedar_territorial_aggregate_snapshot(conn, item.target.type,
                     item.target.id, typequ, None, 100, 0, preflight_only=True)
-            # (c) Published-descriptor domain check runs last: 422 only once the
-            # publication is available and the value is not declared by it.
+            # Published-descriptor domain check: 422 only once the publication
+            # is available and the equipment value is not declared by it.
             if typequ:
                 known = {row[0] for row in conn.execute(
                     "SELECT DISTINCT typequ FROM aedar_territorial_aggregate WHERE typequ=ANY(%s)",
                     (typequ,)).fetchall()}
                 if known != set(typequ):
                     raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
-            if item.intent.kind == "fixed_comparison":
-                if aggregate or _aedar_requested_rank_fields(item.fields, aggregate=False):
-                    # One set-wise read over the resolved fixed-context peer
-                    # group (ADR-0021 scope; per-cell ranks #951), plus the
-                    # comparison entry itself. The aggregate batch keeps the
-                    # resolved ids for its multi-measure preparation.
-                    peer_ids = _aedar_fixed_peer_ids_cached(
-                        conn, item.target.type, item.target.id, item.intent.context,
-                        snapshot_state)
-                    if aggregate and snapshot_state is not None:
-                        batch = snapshot_state.get("aedar_fixed_aggregates", {}).get(
-                            (item.target.type, item.target.id, item.intent.context))
-                        if batch is not None:
-                            batch["peer_ids"] = peer_ids
-                    return 1 + len(peer_ids)
-                return 1
-            if item.intent.kind == "selected_comparison":
-                if aggregate:
-                    # One summary observation per selected/focal territory and
-                    # measure, plus one projected comparison entry per measure.
-                    territory_count = len({member.id for member in item.intent.members} | {item.target.id})
-                    return territory_count * len(measures) + len(measures)
-                # Bounded read work: one aggregate row per member and TYPEQU,
-                # plus one projected comparison entry per TYPEQU x measure.
-                return (max(1, len(item.intent.members)) * max(1, len(typequ))
-                        + max(1, len(typequ)) * max(1, len(measures)))
+            if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+                return work
             if item.intent.kind == "facts":
                 count = conn.execute("SELECT count(*) FROM aedar_territorial_aggregate WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))",
                     (item.target.type, item.target.id, typequ, typequ)).fetchone()[0]
@@ -575,6 +601,7 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import read_axis_comparisons
             # Preserve an explicitly requested scalar facet and its scalar
@@ -600,31 +627,22 @@ class SemanticResourceReader:
             return data
         if resource.resource_kind == "typed_reading":
             return self._typed_reading_read(conn, item, resource)
-        if resource.resource_kind == "aedar_territory_summary":
-            from api.aedar_reads import _aedar_territory_summary_resource_snapshot
-            return {"resource": item.resource, "target": item.target.model_dump(),
-                    **_aedar_territory_summary_resource_snapshot(
-                        conn, item.target.type, item.target.id,
-                        (item.coordinates or {}).get("measure"), item.fields,
-                        resource.fields)}
-        if resource.resource_kind == "aedar_source_grain":
-            from api.aedar_reads import (_aedar_comparison_snapshot,
-                _aedar_selected_comparison_snapshot,
-                _aedar_territorial_aggregate_snapshot)
+        if resource.resource_kind in {"aedar_territory_summary", "aedar_source_grain"}:
+            from api.aedar_reads import (_aedar_territory_summary_resource_snapshot,
+                                         _aedar_territorial_aggregate_snapshot)
             coordinates = item.coordinates or {}
-            if item.intent.kind == "fixed_comparison":
-                typequ = coordinates.get("typequ")
-                data = _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
-                    item.intent.context, typequ[0] if typequ else None, coordinates["measure"][0],
-                    item.fields, resource.measure_facets, snapshot_state=snapshot_state)
-            elif item.intent.kind == "selected_comparison":
-                data = _aedar_selected_comparison_snapshot(conn, item.target.type, item.target.id,
-                    [(member.type, member.id) for member in item.intent.members],
-                    coordinates.get("typequ"), coordinates.get("measure"), item.fields,
-                    resource.measure_facets, snapshot_state=snapshot_state)
+            typequ, measures = coordinates.get("typequ"), coordinates.get("measure")
+            if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+                data = self._aedar_comparison(
+                    conn, item, resource, typequ, measures, aedar_family,
+                    preflight=False, snapshot_state=snapshot_state)
+            elif resource.resource_kind == "aedar_territory_summary":
+                data = _aedar_territory_summary_resource_snapshot(
+                    conn, item.target.type, item.target.id, measures, item.fields,
+                    resource.fields)
             else:
-                data = _aedar_territorial_aggregate_snapshot(conn, item.target.type,
-                    item.target.id, coordinates.get("typequ"), item.fields, 100, 0)
+                data = _aedar_territorial_aggregate_snapshot(
+                    conn, item.target.type, item.target.id, typequ, item.fields, 100, 0)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
         if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
             selection = ([(member.type, member.id) for member in item.intent.members]

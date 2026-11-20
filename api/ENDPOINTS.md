@@ -89,8 +89,55 @@ default:
 The declaration is derived from the same producer metadata the publisher
 validates the descriptor against. The published descriptor remains the factual
 source for label, unit and ordinal; this is a declaration, not a second source
-of truth. AEDAR source grains, the TYPEQU universe, the AEDAR summary family and
-observed collections are declared by #1076, not here.
+of truth. Observed collections are declared by their own producer contracts,
+not here.
+
+### AEDAR Cellules (#1076)
+
+The two AEDAR resources each carry a `cellule` block, declared in the producer
+semantic-resource contract rather than a theme page. Their axes differ:
+
+- `aedar_territorial_aggregate` declares four coordinates — `typequ` (the 235
+  structured producer values: code, readable label, domain, subdomain, gamme
+  status and readable gamme label, source order), `horizon` (5/10/15/20
+  minutes), `mode` (the six source modes including `transit_gain`) and
+  `statistic` (share, min, max, déciles 1–9, mean). A Cellule is equipment ×
+  horizon × mode × statistic. The 312 valid combinations are the full
+  4 × 6 × 13 measure space, orthogonal to the equipment axis; no key is parsed.
+- `aedar_territory_summary` declares its own family and address with `horizon`,
+  the five display `mode`s and `kind` (diversité / volume). Its 40 combinations
+  are that product; `transit_gain` is declared in `no_summary_modes` as having
+  no summary. The car × 15 point is addressed as `car`/`15`/diversity or volume
+  even though its legacy comparison-facet keys are `meanDiversity`/`meanVolume`;
+  those legacy keys remain comparison facets and are never Cellule addresses.
+- The families are disjoint **on the declared address**. A client addresses
+  AEDAR by these declared coordinates: `{typequ, horizon, mode, statistic}` for
+  a per-cell Cellule, `{horizon, mode, kind}` for a summary. These are the only
+  documented addresses; the reader alone translates them to the internal
+  measure key, so a declared address never carries a measure-key string. A
+  summary point sent to the aggregate (or a per-cell point to the summary) is
+  refused by name. The legacy, measure-free `{typequ}` facts read still returns
+  every published measure of that equipment type; it never names a measure.
+
+**Deprecated `measure` alias.** Until #1098 migrates the fiche, `measure` is
+still accepted as a deprecated address alias on both resources, with its
+**pre-#1076 semantics** frozen: `{typequ, measure: [per-cell key]}` and
+`{measure: [summary key]}` on `aedar_territorial_aggregate` (the latter is a
+summary reading on the aggregate, exactly as the fiche calls it today), and
+`{measure: [summary key]}` on `aedar_territory_summary`. The alias keeps the
+old union selector — a mixed per-cell/summary set is still rejected, as are
+facts naming a summary key on the aggregate. It is not advertised as a declared
+coordinate in discovery and carries no family-separation or combination rules.
+**Removal condition:** #1098 migrates the fiche/AEDAR callers to declared
+Cellule coordinates, after which the alias and the deprecated
+`AEDAR_COMPARISON_MEASURE_KEYS` symbol are removed; declared coordinates then
+become the only accepted address.
+
+The Typequ universe pins the source sha256 of the INSEE registry, hierarchy and
+gamme sheet, so a stale committed projection fails discovery loudly. The gamme
+entry carries both its `status` (`classified`/`hors_gamme`/`absent`) and its
+readable label; `absent` has a null label, which is the pipeline's declared
+case for self-regrouping types, not a missing label.
 
 Where a producer page sets `cellule.declare: false`, discovery emits no
 `cellule` and the published descriptor owns the coordinate space. The complete
@@ -229,9 +276,10 @@ Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the
 semantic resource contract. `aedar_territorial_aggregate` is declared as a
 semantic resource and can be read through `/api/resources/read` and
-`/api/resources/read-batch`; `typequ` and
-`measure` are closed coordinate selectors, `measures.<registered-id>` is a field
-projection, and comparison context belongs to `fixed_comparison` intent. The two
+`/api/resources/read-batch`; it is addressed by the declared Cellule coordinates
+`{typequ, horizon, mode, statistic}` (or, until #1098, the deprecated `measure`
+alias described above), `measures.<registered-id>` is a field projection, and
+comparison context belongs to `fixed_comparison` intent. The two
 legacy AEDAR GET operations
 (`/api/aedar/territories/{type}/{id}/aggregates` and `/comparisons`) are
 retired: AEDAR data is available only through the unified resource contract.
@@ -344,14 +392,17 @@ Searches the retained published territory reference with bounded query inputs.
   `aedar_territorial_aggregate` computes, per
   request on one committed snapshot, the address-weighted mean of the
   same-level members' published aggregates (weights = `n_addresses`) for each
-  requested `typequ`/`measure` cell — scalar readings and per-cell curve readings
-  alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
+  requested per-cell Cellule `{typequ, horizon, mode, statistic}` (or the
+  deprecated `{typequ, measure}` alias) — scalar readings and per-cell curve
+  readings alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
   within the selection (ties share rank; the focal must be a member to receive a
   rank). Unknown or partial members fail closed naming the failed member.
   The 40 registry-wide aggregate readings (five displayed modes × four horizons
   × diversity/share and volume/mean; car/15-minute retains `meanDiversity` and
   `meanVolume`),
-  requested via the `measure` coordinate without `typequ`) are computed the same
+  addressed by the declared summary Cellule `{horizon, mode, kind}` on
+  `aedar_territory_summary` (the old `measure`-only form on the aggregate is the
+  deprecated alias until #1098) are computed the same
   way per request from published per-type rows, never published, and gain the
   opt-in rank fields in BOTH intents (#914, ADR-0039's 2026-11-04 amendment):
   fixed declared contexts rank the focal's registry-wide reading within the

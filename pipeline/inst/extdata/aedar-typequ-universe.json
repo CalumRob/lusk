@@ -1,0 +1,4017 @@
+{
+  "contract": "aedar-typequ-universe-v1",
+  "bpe_year": 2025,
+  "registry_count": 235,
+  "sources": {
+    "registry": {
+      "path": "pipeline/inst/extdata/aedar-typequ-2025.csv",
+      "sha256": "97e7b10f4cae822d765e594ac74daa54062cd03f52f84c86f5a541d07576a915"
+    },
+    "hierarchy": {
+      "path": "BPE25_liste_hierarchisee_TYPEQU.html",
+      "sha256": "63c3f4708f2098b647ed54f8394ec4924515a5dc10ecb97d92d66fb0402f31c9"
+    },
+    "hierarchy_projection": "pipeline/tests/testthat/fixtures/aedar-typequ-hierarchy-2025.csv",
+    "gamme": {
+      "path": "BPE_gammes_equipements_2025.xlsx",
+      "sha256": "c804a56f7aa43984da80809ad4a028a70f87fe996495b1abeec327dd8c87980e"
+    }
+  },
+  "values": [
+    {
+      "value": "A104",
+      "label": "GENDARMERIE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 1
+    },
+    {
+      "value": "A105",
+      "label": "COUR D’APPEL",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 2
+    },
+    {
+      "value": "A108",
+      "label": "CONSEIL DE PRUD’HOMMES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 3
+    },
+    {
+      "value": "A109",
+      "label": "TRIBUNAL DE COMMERCE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 4
+    },
+    {
+      "value": "A120",
+      "label": "DIRECTION RÉGIONALE DES FINANCES PUBLIQUES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 5
+    },
+    {
+      "value": "A121",
+      "label": "DIRECTION DÉPARTEMENTALE DES FINANCES PUBLIQUES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 6
+    },
+    {
+      "value": "A122",
+      "label": "RÉSEAU DE PROXIMITÉ FRANCE TRAVAIL",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 7
+    },
+    {
+      "value": "A124",
+      "label": "MAISON DE JUSTICE ET DU DROIT",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 8
+    },
+    {
+      "value": "A125",
+      "label": "ANTENNE DE JUSTICE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 9
+    },
+    {
+      "value": "A126",
+      "label": "CONSEIL DÉPARTEMENTAL D’ACCÈS AU DROIT",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 10
+    },
+    {
+      "value": "A128",
+      "label": "FRANCE SERVICES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 11
+    },
+    {
+      "value": "A129",
+      "label": "MAIRIE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 12
+    },
+    {
+      "value": "A130",
+      "label": "BUREAU D’AIDE JURIDICTIONNELLE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 13
+    },
+    {
+      "value": "A131",
+      "label": "TRIBUNAL JUDICIAIRE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 14
+    },
+    {
+      "value": "A132",
+      "label": "TRIBUNAL DE PROXIMITÉ",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 15
+    },
+    {
+      "value": "A133",
+      "label": "DÉCHÈTERIE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 16
+    },
+    {
+      "value": "A134",
+      "label": "COUR CRIMINELLE DEPARTEMENTALE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 17
+    },
+    {
+      "value": "A135",
+      "label": "COUR D'ASSISES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 18
+    },
+    {
+      "value": "A136",
+      "label": "JURIDICTION ADMINISTRATIVE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 19
+    },
+    {
+      "value": "A137",
+      "label": "TRIBUNAL CORRECTIONNEL",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 20
+    },
+    {
+      "value": "A138",
+      "label": "TRIBUNAL DE POLICE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 21
+    },
+    {
+      "value": "A139",
+      "label": "TRIBUNAL POUR ENFANTS",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 22
+    },
+    {
+      "value": "A140",
+      "label": "POLICE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A1",
+        "label": "SERVICES PUBLICS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 23
+    },
+    {
+      "value": "A203",
+      "label": "BANQUE, CAISSE D’ÉPARGNE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A2",
+        "label": "SERVICES GÉNÉRAUX"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 24
+    },
+    {
+      "value": "A205",
+      "label": "SERVICES FUNÉRAIRES",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A2",
+        "label": "SERVICES GÉNÉRAUX"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 25
+    },
+    {
+      "value": "A206",
+      "label": "BUREAU DE POSTE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A2",
+        "label": "SERVICES GÉNÉRAUX"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 26
+    },
+    {
+      "value": "A207",
+      "label": "RELAIS POSTE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A2",
+        "label": "SERVICES GÉNÉRAUX"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 27
+    },
+    {
+      "value": "A208",
+      "label": "AGENCE POSTALE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A2",
+        "label": "SERVICES GÉNÉRAUX"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 28
+    },
+    {
+      "value": "A301",
+      "label": "RÉPARATION AUTOMOBILE ET DE MATÉRIEL AGRICOLE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A3",
+        "label": "SERVICES AUTOMOBILES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 29
+    },
+    {
+      "value": "A302",
+      "label": "CONTRÔLE TECHNIQUE AUTOMOBILE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A3",
+        "label": "SERVICES AUTOMOBILES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 30
+    },
+    {
+      "value": "A303",
+      "label": "LOCATION AUTO-UTILITAIRES LÉGERS",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A3",
+        "label": "SERVICES AUTOMOBILES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 31
+    },
+    {
+      "value": "A304",
+      "label": "ÉCOLE DE CONDUITE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A3",
+        "label": "SERVICES AUTOMOBILES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 32
+    },
+    {
+      "value": "A401",
+      "label": "MAÇON",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 33
+    },
+    {
+      "value": "A402",
+      "label": "PLÂTRIER PEINTRE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 34
+    },
+    {
+      "value": "A403",
+      "label": "MENUISIER CHARPENTIER SERRURIER",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 35
+    },
+    {
+      "value": "A404",
+      "label": "PLOMBIER COUVREUR CHAUFFAGISTE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 36
+    },
+    {
+      "value": "A405",
+      "label": "ÉLECTRICIEN",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 37
+    },
+    {
+      "value": "A406",
+      "label": "ENTREPRISE GÉNÉRALE DU BÂTIMENT",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A4",
+        "label": "ARTISANAT DU BÂTIMENT"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 38
+    },
+    {
+      "value": "A501",
+      "label": "COIFFURE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 39
+    },
+    {
+      "value": "A502",
+      "label": "VÉTÉRINAIRE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 40
+    },
+    {
+      "value": "A503",
+      "label": "AGENCE DE TRAVAIL TEMPORAIRE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 41
+    },
+    {
+      "value": "A504",
+      "label": "RESTAURANT- RESTAURATION RAPIDE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 42
+    },
+    {
+      "value": "A505",
+      "label": "AGENCE IMMOBILIÈRE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 43
+    },
+    {
+      "value": "A506",
+      "label": "PRESSING-LAVERIE AUTOMATIQUE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 44
+    },
+    {
+      "value": "A507",
+      "label": "INSTITUT DE BEAUTÉ-ONGLERIE",
+      "domain": {
+        "code": "A",
+        "label": "SERVICES POUR LES PARTICULIERS"
+      },
+      "subdomain": {
+        "code": "A5",
+        "label": "AUTRES SERVICES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 45
+    },
+    {
+      "value": "B103",
+      "label": "GRANDE SURFACE DE BRICOLAGE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B1",
+        "label": "GRANDES SURFACES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 46
+    },
+    {
+      "value": "B104",
+      "label": "HYPERMARCHÉ ET GRAND MAGASIN",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B1",
+        "label": "GRANDES SURFACES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 47
+    },
+    {
+      "value": "B105",
+      "label": "SUPERMARCHÉ ET MAGASIN MULTI-COMMERCE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B1",
+        "label": "GRANDES SURFACES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 48
+    },
+    {
+      "value": "B201",
+      "label": "SUPÉRETTE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 49
+    },
+    {
+      "value": "B202",
+      "label": "ÉPICERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 50
+    },
+    {
+      "value": "B204",
+      "label": "BOUCHERIE CHARCUTERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 51
+    },
+    {
+      "value": "B205",
+      "label": "PRODUITS SURGELÉS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 52
+    },
+    {
+      "value": "B206",
+      "label": "POISSONNERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 53
+    },
+    {
+      "value": "B207",
+      "label": "BOULANGERIE-PÂTISSERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 54
+    },
+    {
+      "value": "B208",
+      "label": "COMMERCE SPÉCIALISÉ EN FRUITS ET LÉGUMES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 55
+    },
+    {
+      "value": "B209",
+      "label": "COMMERCE DE BOISSONS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 56
+    },
+    {
+      "value": "B210",
+      "label": "AUTRES COMMERCES ALIMENTAIRES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B2",
+        "label": "COMMERCES ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 57
+    },
+    {
+      "value": "B302",
+      "label": "MAGASIN DE VÊTEMENTS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 58
+    },
+    {
+      "value": "B303",
+      "label": "MAGASIN D’ÉQUIPEMENTS DU FOYER",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 59
+    },
+    {
+      "value": "B304",
+      "label": "MAGASIN DE CHAUSSURES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 60
+    },
+    {
+      "value": "B306",
+      "label": "MAGASIN DE MEUBLES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 61
+    },
+    {
+      "value": "B307",
+      "label": "MAGASIN D’ARTICLES DE SPORTS ET DE LOISIRS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 62
+    },
+    {
+      "value": "B308",
+      "label": "MAGASIN DE REVÊTEMENTS MURS ET SOLS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 63
+    },
+    {
+      "value": "B309",
+      "label": "DROGUERIE QUINCAILLERIE BRICOLAGE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 64
+    },
+    {
+      "value": "B310",
+      "label": "PARFUMERIE-COSMÉTIQUE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 65
+    },
+    {
+      "value": "B311",
+      "label": "HORLOGERIE-BIJOUTERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 66
+    },
+    {
+      "value": "B312",
+      "label": "FLEURISTE-JARDINERIE-ANIMALERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 67
+    },
+    {
+      "value": "B313",
+      "label": "MAGASIN D’OPTIQUE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 68
+    },
+    {
+      "value": "B315",
+      "label": "MAGASIN DE MATÉRIEL MÉDICAL ET ORTHOPÉDIQUE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 69
+    },
+    {
+      "value": "B316",
+      "label": "STATION-SERVICE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 70
+    },
+    {
+      "value": "B317",
+      "label": "COMMERCE DE TISSUS ET MERCERIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 71
+    },
+    {
+      "value": "B318",
+      "label": "COMMERCE DE JEUX ET JOUETS",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 72
+    },
+    {
+      "value": "B319",
+      "label": "MAROQUINERIE ET ARTICLES DE VOYAGE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 73
+    },
+    {
+      "value": "B320",
+      "label": "COMMERCE DE COMBUSTIBLES DOMESTIQUES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 74
+    },
+    {
+      "value": "B321",
+      "label": "MAGASIN ÉLECTROMÉNAGER, MATÉRIEL AUDIO VIDÉO INFORMATIQUE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 75
+    },
+    {
+      "value": "B322",
+      "label": "MAGASIN DE MATÉRIELS DE TÉLÉCOMMUNICATION",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 76
+    },
+    {
+      "value": "B323",
+      "label": "COMMERCE DE BIENS D’OCCASION",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 77
+    },
+    {
+      "value": "B324",
+      "label": "LIBRAIRIE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 78
+    },
+    {
+      "value": "B325",
+      "label": "PAPETERIE ET PRESSE",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 79
+    },
+    {
+      "value": "B326",
+      "label": "STATION DE RECHARGE DE VÉHICULES ÉLECTRIQUES",
+      "domain": {
+        "code": "B",
+        "label": "COMMERCES"
+      },
+      "subdomain": {
+        "code": "B3",
+        "label": "COMMERCES SPÉCIALISÉS NON-ALIMENTAIRES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 80
+    },
+    {
+      "value": "C107",
+      "label": "ÉCOLE MATERNELLE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C1",
+        "label": "ENSEIGNEMENT DU PREMIER DEGRÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 81
+    },
+    {
+      "value": "C108",
+      "label": "ÉCOLE PRIMAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C1",
+        "label": "ENSEIGNEMENT DU PREMIER DEGRÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 82
+    },
+    {
+      "value": "C109",
+      "label": "ÉCOLE ÉLÉMENTAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C1",
+        "label": "ENSEIGNEMENT DU PREMIER DEGRÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 83
+    },
+    {
+      "value": "C201",
+      "label": "COLLÈGE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C2",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - PREMIER CYCLE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 84
+    },
+    {
+      "value": "C301",
+      "label": "LYCÉE D’ENSEIGNEMENT GÉNÉRAL ET/OU TECHNOLOGIQUE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C3",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - SECOND CYCLE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 85
+    },
+    {
+      "value": "C302",
+      "label": "LYCÉE D’ENSEIGNEMENT PROFESSIONNEL",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C3",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - SECOND CYCLE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 86
+    },
+    {
+      "value": "C303",
+      "label": "LYCÉE D’ENSEIGNEMENT TECHNIQUE ET/OU PROFESSIONNEL AGRICOLE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C3",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - SECOND CYCLE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 87
+    },
+    {
+      "value": "C304",
+      "label": "SGT SECTION D’ENSEIGNEMENT GÉNÉRAL ET TECHNOLOGIQUE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C3",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - SECOND CYCLE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 88
+    },
+    {
+      "value": "C305",
+      "label": "SEP SECTION D’ENSEIGNEMENT PROFESSIONNEL",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C3",
+        "label": "ENSEIGNEMENT DU SECOND DEGRÉ - SECOND CYCLE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 89
+    },
+    {
+      "value": "C401",
+      "label": "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C4",
+        "label": "ENSEIGNEMENT SUPÉRIEUR NON-UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 90
+    },
+    {
+      "value": "C403",
+      "label": "FORMATION COMMERCE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C4",
+        "label": "ENSEIGNEMENT SUPÉRIEUR NON-UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 91
+    },
+    {
+      "value": "C409",
+      "label": "AUTRE FORMATION POST BAC NON UNIVERSITAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C4",
+        "label": "ENSEIGNEMENT SUPÉRIEUR NON-UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 92
+    },
+    {
+      "value": "C410",
+      "label": "ÉCOLE DE FORMATION AUX PROFESSIONS SANITAIRES ET SOCIALES",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C4",
+        "label": "ENSEIGNEMENT SUPÉRIEUR NON-UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 93
+    },
+    {
+      "value": "C411",
+      "label": "ÉCOLE DE FORMATION AUX MÉTIERS DE LA CULTURE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C4",
+        "label": "ENSEIGNEMENT SUPÉRIEUR NON-UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 94
+    },
+    {
+      "value": "C501",
+      "label": "UFR",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 95
+    },
+    {
+      "value": "C502",
+      "label": "INSTITUT UNIVERSITAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 96
+    },
+    {
+      "value": "C503",
+      "label": "ÉCOLE D’INGÉNIEURS",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 97
+    },
+    {
+      "value": "C504",
+      "label": "ENSEIGNEMENT GÉNÉRAL SUPÉRIEUR PRIVÉ",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 98
+    },
+    {
+      "value": "C505",
+      "label": "ÉCOLE D’ENSEIGNEMENT SUPÉRIEUR AGRICOLE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 99
+    },
+    {
+      "value": "C509",
+      "label": "AUTRE ENSEIGNEMENT SUPÉRIEUR",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C5",
+        "label": "ENSEIGNEMENT SUPÉRIEUR UNIVERSITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 100
+    },
+    {
+      "value": "C602",
+      "label": "GRETA",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C6",
+        "label": "FORMATION CONTINUE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 101
+    },
+    {
+      "value": "C603",
+      "label": "CENTRE DISPENSANT DE LA FORMATION CONTINUE AGRICOLE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C6",
+        "label": "FORMATION CONTINUE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 102
+    },
+    {
+      "value": "C604",
+      "label": "FORMATION AUX MÉTIERS DU SPORT",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C6",
+        "label": "FORMATION CONTINUE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 103
+    },
+    {
+      "value": "C610",
+      "label": "ORGANISME DE FORMATION EN APPRENTISSAGE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C6",
+        "label": "FORMATION CONTINUE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 104
+    },
+    {
+      "value": "C701",
+      "label": "RÉSIDENCE UNIVERSITAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C7",
+        "label": "AUTRES SERVICES DE L’ÉDUCATION"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 105
+    },
+    {
+      "value": "C702",
+      "label": "RESTAURANT UNIVERSITAIRE",
+      "domain": {
+        "code": "C",
+        "label": "ENSEIGNEMENT"
+      },
+      "subdomain": {
+        "code": "C7",
+        "label": "AUTRES SERVICES DE L’ÉDUCATION"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 106
+    },
+    {
+      "value": "D101",
+      "label": "ÉTABLISSEMENT DE SOINS DE COURTE DURÉE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 107
+    },
+    {
+      "value": "D102",
+      "label": "ÉTABLISSEMENT DE SOINS DE SUITE ET DE RÉADAPTATION",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 108
+    },
+    {
+      "value": "D103",
+      "label": "ÉTABLISSEMENT DE SOINS DE LONGUE DURÉE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 109
+    },
+    {
+      "value": "D104",
+      "label": "ÉTABLISSEMENT PSYCHIATRIQUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 110
+    },
+    {
+      "value": "D105",
+      "label": "CENTRE DE LUTTE CONTRE LE CANCER",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 111
+    },
+    {
+      "value": "D106",
+      "label": "URGENCES",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 112
+    },
+    {
+      "value": "D107",
+      "label": "MATERNITÉ",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 113
+    },
+    {
+      "value": "D108",
+      "label": "CENTRE DE SANTÉ",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 114
+    },
+    {
+      "value": "D109",
+      "label": "STRUCTURE PSYCHIATRIQUE EN AMBULATOIRE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 115
+    },
+    {
+      "value": "D110",
+      "label": "CENTRE DE MÉDECINE PRÉVENTIVE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 116
+    },
+    {
+      "value": "D111",
+      "label": "DIALYSE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 117
+    },
+    {
+      "value": "D112",
+      "label": "HOSPITALISATION À DOMICILE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 118
+    },
+    {
+      "value": "D113",
+      "label": "MAISON DE SANTÉ PLURIDISCIPLINAIRE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 119
+    },
+    {
+      "value": "D114",
+      "label": "SERVICE DE PRISE EN CHARGE DES ADDICTIONS",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 120
+    },
+    {
+      "value": "D115",
+      "label": "SERVICES DE SANTÉ MATERNELLE ET INFANTILE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D1",
+        "label": "ETABLISSEMENTS ET SERVICES DE SANTÉ"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 121
+    },
+    {
+      "value": "D245",
+      "label": "PROFESSIONNELS DE L’APPAREILLAGE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 122
+    },
+    {
+      "value": "D246",
+      "label": "AUDIOPROTHESISTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 123
+    },
+    {
+      "value": "D247",
+      "label": "ERGOTHÉRAPEUTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 124
+    },
+    {
+      "value": "D248",
+      "label": "PSYCHOMOTRICIEN",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 125
+    },
+    {
+      "value": "D249",
+      "label": "DIÉTÉTICIEN",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 126
+    },
+    {
+      "value": "D250",
+      "label": "PSYCHOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 127
+    },
+    {
+      "value": "D251",
+      "label": "ALLERGOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 128
+    },
+    {
+      "value": "D252",
+      "label": "ANESTHÉSISTE-RÉANIMATEUR",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 129
+    },
+    {
+      "value": "D253",
+      "label": "SPÉCIALISTE EN CHIRURGIE GÉNÉRALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 130
+    },
+    {
+      "value": "D254",
+      "label": "SPÉCIALISTE EN CHIRURGIE ORTHOPÉDIQUE, PLASTIQUE ET TRAUMATOLOGIQUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 131
+    },
+    {
+      "value": "D255",
+      "label": "ENDOCRINOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 132
+    },
+    {
+      "value": "D256",
+      "label": "GÉRIATRE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 133
+    },
+    {
+      "value": "D257",
+      "label": "HÉMATOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 134
+    },
+    {
+      "value": "D258",
+      "label": "SPÉCIALISTE EN MÉDECINE PHYSIQUE ET DE RÉADAPTATION",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 135
+    },
+    {
+      "value": "D259",
+      "label": "NEUROLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 136
+    },
+    {
+      "value": "D260",
+      "label": "SPÉCIALISTE EN ONCOLOGIE, ANATOMIE ET CYTOLOGIE PATHOLOGIQUES",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 137
+    },
+    {
+      "value": "D261",
+      "label": "RHUMATOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 138
+    },
+    {
+      "value": "D262",
+      "label": "UROLOGUE, NÉPHROLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 139
+    },
+    {
+      "value": "D265",
+      "label": "MÉDECIN GÉNÉRALISTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 140
+    },
+    {
+      "value": "D266",
+      "label": "SPÉCIALISTE EN CARDIOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 141
+    },
+    {
+      "value": "D267",
+      "label": "SPÉCIALISTE EN DERMATOLOGIE VÉNÉRÉOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 142
+    },
+    {
+      "value": "D268",
+      "label": "SPÉCIALISTE EN GASTRO-ENTÉROLOGIE HÉPATOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 143
+    },
+    {
+      "value": "D269",
+      "label": "SPÉCIALISTE EN PSYCHIATRIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 144
+    },
+    {
+      "value": "D270",
+      "label": "SPÉCIALISTE EN OPHTALMOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 145
+    },
+    {
+      "value": "D271",
+      "label": "SPÉCIALISTE EN OTO-RHINO-LARYNGOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 146
+    },
+    {
+      "value": "D272",
+      "label": "SPÉCIALISTE EN PÉDIATRIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 147
+    },
+    {
+      "value": "D273",
+      "label": "SPÉCIALISTE EN PNEUMOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 148
+    },
+    {
+      "value": "D274",
+      "label": "SPÉCIALISTE EN RADIODIAGNOSTIC ET IMAGERIE MÉDICALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 149
+    },
+    {
+      "value": "D275",
+      "label": "SPÉCIALISTE EN STOMATOLOGIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 150
+    },
+    {
+      "value": "D276",
+      "label": "SPÉCIALISTE EN GYNÉCOLOGIE MÉDICALE ET/OU OBSTÉTRIQUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 151
+    },
+    {
+      "value": "D277",
+      "label": "CHIRURGIEN DENTISTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 152
+    },
+    {
+      "value": "D278",
+      "label": "SAGE-FEMME",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 153
+    },
+    {
+      "value": "D279",
+      "label": "MASSEUR KINÉSITHÉRAPEUTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 154
+    },
+    {
+      "value": "D280",
+      "label": "PÉDICURE-PODOLOGUE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 155
+    },
+    {
+      "value": "D281",
+      "label": "INFIRMIER",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 156
+    },
+    {
+      "value": "D282",
+      "label": "ORTHOPHONISTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 157
+    },
+    {
+      "value": "D283",
+      "label": "ORTHOPTISTE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D2",
+        "label": "FONCTIONS MÉDICALES ET PARAMÉDICALES (À TITRE LIBÉRAL)"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 158
+    },
+    {
+      "value": "D302",
+      "label": "LABORATOIRE D ANALYSES ET DE BIOLOGIE MÉDICALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D3",
+        "label": "AUTRES ÉTABLISSEMENTS ET SERVICES À CARACTÈRE SANITAIRE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 159
+    },
+    {
+      "value": "D303",
+      "label": "AMBULANCE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D3",
+        "label": "AUTRES ÉTABLISSEMENTS ET SERVICES À CARACTÈRE SANITAIRE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 160
+    },
+    {
+      "value": "D304",
+      "label": "TRANSFUSION SANGUINE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D3",
+        "label": "AUTRES ÉTABLISSEMENTS ET SERVICES À CARACTÈRE SANITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 161
+    },
+    {
+      "value": "D305",
+      "label": "ÉTABLISSEMENT THERMAL",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D3",
+        "label": "AUTRES ÉTABLISSEMENTS ET SERVICES À CARACTÈRE SANITAIRE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 162
+    },
+    {
+      "value": "D307",
+      "label": "PHARMACIE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D3",
+        "label": "AUTRES ÉTABLISSEMENTS ET SERVICES À CARACTÈRE SANITAIRE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 163
+    },
+    {
+      "value": "D401",
+      "label": "PERSONNES ÂGÉES : HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D4",
+        "label": "ACTION SOCIALE POUR PERSONNES ÂGÉES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 164
+    },
+    {
+      "value": "D402",
+      "label": "PERSONNES ÂGÉES : SOINS À DOMICILE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D4",
+        "label": "ACTION SOCIALE POUR PERSONNES ÂGÉES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 165
+    },
+    {
+      "value": "D403",
+      "label": "PERSONNES ÂGÉES : SERVICES D’AIDE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D4",
+        "label": "ACTION SOCIALE POUR PERSONNES ÂGÉES"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 166
+    },
+    {
+      "value": "D502",
+      "label": "ÉTABLISSEMENT D’ACCUEIL DU JEUNE ENFANT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 167
+    },
+    {
+      "value": "D503",
+      "label": "LIEUX D'ACCUEIL ENFANT-PARENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 168
+    },
+    {
+      "value": "D504",
+      "label": "RELAIS PETITE ENFANCE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 169
+    },
+    {
+      "value": "D505",
+      "label": "ACCUEIL DE LOISIR SANS HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 170
+    },
+    {
+      "value": "D506",
+      "label": "CENTRES SOCIAUX",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 171
+    },
+    {
+      "value": "D507",
+      "label": "MÉDIATION FAMILIALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 172
+    },
+    {
+      "value": "D508",
+      "label": "ESPACES DE VIE SOCIALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 173
+    },
+    {
+      "value": "D509",
+      "label": "MICRO-CRECHE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D5",
+        "label": "ACTION SOCIALE POUR ENFANTS EN BAS-ÂGE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 174
+    },
+    {
+      "value": "D601",
+      "label": "ENFANTS HANDICAPÉS : HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 175
+    },
+    {
+      "value": "D602",
+      "label": "ENFANTS HANDICAPÉS : SERVICES À DOMICILE OU AMBULATOIRES",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 176
+    },
+    {
+      "value": "D603",
+      "label": "ADULTES HANDICAPÉS : ACCUEIL/HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 177
+    },
+    {
+      "value": "D604",
+      "label": "ADULTES HANDICAPÉS : SERVICES D’AIDE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 178
+    },
+    {
+      "value": "D605",
+      "label": "TRAVAIL PROTÉGÉ",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 179
+    },
+    {
+      "value": "D606",
+      "label": "ADULTES HANDICAPÉS : SERVICES DE SOINS À DOMICILE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 180
+    },
+    {
+      "value": "D607",
+      "label": "SERVICE D’AIDE AUX DÉFICIENTS VISUELS OU AUDITIFS",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D6",
+        "label": "ACTION SOCIALE POUR HANDICAPÉS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 181
+    },
+    {
+      "value": "D701",
+      "label": "PROTECTION DE L’ENFANCE : HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 182
+    },
+    {
+      "value": "D702",
+      "label": "PROTECTION DE L’ENFANCE : ACTION ÉDUCATIVE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 183
+    },
+    {
+      "value": "D703",
+      "label": "CENTRE D’HÉBERGEMENT ET DE RÉINSERTION SOCIALE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 184
+    },
+    {
+      "value": "D704",
+      "label": "CENTRE PROVISOIRE D’HÉBERGEMENT",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 185
+    },
+    {
+      "value": "D705",
+      "label": "CENTRE D'ACCUEIL DE DEMANDEURS D’ASILE",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 186
+    },
+    {
+      "value": "D710",
+      "label": "AUTRES HÉBERGEMENTS POUR ADULTES ET FAMILLES EN DIFFICULTÉ ",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 187
+    },
+    {
+      "value": "D711",
+      "label": "SERVICE D’AIDE AUX FEMMES EN SITUATION DE VULNÉRABILITÉ",
+      "domain": {
+        "code": "D",
+        "label": "SANTÉ ET ACTION SOCIALE"
+      },
+      "subdomain": {
+        "code": "D7",
+        "label": "AUTRES SERVICES D’ACTION SOCIALE"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 188
+    },
+    {
+      "value": "E101",
+      "label": "TAXI-VTC",
+      "domain": {
+        "code": "E",
+        "label": "TRANSPORTS ET DÉPLACEMENTS"
+      },
+      "subdomain": {
+        "code": "E1",
+        "label": "INFRASTRUCTURES DE TRANSPORTS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 189
+    },
+    {
+      "value": "E102",
+      "label": "AÉROPORT",
+      "domain": {
+        "code": "E",
+        "label": "TRANSPORTS ET DÉPLACEMENTS"
+      },
+      "subdomain": {
+        "code": "E1",
+        "label": "INFRASTRUCTURES DE TRANSPORTS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 190
+    },
+    {
+      "value": "E107",
+      "label": "GARE DE VOYAGEURS D’INTÉRÊT NATIONAL",
+      "domain": {
+        "code": "E",
+        "label": "TRANSPORTS ET DÉPLACEMENTS"
+      },
+      "subdomain": {
+        "code": "E1",
+        "label": "INFRASTRUCTURES DE TRANSPORTS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 191
+    },
+    {
+      "value": "E108",
+      "label": "GARE DE VOYAGEURS D’INTÉRÊT RÉGIONAL",
+      "domain": {
+        "code": "E",
+        "label": "TRANSPORTS ET DÉPLACEMENTS"
+      },
+      "subdomain": {
+        "code": "E1",
+        "label": "INFRASTRUCTURES DE TRANSPORTS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 192
+    },
+    {
+      "value": "E109",
+      "label": "GARE DE VOYAGEURS D’INTÉRÊT LOCAL",
+      "domain": {
+        "code": "E",
+        "label": "TRANSPORTS ET DÉPLACEMENTS"
+      },
+      "subdomain": {
+        "code": "E1",
+        "label": "INFRASTRUCTURES DE TRANSPORTS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 193
+    },
+    {
+      "value": "F101",
+      "label": "BASSIN DE NATATION",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 194
+    },
+    {
+      "value": "F102",
+      "label": "BOULODROME",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 195
+    },
+    {
+      "value": "F103",
+      "label": "TENNIS",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 196
+    },
+    {
+      "value": "F105",
+      "label": "DOMAINE SKIABLE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 197
+    },
+    {
+      "value": "F106",
+      "label": "CENTRE ÉQUESTRE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 198
+    },
+    {
+      "value": "F107",
+      "label": "ATHLÉTISME",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 199
+    },
+    {
+      "value": "F108",
+      "label": "TERRAIN DE GOLF",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 200
+    },
+    {
+      "value": "F109",
+      "label": "PARCOURS SPORTIF/SANTÉ",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 201
+    },
+    {
+      "value": "F110",
+      "label": "SPORTS DE GLACE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 202
+    },
+    {
+      "value": "F111",
+      "label": "PLATEAUX ET TERRAINS DE JEUX EXTÉRIEURS",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 203
+    },
+    {
+      "value": "F113",
+      "label": "TERRAINS DE GRANDS JEUX",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 204
+    },
+    {
+      "value": "F114",
+      "label": "SALLES DE COMBAT",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 205
+    },
+    {
+      "value": "F116",
+      "label": "SALLES NON SPÉCIALISÉES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 206
+    },
+    {
+      "value": "F118",
+      "label": "SPORTS NAUTIQUES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 207
+    },
+    {
+      "value": "F119",
+      "label": "BOWLING",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 208
+    },
+    {
+      "value": "F120",
+      "label": "SALLES DE REMISE EN FORME",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 209
+    },
+    {
+      "value": "F121",
+      "label": "SALLES MULTISPORTS, GYMNASES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 210
+    },
+    {
+      "value": "F122",
+      "label": "CIRCUIT / PISTE DE SPORTS MÉCANIQUES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 211
+    },
+    {
+      "value": "F123",
+      "label": "MUR ET FRONTON",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 212
+    },
+    {
+      "value": "F124",
+      "label": "PAS DE TIR",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 213
+    },
+    {
+      "value": "F125",
+      "label": "SITE D'ACTIVITÉS AÉRIENNES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 214
+    },
+    {
+      "value": "F126",
+      "label": "SITE DE MODÉLISME",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 215
+    },
+    {
+      "value": "F127",
+      "label": "STRUCTURE ARTIFICIELLE D’ESCALADE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 216
+    },
+    {
+      "value": "F128",
+      "label": "ÉQUIPEMENTS DE CYCLISME",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 217
+    },
+    {
+      "value": "F129",
+      "label": "SALLES SPÉCIALISÉES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 218
+    },
+    {
+      "value": "F130",
+      "label": "SKATEPARK & VÉLO-FREESTYLE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F1",
+        "label": "EQUIPEMENTS SPORTIFS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme intermédiaire"
+      },
+      "source_order": 219
+    },
+    {
+      "value": "F201",
+      "label": "BAIGNADE AMÉNAGÉE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F2",
+        "label": "EQUIPEMENTS DE LOISIRS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 220
+    },
+    {
+      "value": "F202",
+      "label": "PORT DE PLAISANCE – MOUILLAGE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F2",
+        "label": "EQUIPEMENTS DE LOISIRS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 221
+    },
+    {
+      "value": "F203",
+      "label": "BOUCLE DE RANDONNÉE ET PARCOURS DE COURSE D’ORIENTATION",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F2",
+        "label": "EQUIPEMENTS DE LOISIRS"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 222
+    },
+    {
+      "value": "F204",
+      "label": "ÉQUIPEMENTS DE SPORTS DE NATURE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F2",
+        "label": "EQUIPEMENTS DE LOISIRS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 223
+    },
+    {
+      "value": "F303",
+      "label": "CINÉMA",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 224
+    },
+    {
+      "value": "F305",
+      "label": "CONSERVATOIRE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 225
+    },
+    {
+      "value": "F307",
+      "label": "BIBLIOTHÈQUE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme de proximité"
+      },
+      "source_order": 226
+    },
+    {
+      "value": "F312",
+      "label": "EXPOSITION ET MÉDIATION CULTURELLE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 227
+    },
+    {
+      "value": "F313",
+      "label": "ESPACE REMARQUABLE ET PATRIMOINE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "hors_gamme",
+        "label": "Hors Gamme"
+      },
+      "source_order": 228
+    },
+    {
+      "value": "F314",
+      "label": "ARCHIVES",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 229
+    },
+    {
+      "value": "F315",
+      "label": "ARTS DU SPECTACLE",
+      "domain": {
+        "code": "F",
+        "label": "SPORTS, LOISIRS ET CULTURE"
+      },
+      "subdomain": {
+        "code": "F3",
+        "label": "EQUIPEMENTS CULTURELS ET SOCIOCULTURELS"
+      },
+      "gamme": {
+        "status": "classified",
+        "label": "Gamme supérieure"
+      },
+      "source_order": 230
+    },
+    {
+      "value": "G101",
+      "label": "AGENCE DE VOYAGE",
+      "domain": {
+        "code": "G",
+        "label": "TOURISME"
+      },
+      "subdomain": {
+        "code": "G1",
+        "label": "TOURISME"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 231
+    },
+    {
+      "value": "G102",
+      "label": "HÔTEL",
+      "domain": {
+        "code": "G",
+        "label": "TOURISME"
+      },
+      "subdomain": {
+        "code": "G1",
+        "label": "TOURISME"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 232
+    },
+    {
+      "value": "G103",
+      "label": "CAMPING",
+      "domain": {
+        "code": "G",
+        "label": "TOURISME"
+      },
+      "subdomain": {
+        "code": "G1",
+        "label": "TOURISME"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 233
+    },
+    {
+      "value": "G104",
+      "label": "INFORMATION TOURISTIQUE",
+      "domain": {
+        "code": "G",
+        "label": "TOURISME"
+      },
+      "subdomain": {
+        "code": "G1",
+        "label": "TOURISME"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 234
+    },
+    {
+      "value": "G105",
+      "label": "AUTRES HÉBERGEMENTS COLLECTIFS TOURISTIQUES",
+      "domain": {
+        "code": "G",
+        "label": "TOURISME"
+      },
+      "subdomain": {
+        "code": "G1",
+        "label": "TOURISME"
+      },
+      "gamme": {
+        "status": "absent",
+        "label": null
+      },
+      "source_order": 235
+    }
+  ]
+}

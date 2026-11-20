@@ -146,9 +146,11 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
     dockerfile = (root / "api/deploy/Dockerfile").read_text(encoding="utf-8")
     assert "COPY pipeline/inst/extdata/theme-metadata /app/pipeline/inst/extdata/theme-metadata" in dockerfile
     assert "COPY pipeline/inst/extdata/semantic-resource-contracts.json /app/pipeline/inst/extdata/semantic-resource-contracts.json" in dockerfile
+    assert "COPY pipeline/inst/extdata/aedar-typequ-universe.json /app/pipeline/inst/extdata/aedar-typequ-universe.json" in dockerfile
     image_payload = tmp_path / "pipeline/inst/extdata"
     shutil.copytree(source / "theme-metadata", image_payload / "theme-metadata")
     shutil.copy2(source / "semantic-resource-contracts.json", image_payload)
+    shutil.copy2(source / "aedar-typequ-universe.json", image_payload)
     monkeypatch.setenv("LUSK_PRODUCER_METADATA_DIR", str(image_payload))
 
     from api.resource_catalogue import default_resource_catalogue
@@ -184,8 +186,8 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
     summary = catalogue.resources_by_id["aedar_territory_summary"]
     assert summary.resource_kind == "aedar_territory_summary"
     assert summary.allowed_levels == ("commune", "epci", "departement", "region")
-    assert summary.axes == ("measure",) and summary.dynamic_axes == ("measure",)
-    assert summary.intents == ("facts",)
+    assert summary.axes == ("horizon", "mode", "kind") and summary.dynamic_axes == ("measure",)
+    assert summary.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert {"value", "status", "n_typequ", "n_addresses", "n_observed",
             "coverage_status", "source_id", "vintage_id"} <= set(summary.fields)
     typed = {resource_id: catalogue.resources_by_id[resource_id] for resource_id in (
