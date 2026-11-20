@@ -190,6 +190,12 @@ bridge_parse_text_array <- function(x) {
   if (length(values) == 1L && !is.na(values) &&
       startsWith(values, "{") && endsWith(values, "}")) {
     inner <- substr(values, 2L, nchar(values) - 1L)
+    # Serving levels are a closed enum (commune/epci/departement/region). A
+    # quoted or escaped element is outside that contract and must STOP rather
+    # than be silently mis-split by this simple parser.
+    if (grepl('["\\\\]', inner))
+      stop("Bridge cannot parse a quoted/escaped PostgreSQL array element; ",
+           "use SQL unnest() for such columns", call. = FALSE)
     if (!nzchar(inner)) return(character())
     return(strsplit(inner, ",", fixed = TRUE)[[1L]])
   }
@@ -261,11 +267,18 @@ read_live_scalar_projection <- function(con, reader = bridge_live_reader()) {
   facts$territory_type <- as.character(facts$territory_type)
   facts$status <- as.character(facts$status)
   facts$value <- as.numeric(facts$value)
-  facts$support_count <- if (all(is.na(facts$support_count))) NA_integer_ else as.integer(facts$support_count)
-  facts$denominator_count <- if (all(is.na(facts$denominator_count))) NA_integer_ else as.integer(facts$denominator_count)
+  # bigint arrives from RPostgres as integer64; as.integer() directly would
+  # reinterpret the bits. Go through character to preserve the exact value.
+  as_count <- function(x) {
+    if (inherits(x, "integer64")) as.integer(as.character(x)) else as.integer(x)
+  }
+  facts$support_count <- as_count(facts$support_count)
+  facts$denominator_count <- as_count(facts$denominator_count)
+  facts <- bridge_fresh_frame(facts)
   vintages <- reader$vintages(con)
   vintages$reference_date <- as.Date(vintages$reference_date)
   vintages$publication_date <- as.Date(vintages$publication_date)
+  vintages <- bridge_fresh_frame(vintages)
   territories <- reader$territories(con)
   levels <- unique(unlist(descriptors$allowed_levels, use.names = FALSE))
   eligible <- unique(territories[territories$territory_type %in% levels,
@@ -473,14 +486,22 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
                                     scalar_adapter = NULL,
                                     comparison_adapter = NULL,
                                     profile_adapter = NULL,
-                                    writer = NULL, read_markers = NULL, read_live = NULL, read_profile_rows = NULL) {
+                                    writer = NULL, read_markers = NULL, read_live = NULL, read_profile_rows = NULL,
+                                     lock_timeout_ms = Sys.getenv("LUSK_BRIDGE_LOCK_TIMEOUT_MS", unset = "5000"),
+                                     statement_timeout_ms = Sys.getenv("LUSK_BRIDGE_STATEMENT_TIMEOUT_MS", unset = "120000"),
+                                     apply_timeouts = NULL, fk_inventory = NULL) {
   if (is.null(scalar_adapter)) scalar_adapter <- scalar_postgres_adapter(con)
   if (is.null(comparison_adapter)) comparison_adapter <- scalar_comparison_postgres_adapter(con)
   if (is.null(profile_adapter)) profile_adapter <- profile_postgres_adapter(con)
   if (is.null(read_markers)) read_markers <- function() plan$markers
   registry <- bridge_identity_registry("bridge_scalar_snapshot", register_scalar_publisher)
 
+  if (is.null(apply_timeouts)) apply_timeouts <- function(sql) {
+    if (!is.null(con) && !inherits(con, "fake-con")) DBI::dbExecute(con, sql)
+  }
   transaction(con, {
+    bridge_write_timeouts(lock_timeout_ms, statement_timeout_ms, set = apply_timeouts)
+    if (!is.null(fk_inventory)) assert_bridge_no_foreign_scalar_fks(fk_inventory)
     # The scalar publisher's own advisory lock helper (pg_advisory_xact_lock
     # 594,1) serialises this whole write, is re-entrant in-session and is held
     # until commit. Re-read the markers under that lock: a token that moved
@@ -489,7 +510,7 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
     fresh_markers <- read_markers()
     assert_bridge_markers(fresh_markers, expected)
     if (!is.null(read_live)) {
-      if (is.null(plan$affected))
+      if (is.null(plan$affected) || !length(plan$affected))
         stop("Bridge plan is missing the round-trip exemption set (offre_tc + retirements)",
              call. = FALSE)
       assert_bridge_round_trip(read_live(), plan$projection, plan$affected)
@@ -505,6 +526,10 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
     if (!identical(as.character(scalar$content_version), as.character(plan$tokens$scalar)))
       stop("The written scalar token differs from the prepared bridge token",
            call. = FALSE)
+    if (!is.null(read_live))
+      assert_bridge_post_write_scalar(
+        read_live(), plan$projection, plan$live, plan$affected, retired_ids,
+        plan$indicator_id %||% bridge_offre_tc_id())
     comparison <- publish_registered_scalar_comparison(
       plan$tokens$comparison_projection, comparison_adapter)
     # The scalar-binding change cascades into the declared-profile descriptor
@@ -543,7 +568,11 @@ bridge_print_report <- function(plan, mode) {
   cat("new scalar token:", plan$tokens$scalar, "\n")
   cat("new comparison token:", plan$tokens$comparison, "\n")
   cat("new Habitat linked token:", plan$tokens$linked, "\n")
-  cat("retired indicators in this bridge:", length(plan$retired_ids), "\n")
+  present <- plan$retired_present %||% character()
+  cat("policy retirements:", length(plan$retired_ids),
+      "; present live:", length(present),
+      if (length(present)) paste0(" (", paste(present, collapse = ", "), ")") else " (none present live)",
+      "\n")
   cat("per-indicator diff:\n")
   print(plan$diff, row.names = FALSE)
   if (identical(mode, "dry-run")) cat("dry-run: no database writes performed\n")
@@ -560,7 +589,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
                                 publish = publish_bridge_snapshot, lock = NULL, unlock = NULL,
-                                 identity_reader = NULL) {
+                                 identity_reader = NULL, fk_reader = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
   # Resolve the registered scope once and require the operator to select exactly
@@ -593,6 +622,14 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
       try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
   }, add = TRUE)
   if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)
+  if (is.null(fk_reader)) fk_reader <- function(con) {
+    if (inherits(con, "fake-con")) data.frame(
+      referencing_table = character(), referenced_table = character(),
+      constraint_name = character(), has_rows = logical(), stringsAsFactors = FALSE)
+    else bridge_fk_inventory(con)
+  }
+  fk_inventory <- fk_reader(con)
+  assert_bridge_no_foreign_scalar_fks(fk_inventory)
 
   live <- read_live_scalar_projection(con, reader = live_reader)
   markers <- read_markers()
@@ -626,6 +663,10 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                expected = expected, retired_ids = retired_ids,
                profiles = profiles, profile_lineage = lineage,
                affected = built$affected,
+                indicator_id = built$indicator_id,
+                retired_present = intersect(retired_ids,
+                  unique(as.character(live$facts$indicator_id))),
+                fk_inventory = fk_inventory,
                 live_profile_rows = live_profile_rows)
   bridge_print_report(plan, mode)
 
@@ -950,7 +991,7 @@ bridge_profile_live_rows <- function(reader, con) list(
 # observed bad_weak_ptr). Registers immediately after CREATE SCHEMA in the DB
 # proof so no failure between create and the first assertion can leak a schema.
 bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
-                                     execute = NULL, close = NULL,
+                                     execute = NULL, close = NULL, quote = NULL,
                                      cleanup_flag = Sys.getenv("LUSK_BRIDGE_TEST_CLEANUP", unset = "")) {
   if (!identical(cleanup_flag, "1")) {
     stop("Refusing cleanup without the explicit LUSK_BRIDGE_TEST_CLEANUP=1 opt-in",
@@ -979,7 +1020,9 @@ bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
       !isTRUE(check$owned[[1L]]))
     stop("Refusing cleanup: schema identity is not this guarded test schema",
          call. = FALSE)
-  execute(con, paste0("DROP SCHEMA \"", schema, "\" CASCADE"))
+  if (is.null(quote)) quote <- function(con, schema)
+    as.character(DBI::dbQuoteIdentifier(con, schema))
+  execute(con, paste0("DROP SCHEMA ", quote(con, schema), " CASCADE"))
   invisible(TRUE)
 }
 
@@ -1000,5 +1043,137 @@ bridge_fresh_frame <- function(frame, columns = names(frame)) {
   out <- do.call(data.frame, c(values, list(stringsAsFactors = FALSE, check.names = FALSE)))
   rownames(out) <- NULL
   out
+}
+
+
+# --- Review round 4: disposable-target guard, FK pre-flight, timeouts ---------
+
+BRIDGE_TEST_DATABASE <- "lusk_it_contract"
+BRIDGE_TEST_USER <- "lusk_it_contract_pub"
+BRIDGE_TEST_HOST <- "192.168.1.120"
+
+# HARD gate BEFORE any connection: never let an override reach the serving DB.
+bridge_db_target_guard <- function(database, user, host) {
+  if (!identical(as.character(database), BRIDGE_TEST_DATABASE) ||
+      !identical(as.character(user), BRIDGE_TEST_USER) ||
+      !identical(as.character(host), BRIDGE_TEST_HOST))
+    stop("Refusing to connect: the guarded proof accepts only ",
+         BRIDGE_TEST_HOST, "/", BRIDGE_TEST_DATABASE, "/", BRIDGE_TEST_USER,
+         call. = FALSE)
+  invisible(TRUE)
+}
+
+# HARD gate immediately after connecting and BEFORE any DDL.
+assert_bridge_connected_test_db <- function(identity) {
+  if (!is.data.frame(identity) || nrow(identity) != 1L ||
+      !identical(as.character(identity$database[[1L]]), BRIDGE_TEST_DATABASE) ||
+      !identical(as.character(identity$role[[1L]]), BRIDGE_TEST_USER))
+    stop("Refusing to run: connected database/role is not the guarded test target",
+         call. = FALSE)
+  invisible(TRUE)
+}
+
+# Tables the bridge and the registered publishers replace wholesale.
+BRIDGE_MANAGED_TABLES <- c(
+  "scalar_observation", "scalar_observation_source", "scalar_descriptor",
+  "scalar_descriptor_source", "source_dataset", "source_vintage",
+  "scalar_comparison_group", "scalar_comparison_territory",
+  "scalar_comparison_publication", "comparison_source_lineage",
+  "profile_descriptor", "profile_descriptor_source", "profile_axis",
+  "profile_observation", "profile_observation_source",
+  "profile_comparison_group", "profile_comparison_territory",
+  "profile_comparison_publication", "table_publication",
+  "selected_reading_descriptor", "selected_reading_publication")
+
+# Fail closed when an outside owner has a populated FK into a table the bridge
+# deletes from: the whole-table replace would cascade or be rejected mid-flight.
+assert_bridge_no_foreign_scalar_fks <- function(inventory) {
+  required <- c("referencing_table", "referenced_table", "has_rows")
+  if (!is.data.frame(inventory) || !all(required %in% names(inventory)))
+    stop("Bridge FK pre-flight requires a populated pg_constraint inventory",
+         call. = FALSE)
+  outside <- inventory[!inventory$referencing_table %in% BRIDGE_MANAGED_TABLES &
+                         isTRUE(as.logical(inventory$has_rows)), , drop = FALSE]
+  if (nrow(outside))
+    stop("Bridge FK pre-flight refused: outside table(s) with rows reference a ",
+         "wholesale-replaced table: ",
+         paste(unique(outside$referencing_table), collapse = ", "),
+         call. = FALSE)
+  invisible(inventory)
+}
+
+# Read-only FK inventory from the live catalog. has_rows is evaluated per FK via
+# a quoted-identifier EXISTS query; no DDL or mutation is issued here.
+bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES) {
+  placeholders <- paste0("$", seq_along(managed), collapse = ",")
+  fks <- DBI::dbGetQuery(con, paste0(
+    "SELECT referencing.relname AS referencing_table, referenced.relname AS referenced_table,",
+    " c.conname AS constraint_name FROM pg_constraint c",
+    " JOIN pg_class referencing ON referencing.oid = c.conrelid",
+    " JOIN pg_class referenced ON referenced.oid = c.confrelid",
+    " WHERE c.contype = 'f' AND referenced.relname IN (", placeholders, ")"),
+    params = as.list(managed))
+  if (!nrow(fks)) return(data.frame(
+    referencing_table = character(), referenced_table = character(),
+    constraint_name = character(), has_rows = logical(), stringsAsFactors = FALSE))
+  fks$has_rows <- vapply(seq_len(nrow(fks)), function(i) {
+    quoted <- as.character(DBI::dbQuoteIdentifier(con, fks$referencing_table[[i]]))
+    DBI::dbGetQuery(con, paste0("SELECT EXISTS (SELECT 1 FROM ", quoted,
+                                ") AS has_rows"))$has_rows[[1L]]
+  }, logical(1))
+  fks
+}
+
+# Bounded timeouts set INSIDE the write transaction (SET LOCAL), release on commit.
+bridge_write_timeouts <- function(lock_ms = Sys.getenv("LUSK_BRIDGE_LOCK_TIMEOUT_MS",
+                                                      unset = "5000"),
+                                  statement_ms = Sys.getenv("LUSK_BRIDGE_STATEMENT_TIMEOUT_MS",
+                                                            unset = "120000"),
+                                  set = NULL) {
+  to_ms <- function(value, label) {
+    number <- suppressWarnings(as.numeric(value))
+    if (length(number) != 1L || is.na(number) || !is.finite(number) ||
+        number < 1L || number != as.integer(number))
+      stop(label, " must be a positive integer number of milliseconds", call. = FALSE)
+    as.integer(number)
+  }
+  lock_ms <- to_ms(lock_ms, "LUSK_BRIDGE_LOCK_TIMEOUT_MS")
+  statement_ms <- to_ms(statement_ms, "LUSK_BRIDGE_STATEMENT_TIMEOUT_MS")
+  statements <- c(paste0("SET LOCAL lock_timeout = '", lock_ms, "ms'"),
+                  paste0("SET LOCAL statement_timeout = '", statement_ms, "ms'"))
+  if (!is.null(set)) {
+    for (sql in statements) set(sql)
+    return(invisible(statements))
+  }
+  invisible(statements)
+}
+
+# Re-read the scalar snapshot AFTER the whole-table replace, still inside the
+# transaction: retired ids gone, new offre_tc facts written, all other indicators
+# byte-identical to the pre-write rows.
+assert_bridge_post_write_scalar <- function(after, projection, pre_live, affected,
+                                            retired_ids, offre_tc_id) {
+  validate_scalar_artifact_projection(after)
+  present <- unique(as.character(after$descriptors$indicator_id))
+  if (any(retired_ids %in% present))
+    stop("Bridge post-write check: retired indicator(s) still present: ",
+         paste(intersect(retired_ids, present), collapse = ", "), call. = FALSE)
+  want <- projection$facts[projection$facts$indicator_id == offre_tc_id,
+                           c("indicator_id", "territory_id", "territory_type",
+                             "value", "status", "support_count", "denominator_count"),
+                           drop = FALSE]
+  got <- after$facts[after$facts$indicator_id == offre_tc_id,
+                     c("indicator_id", "territory_id", "territory_type",
+                       "value", "status", "support_count", "denominator_count"),
+                     drop = FALSE]
+  rownames(want) <- rownames(got) <- NULL
+  want <- bridge_sort_frame(want, c("indicator_id", "territory_id"))
+  got <- bridge_sort_frame(got, c("indicator_id", "territory_id"))
+  if (!identical(got, want))
+    stop("Bridge post-write check: offre_tc facts differ from the prepared projection",
+         call. = FALSE)
+  assert_bridge_round_trip(after, projection, affected)
+  assert_bridge_round_trip(pre_live, after, affected)
+  invisible(after)
 }
 

@@ -42,11 +42,14 @@ if (!bridge_db_proof_configured()) {
     port <- as.integer(Sys.getenv("LUSK_BRIDGE_TEST_PORT", unset = "5432"))
     passfile <- normalizePath(Sys.getenv("PGPASSFILE"), winslash = "/", mustWork = TRUE)
     repository <- bridge_db_repo_root()
-    expect_identical(database, "lusk_it_contract")
-    expect_identical(user, "lusk_it_contract_pub")
-    expect_identical(Sys.getenv("LUSK_BRIDGE_TEST_MUTEX_HELD"), "1")
-    expect_identical(Sys.getenv("LUSK_BRIDGE_TEST_CLEANUP"), "1")
-    expect_false(startsWith(tolower(passfile), paste0(tolower(repository), "/")))
+    # HARD stop before dbConnect: an expect_* here would only record a failure
+    # and still connect to whatever target the caller supplied.
+    bridge_db_target_guard(database, user, host)
+    if (!identical(Sys.getenv("LUSK_BRIDGE_TEST_MUTEX_HELD"), "1") ||
+        !identical(Sys.getenv("LUSK_BRIDGE_TEST_CLEANUP"), "1") ||
+        startsWith(tolower(passfile), paste0(tolower(repository), "/")))
+      stop("Guarded proof requires the mutex, cleanup opt-in and a private passfile outside the repo")
+    expect_true(requireNamespace("DBI", quietly = TRUE))
     expect_true(requireNamespace("DBI", quietly = TRUE))
     expect_true(requireNamespace("RPostgres", quietly = TRUE))
 
@@ -55,8 +58,7 @@ if (!bridge_db_proof_configured()) {
     on.exit(try(DBI::dbDisconnect(connection), silent = TRUE), add = TRUE)
     identity <- DBI::dbGetQuery(connection, paste(
       "SELECT current_database() AS database, current_user AS role"))
-    expect_identical(identity$database[[1L]], "lusk_it_contract")
-    expect_identical(identity$role[[1L]], "lusk_it_contract_pub")
+    assert_bridge_connected_test_db(identity)  # HARD stop before any DDL
     config <- list(dbname = database, user = user)
 
     schema <- paste0("serving_it_", Sys.getpid(), "_",
@@ -164,6 +166,7 @@ if (!bridge_db_proof_configured()) {
       live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
     expect_identical(schema_digest(), seeded_digest)
     expect_identical(plan$mode, "dry-run")
+    expect_true(is.data.frame(plan$fk_inventory))
 
     # (A) ROLLBACK against the OLD seeded state. The scalar/comparison/profile
     # publishers have real work to do (old -> new); the failure is injected only
@@ -238,6 +241,43 @@ if (!bridge_db_proof_configured()) {
       "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
       plan$tokens$scalar)
 
+    # Live-shaped addendum: after the control run the retired ids are gone but
+    # offre_tc is present with the new values, exactly like the serving DB.
+    after_markers <- retained_backend_markers(connection)
+    marker_value <- function(name) DBI::dbGetQuery(connection,
+      "SELECT content_version FROM table_publication WHERE table_name=$1",
+      params = list(name))$content_version[[1L]]
+    expected_live <- c(
+      scalar = marker_value("scalar_observation"),
+      comparison = after_markers$comparison$content_version[[1L]],
+      profile = marker_value("declared_profile"),
+      habitat = marker_value("selected_reading"),
+      reference = marker_value("territory_reference"))
+    live_facts_path <- tempfile("bridge-facts-live-", fileext = ".rds")
+    on.exit(unlink(live_facts_path), add = TRUE)
+    saveRDS(bridge_fresh_offre_tc_rows(c(0.55, 0.65)), live_facts_path)
+    live_values <- bridge_test_env_values(expected_live, live_facts_path,
+      list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+           setNames("dump-live", BRIDGE_DUMP_ACK_ENV)))
+    withr::with_envvar(as.list(live_values), {
+      capture.output(live_plan <- run_offre_tc_bridge(
+        "dry-run", env = bridge_fake_env(live_values), con = connection,
+        config = config, live_reader = reader, read_markers = read_markers,
+        retired_ids = retired_ids))
+      capture.output(live_written <- run_offre_tc_bridge(
+        "publish", env = bridge_fake_env(live_values), con = connection,
+        config = config, live_reader = reader, read_markers = read_markers,
+        retired_ids = retired_ids))
+    })
+    expect_length(live_plan$retired_present, 0L)
+    expect_identical(live_written$scalar$content_version, live_plan$tokens$scalar)
+    live_ids_now <- DBI::dbGetQuery(connection,
+      "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+    expect_false(any(retired_ids %in% live_ids_now))
+    live_values_now <- sort(DBI::dbGetQuery(connection, paste(
+      "SELECT value FROM scalar_observation WHERE indicator_id='offre_tc'",
+      "ORDER BY territory_id"))$value)
+    expect_equal(live_values_now, c(0.55, 0.65))
     residual <- DBI::dbGetQuery(connection, paste(
       "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'serving_it_%'",
       "ORDER BY nspname"))$nspname

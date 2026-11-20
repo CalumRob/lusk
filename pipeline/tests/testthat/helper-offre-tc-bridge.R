@@ -105,6 +105,10 @@ bridge_live_fixture <- function() {
       name = c("Fixture source", "Bretagne Mobilité"), stringsAsFactors = FALSE),
     vintages = rbind(fixture_vintage, bridge_fixture_vintage()),
     eligible_territories = eligible)
+  # Producer-shaped frames are canonical: the readers rebuild frames the same
+  # way, so md5(saveRDS()) parity needs no test-only normalisation.
+  for (field in names(projection))
+    projection[[field]] <- bridge_fresh_frame(projection[[field]])
   validate_scalar_artifact_projection(projection)
   projection
 }
@@ -196,8 +200,9 @@ bridge_db_rows_from_projection <- function(projection) {
     descriptor_version = descriptors$descriptor_version,
     stringsAsFactors = FALSE)
   facts <- projection$facts
-  facts$support_count <- as.numeric(facts$support_count)
-  facts$denominator_count <- as.numeric(facts$denominator_count)
+  # api/schema.sql declares both as bigint: RPostgres returns integer64.
+  facts$support_count <- bit64::as.integer64(as.integer(facts$support_count))
+  facts$denominator_count <- bit64::as.integer64(as.integer(facts$denominator_count))
   reference <- bridge_fixture_reference_rows()
   list(
     facts = facts,
@@ -355,9 +360,15 @@ bridge_live_profile_fixture <- function(scalar_version = "scalar-live") {
                         stringsAsFactors = FALSE)
   eligible <- data.frame(territory_id = communes, territory_type = "commune",
                          stringsAsFactors = FALSE)
-  make <- function(descriptor, axes, facts, provenance) list(
-    facts = facts, axes = axes, descriptor = descriptor, provenance = provenance,
-    vintages = vintage, datasets = dataset, eligible_territories = eligible)
+  make <- function(descriptor, axes, facts, provenance) {
+    out <- list(facts = facts, axes = axes, descriptor = descriptor,
+                provenance = provenance, vintages = vintage, datasets = dataset,
+                eligible_territories = eligible)
+    for (field in c("facts", "axes", "provenance", "vintages", "datasets",
+                    "eligible_territories"))
+      out[[field]] <- bridge_fresh_frame(out[[field]])
+    out
+  }
   profiles <- list(
     distribution_dpe = make(dpe_descriptor, dpe_axes, dpe_facts, dpe_provenance),
     structure_age = make(structure_descriptor, structure_axes, structure_facts,
@@ -511,5 +522,31 @@ bridge_db_schema_path <- function() {
   if (!file.exists(path))
     stop("Serving schema is missing: ", path, call. = FALSE)
   path
+}
+
+
+# Live-shaped scenario matching the current serving DB: the 29 retired ids are
+# ABSENT, offre_tc is present with old values, other indicators are kept.
+bridge_live_fixture_no_retirements <- function() {
+  live <- bridge_live_fixture()
+  retired <- retained_scalar_retirement_ids()
+  keep <- !live$facts$indicator_id %in% retired
+  keep_desc <- !live$descriptors$indicator_id %in% retired
+  keep_prov <- !live$provenance$indicator_id %in% retired
+  used_sources <- unique(as.character(live$provenance$source_id[keep_prov]))
+  used_vintages <- unique(paste(live$provenance$source_id[keep_prov],
+                                live$provenance$vintage_id[keep_prov]))
+  out <- list(
+    facts = live$facts[keep, , drop = FALSE],
+    descriptors = live$descriptors[keep_desc, , drop = FALSE],
+    provenance = live$provenance[keep_prov, , drop = FALSE],
+    datasets = live$datasets[live$datasets$source_id %in% used_sources, , drop = FALSE],
+    vintages = live$vintages[
+      paste(live$vintages$source_id, live$vintages$vintage_id) %in% used_vintages, ,
+      drop = FALSE],
+    eligible_territories = live$eligible_territories)
+  for (field in names(out)) out[[field]] <- bridge_fresh_frame(out[[field]])
+  validate_scalar_artifact_projection(out)
+  out
 }
 

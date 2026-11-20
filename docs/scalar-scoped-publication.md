@@ -402,6 +402,10 @@ from the verified live tokens.
    `LUSK_PUBLISH_DATABASE`, `LUSK_PUBLISH_USER` (optional `_PORT`); the password
    comes only from the private libpq passfile (`PGPASSFILE`, never inside the
    repository).
+7. **FK pre-flight** — a read-only `pg_constraint` inventory refuses with zero
+   writes if a table the bridge does not manage has rows referencing a
+   wholesale-replaced scalar table. The dry-run prints the inventory and which
+   metadata-derived retirement ids are actually present live (normally none).
 
 The fresh facts are supplied as a private RDS/CSV path in
 `LUSK_BRIDGE_OFFRE_TC_FACTS` (the producer row shape: territory, indicator,
@@ -425,6 +429,8 @@ Rscript scripts/publish-serving-tables.R --offre-tc-bridge-dry-run
 # review: changes only to offre_tc values + the 29 retirements
 $env:LUSK_BRIDGE_DUMP_CONFIRMED = '<dump path or id>'
 $env:LUSK_PUBLISH_OFFRE_TC_BRIDGE = '1'   # explicit write opt-in, like --series-publish
+$env:LUSK_BRIDGE_LOCK_TIMEOUT_MS = '5000'      # bounded lock wait (default 5000)
+$env:LUSK_BRIDGE_STATEMENT_TIMEOUT_MS = '120000' # finite statement cap (default 120000)
 Rscript scripts/publish-serving-tables.R --offre-tc-bridge
 ```
 
@@ -484,6 +490,11 @@ the owner-artifact path: the round-trip data proof, the five-token live guard,
 the verified-dump acknowledgement, the explicit write opt-in, the single
 transaction with fail-closed (exactly-one-row) marker updates, the advisory lock
 held across check and write, and the re-derivation of every dependent profile
-hash through the registered producer functions from live-read rows. Unrelated
-owners are neither read as expectations nor written. The ADR itself is unchanged.
+hash through the registered producer functions from live-read rows. The scalar
+tables are whole-table snapshots, so other themes' scalar rows (and the
+owned-series scalar facet) are deleted and re-inserted with identical data, and
+the global scalar marker advances; their own typed-reading / owned-series
+markers are neither read as expectations nor written. The Habitat linked
+descriptor token is rewritten because it chains from the scalar version. The
+ADR itself is unchanged.
 

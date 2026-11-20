@@ -1,19 +1,19 @@
 # Guarded wrapper for the #1071 disposable-database proof.
 # Holds the shared named mutex for the WHOLE R process (including cleanup), like
 # run-retained-baseline-smoke.ps1 and the guarded Python integration suites.
-# The R test verifies the mutex is held (WaitOne(0) must fail) before connecting.
-# Never point any of these variables at the serving database `lusk`.
+# The target is HARD-CODED: no host/database/role override can reach `lusk`.
 param(
-  [Parameter(Mandatory = $true)][string]$PgPassFile,
-  [string]$HostName = '192.168.1.120',
-  [string]$Database = 'lusk_it_contract',
-  [string]$User = 'lusk_it_contract_pub'
+  [Parameter(Mandatory = $true)][string]$PgPassFile
 )
 
+$testHost = '192.168.1.120'
+$testDatabase = 'lusk_it_contract'
+$testUser = 'lusk_it_contract_pub'
+
 $env:PGPASSFILE = (Resolve-Path -LiteralPath $PgPassFile).Path
-$env:LUSK_BRIDGE_TEST_HOST = $HostName
-$env:LUSK_BRIDGE_TEST_DATABASE = $Database
-$env:LUSK_BRIDGE_TEST_USER = $User
+$env:LUSK_BRIDGE_TEST_HOST = $testHost
+$env:LUSK_BRIDGE_TEST_DATABASE = $testDatabase
+$env:LUSK_BRIDGE_TEST_USER = $testUser
 $env:LUSK_BRIDGE_TEST_CLEANUP = '1'
 $env:TESTTHAT_PARALLEL = 'FALSE'
 $env:PGCONNECT_TIMEOUT = '5'
@@ -22,7 +22,7 @@ $env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_tra
 # Rscript must start in pipeline/ so .Rprofile activates the populated renv
 # library and pkgload::load_all('.') resolves the pipeline package.
 $pipelineDir = Split-Path -Parent $PSScriptRoot
-Write-Host "bridge DB proof: running from $pipelineDir"
+Write-Host "bridge DB proof: $testHost/$testDatabase/$testUser from $pipelineDir"
 
 $mutex = New-Object System.Threading.Mutex($false, 'Local\LuskIntegrationContractDb')
 $acquired = $false

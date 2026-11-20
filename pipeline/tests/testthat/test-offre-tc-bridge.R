@@ -731,7 +731,9 @@ test_that("schema cleanup runs after an early error and drops only this run's sc
     schema <- "serving_it_999_abcdef"
     on.exit(bridge_db_cleanup_schema(
       schema, bridge_pure_config(), open = open_stub, query = query_stub,
-      execute = execute_stub, close = close_stub, cleanup_flag = "1"), add = TRUE)
+      execute = execute_stub, close = close_stub,
+      quote = function(con, schema) paste0('"', schema, '"'),
+      cleanup_flag = "1"), add = TRUE)
     stop("boom between CREATE SCHEMA and the first assertion")
   }), "boom between CREATE SCHEMA")
 
@@ -1045,5 +1047,178 @@ test_that("the in-transaction re-guard still refuses a changed kept indicator", 
         writer = bridge_fake_marker_writer(expected[["scalar"]]))
     })),
     "unrelated indicator\\(s\\) changed: kept_scalar")
+})
+
+
+# --- Review round 4 + addendum: safety, types, FK, timeouts, live shape -------
+
+test_that("the disposable target guard stops every wrong-host/db/user path", {
+  for (bad in list(
+    list("lusk", "lusk_it_contract_pub", "192.168.1.120"),
+    list("lusk_it_contract", "lusk_publisher", "192.168.1.120"),
+    list("lusk_it_contract", "lusk_it_contract_pub", "other-host")))
+    expect_error(do.call(bridge_db_target_guard, bad), "Refusing to connect")
+  expect_invisible(bridge_db_target_guard("lusk_it_contract",
+    "lusk_it_contract_pub", "192.168.1.120"))
+
+  good <- data.frame(database = "lusk_it_contract", role = "lusk_it_contract_pub",
+                     stringsAsFactors = FALSE)
+  expect_invisible(assert_bridge_connected_test_db(good))
+  expect_error(assert_bridge_connected_test_db(transform(good, database = "lusk")),
+               "Refusing to run")
+  expect_error(assert_bridge_connected_test_db(transform(good, role = "lusk_publisher")),
+               "Refusing to run")
+})
+
+test_that("the FK pre-flight refuses populated outside references", {
+  internal <- data.frame(referencing_table = "scalar_comparison_group",
+    referenced_table = "scalar_descriptor", has_rows = TRUE, stringsAsFactors = FALSE)
+  expect_invisible(assert_bridge_no_foreign_scalar_fks(internal))
+  expect_invisible(assert_bridge_no_foreign_scalar_fks(internal[0L, , drop = FALSE]))
+  outside <- transform(internal, referencing_table = "outside_owner",
+                       has_rows = TRUE)
+  expect_error(assert_bridge_no_foreign_scalar_fks(outside),
+               "outside table\\(s\\) with rows reference")
+  # An empty outside FK is harmless: nothing can cascade.
+  expect_invisible(assert_bridge_no_foreign_scalar_fks(
+    transform(outside, has_rows = FALSE)))
+})
+
+test_that("api/schema.sql declares no outside FK into wholesale-replaced tables", {
+  sql <- paste(readLines(bridge_db_schema_path(), warn = FALSE), collapse = "\n")
+  current <- NA_character_
+  refs <- list()
+  for (line in strsplit(sql, "\n", fixed = TRUE)[[1L]]) {
+    header <- regmatches(line, regexpr("^CREATE TABLE [a-z_]+", line))
+    if (length(header)) current <- sub("^CREATE TABLE ", "", header)
+    for (match in regmatches(line, gregexpr("REFERENCES [a-z_]+", line))[[1L]])
+      refs[[length(refs) + 1L]] <- data.frame(
+        referencing_table = current, referenced_table = sub("^REFERENCES ", "", match),
+        stringsAsFactors = FALSE)
+  }
+  catalog <- do.call(rbind, refs)
+  replaced <- c("scalar_descriptor", "scalar_observation",
+                "scalar_observation_source", "scalar_descriptor_source")
+  outside <- catalog[catalog$referenced_table %in% replaced &
+                       !catalog$referencing_table %in% BRIDGE_MANAGED_TABLES, ,
+                     drop = FALSE]
+  expect_identical(nrow(outside), 0L)
+})
+
+test_that("write timeouts are bounded, configurable SQL and reject bad values", {
+  seen <- character()
+  expect_invisible(bridge_write_timeouts("250", "90000",
+    set = function(sql) seen <<- c(seen, sql)))
+  expect_identical(seen, c("SET LOCAL lock_timeout = '250ms'",
+                           "SET LOCAL statement_timeout = '90000ms'"))
+  expect_error(bridge_write_timeouts("0", "100"), "positive integer")
+  expect_error(bridge_write_timeouts("5000", "abc"), "positive integer")
+  expect_match(bridge_write_timeouts(set = function(sql) NULL)[[1L]],
+               "SET LOCAL lock_timeout")
+})
+
+test_that("the in-transaction guard refuses missing or empty exemption sets", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  make_plan <- function() list(projection = built$projection, tokens =
+    bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
+      expected[["reference"]], bridge_fixture_markers(expected), expected),
+    markers = bridge_fixture_markers(expected), expected = expected,
+    live = live, profiles = NULL, live_profile_rows = NULL)
+  for (affected in list(NULL, character())) {
+    plan <- make_plan()
+    if (!is.null(affected)) plan$affected <- affected
+    expect_error(publish_bridge_snapshot(NULL, plan,
+      retained_scalar_retirement_ids(), expected,
+      transaction = function(con, expr) force(expr),
+      scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+      comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]],
+                                                         plan$tokens$scalar),
+      writer = bridge_fake_marker_writer(expected[["scalar"]]),
+      read_live = function() live), "exemption set")
+  }
+})
+
+test_that("the array parser stops on quoted or escaped elements", {
+  expect_error(bridge_parse_text_array('{"a\\"b"}'), "quoted/escaped")
+  expect_error(bridge_parse_text_array('{"a\\\\b"}'), "quoted/escaped")
+  expect_identical(bridge_parse_text_array("{commune,epci}"), c("commune", "epci"))
+})
+
+test_that("post-write re-read refuses retired rows still present and changed facts", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  retired <- retained_scalar_retirement_ids()
+  expect_invisible(assert_bridge_post_write_scalar(built$projection,
+    built$projection, live, built$affected, retired, built$indicator_id))
+  bad <- built$projection
+  rid <- retired[[1L]]
+  bad$descriptors <- rbind(bad$descriptors,
+    live$descriptors[live$descriptors$indicator_id == rid, , drop = FALSE])
+  bad$facts <- rbind(bad$facts,
+    live$facts[live$facts$indicator_id == rid, , drop = FALSE])
+  bad$provenance <- rbind(bad$provenance,
+    live$provenance[live$provenance$indicator_id == rid, , drop = FALSE])
+  expect_error(assert_bridge_post_write_scalar(bad, built$projection, live,
+    built$affected, retired, built$indicator_id), "retired indicator")
+  bad2 <- built$projection
+  bad2$facts$value[bad2$facts$indicator_id == "kept_scalar"][[1L]] <- 999
+  expect_error(assert_bridge_post_write_scalar(bad2, built$projection, live,
+    built$affected, retired, built$indicator_id), "unrelated indicator")
+})
+
+test_that("the live-shaped no-retirement scenario publishes cleanly", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture_no_retirements()
+  retired <- retained_scalar_retirement_ids()
+  expect_false(any(retired %in% live$descriptors$indicator_id))
+  expect_true(bridge_offre_tc_id() %in% live$descriptors$indicator_id)
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retired)
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path,
+    list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+         setNames("dump", BRIDGE_DUMP_ACK_ENV)))
+  report <- capture.output(result <- run_offre_tc_bridge(
+    "dry-run", env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = bridge_fake_reader(bridge_db_rows_from_projection(live)),
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retired))
+  expect_match(paste(report, collapse = "\n"), "none present live", fixed = TRUE)
+  expect_length(result$retired_present, 0L)
+  expect_identical(result$projection, built$projection)
+
+  live_stub <- bridge_ordering_stub_reader(
+    bridge_db_rows_from_projection(live),
+    bridge_db_rows_from_projection(built$projection),
+    bridge_db_rows_from_profile_projections(bridge_live_profile_fixture(expected[["scalar"]])))
+  written <- run_offre_tc_bridge(
+    "publish", env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = live_stub$reader,
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retired,
+    publish = function(con, plan, retired_ids, tokens, ...) {
+      live_stub$state$written <- TRUE
+      expect_length(plan$retired_present, 0L)
+      publish_bridge_snapshot(con, plan, retired_ids, tokens, ...,
+        transaction = function(con, expr) force(expr),
+        scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+        comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]],
+                                                           plan$tokens$scalar),
+        profile_adapter = bridge_fake_profile_adapter(expected[["profile"]],
+                                                     plan$tokens$scalar),
+        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+    })
+  expect_identical(written$scalar$content_version, result$tokens$scalar)
 })
 
