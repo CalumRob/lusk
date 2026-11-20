@@ -1,59 +1,46 @@
 <script setup lang="ts">
-/** PROTOTYPE — a Figure d'atelier in the production nested frame: centered editable title, small actions top right, empty plot, key, sources. */
+/** PROTOTYPE — a Figure d'atelier: a production-style figure title, an empty plot with editable axis titles, legends, a sources line. */
 import { computed } from 'vue'
+import { ChevronDown, ChevronUp, Copy, Pencil, Trash2 } from 'lucide-vue-next'
 
-import CahierFigureFrame from '@/fiche/prototype/CahierFigureFrame.vue'
+import { cahierFigureStyle } from '@/fiche/cahierFigureGrammaire'
+import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import '@/fiche/prototype/cahierEvidenceSource.css'
-import { CAHIER_FIGURE_GEOMETRY } from '@/fiche/cahierFigureGrammaire'
+import '@/fiche/prototype/cahierFigure.css'
 
-import type { ResourceDef } from './prototypeCellules'
+import AtelierLegends from './AtelierLegends.vue'
+import BlockHandle from './BlockHandle.vue'
 import EditableText from './EditableText.vue'
-import {
-  channelLabel,
-  describe,
-  formulaReadingOf,
-  prettyExpression,
-  type ChannelId,
-  type FigureState,
-} from './prototypeFigure'
+import IconButton from './IconButton.vue'
+import type { ResourceDef } from './prototypeCellules'
+import type { SharedAxisTitles } from './prototypeShare'
+import { axisDefault, type FigureState } from './prototypeFigure'
+import type { Territoires } from './prototypeTerritoires'
 
-const props = defineProps<{ state: FigureState; catalogue: ResourceDef[]; title: string; number: number }>()
-const emit = defineEmits<{ retitle: [value: string]; edit: []; duplicate: []; remove: [] }>()
+const props = defineProps<{
+  state: FigureState
+  catalogue: ResourceDef[]
+  territoires: Territoires | null
+  title: string
+  /** The reader's overrides; null = default. */
+  axis: SharedAxisTitles
+  id: number
+  position: number
+  total: number
+}>()
+const emit = defineEmits<{
+  retitle: [value: string]
+  axis: [which: 'x' | 'y', value: string]
+  edit: []
+  duplicate: []
+  remove: []
+  move: [delta: -1 | 1]
+  dragstart: [event: DragEvent]
+  dragend: []
+}>()
 
 const lookup = (id: string) => props.catalogue.find((r) => r.id === id)
-const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
-const label = (id: ChannelId) => channelLabel(props.state.channels[id], lookup)
-
-const levelLabel = computed(() => ({ commune: 'communes', epci: 'EPCI', departement: 'départements' })[props.state.level])
-const subtitle = computed(() =>
-  [
-    `Nuage de ${levelLabel.value}`,
-    props.state.channels.taille.mode !== 'aucune' ? `taille : ${label('taille')}` : '',
-    props.state.channels.couleur.mode !== 'aucune' ? `couleur : ${label('couleur')}` : '',
-  ]
-    .filter(Boolean)
-    .join(' · '),
-)
-
-interface Row { tag: string; text: string; unit: string; sub?: boolean }
-const rows = computed<Row[]>(() => {
-  const out: Row[] = []
-  for (const id of ['x', 'y', 'taille', 'couleur'] as const) {
-    const channel = props.state.channels[id]
-    if (channel.mode === 'aucune') continue
-    if (channel.mode === 'cellule') {
-      const info = describe(channel.cell, lookup)
-      out.push({ tag: id, text: info?.lecture ?? '', unit: info?.unite || '' })
-    } else if (channel.mode === 'formule') {
-      out.push({ tag: id, text: prettyExpression(channel.expression), unit: '' })
-      for (const letter of formulaReadingOf(channel).letters) {
-        const info = describe(channel.operands[letter.charCodeAt(0) - 65] ?? null, lookup)
-        out.push({ tag: letter, text: info?.lecture ?? '', unit: info?.unite || '', sub: true })
-      }
-    } else out.push({ tag: id, text: label(id), unit: '' })
-  }
-  return out
-})
+const axisText = (which: 'x' | 'y') => props.axis[which] ?? axisDefault(props.state.channels[which], lookup)
 
 const sources = computed(() => {
   const labels = new Set<string>()
@@ -64,46 +51,46 @@ const sources = computed(() => {
   return [...labels]
 })
 
-const FILTER_LABELS: Record<string, string> = { departement: 'Département', epci: 'EPCI', classe_densite: 'Classe de densité', littoral: 'Littoral' }
-const filters = computed(() => Object.entries(props.state.population).filter(([, v]) => v.length).map(([k, v]) => `${FILTER_LABELS[k]} (${v.length})`))
-
-const g = CAHIER_FIGURE_GEOMETRY
+/** Production frame geometry, with a deeper bottom and left rail so wrapped axis titles have room. */
+const geometry: CahierFigureGeometry = { width: 820, height: 380, margin: { top: 20, right: 26, bottom: 84, left: 96 } }
+const frameStyle = cahierFigureStyle(geometry)
+const g = geometry
 const plot = { left: g.margin.left, right: g.width - g.margin.right, top: g.margin.top, bottom: g.height - g.margin.bottom }
 const ticks = [0.25, 0.5, 0.75]
 </script>
 
 <template>
-  <section class="concept-group at-group" :aria-label="`Figure ${number}`">
-    <div class="concept-group-heading at-group__heading">
-      <span class="at-group__number">{{ String(number).padStart(2, '0') }}</span>
-      <EditableText class="at-group__title" tag="h3" label="Titre de la figure" :model-value="title" @commit="emit('retitle', $event)" />
-      <div class="at-group__actions">
-        <button type="button" class="at-action" @click="emit('edit')">Modifier</button>
-        <button type="button" class="at-action" @click="emit('duplicate')">Dupliquer</button>
-        <button type="button" class="at-action at-action--quiet" @click="emit('remove')">Retirer</button>
-      </div>
+  <figure class="at-block at-figure" :data-block="id">
+    <div class="at-block__actions">
+      <BlockHandle :id="id" :position="position" :total="total" @move="emit('move', $event)" @dragstart="emit('dragstart', $event)" @dragend="emit('dragend')" />
+      <IconButton class="at-touch-only" :icon="ChevronUp" label="Monter le bloc" :disabled="position === 1" @click="emit('move', -1)" />
+      <IconButton class="at-touch-only" :icon="ChevronDown" label="Descendre le bloc" :disabled="position === total" @click="emit('move', 1)" />
+      <IconButton :icon="Pencil" label="Modifier la figure" @click="emit('edit')" />
+      <IconButton :icon="Copy" label="Dupliquer la figure" @click="emit('duplicate')" />
+      <IconButton :icon="Trash2" label="Retirer la figure" @click="emit('remove')" />
     </div>
 
-    <p class="at-group__subtitle">{{ subtitle }}<template v-if="filters.length"> · {{ filters.join(' · ') }}</template></p>
+    <EditableText class="cahier-figure-title" tag="h3" label="Titre de la figure" :model-value="title" @commit="emit('retitle', $event)" />
 
-    <CahierFigureFrame :x-title="short(label('x'), 48)" :y-title="short(label('y'), 40)" size="standard">
-      <template #plot>
+    <div class="cahier-figure-frame cahier-figure-frame--standard at-plot" :style="frameStyle">
+      <div class="cahier-figure-frame__plot">
         <svg class="cahier-figure-plot" :viewBox="`0 0 ${g.width} ${g.height}`" role="img" :aria-label="`Cadre vide du nuage : ${title}`">
           <line v-for="t in ticks" :key="`h${t}`" class="cahier-figure-tick" :x1="plot.left" :x2="plot.right" :y1="plot.top + (plot.bottom - plot.top) * t" :y2="plot.top + (plot.bottom - plot.top) * t" />
           <line v-for="t in ticks" :key="`v${t}`" class="cahier-figure-tick" :y1="plot.top" :y2="plot.bottom" :x1="plot.left + (plot.right - plot.left) * t" :x2="plot.left + (plot.right - plot.left) * t" />
           <line class="cahier-figure-axis" :x1="plot.left" :x2="plot.right" :y1="plot.bottom" :y2="plot.bottom" />
           <line class="cahier-figure-axis" :x1="plot.left" :x2="plot.left" :y1="plot.top" :y2="plot.bottom" />
         </svg>
-      </template>
-    </CahierFigureFrame>
+        <div class="cahier-figure-axis-title cahier-figure-axis-title--x at-axis">
+          <EditableText tag="span" label="Titre de l’axe x" :model-value="axisText('x')" :resettable="axis.x !== null" @commit="emit('axis', 'x', $event)" @reset="emit('axis', 'x', '')" />
+        </div>
+        <div class="cahier-figure-axis-title cahier-figure-axis-title--y at-axis">
+          <EditableText tag="span" label="Titre de l’axe y" :model-value="axisText('y')" :resettable="axis.y !== null" @commit="emit('axis', 'y', $event)" @reset="emit('axis', 'y', '')" />
+        </div>
+      </div>
+    </div>
 
-    <dl class="at-figure__key">
-      <template v-for="row in rows" :key="`${row.tag}-${row.sub}`">
-        <dt :class="{ 'at-figure__sub': row.sub }">{{ row.tag }}</dt>
-        <dd>{{ row.text }}</dd>
-        <dd>{{ row.unit }}</dd>
-      </template>
-    </dl>
-    <p v-if="sources.length" class="cahier-evidence-source">Sources : {{ sources.join(' · ') }}</p>
-  </section>
+    <AtelierLegends :state="state" :catalogue="catalogue" :territoires="territoires" />
+
+    <p v-if="sources.length" class="cahier-evidence-source at-figure__sources">Sources : {{ sources.join(' · ') }}</p>
+  </figure>
 </template>

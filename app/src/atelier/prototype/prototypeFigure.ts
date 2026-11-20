@@ -169,6 +169,20 @@ export function channelLabel(channel: ChannelState, lookup: Lookup): string {
   return ''
 }
 
+/** Default axis title, unit included: « Densité de population (hab/km²) ». A formula takes the unit only when all operands share it. */
+export function axisDefault(channel: ChannelState, lookup: Lookup): string {
+  if (channel.mode === 'cellule') {
+    const info = describe(channel.cell, lookup)
+    return info ? (info.unite ? `${info.lecture} (${info.unite})` : info.lecture) : ''
+  }
+  if (channel.mode === 'formule') {
+    const units = operandUnits(channel, formulaReadingOf(channel), lookup)
+    const label = prettyExpression(channel.expression)
+    return units.length === 1 && units[0] !== '—' ? `${label} (${units[0]})` : label
+  }
+  return channelLabel(channel, lookup)
+}
+
 /** « y : log(B − A) / C · x : Densité de population » — the reader may overwrite it. */
 export function generatedTitle(state: FigureState, lookup: Lookup): string {
   const part = (id: ChannelId) => channelLabel(state.channels[id], lookup) || '…'

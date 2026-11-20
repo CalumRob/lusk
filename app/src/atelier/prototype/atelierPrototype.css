@@ -11,6 +11,8 @@
   --cahier-grid-jump: 24px;
   --cahier-prose-line-height: 1.45;
   --cahier-prose-paragraph-gap: var(--space-3);
+  --cahier-figure-title-gap: var(--space-3);
+  --cahier-figure-title-min-height: 0px;
   color: var(--ink);
   font-family: var(--font-body);
   background: transparent;
@@ -44,6 +46,9 @@
 .page-heading-index small { margin-left: 3px; color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .page-heading-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .page-heading-title { max-width: none; margin: 0; color: var(--ink); font: var(--text-page-heading); letter-spacing: var(--text-page-heading-tracking); text-align: left; }
+.page-heading-tools { display: flex; align-items: center; justify-self: end; gap: var(--space-4); }
+.at-share { min-height: 28px; }
+.at-share:disabled { opacity: 0.5; cursor: default; }
 .page-heading-context { display: flex; align-items: center; justify-self: end; gap: 6px; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
 .page-heading-theme { color: var(--cahier-theme-strong); font-weight: 600; }
 .page-heading-context-separator { color: var(--muted); }
@@ -51,7 +56,8 @@
 
 .page-copy { display: grid; gap: 0; padding-bottom: 18px; }
 .page-subtitle { max-width: none; margin: 14px 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
-.at-state { margin: var(--space-6) 0; color: var(--cahier-default); font-size: 15px; }
+.at-state { margin: var(--space-4) 0; color: var(--cahier-default); font-size: 15px; }
+.at-state--quiet { color: var(--muted); font: var(--type-figure-legend); }
 
 /* the small action in the manner of the production PDF button */
 .at-action {
@@ -72,10 +78,6 @@
 .at-action:active { background: color-mix(in srgb, currentColor 14%, transparent); }
 .at-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .at-action--quiet { color: var(--muted); }
-
-.at-insert { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); margin: 0; opacity: 0.5; }
-.at-insert .at-action { min-height: 26px; }
-.at-insert:hover, .at-insert:focus-within { opacity: 1; }
 
 /* the empty slot: paper-deep, as the production map ground */
 .at-slot { display: grid; justify-items: center; gap: var(--space-3); margin-top: var(--space-6); padding: var(--space-8) var(--space-6); background: var(--paper-deep); text-align: center; }
@@ -99,29 +101,39 @@
 .at-add:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .at-add__plus { font: 400 1.25rem/1 var(--font-figure-label); }
 
-/* --------------------------------------------------- the nested figure frame */
+/* ------------------------------------------------- blocks, actions, figures */
 
-.at-group { container: subgroup / inline-size; width: 100%; margin: var(--space-6) 0; padding: var(--space-3); border: 1px solid color-mix(in srgb, var(--cahier-theme) 24%, var(--paper)); background: transparent; }
-.at-group__heading { display: grid; grid-template-columns: minmax(max-content, 1fr) minmax(0, 3fr) minmax(max-content, 1fr); align-items: center; gap: 14px; padding: 0 0 var(--space-3); }
-.at-group__number { justify-self: end; color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
-.at-group__title { grid-column: 2; min-width: 0; margin: 0; color: var(--ink); text-align: center; font: var(--text-cahier-section); }
-.at-group__title :deep(.editable__input) { text-align: center; }
-.at-group__actions { grid-column: 3; justify-self: end; display: flex; align-items: center; }
-.at-group__subtitle { margin: 0 0 var(--space-3); color: var(--cahier-default); font: var(--type-figure-legend); text-align: center; }
-@container subgroup (max-width: 560px) {
-  .at-group__heading { grid-template-columns: minmax(0, 1fr); }
-  .at-group__number { display: none; }
-  .at-group__title, .at-group__actions { grid-column: 1; justify-self: center; }
+.at-block { position: relative; min-width: 0; }
+/* actions live in the page margin, revealed by hover or focus; touch gets a quiet inline row */
+.at-block__actions { position: absolute; top: 0; right: -52px; z-index: 2; display: grid; gap: 2px; opacity: 0; transition: opacity 120ms ease-out; }
+.at-block:hover > .at-block__actions, .at-block:focus-within > .at-block__actions, .at-block__actions--on { opacity: 1; }
+.at-block__actions--on { position: static; display: flex; justify-content: flex-end; }
+@media (max-width: 760px), (hover: none) {
+  .at-block__actions { position: static; display: flex; justify-content: flex-end; opacity: 0.55; }
 }
 
-.at-figure__key { display: grid; grid-template-columns: auto 1fr auto; gap: 2px var(--space-4); margin: var(--space-3) 0 0; padding: var(--space-3) 0 0; border-top: 1px solid var(--at-rule-soft); }
-.at-figure__key dt { color: var(--red); font: var(--type-figure-value); font-size: 0.8125rem; }
-.at-figure__sub { padding-left: var(--space-3); color: var(--muted); }
-.at-figure__key dd { margin: 0; color: var(--cahier-default); font: var(--type-figure-legend); }
-.at-figure__key dd:nth-of-type(2n) { color: var(--muted); font: var(--text-caption); text-align: right; }
-.at-group .cahier-figure-axis-title { text-transform: none; }
-.at-group .cahier-evidence-source { margin-top: var(--space-3); }
+.at-insert { display: flex; justify-content: center; gap: var(--space-1); height: 24px; align-items: center; opacity: 0; transition: opacity 120ms ease-out; }
+.at-insert:hover, .at-insert:focus-within { opacity: 1; }
+.at-insert .at-icon { width: 28px; height: 24px; }
+@media (max-width: 760px), (hover: none) { .at-insert { opacity: 0.45; } }
 
+.at-figure { margin: var(--space-6) 0; }
+.at-figure .cahier-figure-title { margin-bottom: var(--space-3); }
+.at-plot { --at-plot-ink: var(--cahier-default); }
+/* axis titles: production figure-label type, wrapped (never truncated), editable */
+.at-plot .cahier-figure-axis-title { text-transform: none; white-space: normal; pointer-events: auto; width: max-content; text-align: center; line-height: 1.3; }
+.at-plot .cahier-figure-axis-title--x { max-width: 72%; }
+.at-plot .cahier-figure-axis-title--y { max-width: 32%; left: 30px; }
+.at-plot .cahier-figure-axis-title--y:has(.editable__input) { top: 0; left: 0; z-index: 3; max-width: none; transform: none; background: var(--paper); }
+.at-plot .cahier-figure-axis-title--x:has(.editable__input) { z-index: 3; max-width: none; background: var(--paper); }
+/* narrow: the frame is too small for rotated multi-line titles. y goes above the axis, x below the plot, both wrapped */
+@media (max-width: 760px) {
+  .at-plot .cahier-figure-frame__plot { margin-top: 3.6em; margin-bottom: 4.6em; }
+  .at-plot .cahier-figure-axis-title--y { top: -3.5em; left: 0; max-width: 100%; transform: none; text-align: left; }
+  .at-plot .cahier-figure-axis-title--x { top: 100%; bottom: auto; left: 50%; max-width: 100%; margin-top: 0.4em; }
+  .at-plot .cahier-figure-axis-title--y:has(.editable__input) { top: -3.5em; }
+}
+.at-figure__sources { margin-top: var(--space-3); text-align: left; }
 /* ------------------------------------------------------------- modal grammar */
 
 dialog.cahier-dialog.atelier-dialog { width: min(96vw, 1000px); max-width: 1000px; }
@@ -220,6 +232,7 @@ dialog.atelier-dialog .cahier-dialog__content > .at-modal { grid-area: 2 / 1 / 3
 .at-etat { margin: var(--space-4) 0 0; padding-top: var(--space-3); border-top: 1px solid var(--at-rule-soft); color: var(--muted); }
 .at-etat summary { width: max-content; cursor: pointer; font: var(--text-overline); letter-spacing: 0.08em; text-transform: uppercase; }
 .at-etat summary:hover { color: var(--red); }
+.at-etat__meta { margin: var(--space-3) 0 0; font: var(--type-figure-legend); }
 .at-etat pre { max-height: 22rem; margin: var(--space-3) 0 0; padding: var(--space-3); overflow: auto; background: var(--paper-deep); color: var(--ink); font: 400 0.75rem/1.5 var(--font-metadata); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---------------------------------------------------------------- narrow */
@@ -228,8 +241,30 @@ dialog.atelier-dialog .cahier-dialog__content > .at-modal { grid-area: 2 / 1 / 3
   .atelier-page { padding: 0 var(--space-4) 40px; border: 0; box-shadow: none; }
   .page-heading { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-1); }
   .page-heading-index { grid-column: 1 / -1; }
-  .page-heading-context { grid-column: 2; grid-row: 2; }
-  .page-heading-title { grid-column: 1; grid-row: 2; }
+  .page-heading-tools { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: space-between; }
+  .page-heading-title { grid-column: 1 / -1; grid-row: 2; }
 }
 
 @media (prefers-reduced-motion: reduce) { .atelier * { transition: none !important; } }
+
+/* reordering */
+.page-copy { position: relative; }
+.at-dropline { position: absolute; left: 0; right: 0; height: 2px; margin-top: -1px; background: var(--red); pointer-events: none; z-index: 3; }
+.at-dropline::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+.at-block--dragging { opacity: 0.4; }
+.at-touch-only { display: none; }
+@media (max-width: 760px), (hover: none) { .at-touch-only { display: inline-grid; } }
+.at-icon:disabled { opacity: 0.3; cursor: default; background: none; color: var(--muted); }
+
+/* Markdown prose (rendered as VNodes): production cahier prose, plus headings and lists in cahier voice */
+.cahier-prose.at-md > * + * { margin-top: var(--space-3); }
+.cahier-prose.at-md > .at-md-h2, .cahier-prose.at-md > .at-md-h3 { margin-bottom: 0; }
+.cahier-prose.at-md > :is(h2, h3) + * { margin-top: var(--space-2); }
+.cahier-prose.at-md .at-md-h2 { margin: var(--space-5) 0 0; color: var(--ink); font: var(--text-cahier-section); letter-spacing: 0; text-align: left; }
+.cahier-prose.at-md .at-md-h3 { margin: var(--space-4) 0 0; color: var(--ink); font: var(--type-figure-title); text-align: left; }
+.at-md > :first-child { margin-top: 0; }
+.at-md .at-md-list { padding-left: 1.25rem; text-align: left; }
+.at-md .at-md-list li { padding-left: 0.25rem; }
+.at-md .at-md-list li::marker { color: var(--red); font-variant-numeric: tabular-nums; }
+.at-md strong { font-family: var(--font-body-emphasis); font-weight: 600; }
+.at-md em { font-style: italic; }

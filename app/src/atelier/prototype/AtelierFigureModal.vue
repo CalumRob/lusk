@@ -36,6 +36,8 @@ const props = defineProps<{
   insertAt: number
   /** The reader's own title for the figure being edited, if any. */
   customTitle: string | null
+  /** Length of the current share URL (page as saved). */
+  shareLength: number
 }>()
 const emit = defineEmits<{ close: []; save: [state: FigureState] }>()
 
@@ -96,6 +98,7 @@ function save() {
 
         <details ref="annex" class="at-etat">
           <summary>État (prototype)</summary>
+          <p class="at-etat__meta">Lien de partage de la page : {{ shareLength }} caractères</p>
           <pre aria-label="État de la page et de la figure, JSON">{{ specJson }}</pre>
         </details>
       </div>
