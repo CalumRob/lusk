@@ -276,9 +276,10 @@ Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the
 semantic resource contract. `aedar_territorial_aggregate` is declared as a
 semantic resource and can be read through `/api/resources/read` and
-`/api/resources/read-batch`; `typequ` and
-`measure` are closed coordinate selectors, `measures.<registered-id>` is a field
-projection, and comparison context belongs to `fixed_comparison` intent. The two
+`/api/resources/read-batch`; it is addressed by the declared Cellule coordinates
+`{typequ, horizon, mode, statistic}` (or, until #1098, the deprecated `measure`
+alias described above), `measures.<registered-id>` is a field projection, and
+comparison context belongs to `fixed_comparison` intent. The two
 legacy AEDAR GET operations
 (`/api/aedar/territories/{type}/{id}/aggregates` and `/comparisons`) are
 retired: AEDAR data is available only through the unified resource contract.
@@ -391,14 +392,17 @@ Searches the retained published territory reference with bounded query inputs.
   `aedar_territorial_aggregate` computes, per
   request on one committed snapshot, the address-weighted mean of the
   same-level members' published aggregates (weights = `n_addresses`) for each
-  requested `typequ`/`measure` cell — scalar readings and per-cell curve readings
-  alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
+  requested per-cell Cellule `{typequ, horizon, mode, statistic}` (or the
+  deprecated `{typequ, measure}` alias) — scalar readings and per-cell curve
+  readings alike — plus the opt-in direction-aware focal `rank`/`rank_size`/`rank_ties`
   within the selection (ties share rank; the focal must be a member to receive a
   rank). Unknown or partial members fail closed naming the failed member.
   The 40 registry-wide aggregate readings (five displayed modes × four horizons
   × diversity/share and volume/mean; car/15-minute retains `meanDiversity` and
   `meanVolume`),
-  requested via the `measure` coordinate without `typequ`) are computed the same
+  addressed by the declared summary Cellule `{horizon, mode, kind}` on
+  `aedar_territory_summary` (the old `measure`-only form on the aggregate is the
+  deprecated alias until #1098) are computed the same
   way per request from published per-type rows, never published, and gain the
   opt-in rank fields in BOTH intents (#914, ADR-0039's 2026-11-04 amendment):
   fixed declared contexts rank the focal's registry-wide reading within the

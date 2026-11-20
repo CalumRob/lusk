@@ -246,31 +246,56 @@ def test_declared_coordinates_resolve_to_internal_selectors(monkeypatch):
 
 
 def test_batch_items_share_the_declared_address_resolution(monkeypatch):
-    """Single and batch reads use the same reader seam, so both resolve addresses."""
+    """A batch of declared Cellules yields the same read as a single read."""
+    from contextlib import contextmanager
+
     from api.resource_execution import execute_batch
     from api.semantic_resource_reader import SemanticResourceReader
 
-    seen = []
+    captured = []
+
+    def snapshot(name):
+        def stub(*args, **kwargs):
+            captured.append((name, args, kwargs))
+            return {"facts": [], "readings": []}
+        return stub
+
+    monkeypatch.setattr("api.aedar_reads._aedar_territorial_aggregate_snapshot",
+                        snapshot("aggregate"))
+    monkeypatch.setattr("api.aedar_reads._aedar_territory_summary_resource_snapshot",
+                        snapshot("summary"))
+
+    class Cursor:
+        def __init__(self, rows=()):
+            self.rows = list(rows)
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else (0,)
+
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "SELECT DISTINCT typequ" in sql:
+                return Cursor([(code,) for code in (params[0] if params else ())])
+            return Cursor()
+
+        @contextmanager
+        def transaction(self):
+            yield self
+
+    class Pool:
+        @contextmanager
+        def connection(self):
+            yield Connection()
+
+    catalogue = default_resource_catalogue.__wrapped__()
     reader = SemanticResourceReader(
         indicator_facts_snapshot=lambda *a, **k: {}, indicator_comparison_preflight=lambda *a, **k: {},
         indicator_comparison_snapshot=lambda *a, **k: {}, owned_series_route=lambda *a, **k: None,
         owned_named_reference_snapshot=lambda *a, **k: {}, comparison_field_selection=lambda f: f,
         max_owned_series_provenance_per_point=8)
-
-    def preflight(conn, item, budget):
-        resource = reader._catalogue_for_test.resources_by_id[item.resource]
-        resolved = reader._aedar_resolve(item, resource)
-        seen.append(("preflight", resolved.coordinates["measure"]))
-        return 1
-
-    def read(conn, item):
-        resource = reader._catalogue_for_test.resources_by_id[item.resource]
-        resolved = reader._aedar_resolve(item, resource)
-        seen.append(("read", resolved.coordinates["measure"]))
-        return {"ok": True}
-
-    reader._catalogue_for_test = default_resource_catalogue.__wrapped__()
-    pool = type("Pool", (), {"connection": lambda self: _no_conn()})()
     request = type("Request", (), {"items": [
         ResourceBatchItem.model_validate({
             "id": "a", "resource": AGGREGATE,
@@ -284,9 +309,18 @@ def test_batch_items_share_the_declared_address_resolution(monkeypatch):
             "coordinates": {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]},
             "intent": {"kind": "facts"}}),
     ], "contract": None})()
-    execute_batch(pool, request, reader._catalogue_for_test, preflight, read)
-    assert [entry[1][0] for entry in seen] == ["count_5_walk_mean", "meanVolume",
-                                              "count_5_walk_mean", "meanVolume"]
+    response = execute_batch(Pool(), request, catalogue,
+        lambda conn, item, budget: reader.preflight(conn, item, catalogue, work_budget=budget),
+        lambda conn, item: reader.read(conn, item, catalogue))
+    assert [result["id"] for result in response["results"]] == ["a", "b"]
+    # Each declared Cellule was projected to exactly one internal measure.
+    aggregate_call = next(entry for entry in captured
+                          if entry[0] == "aggregate" and not entry[2].get("preflight_only"))
+    summary_call = next(entry for entry in captured
+                        if entry[0] == "summary" and not entry[2].get("preflight_only"))
+    assert aggregate_call[1][3] == ["A104"]
+    assert aggregate_call[1][4] == ["measures.count_5_walk_mean"]
+    assert summary_call[1][3] == ["meanVolume"]
 
 
 class _NoConnection:
