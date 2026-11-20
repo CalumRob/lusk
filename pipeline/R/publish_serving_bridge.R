@@ -555,7 +555,8 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 read_markers = NULL,
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
-                                publish = publish_bridge_snapshot, lock = NULL, identity_reader = NULL) {
+                                publish = publish_bridge_snapshot, lock = NULL, unlock = NULL,
+                                 identity_reader = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
   # Resolve the registered scope once and require the operator to select exactly
@@ -583,7 +584,8 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   }
   lock(con)
   on.exit({
-    if (!inherits(con, "fake-con"))
+    if (!is.null(unlock)) unlock(con)
+    else if (!inherits(con, "fake-con"))
       try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
   }, add = TRUE)
   if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)

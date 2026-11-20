@@ -478,7 +478,7 @@ bridge_test_env_values <- function(expected, facts_path = "facts.rds", extra = l
              "LUSK_SCALAR_SCOPE"),
     setNames(c(bridge_pure_config()$dbname, bridge_pure_config()$user),
              c("LUSK_PUBLISH_DATABASE", "LUSK_PUBLISH_USER")),
-    extra)
+    unlist(extra, use.names = TRUE))
 }
 
 

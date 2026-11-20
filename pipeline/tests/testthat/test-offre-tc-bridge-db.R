@@ -174,18 +174,24 @@ if (!bridge_db_proof_configured()) {
         writer = list(set_habitat_linked = function(new_linked)
           stop("injected failure before Habitat rebind", call. = FALSE)))
     }
-    capture.output(expect_error(run_offre_tc_bridge(
-      "publish", env = env, con = connection, config = config,
-      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
-      publish = fail_before_rebind), "injected failure before Habitat rebind"))
+    # The real-write gates (opt-in, dump ack, scope, expected tokens, facts file)
+    # are set for THIS call only via withr; nothing leaks to other tests.
+    withr::with_envvar(as.list(env_values), {
+      capture.output(expect_error(run_offre_tc_bridge(
+        "publish", env = env, con = connection, config = config,
+        live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
+        publish = fail_before_rebind), "injected failure before Habitat rebind"))
+    })
     expect_identical(schema_digest(), seeded_digest,
                      info = "failed publication must restore the exact seeded state")
 
     # (A) CONTROL without injection: the same seeded state really changes when
     # the bridge succeeds, so the rollback assertion above cannot pass vacuously.
-    capture.output(written <- run_offre_tc_bridge(
-      "publish", env = env, con = connection, config = config,
-      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
+    withr::with_envvar(as.list(env_values), {
+      capture.output(written <<- run_offre_tc_bridge(
+        "publish", env = env, con = connection, config = config,
+        live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
+    })
     expect_false(identical(schema_digest(), seeded_digest),
                  info = "control publication must actually change the schema")
     expect_identical(written$scalar$content_version, plan$tokens$scalar)

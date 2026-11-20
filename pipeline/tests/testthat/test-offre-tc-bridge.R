@@ -882,3 +882,74 @@ test_that("a raw RPostgres profile projection is producer-equal and hash-equal",
   expect_setequal(unique(comparisons$groups$comparison_context),
                   c("bretagne", "density_class", "epci", "littoral"))
 })
+
+# --- Round-6: real-write prerequisites and PostgreSQL semantics (offline) -----
+
+test_that("the harness env builder carries every real-write gate", {
+  values <- bridge_test_env_values(bridge_fixture_expected_tokens(), "facts.rds",
+    list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+         setNames("dump", BRIDGE_DUMP_ACK_ENV)))
+  env <- bridge_fake_env(values)
+  expect_identical(env(BRIDGE_PUBLISH_OPT_IN_ENV), "1")
+  expect_identical(env(BRIDGE_DUMP_ACK_ENV), "dump")
+  expect_identical(env("LUSK_SCALAR_SCOPE"), "mobilite:offre_tc")
+  expect_identical(env(BRIDGE_FACTS_ENV), "facts.rds")
+  expect_true(all(vapply(unname(BRIDGE_EXPECTED_ENV),
+                         function(name) nzchar(env(name)), logical(1))))
+  expect_invisible(assert_bridge_publish_opt_in(env))
+  expect_invisible(assert_bridge_dump_confirmed(env))
+})
+
+test_that("the session lock is released even when the real write fails", {
+  expected <- bridge_fixture_expected_tokens()
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path,
+    list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+         setNames("dump", BRIDGE_DUMP_ACK_ENV)))
+  locked <- unlocked <- 0L
+  expect_error(capture.output(run_offre_tc_bridge(
+    "publish", env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture())),
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    lock = function(con) { locked <<- locked + 1L; invisible(NULL) },
+    unlock = function(con) { unlocked <<- unlocked + 1L; invisible(NULL) },
+    publish = function(...) stop("injected write failure"))), "injected write failure")
+  expect_identical(locked, 1L)
+  expect_identical(unlocked, 1L)
+})
+
+test_that("a failed publication transaction rolls back before the caller continues", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  tokens <- bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
+    expected[["reference"]], bridge_fixture_markers(expected), expected)
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected,
+               affected = built$affected, live = live)
+  rolled_back <- 0L
+  # Mimics DBI::dbWithTransaction: run the body, roll back on error, rethrow.
+  fake_transaction <- function(con, expr) {
+    result <- tryCatch(list(ok = force(expr)), error = function(e) {
+      rolled_back <<- rolled_back + 1L
+      stop(e)
+    })
+    result$ok
+  }
+  comparison_db <- bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar)
+  comparison_db$replace <- function(projection) stop("injected failure")
+  expect_error(publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = fake_transaction,
+    scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+    comparison_adapter = comparison_db,
+    writer = bridge_fake_marker_writer(expected[["scalar"]])), "injected failure")
+  expect_identical(rolled_back, 1L)
+})
+
