@@ -1,31 +1,23 @@
-/** PROTOTYPE — throwaway. Figure d'atelier draft state, Formule parsing, spec shape. */
-import { computed, reactive, ref } from 'vue'
-
+/** PROTOTYPE — throwaway. Figure d'atelier state, Formule reading, spec shape, generated titles. */
 import {
   cellShortLabel,
   cellUnit,
-  defaultCoordinates,
-  normaliseCoordinates,
   type Coordinates,
   type Level,
   type ResourceDef,
 } from './prototypeCellules'
 
 export const CHANNELS = [
-  { id: 'x', label: 'x', note: 'abscisse' },
-  { id: 'y', label: 'y', note: 'ordonnée' },
-  { id: 'taille', label: 'taille', note: 'surface du point' },
-  { id: 'couleur', label: 'couleur', note: 'teinte du point' },
+  { id: 'x', label: 'x', note: 'abscisse', required: true },
+  { id: 'y', label: 'y', note: 'ordonnée', required: true },
+  { id: 'taille', label: 'taille', note: 'surface du point', required: false },
+  { id: 'couleur', label: 'couleur', note: 'teinte du point', required: false },
 ] as const
 export type ChannelId = (typeof CHANNELS)[number]['id']
 
-export const POPULATION_STUBS = [
-  { id: 'departement', label: 'Département' },
-  { id: 'classe_densite', label: 'Classe de densité' },
-  { id: 'littoral', label: 'Littoral (C / NC)' },
-] as const
+export const POPULATION_KEYS = ['departement', 'epci', 'classe_densite', 'littoral'] as const
+export type PopulationKey = (typeof POPULATION_KEYS)[number]
 
-/** Catégorie territoriale (closed classes) and Appartenance territoriale (membership) stubs. */
 export const CATEGORIES = [
   { id: 'classe_densite', label: 'Classe de densité' },
   { id: 'littoral', label: 'Littoral (C / NC)' },
@@ -35,17 +27,52 @@ export const APPARTENANCES = [
   { id: 'epci', label: 'EPCI' },
 ] as const
 
-export type Binding =
-  | { kind: 'cellule'; letter: string }
-  | { kind: 'formule'; expression: string }
-  | { kind: 'categorie'; id: string }
-  | { kind: 'appartenance'; id: string }
-
-export interface CelluleDraft {
-  letter: string
-  resourceId: string | null
+export interface CellRef {
+  resourceId: string
   coordinates: Coordinates
 }
+
+export type ChannelMode = 'aucune' | 'cellule' | 'formule' | 'categorie' | 'appartenance'
+
+/** Every sub-state is kept so switching mode never loses what was typed. */
+export interface ChannelState {
+  mode: ChannelMode
+  cell: CellRef | null
+  expression: string
+  /** Operands of the Formule, lettered A, B, C… within this formula only. */
+  operands: (CellRef | null)[]
+  categorie: string
+  appartenance: string
+}
+
+export interface FigureState {
+  level: Level
+  population: Record<PopulationKey, string[]>
+  channels: Record<ChannelId, ChannelState>
+}
+
+export const letterOf = (index: number) => String.fromCharCode(65 + index)
+
+export function newChannel(id: ChannelId): ChannelState {
+  return {
+    mode: id === 'x' || id === 'y' ? 'cellule' : 'aucune',
+    cell: null,
+    expression: '',
+    operands: [],
+    categorie: CATEGORIES[0].id,
+    appartenance: APPARTENANCES[0].id,
+  }
+}
+
+export function newFigureState(): FigureState {
+  return {
+    level: 'commune',
+    population: { departement: [], epci: [], classe_densite: [], littoral: [] },
+    channels: { x: newChannel('x'), y: newChannel('y'), taille: newChannel('taille'), couleur: newChannel('couleur') },
+  }
+}
+
+export const cloneState = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
 /* ------------------------------------------------------------------- formula */
 
@@ -70,14 +97,11 @@ export function readFormula(expression: string, knownLetters: readonly string[])
   for (const match of trimmed.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)) {
     const token = match[0]
     const lower = token.toLowerCase()
-    if ((FUNCTIONS as readonly string[]).includes(lower)) {
-      functions.add(lower)
-    } else if (/^[A-Z]$/.test(token)) {
+    if ((FUNCTIONS as readonly string[]).includes(lower)) functions.add(lower)
+    else if (/^[A-Z]$/.test(token)) {
       letters.add(token)
       if (!knownLetters.includes(token)) unknownLetters.add(token)
-    } else {
-      unknownTokens.add(token)
-    }
+    } else unknownTokens.add(token)
   }
   let depth = 0
   let balanced = true
@@ -87,175 +111,104 @@ export function readFormula(expression: string, knownLetters: readonly string[])
     if (depth < 0) balanced = false
   }
   if (depth !== 0) balanced = false
-  return {
-    empty: trimmed === '',
-    letters: [...letters].sort(),
-    unknownLetters: [...unknownLetters].sort(),
-    unknownTokens: [...unknownTokens],
-    functions: [...functions],
-    balanced,
-  }
+  return { empty: trimmed === '', letters: [...letters].sort(), unknownLetters: [...unknownLetters].sort(), unknownTokens: [...unknownTokens], functions: [...functions], balanced }
 }
 
-export const prettyExpression = (expression: string) => expression.trim().replace(/\*/g, '×').replace(/(?<![eE])-/g, '−').replace(/\s+/g, ' ')
+export const prettyExpression = (expression: string) =>
+  expression.trim().replace(/\*/g, '×').replace(/(?<![eE])-/g, '−').replace(/\s+/g, ' ')
 
-/* -------------------------------------------------------------------- draft */
+export const formulaIsValid = (reading: FormulaReading) =>
+  !reading.empty && reading.letters.length > 0 && !reading.unknownLetters.length && !reading.unknownTokens.length && reading.balanced
 
-export function createDraft(catalogueOf: () => ResourceDef[]) {
-  const level = ref<Level>('commune')
-  const population = reactive<Record<string, boolean>>({ departement: false, classe_densite: false, littoral: false })
-  const cells = ref<CelluleDraft[]>([{ letter: 'A', resourceId: null, coordinates: {} }])
-  const channels = reactive<Record<ChannelId, Binding | null>>({ x: null, y: null, taille: null, couleur: null })
-
-  const resourceOf = (resourceId: string | null) => catalogueOf().find((r) => r.id === resourceId) ?? null
-  const cellByLetter = (letter: string) => cells.value.find((c) => c.letter === letter) ?? null
-  const letters = computed(() => cells.value.map((c) => c.letter))
-
-  function addCell(): string {
-    const used = new Set(letters.value)
-    const letter = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').find((l) => !used.has(l))!
-    cells.value = [...cells.value, { letter, resourceId: null, coordinates: {} }].sort((a, b) => a.letter.localeCompare(b.letter))
-    return letter
-  }
-
-  function removeCell(letter: string) {
-    cells.value = cells.value.filter((c) => c.letter !== letter)
-    for (const id of Object.keys(channels) as ChannelId[]) {
-      const binding = channels[id]
-      if (binding?.kind === 'cellule' && binding.letter === letter) channels[id] = null
-    }
-  }
-
-  function setResource(letter: string, resourceId: string | null) {
-    const cell = cellByLetter(letter)
-    if (!cell) return
-    const resource = resourceOf(resourceId)
-    cell.resourceId = resource?.id ?? null
-    cell.coordinates = resource ? defaultCoordinates(resource) : {}
-  }
-
-  function setCoordinate(letter: string, axisKey: string, value: string) {
-    const cell = cellByLetter(letter)
-    const resource = resourceOf(cell?.resourceId ?? null)
-    if (!cell || !resource) return
-    cell.coordinates = normaliseCoordinates(resource, { ...cell.coordinates, [axisKey]: value }, axisKey)
-  }
-
-  function address(letter: string, resourceId: string, coordinates: Coordinates) {
-    const cell = cellByLetter(letter)
-    if (!cell) return
-    cell.resourceId = resourceId
-    cell.coordinates = { ...coordinates }
-  }
-
-  const completeCells = computed(() => cells.value.filter((c) => c.resourceId && resourceOf(c.resourceId)))
-
-  function unitsOf(expressionLetters: readonly string[]): string[] {
-    const units = new Set<string>()
-    for (const l of expressionLetters) {
-      const cell = cellByLetter(l)
-      const resource = resourceOf(cell?.resourceId ?? null)
-      if (cell && resource) units.add(cellUnit(resource, cell.coordinates) || '—')
-    }
-    return [...units]
-  }
-
-  function bindingTitle(binding: Binding | null): string {
-    if (!binding) return ''
-    if (binding.kind === 'cellule') return binding.letter
-    if (binding.kind === 'formule') return prettyExpression(binding.expression)
-    const list = binding.kind === 'categorie' ? CATEGORIES : APPARTENANCES
-    return list.find((e) => e.id === binding.id)?.label ?? binding.id
-  }
-
-  function formulaProblems(binding: Binding | null): { reading: FormulaReading; units: string[] } | null {
-    if (binding?.kind !== 'formule') return null
-    const reading = readFormula(binding.expression, letters.value)
-    return { reading, units: unitsOf(reading.letters) }
-  }
-
-  const channelIssues = computed(() => {
-    const issues: string[] = []
-    for (const { id } of CHANNELS) {
-      const binding = channels[id]
-      if (binding?.kind === 'cellule' && !cellByLetter(binding.letter)) issues.push(`${id} : cellule ${binding.letter} absente`)
-      if (binding?.kind === 'cellule' && !cellByLetter(binding.letter)?.resourceId) issues.push(`${id} : cellule ${binding.letter} non adressée`)
-      if (binding?.kind === 'formule') {
-        const reading = readFormula(binding.expression, letters.value)
-        if (reading.empty) issues.push(`${id} : formule vide`)
-        else if (reading.unknownLetters.length || reading.unknownTokens.length || !reading.balanced || !reading.letters.length) issues.push(`${id} : formule invalide`)
-        for (const l of reading.letters) if (cellByLetter(l) && !cellByLetter(l)!.resourceId) issues.push(`${id} : cellule ${l} non adressée`)
-      }
-    }
-    if (!channels.x) issues.push('x : à lier')
-    if (!channels.y) issues.push('y : à lier')
-    return issues
-  })
-
-  const spec = computed(() => {
-    const warnings: string[] = []
-    const canaux: Record<string, unknown> = {}
-    for (const { id } of CHANNELS) {
-      const binding = channels[id]
-      if (!binding) {
-        canaux[id] = null
-      } else if (binding.kind === 'cellule') {
-        canaux[id] = { cellule: binding.letter }
-      } else if (binding.kind === 'formule') {
-        const reading = readFormula(binding.expression, letters.value)
-        const units = unitsOf(reading.letters)
-        if (units.length > 1) warnings.push(`${id} : unités mêlées (${units.join(' / ')})`)
-        canaux[id] = { formule: binding.expression.trim(), libelle: prettyExpression(binding.expression), cellules: reading.letters, fonctions: reading.functions, inconnues: [...reading.unknownLetters, ...reading.unknownTokens] }
-      } else if (binding.kind === 'categorie') {
-        canaux[id] = { categorie_territoriale: binding.id }
-      } else {
-        canaux[id] = { appartenance_territoriale: binding.id }
-      }
-    }
-    return {
-      type: 'nuage',
-      niveau: level.value,
-      filtre_population: POPULATION_STUBS.filter((p) => population[p.id]).map((p) => ({ id: p.id, valeurs: 'stub' })),
-      cellules: completeCells.value.map((c) => {
-        const resource = resourceOf(c.resourceId)!
-        return {
-          id: c.letter,
-          resource_id: resource.id,
-          theme_id: resource.themeId,
-          label: resource.label,
-          unite: cellUnit(resource, c.coordinates),
-          coordonnees: c.coordinates,
-          lecture: cellShortLabel(resource, c.coordinates),
-        }
-      }),
-      canaux,
-      avertissements: warnings,
-    }
-  })
-
-  const canCreate = computed(() => channelIssues.value.length === 0 && completeCells.value.length > 0)
-
-  return {
-    level,
-    population,
-    cells,
-    channels,
-    letters,
-    resourceOf,
-    cellByLetter,
-    addCell,
-    removeCell,
-    setResource,
-    setCoordinate,
-    address,
-    completeCells,
-    unitsOf,
-    bindingTitle,
-    formulaProblems,
-    channelIssues,
-    spec,
-    canCreate,
-  }
+export function formulaReadingOf(channel: ChannelState) {
+  return readFormula(channel.expression, channel.operands.map((_, i) => letterOf(i)))
 }
 
-export type Draft = ReturnType<typeof createDraft>
+/* --------------------------------------------------------------------- reading */
+
+type Lookup = (resourceId: string) => ResourceDef | undefined
+
+export function describe(cell: CellRef | null, lookup: Lookup) {
+  const resource = cell ? lookup(cell.resourceId) : undefined
+  if (!cell || !resource) return null
+  return { resource, cell, lecture: cellShortLabel(resource, cell.coordinates), unite: cellUnit(resource, cell.coordinates) }
+}
+
+export function operandUnits(channel: ChannelState, reading: FormulaReading, lookup: Lookup): string[] {
+  const units = new Set<string>()
+  for (const letter of reading.letters) {
+    const info = describe(channel.operands[letter.charCodeAt(0) - 65] ?? null, lookup)
+    if (info) units.add(info.unite || '—')
+  }
+  return [...units]
+}
+
+export function channelIssues(state: FigureState, lookup: Lookup): string[] {
+  const issues: string[] = []
+  for (const { id, required } of CHANNELS) {
+    const channel = state.channels[id]
+    if (channel.mode === 'aucune') {
+      if (required) issues.push(`${id} : à lier`)
+    } else if (channel.mode === 'cellule') {
+      if (!describe(channel.cell, lookup)) issues.push(`${id} : cellule à choisir`)
+    } else if (channel.mode === 'formule') {
+      const reading = formulaReadingOf(channel)
+      if (reading.empty) issues.push(`${id} : formule vide`)
+      else if (!formulaIsValid(reading)) issues.push(`${id} : formule invalide`)
+      else if (reading.letters.some((l) => !describe(channel.operands[l.charCodeAt(0) - 65] ?? null, lookup))) issues.push(`${id} : opérande à choisir`)
+    }
+  }
+  return issues
+}
+
+export function channelLabel(channel: ChannelState, lookup: Lookup): string {
+  if (channel.mode === 'cellule') return describe(channel.cell, lookup)?.lecture ?? ''
+  if (channel.mode === 'formule') return prettyExpression(channel.expression)
+  if (channel.mode === 'categorie') return CATEGORIES.find((c) => c.id === channel.categorie)?.label ?? ''
+  if (channel.mode === 'appartenance') return APPARTENANCES.find((a) => a.id === channel.appartenance)?.label ?? ''
+  return ''
+}
+
+/** « y : log(B − A) / C · x : Densité de population » — the reader may overwrite it. */
+export function generatedTitle(state: FigureState, lookup: Lookup): string {
+  const part = (id: ChannelId) => channelLabel(state.channels[id], lookup) || '…'
+  return `y : ${part('y')} · x : ${part('x')}`
+}
+
+export function buildSpec(state: FigureState, lookup: Lookup) {
+  const variables: Record<string, unknown> = {}
+  for (const { id } of CHANNELS) {
+    const channel = state.channels[id]
+    if (channel.mode === 'aucune') {
+      variables[id] = null
+    } else if (channel.mode === 'cellule') {
+      const info = describe(channel.cell, lookup)
+      variables[id] = info ? { liaison: 'cellule', resource_id: info.resource.id, coordonnees: info.cell.coordinates, unite: info.unite, lecture: info.lecture } : { liaison: 'cellule', cellule: null }
+    } else if (channel.mode === 'formule') {
+      const reading = formulaReadingOf(channel)
+      const units = operandUnits(channel, reading, lookup)
+      variables[id] = {
+        liaison: 'formule',
+        formule: channel.expression.trim(),
+        libelle: prettyExpression(channel.expression),
+        fonctions: reading.functions,
+        operandes: channel.operands.map((operand, index) => {
+          const info = describe(operand, lookup)
+          return info
+            ? { id: letterOf(index), resource_id: info.resource.id, coordonnees: info.cell.coordinates, unite: info.unite, lecture: info.lecture }
+            : { id: letterOf(index), resource_id: null }
+        }),
+        erreurs: [...reading.unknownLetters.map((l) => `lettre inconnue ${l}`), ...reading.unknownTokens.map((t) => `jeton inconnu ${t}`), ...(reading.balanced ? [] : ['parenthèses'])],
+        avertissements: units.length > 1 ? [`unités mêlées : ${units.join(' / ')}`] : [],
+      }
+    } else if (channel.mode === 'categorie') {
+      variables[id] = { liaison: 'categorie_territoriale', id: channel.categorie }
+    } else {
+      variables[id] = { liaison: 'appartenance_territoriale', id: channel.appartenance }
+    }
+  }
+  const population: Record<string, string[]> = {}
+  for (const key of POPULATION_KEYS) if (state.population[key].length) population[key] = [...state.population[key]]
+  return { type: 'nuage', niveau: state.level, filtre_population: population, variables }
+}
+export type FigureSpec = ReturnType<typeof buildSpec>

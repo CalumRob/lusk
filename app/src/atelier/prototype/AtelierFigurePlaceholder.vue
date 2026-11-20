@@ -1,35 +1,71 @@
 <script setup lang="ts">
-/** PROTOTYPE — placeholder for a Figure d'atelier: title from the bindings, empty plot frame, cellule key, sources. */
+/** PROTOTYPE — a Figure d'atelier in the production nested frame: centered editable title, small actions top right, empty plot, key, sources. */
 import { computed } from 'vue'
 
 import CahierFigureFrame from '@/fiche/prototype/CahierFigureFrame.vue'
 import '@/fiche/prototype/cahierEvidenceSource.css'
 import { CAHIER_FIGURE_GEOMETRY } from '@/fiche/cahierFigureGrammaire'
 
-import type { FigureSpec } from './AtelierFigureModal.vue'
-import { CATEGORIES, APPARTENANCES, prettyExpression } from './prototypeFigure'
+import type { ResourceDef } from './prototypeCellules'
+import EditableText from './EditableText.vue'
+import {
+  channelLabel,
+  describe,
+  formulaReadingOf,
+  prettyExpression,
+  type ChannelId,
+  type FigureState,
+} from './prototypeFigure'
 
-const props = defineProps<{ spec: FigureSpec; number: number }>()
-defineEmits<{ remove: [] }>()
+const props = defineProps<{ state: FigureState; catalogue: ResourceDef[]; title: string; number: number }>()
+const emit = defineEmits<{ retitle: [value: string]; edit: []; duplicate: []; remove: [] }>()
 
-type Canal = Record<string, unknown> | null
+const lookup = (id: string) => props.catalogue.find((r) => r.id === id)
+const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+const label = (id: ChannelId) => channelLabel(props.state.channels[id], lookup)
 
-function titleOf(canal: Canal): string {
-  if (!canal) return ''
-  if (typeof canal.cellule === 'string') return canal.cellule
-  if (typeof canal.formule === 'string') return prettyExpression(canal.formule)
-  if (typeof canal.categorie_territoriale === 'string') return CATEGORIES.find((c) => c.id === canal.categorie_territoriale)?.label ?? ''
-  if (typeof canal.appartenance_territoriale === 'string') return APPARTENANCES.find((a) => a.id === canal.appartenance_territoriale)?.label ?? ''
-  return ''
-}
-
-const canaux = computed(() => props.spec.canaux as Record<string, Canal>)
-const title = computed(() => `y : ${titleOf(canaux.value.y!)} · x : ${titleOf(canaux.value.x!)}`)
-const secondary = computed(() =>
-  [canaux.value.taille ? `taille : ${titleOf(canaux.value.taille)}` : '', canaux.value.couleur ? `couleur : ${titleOf(canaux.value.couleur)}` : ''].filter(Boolean).join(' · '),
+const levelLabel = computed(() => ({ commune: 'communes', epci: 'EPCI', departement: 'départements' })[props.state.level])
+const subtitle = computed(() =>
+  [
+    `Nuage de ${levelLabel.value}`,
+    props.state.channels.taille.mode !== 'aucune' ? `taille : ${label('taille')}` : '',
+    props.state.channels.couleur.mode !== 'aucune' ? `couleur : ${label('couleur')}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · '),
 )
-const levelLabel = computed(() => ({ commune: 'communes', epci: 'EPCI', departement: 'départements' })[props.spec.niveau] ?? props.spec.niveau)
-const sources = computed(() => [...new Set(props.spec.cellules.map((c) => c.label))])
+
+interface Row { tag: string; text: string; unit: string; sub?: boolean }
+const rows = computed<Row[]>(() => {
+  const out: Row[] = []
+  for (const id of ['x', 'y', 'taille', 'couleur'] as const) {
+    const channel = props.state.channels[id]
+    if (channel.mode === 'aucune') continue
+    if (channel.mode === 'cellule') {
+      const info = describe(channel.cell, lookup)
+      out.push({ tag: id, text: info?.lecture ?? '', unit: info?.unite || '' })
+    } else if (channel.mode === 'formule') {
+      out.push({ tag: id, text: prettyExpression(channel.expression), unit: '' })
+      for (const letter of formulaReadingOf(channel).letters) {
+        const info = describe(channel.operands[letter.charCodeAt(0) - 65] ?? null, lookup)
+        out.push({ tag: letter, text: info?.lecture ?? '', unit: info?.unite || '', sub: true })
+      }
+    } else out.push({ tag: id, text: label(id), unit: '' })
+  }
+  return out
+})
+
+const sources = computed(() => {
+  const labels = new Set<string>()
+  for (const channel of Object.values(props.state.channels)) {
+    const cells = channel.mode === 'cellule' ? [channel.cell] : channel.mode === 'formule' ? channel.operands : []
+    for (const cell of cells) if (cell) labels.add(lookup(cell.resourceId)?.label ?? cell.resourceId)
+  }
+  return [...labels]
+})
+
+const FILTER_LABELS: Record<string, string> = { departement: 'Département', epci: 'EPCI', classe_densite: 'Classe de densité', littoral: 'Littoral' }
+const filters = computed(() => Object.entries(props.state.population).filter(([, v]) => v.length).map(([k, v]) => `${FILTER_LABELS[k]} (${v.length})`))
 
 const g = CAHIER_FIGURE_GEOMETRY
 const plot = { left: g.margin.left, right: g.width - g.margin.right, top: g.margin.top, bottom: g.height - g.margin.bottom }
@@ -37,36 +73,37 @@ const ticks = [0.25, 0.5, 0.75]
 </script>
 
 <template>
-  <figure class="at-figure" :aria-label="`Figure ${number} — ${title}`">
-    <div class="at-figure__head">
-      <span class="at-figure__number">Fig. {{ String(number).padStart(2, '0') }}</span>
-      <h2 class="at-figure__title">{{ title }}</h2>
-      <button type="button" class="at-figure__remove" @click="$emit('remove')">Retirer la figure</button>
+  <section class="concept-group at-group" :aria-label="`Figure ${number}`">
+    <div class="concept-group-heading at-group__heading">
+      <span class="at-group__number">{{ String(number).padStart(2, '0') }}</span>
+      <EditableText class="at-group__title" tag="h3" label="Titre de la figure" :model-value="title" @commit="emit('retitle', $event)" />
+      <div class="at-group__actions">
+        <button type="button" class="at-action" @click="emit('edit')">Modifier</button>
+        <button type="button" class="at-action" @click="emit('duplicate')">Dupliquer</button>
+        <button type="button" class="at-action at-action--quiet" @click="emit('remove')">Retirer</button>
+      </div>
     </div>
-    <p class="at-figure__channels">
-      Nuage de {{ levelLabel }}<template v-if="secondary"> · {{ secondary }}</template
-      ><template v-if="spec.filtre_population.length"> · population restreinte : {{ spec.filtre_population.map((p) => p.id).join(', ') }}</template>
-    </p>
 
-    <CahierFigureFrame :x-title="titleOf(canaux.x!)" :y-title="titleOf(canaux.y!)" size="standard">
+    <p class="at-group__subtitle">{{ subtitle }}<template v-if="filters.length"> · {{ filters.join(' · ') }}</template></p>
+
+    <CahierFigureFrame :x-title="short(label('x'), 48)" :y-title="short(label('y'), 40)" size="standard">
       <template #plot>
-        <svg class="cahier-figure-plot" :viewBox="`0 0 ${g.width} ${g.height}`" role="img" :aria-label="`Cadre vide du nuage ${title}`">
+        <svg class="cahier-figure-plot" :viewBox="`0 0 ${g.width} ${g.height}`" role="img" :aria-label="`Cadre vide du nuage : ${title}`">
           <line v-for="t in ticks" :key="`h${t}`" class="cahier-figure-tick" :x1="plot.left" :x2="plot.right" :y1="plot.top + (plot.bottom - plot.top) * t" :y2="plot.top + (plot.bottom - plot.top) * t" />
           <line v-for="t in ticks" :key="`v${t}`" class="cahier-figure-tick" :y1="plot.top" :y2="plot.bottom" :x1="plot.left + (plot.right - plot.left) * t" :x2="plot.left + (plot.right - plot.left) * t" />
           <line class="cahier-figure-axis" :x1="plot.left" :x2="plot.right" :y1="plot.bottom" :y2="plot.bottom" />
           <line class="cahier-figure-axis" :x1="plot.left" :x2="plot.left" :y1="plot.top" :y2="plot.bottom" />
-          <text class="at-figure__plot-note" :x="(plot.left + plot.right) / 2" :y="(plot.top + plot.bottom) / 2" text-anchor="middle">Figure non tracée — prototype</text>
         </svg>
       </template>
     </CahierFigureFrame>
 
     <dl class="at-figure__key">
-      <template v-for="cell in spec.cellules" :key="cell.id">
-        <dt>{{ cell.id }}</dt>
-        <dd>{{ cell.lecture }}</dd>
-        <dd>{{ cell.unite || 'sans unité' }}</dd>
+      <template v-for="row in rows" :key="`${row.tag}-${row.sub}`">
+        <dt :class="{ 'at-figure__sub': row.sub }">{{ row.tag }}</dt>
+        <dd>{{ row.text }}</dd>
+        <dd>{{ row.unit }}</dd>
       </template>
     </dl>
-    <p class="cahier-evidence-source">Sources : {{ sources.join(' · ') }}</p>
-  </figure>
+    <p v-if="sources.length" class="cahier-evidence-source">Sources : {{ sources.join(' · ') }}</p>
+  </section>
 </template>
