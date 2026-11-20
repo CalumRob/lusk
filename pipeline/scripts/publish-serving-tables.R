@@ -21,6 +21,7 @@ if (selector_count==1L) {
 args <- args[args!="--all"]
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
                                                 "--scalar-scope", "--scalar-scope-check",
+                                                 "--offre-tc-bridge", "--offre-tc-bridge-dry-run",
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
                                                 "--series-check", "--series-publish",
@@ -247,6 +248,19 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
       nrow(current$descriptors), "retained indicators; content version",
       scalar_content_version(current), "\n")
   verifier_snapshot_retention_scalaire(sortie, reference = reference)
+} else if (args[[1L]] %in% c("--offre-tc-bridge", "--offre-tc-bridge-dry-run")) {
+  # #1071 guarded one-off bridge. This does NOT use the #1068 scoped path and
+  # does not require the lost LUSK_SCALAR_BASELINE_SORTIE: the new generation is
+  # built from the live serving rows + freshly built offre_tc facts. The write
+  # command still requires LUSK_BRIDGE_DUMP_CONFIRMED and the five expected
+  # publication tokens; the dry-run variant never writes.
+  if (identical(Sys.getenv("LUSK_MODE", unset = "full"), "cron")) {
+    stop("Offre TC serving bridge is not enabled for the cron graph.",
+         call. = FALSE)
+  }
+  mode <- if (args[[1L]] == "--offre-tc-bridge") "publish" else "dry-run"
+  run_offre_tc_bridge(mode)
+  quit(status = 0L)
 } else if (args[[1L]] == "--check") {
   sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
   verifier_snapshot_retention_scalaire(sortie)

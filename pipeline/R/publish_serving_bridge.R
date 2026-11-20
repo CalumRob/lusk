@@ -361,3 +361,154 @@ assert_bridge_markers <- function(markers, expected) {
   invisible(bad)
 }
 
+
+# Slice 3 â€” token chaining, one-transaction write, dry-run ---------------------
+read_bridge_offre_tc_rows <- function(path) {
+  if (!is.character(path) || length(path) != 1L || !nzchar(trimws(path)) || !file.exists(path))
+    stop("Bridge requires ", BRIDGE_FACTS_ENV, " pointing to the freshly built ",
+         "offre_tc facts (a private .rds or .csv file)", call. = FALSE)
+  rows <- if (grepl("\\.rds$", tolower(path))) readRDS(path) else
+    readr::read_csv(path, show_col_types = FALSE)
+  validate_bridge_offre_tc_rows(rows)
+  rows
+}
+
+# The Habitat descriptor's linked token is "<canonical>-<profile>-<scalar>-<ref>".
+# Rebuild it from the live tokens rather than hardcoding a composition: a live
+# string that is not chained to the verified tokens is a hard refusal.
+bridge_rebind_linked_version <- function(live_linked, live_tokens, new_tokens) {
+  fields <- c("profile", "scalar", "reference")
+  if (!is.character(live_linked) || length(live_linked) != 1L || is.na(live_linked) ||
+      !all(fields %in% names(live_tokens)) || !all(fields %in% names(new_tokens)))
+    stop("Bridge cannot re-chain an invalid Habitat linked token", call. = FALSE)
+  suffix <- paste0("-", paste(unname(live_tokens[fields]), collapse = "-"))
+  if (!endsWith(live_linked, suffix))
+    stop("The live Habitat linked token is not chained to the live publication ",
+         "tokens; refusing with zero writes", call. = FALSE)
+  prefix <- substr(live_linked, 1L, nchar(live_linked) - nchar(suffix))
+  paste0(prefix, "-", paste(unname(new_tokens[fields]), collapse = "-"))
+}
+
+bridge_compute_new_tokens <- function(projection, reference_rows, reference_version,
+                                      markers, expected) {
+  scalar_version <- scalar_content_version(projection)
+  comparison <- project_scalar_comparisons(
+    projection, reference_rows,
+    input_scalar_content_version = scalar_version,
+    reference_content_version = reference_version)
+  live_linked <- markers$selected_descriptor$linked_content_version[[1L]]
+  live_tokens <- expected[c("profile", "scalar", "reference")]
+  new_tokens <- c(profile = expected[["profile"]], scalar = scalar_version,
+                  reference = reference_version)
+  list(scalar = scalar_version, comparison = comparison$content_version,
+       profile = expected[["profile"]], habitat = expected[["habitat"]],
+       reference = reference_version,
+       linked = bridge_rebind_linked_version(live_linked, live_tokens, new_tokens),
+       comparison_projection = comparison)
+}
+
+# Marker-only rebind of the two chained descriptor fields. No profile fact,
+# selected-reading row or unrelated owner is rewritten by the bridge. The WHERE
+# clauses use the verified live tokens, so a concurrent move breaks the UPDATE
+# and the whole transaction rolls back.
+bridge_marker_writer <- function(con, old_scalar, old_linked) {
+  list(
+    set_profile_scalar_binding = function(new_scalar) DBI::dbExecute(con, paste(
+      "UPDATE profile_descriptor SET required_scalar_version=$1",
+      "WHERE required_scalar_version=$2"),
+      params = list(new_scalar, old_scalar)),
+    set_habitat_linked = function(new_linked) DBI::dbExecute(con, paste(
+      "UPDATE selected_reading_descriptor SET linked_content_version=$1",
+      "WHERE linked_content_version=$2"),
+      params = list(new_linked, old_linked)))
+}
+
+publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
+                                    transaction = with_publication_transaction,
+                                    scalar_adapter = NULL,
+                                    comparison_adapter = NULL,
+                                    writer = NULL) {
+  if (is.null(scalar_adapter)) scalar_adapter <- scalar_postgres_adapter(con)
+  if (is.null(comparison_adapter)) comparison_adapter <- scalar_comparison_postgres_adapter(con)
+  if (is.null(writer))
+    writer <- bridge_marker_writer(
+      con, expected[["scalar"]],
+      plan$markers$selected_descriptor$linked_content_version[[1L]])
+  registry <- register_scalar_publisher(list(), "bridge_scalar_snapshot",
+    project = function(canonical) canonical,
+    publish = function(projection, db, version) db$replace(projection, version))
+
+  transaction(con, {
+    # The normal scalar publisher owns the whole-table replace and the explicit
+    # retirement policy (including the retired indicators' comparison lineage).
+    scalar <- publish_registered_scalar(
+      registry, "bridge_scalar_snapshot", plan$projection, scalar_adapter,
+      retired_indicator_ids = retired_ids)
+    if (!identical(as.character(scalar$content_version), as.character(plan$tokens$scalar)))
+      stop("The written scalar token differs from the prepared bridge token",
+           call. = FALSE)
+    comparison <- publish_registered_scalar_comparison(
+      plan$tokens$comparison_projection, comparison_adapter)
+    writer$set_profile_scalar_binding(scalar$content_version)
+    writer$set_habitat_linked(plan$tokens$linked)
+    invisible(list(scalar = scalar, comparison = comparison,
+                   linked = plan$tokens$linked))
+  })
+}
+
+bridge_print_report <- function(plan, mode) {
+  cat("offre_tc serving bridge (", mode, ")\n", sep = "")
+  cat("new scalar token:", plan$tokens$scalar, "\n")
+  cat("new comparison token:", plan$tokens$comparison, "\n")
+  cat("new Habitat linked token:", plan$tokens$linked, "\n")
+  cat("retired indicators in this bridge:", length(plan$retired_ids), "\n")
+  cat("per-indicator diff:\n")
+  print(plan$diff, row.names = FALSE)
+  if (identical(mode, "dry-run")) cat("dry-run: no database writes performed\n")
+  invisible(plan)
+}
+
+# The single entry point used by the two CLI commands. Every guard runs before
+# the write callback; collaborators are injectable so the pure tests never open
+# a connection and the guarded DB proof can target lusk_it_* only.
+run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv,
+                                con = NULL, config = NULL, connect = NULL,
+                                live_reader = bridge_live_reader(),
+                                read_markers = NULL,
+                                fresh_rows = NULL, metadata = NULL,
+                                retired_ids = retained_scalar_retirement_ids(),
+                                publish = publish_bridge_snapshot) {
+  mode <- match.arg(mode)
+  expected <- bridge_expected_tokens_from_env(env)
+  if (is.null(con)) {
+    if (is.null(config)) config <- configuration_service_postgres()
+    if (is.null(connect)) connect <- function(cfg) do.call(DBI::dbConnect,
+      c(list(drv = RPostgres::Postgres()), cfg))
+    con <- connect(config)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+  }
+  if (is.null(read_markers)) read_markers <- function() bridge_read_markers(con)
+
+  live <- read_live_scalar_projection(con, reader = live_reader)
+  markers <- read_markers()
+  assert_bridge_markers(markers, expected)
+  if (is.null(fresh_rows))
+    fresh_rows <- read_bridge_offre_tc_rows(env(BRIDGE_FACTS_ENV, unset = ""))
+  if (is.null(metadata)) metadata <- lire_theme_metadata(
+    scalar_scope_contract("mobilite", bridge_offre_tc_id())$theme)
+  built <- build_bridge_scalar_projection(
+    live, fresh_rows, metadata, retired_ids, offre_tc_id = bridge_offre_tc_id())
+  diff <- assert_bridge_round_trip(live, built$projection, built$affected)
+  tokens <- bridge_compute_new_tokens(
+    built$projection, live_reader$reference_rows(con), expected[["reference"]],
+    markers, expected)
+  plan <- list(mode = mode, projection = built$projection, live = live,
+               diff = diff, tokens = tokens, markers = markers,
+               expected = expected, retired_ids = retired_ids)
+  bridge_print_report(plan, mode)
+
+  if (identical(mode, "dry-run")) return(invisible(plan))
+  assert_bridge_dump_confirmed(env)
+  publish(con, plan, retired_ids, expected)
+}
+

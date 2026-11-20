@@ -185,3 +185,175 @@ test_that("expected tokens and the dump acknowledgement come only from the envir
   expect_identical(ack, "dump-2026-11-20")
 })
 
+
+# --- Slice 3: token chaining, one-transaction write and dry-run ---------------
+
+test_that("the Habitat linked token is re-chained from the live tokens", {
+  live <- c(profile = "profile-live", scalar = "scalar-live", reference = "reference-live")
+  new <- c(profile = "profile-live", scalar = "scalar-new", reference = "reference-live")
+  live_linked <- paste(c("canonical", unname(live)), collapse = "-")
+  expect_identical(bridge_rebind_linked_version(live_linked, live, new),
+                   paste(c("canonical", unname(new)), collapse = "-"))
+  expect_error(bridge_rebind_linked_version("not-chained", live, new),
+               "not chained")
+})
+
+test_that("new tokens chain scalar -> comparison -> Habitat link", {
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  expected <- bridge_fixture_expected_tokens()
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+
+  scalar_version <- scalar_content_version(built$projection)
+  comparison <- project_scalar_comparisons(
+    built$projection, bridge_fixture_reference_rows(),
+    input_scalar_content_version = scalar_version,
+    reference_content_version = expected[["reference"]])
+  expect_identical(tokens$scalar, scalar_version)
+  expect_identical(tokens$comparison, comparison$content_version)
+  expect_identical(tokens$comparison_projection$content_version, comparison$content_version)
+  expect_match(tokens$linked, paste0("-", expected[["profile"]], "-", scalar_version,
+                                     "-", expected[["reference"]], "$"))
+})
+
+test_that("the write composes the registered publishers inside ONE transaction", {
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  expected <- bridge_fixture_expected_tokens()
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected)
+
+  scalar_db <- bridge_fake_scalar_adapter("scalar-live")
+  comparison_db <- bridge_fake_comparison_adapter("comparison-live", tokens$scalar)
+  writer <- bridge_fake_marker_writer(expected[["scalar"]])
+  transactions <- 0L
+  write <- publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    scalar_adapter = scalar_db, comparison_adapter = comparison_db,
+    writer = writer)
+
+  expect_identical(transactions, 1L)
+  expect_identical(write$scalar$content_version, tokens$scalar)
+  expect_identical(write$comparison$content_version, tokens$comparison)
+  expect_identical(scalar_db$state$retired, retained_scalar_retirement_ids())
+  expect_identical(comparison_db$state$replaced, tokens$comparison)
+  expect_identical(writer$state$profile, "scalar-live")
+  expect_identical(writer$state$profile_new, tokens$scalar)
+  expect_identical(writer$state$linked_new, tokens$linked)
+})
+
+test_that("the write rolls back as one unit when an adapter fails", {
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  expected <- bridge_fixture_expected_tokens()
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected)
+
+  comparison_db <- bridge_fake_comparison_adapter("comparison-live", tokens$scalar)
+  comparison_db$replace <- function(projection) stop("injected comparison failure")
+  expect_error(publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) force(expr),
+    scalar_adapter = bridge_fake_scalar_adapter("scalar-live"),
+    comparison_adapter = comparison_db,
+    writer = bridge_fake_marker_writer(expected[["scalar"]])), "injected comparison failure")
+})
+
+test_that("the dry-run prints tokens and the diff and never calls the writer", {
+  expected <- bridge_fixture_expected_tokens()
+  env <- bridge_fake_env(c(
+    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
+    setNames("E:/Temp/opencode/offre-tc-facts.rds", BRIDGE_FACTS_ENV)))
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  env <- bridge_fake_env(c(
+    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
+    setNames(facts_path, BRIDGE_FACTS_ENV)))
+
+  live <- bridge_live_fixture()
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(live))
+  write_calls <- 0L
+  output <- capture.output(result <- run_offre_tc_bridge(
+    "dry-run", env = env, con = structure(list(), class = "fake-con"),
+    live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) { write_calls <<- write_calls + 1L }))
+
+  expect_identical(write_calls, 0L)
+  expect_match(paste(output, collapse = "\n"), "new scalar token", fixed = TRUE)
+  expect_match(paste(output, collapse = "\n"), "new comparison token", fixed = TRUE)
+  expect_match(paste(output, collapse = "\n"), "offre_tc")
+  expect_identical(result$mode, "dry-run")
+  expect_true("tot_loss_t" %in% result$diff$indicator_id)
+})
+
+test_that("a moved live marker refuses before any write is attempted", {
+  expected <- bridge_fixture_expected_tokens()
+  moved <- expected
+  moved[["scalar"]] <- "someone-else"
+  env <- bridge_fake_env(c(
+    setNames(unname(moved), unname(BRIDGE_EXPECTED_ENV)),
+    setNames("facts.rds", BRIDGE_FACTS_ENV)))
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
+  write_calls <- 0L
+  expect_error(run_offre_tc_bridge(
+    "publish", env = env, con = structure(list(), class = "fake-con"),
+    live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) { write_calls <<- write_calls + 1L }), "marker mismatch")
+  expect_identical(write_calls, 0L)
+})
+
+test_that("a missing dump acknowledgement refuses before any write is attempted", {
+  expected <- bridge_fixture_expected_tokens()
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  env <- bridge_fake_env(c(
+    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
+    setNames(facts_path, BRIDGE_FACTS_ENV)))
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
+  write_calls <- 0L
+  capture.output(expect_error(run_offre_tc_bridge(
+    "publish", env = env, con = structure(list(), class = "fake-con"),
+    live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) { write_calls <<- write_calls + 1L }), "verified dump"))
+  expect_identical(write_calls, 0L)
+})
+
+test_that("the bridge refuses to run without the LUSK_PUBLISH_* configuration", {
+  expected <- bridge_fixture_expected_tokens()
+  env <- bridge_fake_env(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)))
+  expect_error(run_offre_tc_bridge("dry-run", env = env), "Publication SQL")
+})
+
+
+test_that("the CLI registers both bridge commands without changing --publish", {
+  script <- readLines(system.file("..", "scripts", "publish-serving-tables.R",
+                                  package = "lusk"))
+  source_text <- paste(script, collapse = "\n")
+  expect_match(source_text, '"--offre-tc-bridge"', fixed = TRUE)
+  expect_match(source_text, '"--offre-tc-bridge-dry-run"', fixed = TRUE)
+  expect_match(source_text, "run_offre_tc_bridge(mode)", fixed = TRUE)
+  expect_match(source_text, "publish_retained_backend_from_parquet(", fixed = TRUE)
+  # The single-command arg contract is unchanged.
+  expect_match(source_text, "length(args) != 1L", fixed = TRUE)
+})
+

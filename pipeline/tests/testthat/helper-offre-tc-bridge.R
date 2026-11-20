@@ -7,8 +7,8 @@ bridge_fixture_metadata <- function() lire_theme_metadata("mobilite")
 
 bridge_fixture_eligible <- function() {
   data.frame(
-    territory_id = c("29001", "29002", "35001", "242900314"),
-    territory_type = c("commune", "commune", "commune", "epci"),
+    territory_id = c("29001", "29002", "35001", "242900314", "53"),
+    territory_type = c("commune", "commune", "commune", "epci", "region"),
     stringsAsFactors = FALSE)
 }
 
@@ -99,12 +99,13 @@ bridge_fresh_offre_tc_rows <- function(values = c(0.9968, 0.9261)) {
 
 bridge_fixture_reference_rows <- function() {
   data.frame(
-    territory_id = c("29001", "29002", "35001", "242900314"),
-    territory_type = c("commune", "commune", "commune", "epci"),
-    name = c("A", "B", "C", "D"),
-    density_class_code = rep("A", 4L),
-    littoral_code = c("C", "NC", "NC", NA_character_),
-    littoral_classement_source = c("Mer", NA_character_, NA_character_, NA_character_),
+    territory_id = c("29001", "29002", "35001", "242900314", "53"),
+    territory_type = c("commune", "commune", "commune", "epci", "region"),
+    name = c("A", "B", "C", "D", "Bretagne"),
+    epci_id = c("242900314", "242900314", "242900314", NA_character_, NA_character_),
+    density_class_code = c("A", "A", "B", NA_character_, NA_character_),
+    littoral_code = c("C", "NC", "NC", NA_character_, NA_character_),
+    littoral_classement_source = c("Mer", NA_character_, NA_character_, NA_character_, NA_character_),
     stringsAsFactors = FALSE)
 }
 
@@ -198,5 +199,70 @@ bridge_fake_reader <- function(rows) list(
 
 bridge_fake_env <- function(values) function(name, unset = "") {
   if (name %in% names(values)) values[[name]] else unset
+}
+
+
+# Injectable adapters that satisfy the registered publisher contracts without a
+# database. They record what the write path would have sent to PostgreSQL.
+bridge_fake_scalar_adapter <- function(old_version, old_reference = "reference-live") {
+  state <- new.env(parent = emptyenv())
+  state$replaced <- NULL
+  state$retired <- NULL
+  list(
+    transaction = function(expr) force(expr),
+    lock = function(owner_arg) invisible(NULL),
+    marker = function(name) data.frame(
+      content_version = old_version, reference_content_version = old_reference,
+      stringsAsFactors = FALSE),
+    reference_marker = function() data.frame(
+      content_version = old_reference, row_count = 4L, actual_rows = 4L,
+      stringsAsFactors = FALSE),
+    validate_territories = function(territories, descriptors) invisible(TRUE),
+    validate_snapshot = function(projection, retired_indicator_ids = character()) {
+      state$retired <- retired_indicator_ids
+      list(pending_retirement = FALSE)
+    },
+    set_reference_version = function(version) invisible(NULL),
+    replace = function(projection, version, retired_indicator_ids = character()) {
+      state$replaced <- version
+      state$retired <- retired_indicator_ids
+      invisible(TRUE)
+    },
+    state = state)
+}
+
+bridge_fake_comparison_adapter <- function(old_version, input_scalar = "scalar-new") {
+  state <- new.env(parent = emptyenv())
+  state$replaced <- NULL
+  list(
+    transaction = function(expr) force(expr),
+    lock = function() invisible(NULL),
+    input_markers = function() data.frame(
+      scalar_content_version = input_scalar,
+      reference_content_version = "reference-live", stringsAsFactors = FALSE),
+    marker = function() data.frame(
+      content_version = old_version, scalar_content_version = input_scalar,
+      reference_content_version = "reference-live", lineage_row_count = 1L,
+      stringsAsFactors = FALSE),
+    replace = function(projection) {
+      state$replaced <- projection$content_version
+      invisible(TRUE)
+    },
+    state = state)
+}
+
+bridge_fake_marker_writer <- function(old_scalar = "scalar-live") {
+  state <- new.env(parent = emptyenv())
+  state$profile <- old_scalar
+  list(
+    set_profile_scalar_binding = function(new_scalar) {
+      state$profile_new <- new_scalar
+      invisible(TRUE)
+    },
+    set_habitat_linked = function(new_linked) {
+      state$linked_new <- new_linked
+      invisible(TRUE)
+    },
+    state = state)
 }
 
