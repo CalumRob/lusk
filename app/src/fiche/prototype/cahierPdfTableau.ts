@@ -157,9 +157,8 @@ export interface OptionsTableauPdf {
 
 /**
  * The one presentation-role fact: a flat table's Mode/raw COLUMN owns the
- * row-label role; every other column's cells use the value role. `cell.raw` is
- * a measurement flag also set on numeric focal cells, so it must never decide
- * typography. Measurement, row height and painting all read this column fact.
+ * row-label role; every other column's cells use the value role. Measurement,
+ * row height and painting all read this column fact, so they cannot diverge.
  */
 export function estCelluleBrute(column: CahierTableColumn): boolean {
   return column.kind === 'raw'

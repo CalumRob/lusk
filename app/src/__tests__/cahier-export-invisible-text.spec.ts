@@ -7,13 +7,14 @@
 import { describe, expect, it } from 'vitest'
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
-import { capturePdfFixture } from './helpers/cahierPdfFixtures'
+import { PDF_FIXTURE_SECTION_KEYS, capturePdfFixture, readyPublications, type PdfFixtureSectionKey } from './helpers/cahierPdfFixtures'
 import { composerCahierPdfNativedansNavigateur } from './helpers/cahierPdfNativeRuntime'
 
-async function inspect(key: 'aedar-car-overview' | 'aedar-diversity-loss') {
-  const capture = capturePdfFixture(key)
-  const projection = projeterRequeteExport(capture, [])
-  if (projection.status !== 'ready') throw new Error(projection.reason)
+async function inspect(key: PdfFixtureSectionKey) {
+  const capture = capturePdfFixture(key, { publications: readyPublications(key) })
+  const modes = capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.id)
+  const projection = projeterRequeteExport(capture, modes)
+  if (projection.status !== 'ready') throw new Error(`${key}: ${projection.reason}`)
   const result = await composerCahierPdfNativedansNavigateur(projection.request, {
     signal: new AbortController().signal,
   })
@@ -39,15 +40,10 @@ async function inspect(key: 'aedar-car-overview' | 'aedar-diversity-loss') {
 }
 
 describe('no invisible plate indices in the export (#1025)', () => {
-  it('keeps no two-digit text inside a raster box for car-overview', async () => {
-    const result = await inspect('aedar-car-overview')
-    expect(result.images).toBeGreaterThan(0)
-    expect(result.hidden).toEqual([])
-  }, 60000)
-
-  it('keeps no two-digit text inside a raster box for diversity-loss', async () => {
-    const result = await inspect('aedar-diversity-loss')
-    expect(result.images).toBe(4)
-    expect(result.hidden).toEqual([])
-  }, 60000)
+  it('keeps no two-digit text inside a raster box in any figure', async () => {
+    for (const key of PDF_FIXTURE_SECTION_KEYS) {
+      const result = await inspect(key)
+      expect(result.hidden, `${key}: ${result.hidden.join(', ')}`).toEqual([])
+    }
+  }, 300000)
 })

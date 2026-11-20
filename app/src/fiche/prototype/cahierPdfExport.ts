@@ -233,9 +233,11 @@ function comparisonBlockReason(
 
 /**
  * A served comparison can settle its status before the ranks it carries reach
- * the scalar model. Readiness must use the same completeness fact the capture
- * consumes: a displayed reference without a published rank (and without the
- * owner's explicit unavailability wording) is still a half-loaded comparison.
+ * the scalar model. Blocks only that in-flight window: a selection-mean
+ * reference (the comparison group's own served mean) without any rank data is
+ * a half-loaded comparison. A territory-mean reference is the owner's fallback
+ * when the comparison is stale/rejected — it legitimately has no ranks and is
+ * settled, so it must never strand the action.
  */
 function overviewRanksPending(
   capture: CahierExportCapture,
@@ -243,8 +245,11 @@ function overviewRanksPending(
 ): boolean {
   if (!comparisonRelevant(comparison)) return false
   return capture.figures.some((figure) => figure.family === 'aedar-car-overview'
-    && figure.model.scalars.some((scalar) => scalar.reference !== null
-      && scalar.rank == null && scalar.rankSize == null && !scalar.rankUnavailableLabel))
+    && figure.model.scalars.some((scalar) => {
+      const reference = scalar.reference
+      if (!reference || !('kind' in reference) || reference.kind !== 'selection-mean') return false
+      return scalar.rank == null && scalar.rankSize == null && !scalar.rankUnavailableLabel
+    }))
 }
 
 interface FigureResourceFailures {

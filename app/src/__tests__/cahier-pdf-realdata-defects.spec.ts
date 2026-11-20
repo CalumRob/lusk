@@ -7,7 +7,7 @@ import { formatTimeRampNumber } from '@/fiche/prototype/cahierFigureReadings'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import { estCelluleBrute, roleCelluleTableau } from '@/fiche/prototype/cahierPdfTableau'
 import { plierTexte, type MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
-import type { CahierTableCell, CahierTableColumn } from '@/fiche/prototype/cahierExportAdapters'
+import type { CahierTableColumn } from '@/fiche/prototype/cahierExportAdapters'
 import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from '@/fiche/prototype/cahierExportSurface'
 
 const MESURE_TABLEAU_FIXE: MesureTexte = {
@@ -52,10 +52,8 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(estCelluleBrute(focal)).toBe(false)
     expect(roleCelluleTableau(mode)).toEqual(ROLE_PDF.libelleTableau)
     expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
-    // A served numeric cell may carry raw:true in a focal column; it is still
-    // a value cell and must keep the 13px medium value face.
-    const rawNumeric = { raw: true } as CahierTableCell
-    expect(rawNumeric.raw).toBe(true)
+    // The adapters set raw:true only on the Mode column; a focal column keeps
+    // the value face regardless of any cell-level measurement flag.
     expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
   })
 

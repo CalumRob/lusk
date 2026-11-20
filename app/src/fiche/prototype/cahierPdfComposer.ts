@@ -1267,8 +1267,7 @@ function dessinerTableau(
         continue
       }
       // One role fact for measurement, row height and painting: the column's
-      // presentation kind. `cell.raw` is a measurement flag on numeric focal
-      // cells too and must never switch their typography to the label role.
+      // presentation kind.
       const roleCellule = roleCelluleTableau(colonne.column)
       const lignes = plierTexte(cellule.display, mesure, {
         police: roleCellule.police,

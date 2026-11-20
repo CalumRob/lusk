@@ -308,6 +308,21 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     }))).toEqual({ ready: true })
   })
 
+  it('exports a territory-mean reference with no ranks (stale comparison fallback)', () => {
+    const base = capturePdfFixture('aedar-car-overview')
+    const evidence = base.nativeRender!.content.units[0]!.sections[0]!.evidence as any
+    const territoryMeanScalars = evidence.scalars.map((scalar: any) => ({
+      ...scalar,
+      reference: { kind: 'territory-mean', label: 'Moyenne — EPCI', value: 42, unit: '%' },
+      rank: null, rankSize: null, rankUnavailableLabel: null,
+    }))
+    expect(evaluerDisponibiliteExportPdf(capturePdfFixture('aedar-car-overview', {
+      comparisonStatus: 'ready',
+      publications: readyPublications('aedar-car-overview'),
+      evidencePatch: { scalars: territoryMeanScalars },
+    }))).toEqual({ ready: true })
+  })
+
   it('blocks a pending source clock while allowing explicit unavailable scalar cells', () => {
     expect(blockReason(capturePdfFixture('aedar-car-overview', {
       evidencePatch: { sourcePending: true },

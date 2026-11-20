@@ -55,6 +55,31 @@ describe('overview scalars in every export route (#1025)', () => {
     expect(text.match(/1er\/43/gu)).toHaveLength(2)
   }, 60000)
 
+  it('exports a territory-mean reference with the approved em dash, no ranks', async () => {
+    const base = capturePdfFixture('aedar-car-overview')
+    const evidence = base.nativeRender!.content.units[0]!.sections[0]!.evidence as any
+    const patched = capturePdfFixture('aedar-car-overview', {
+      evidencePatch: {
+        scalars: evidence.scalars.map((scalar: any) => ({
+          ...scalar,
+          reference: { kind: 'territory-mean', label: 'Moyenne — EPCI', value: 42, unit: '%' },
+          rank: null, rankSize: null,
+        })),
+      },
+    })
+    const projection = projeterRequeteExport(patched, [])
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    const result = await composerCahierPdfNativedansNavigateur(projection.request, {
+      signal: new AbortController().signal,
+    })
+    const text = await textOf(result.blob)
+    // The territory-mean value is served (42) but no rank exists: the Rang
+    // column uses the approved em dash instead of stranding the action.
+    expect(text).toContain('42')
+    expect(text).not.toMatch(/\d+(er|e|ème)?\/\d+/u)
+    expect(text).toContain('—')
+  }, 60000)
+
   it('never paints comparison loading-state chrome in the PDF', async () => {
     const { cahierExportHiddenSelectors } = await import('@/fiche/prototype/cahierExportSurface')
     for (const document of [true, false]) {
