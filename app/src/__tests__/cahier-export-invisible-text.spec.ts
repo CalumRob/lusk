@@ -41,8 +41,14 @@ async function inspect(key: PdfFixtureSectionKey) {
 
 describe('no invisible plate indices in the export (#1025)', () => {
   it('keeps no two-digit text inside a raster box in any figure', async () => {
+    const plateFigures = ['aedar-car-overview', 'aedar-diversity-loss', 'reseaux']
     for (const key of PDF_FIXTURE_SECTION_KEYS) {
       const result = await inspect(key)
+      // A plate-less render would make the "no index inside a raster" check
+      // vacuous: require that figures which emit indices actually rastered.
+      if (plateFigures.includes(key)) {
+        expect(result.images, `${key}: no raster image in the export`).toBeGreaterThan(0)
+      }
       expect(result.hidden, `${key}: ${result.hidden.join(', ')}`).toEqual([])
     }
   }, 300000)

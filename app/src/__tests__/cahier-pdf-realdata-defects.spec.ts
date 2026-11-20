@@ -52,8 +52,9 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(estCelluleBrute(focal)).toBe(false)
     expect(roleCelluleTableau(mode)).toEqual(ROLE_PDF.libelleTableau)
     expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
-    // The adapters set raw:true only on the Mode column; a focal column keeps
-    // the value face regardless of any cell-level measurement flag.
+    // cahierExportAdapters copies `reading.raw` onto focal and comparison
+    // cells too (lines 1142/1150): per-cell raw is a measurement flag, not a
+    // presentation fact. The column kind is the correct presentation owner.
     expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
   })
 
