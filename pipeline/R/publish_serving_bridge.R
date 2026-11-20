@@ -216,17 +216,21 @@ bridge_live_reader <- function() list(
   territories = function(con) DBI::dbGetQuery(con,
     "SELECT territory_id, territory_type FROM territory_reference"),
   reference_rows = function(con) DBI::dbGetQuery(con, "SELECT * FROM territory_reference"),
-  profile_descriptors = function(con) DBI::dbGetQuery(con,
-    "SELECT * FROM profile_descriptor"),
-  profile_sources = function(con) DBI::dbGetQuery(con,
-    "SELECT indicator_id, source_id FROM profile_descriptor_source"),
-  profile_axes = function(con) DBI::dbGetQuery(con, "SELECT * FROM profile_axis"),
+  profile_descriptors = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT * FROM profile_descriptor ORDER BY indicator_id")),
+  profile_sources = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, source_id FROM profile_descriptor_source",
+    "ORDER BY indicator_id, source_id")),
+  profile_axes = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT * FROM profile_axis ORDER BY indicator_id, axis_name, ordinal")),
   profile_facts = function(con) DBI::dbGetQuery(con, paste(
     "SELECT indicator_id, territory_id, territory_type, detail_key, sex_key,",
-    "value, status FROM profile_observation")),
+    "detail_axis_name, sex_axis_name, value, status FROM profile_observation",
+    "ORDER BY indicator_id, territory_id, territory_type, detail_key, sex_key")),
   profile_provenance = function(con) DBI::dbGetQuery(con, paste(
     "SELECT indicator_id, territory_id, detail_key, sex_key, source_id, vintage_id",
-    "FROM profile_observation_source")))
+    "FROM profile_observation_source ORDER BY indicator_id, territory_id,",
+    "detail_key, sex_key, source_id, vintage_id")))
 
 read_live_scalar_projection <- function(con, reader = bridge_live_reader()) {
   facts <- reader$facts(con)
@@ -401,13 +405,13 @@ assert_bridge_markers <- function(markers, expected) {
 
 
 # Slice 3 â€” token chaining, one-transaction write, dry-run ---------------------
-read_bridge_offre_tc_rows <- function(path) {
+read_bridge_offre_tc_rows <- function(path, indicator_id = bridge_offre_tc_id()) {
   if (!is.character(path) || length(path) != 1L || !nzchar(trimws(path)) || !file.exists(path))
     stop("Bridge requires ", BRIDGE_FACTS_ENV, " pointing to the freshly built ",
          "offre_tc facts (a private .rds or .csv file)", call. = FALSE)
   rows <- if (grepl("\\.rds$", tolower(path))) readRDS(path) else
     readr::read_csv(path, show_col_types = FALSE)
-  validate_bridge_offre_tc_rows(rows)
+  validate_bridge_offre_tc_rows(rows, indicator_id = indicator_id)
   rows
 }
 
@@ -469,14 +473,12 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
                                     scalar_adapter = NULL,
                                     comparison_adapter = NULL,
                                     profile_adapter = NULL,
-                                    writer = NULL, read_markers = NULL, read_live = NULL) {
+                                    writer = NULL, read_markers = NULL, read_live = NULL, read_profile_rows = NULL) {
   if (is.null(scalar_adapter)) scalar_adapter <- scalar_postgres_adapter(con)
   if (is.null(comparison_adapter)) comparison_adapter <- scalar_comparison_postgres_adapter(con)
   if (is.null(profile_adapter)) profile_adapter <- profile_postgres_adapter(con)
   if (is.null(read_markers)) read_markers <- function() plan$markers
-  registry <- register_scalar_publisher(list(), "bridge_scalar_snapshot",
-    project = function(canonical) canonical,
-    publish = function(projection, db, version) db$replace(projection, version))
+  registry <- bridge_identity_registry("bridge_scalar_snapshot", register_scalar_publisher)
 
   transaction(con, {
     # The scalar publisher's own advisory lock helper (pg_advisory_xact_lock
@@ -508,17 +510,23 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
     # projections — the same producer functions the #1068 artifact path uses.
     profile <- NULL
     if (!is.null(plan$profiles) && length(plan$profiles)) {
+      if (!is.null(plan$live_profile_rows))
+        assert_bridge_profile_round_trip(plan$profiles, plan$live_profile_rows)
       base <- names(plan$profiles)[[1L]]
-      registry <- register_profile_publisher(list(), "bridge_declared_profiles",
-        project = function(canonical) canonical,
-        publish = function(projection, db, version) db$replace(projection, version))
+      profile_registry <- bridge_identity_registry("bridge_declared_profiles",
+        register_profile_publisher)
       profile <- publish_registered_profile(
-        registry, "bridge_declared_profiles", plan$profiles[[base]], profile_adapter,
+        profile_registry, "bridge_declared_profiles", plan$profiles[[base]],
+        profile_adapter,
         additional_projections = plan$profiles[setdiff(names(plan$profiles), base)])
       if (!identical(as.character(profile$content_version),
                      as.character(plan$profile_lineage$version)))
         stop("The written profile token differs from the recomputed lineage",
              call. = FALSE)
+      # The publisher DELETEs and re-INSERTs all profile rows; re-read them in
+      # THIS transaction and prove no fact/axis/provenance row changed.
+      if (!is.null(read_profile_rows))
+        assert_bridge_profile_round_trip(plan$profiles, read_profile_rows(con))
     }
     writer$set_habitat_linked(plan$tokens$linked)
     invisible(list(scalar = scalar, comparison = comparison, profile = profile,
@@ -547,16 +555,24 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 read_markers = NULL,
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
-                                publish = publish_bridge_snapshot, lock = NULL) {
+                                publish = publish_bridge_snapshot, lock = NULL, identity_reader = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
+  # Resolve the registered scope once and require the operator to select exactly
+  # it before any connection or write, including in dry-run.
+  scope <- bridge_scope()
+  assert_bridge_scope_env(env("LUSK_SCALAR_SCOPE", unset = ""), scope)
   if (is.null(con)) {
     if (is.null(config)) config <- configuration_service_postgres()
     if (is.null(connect)) connect <- function(cfg) do.call(DBI::dbConnect,
       c(list(drv = RPostgres::Postgres()), cfg))
     con <- connect(config)
-    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    on.exit(if (!inherits(con, "fake-con")) DBI::dbDisconnect(con), add = TRUE)
+  } else if (is.null(config)) {
+    config <- list(dbname = env("LUSK_PUBLISH_DATABASE", unset = ""),
+                   user = env("LUSK_PUBLISH_USER", unset = ""))
   }
+  assert_bridge_connection_identity(bridge_connection_identity(con, identity_reader), config)
   # Hold the scalar advisory lock (same key as the registered scalar publisher)
   # from BEFORE the guard reads until after the write, so no token can move
   # between inspection and commit. Injected fake connections in pure tests do
@@ -570,14 +586,14 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
     if (!inherits(con, "fake-con"))
       try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
   }, add = TRUE)
-  scope <- bridge_scope()
   if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)
 
   live <- read_live_scalar_projection(con, reader = live_reader)
   markers <- read_markers()
   assert_bridge_markers(markers, expected)
   if (is.null(fresh_rows))
-    fresh_rows <- read_bridge_offre_tc_rows(env(BRIDGE_FACTS_ENV, unset = ""))
+    fresh_rows <- read_bridge_offre_tc_rows(env(BRIDGE_FACTS_ENV, unset = ""),
+                                            indicator_id = scope$indicators[[1L]])
   if (is.null(metadata)) metadata <- lire_theme_metadata(scope$theme)
   built <- build_bridge_scalar_projection(
     live, fresh_rows, metadata, retired_ids,
@@ -592,12 +608,18 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   profiles <- bridge_read_live_profile_projections(
     con, reader = live_reader, metadata = bridge_profile_contracts(),
     new_scalar = tokens$scalar)
+  # The registered profile publisher rewrites every profile row. Prove first
+  # that the reconstructed projections are exactly the live rows (apart from the
+  # declared token changes), otherwise the rewrite could silently change data.
+  live_profile_rows <- bridge_profile_live_rows(live_reader, con)
+  assert_bridge_profile_round_trip(profiles, live_profile_rows)
   lineage <- bridge_profile_lineage_tokens(
     profiles, live_reader$reference_rows(con), expected[["reference"]])
   plan <- list(mode = mode, projection = built$projection, live = live,
                diff = diff, tokens = tokens, markers = markers,
                expected = expected, retired_ids = retired_ids,
-               profiles = profiles, profile_lineage = lineage)
+               profiles = profiles, profile_lineage = lineage,
+               live_profile_rows = live_profile_rows)
   bridge_print_report(plan, mode)
 
   if (identical(mode, "dry-run")) return(invisible(plan))
@@ -605,7 +627,8 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   assert_bridge_dump_confirmed(env)
   publish(con, plan, retired_ids, expected,
           read_markers = read_markers,
-          read_live = function() read_live_scalar_projection(con, reader = live_reader))
+          read_live = function() read_live_scalar_projection(con, reader = live_reader),
+          read_profile_rows = function(con) bridge_profile_live_rows(live_reader, con))
 }
 
 
@@ -650,6 +673,8 @@ bridge_read_live_profile_projections <- function(con, reader = bridge_live_reade
     owner_axes <- axes_rows[axes_rows$indicator_id == owner,
                             c("axis_name", "axis_key", "label", "ordinal", "unit"),
                             drop = FALSE]
+    owner_axes <- owner_axes[order(as.character(owner_axes$axis_name),
+                                   as.integer(owner_axes$ordinal)), , drop = FALSE]
     owner_axes$axis_name <- as.character(owner_axes$axis_name)
     owner_axes$axis_key <- as.character(owner_axes$axis_key)
     owner_axes$ordinal <- as.integer(owner_axes$ordinal)
@@ -662,7 +687,7 @@ bridge_read_live_profile_projections <- function(con, reader = bridge_live_reade
       levels = as.character(row$allowed_levels[[1L]]),
       details = details, sexes = sexes,
       label = as.character(row$label[[1L]]), unit = as.character(row$unit[[1L]]),
-      source = as.character(sources$source_id[sources$indicator_id == owner]),
+      source = sort(as.character(sources$source_id[sources$indicator_id == owner])),
       comparison_detail = if (is.na(row$comparison_detail[[1L]])) NA_character_ else as.character(row$comparison_detail[[1L]]),
       comparison_sex = if (is.na(row$comparison_sex[[1L]])) NA_character_ else as.character(row$comparison_sex[[1L]]),
       comparison_direction = as.character(row$comparison_direction[[1L]]),
@@ -750,4 +775,150 @@ bridge_profile_contracts <- function() {
   }
   contracts
 }
+
+
+# --- Round-2 review: scope/identity gates and profile fact guards -------------
+
+# The operator must select exactly the registered offre_tc scope. Derived from
+# the contract, never a literal compared against a second domain list.
+assert_bridge_scope_env <- function(selection, scope) {
+  parsed <- tryCatch(parse_scalar_scope(selection), error = function(e) NULL)
+  if (is.null(parsed) || !identical(as.character(parsed$theme), as.character(scope$theme)) ||
+      !identical(as.character(parsed$indicators), as.character(scope$indicators)))
+    stop("Bridge requires LUSK_SCALAR_SCOPE to select exactly the registered ",
+         "offre_tc scope (", scope$theme, ":", paste(scope$indicators, collapse = ","),
+         "); refusing with zero writes", call. = FALSE)
+  invisible(parsed)
+}
+
+bridge_connection_identity <- function(con, reader = NULL) {
+  if (is.null(reader)) reader <- function(con) DBI::dbGetQuery(con, paste(
+    "SELECT current_database() AS database, current_user AS role"))
+  reader(con)
+}
+
+assert_bridge_connection_identity <- function(identity, config) {
+  if (!is.data.frame(identity) || nrow(identity) != 1L ||
+      !all(c("database", "role") %in% names(identity)) ||
+      !identical(as.character(identity$database[[1L]]), as.character(config$dbname)) ||
+      !identical(as.character(identity$role[[1L]]), as.character(config$user)))
+    stop("Bridge connection identity does not match LUSK_PUBLISH_DATABASE / ",
+         "LUSK_PUBLISH_USER (live=",
+         if (is.data.frame(identity) && nrow(identity)) identity$database[[1L]] else "<none>",
+         " / ",
+         if (is.data.frame(identity) && nrow(identity)) identity$role[[1L]] else "<none>",
+         "); refusing with zero writes", call. = FALSE)
+  invisible(identity)
+}
+
+# A shared identity registry for the two registered publishers used by the
+# bridge: both consume an already-validated projection unchanged.
+bridge_identity_registry <- function(name, register) {
+  register(list(), name,
+    project = function(canonical) canonical,
+    publish = function(projection, db, version) db$replace(projection, version))
+}
+
+# Normalised row signatures: projection facts are compared with the live
+# serving rows INCLUDING the axis-name columns the profile adapter writes, so a
+# dropped detail_axis_name/sex_axis_name or reordered axis silently failing the
+# round trip becomes a hard error.
+bridge_profile_fact_signature <- function(profile) {
+  facts <- profile$facts
+  sexes <- profile$descriptor$sexes
+  signature <- data.frame(
+    territory_id = as.character(facts$territory_id),
+    territory_type = as.character(facts$territory_type),
+    detail_key = as.character(facts$detail),
+    sex_key = as.character(facts$sex),
+    detail_axis_name = rep("detail", nrow(facts)),
+    sex_axis_name = rep(if (length(sexes)) "sex" else NA_character_, nrow(facts)),
+    value = as.numeric(facts$value),
+    status = as.character(facts$status), stringsAsFactors = FALSE)
+  bridge_sort_frame(signature, c("territory_id", "territory_type", "detail_key", "sex_key"))
+}
+
+bridge_live_profile_fact_signature <- function(rows, owner) {
+  fields <- c("territory_id", "territory_type", "detail_key", "sex_key",
+              "detail_axis_name", "sex_axis_name", "value", "status")
+  if (!is.data.frame(rows) || !all(fields %in% names(rows)))
+    stop("Live profile fact rows are missing the producer columns", call. = FALSE)
+  selected <- rows[rows$indicator_id == owner, fields, drop = FALSE]
+  selected$value <- as.numeric(selected$value)
+  bridge_sort_frame(selected, c("territory_id", "territory_type", "detail_key", "sex_key"))
+}
+
+bridge_sort_frame <- function(frame, keys) {
+  if (nrow(frame))
+    frame <- frame[do.call(order, c(frame[keys], list(na.last = TRUE,
+                                                     method = "radix"))), , drop = FALSE]
+  rownames(frame) <- NULL
+  frame
+}
+
+bridge_profile_axis_signature <- function(profile, owner) {
+  axes <- profile$axes
+  signature <- data.frame(
+    indicator_id = owner, axis_name = as.character(axes$axis_name),
+    axis_key = as.character(axes$axis_key), label = as.character(axes$label),
+    ordinal = as.integer(axes$ordinal),
+    unit = if ("unit" %in% names(axes)) as.character(axes$unit) else NA_character_,
+    stringsAsFactors = FALSE)
+  bridge_sort_frame(signature, c("axis_name", "ordinal"))
+}
+
+bridge_live_profile_axis_signature <- function(rows, owner) {
+  fields <- c("indicator_id", "axis_name", "axis_key", "label", "ordinal", "unit")
+  if (!is.data.frame(rows) || !all(fields %in% names(rows)))
+    stop("Live profile axis rows are missing the producer columns", call. = FALSE)
+  selected <- rows[rows$indicator_id == owner, fields, drop = FALSE]
+  selected$ordinal <- as.integer(selected$ordinal)
+  bridge_sort_frame(selected, c("axis_name", "ordinal"))
+}
+
+bridge_profile_provenance_signature <- function(profile) {
+  fields <- c("indicator_id", "territory_id", "detail_key", "sex_key",
+              "source_id", "vintage_id")
+  if (!is.data.frame(profile$provenance) ||
+      !all(fields %in% names(profile$provenance)))
+    stop("Profile provenance rows are missing the producer columns", call. = FALSE)
+  bridge_sort_frame(profile$provenance[fields], fields)
+}
+
+assert_bridge_profile_round_trip <- function(profiles, live_rows) {
+  needed <- c("facts", "axes", "provenance")
+  if (!is.list(profiles) || !length(profiles) ||
+      !all(vapply(live_rows[needed], is.data.frame, logical(1))))
+    stop("Profile round-trip proof requires live profile rows", call. = FALSE)
+  mismatches <- character()
+  for (owner in names(profiles)) {
+    profile <- profiles[[owner]]
+    checks <- list(
+      facts = list(bridge_profile_fact_signature(profile),
+                   bridge_live_profile_fact_signature(live_rows$facts, owner)),
+      axes = list(bridge_profile_axis_signature(profile, owner),
+                  bridge_live_profile_axis_signature(live_rows$axes, owner)),
+      provenance = list(bridge_profile_provenance_signature(profile),
+                        bridge_sort_frame(live_rows$provenance[
+                          live_rows$provenance$indicator_id == owner,
+                          c("indicator_id", "territory_id", "detail_key", "sex_key",
+                            "source_id", "vintage_id"), drop = FALSE],
+                          c("indicator_id", "territory_id", "detail_key", "sex_key",
+                            "source_id", "vintage_id"))))
+    for (field in names(checks))
+      if (!identical(checks[[field]][[1L]], checks[[field]][[2L]]))
+        mismatches <- c(mismatches, paste0(owner, ".", field))
+  }
+  if (length(mismatches))
+    stop("Bridge profile round-trip proof failed: ",
+         paste(mismatches, collapse = ", "), "; refusing with zero writes",
+         call. = FALSE)
+  invisible(profiles)
+}
+
+
+bridge_profile_live_rows <- function(reader, con) list(
+  facts = reader$profile_facts(con),
+  axes = reader$profile_axes(con),
+  provenance = reader$profile_provenance(con))
 

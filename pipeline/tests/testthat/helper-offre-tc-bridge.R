@@ -388,8 +388,10 @@ bridge_db_rows_from_profile_projections <- function(profiles) {
     f <- profiles[[owner]]$facts
     data.frame(indicator_id = owner, territory_id = f$territory_id,
                territory_type = f$territory_type, detail_key = f$detail,
-               sex_key = f$sex, value = f$value, status = f$status,
-               stringsAsFactors = FALSE)
+               sex_key = f$sex,
+               detail_axis_name = "detail",
+               sex_axis_name = if (length(profiles[[owner]]$descriptor$sexes)) "sex" else NA_character_,
+               value = f$value, status = f$status, stringsAsFactors = FALSE)
   }))
   provenance <- do.call(rbind, lapply(profiles, `[[`, "provenance"))
   list(profile_descriptors = descriptors, profile_sources = sources,
@@ -426,4 +428,43 @@ bridge_fake_profile_adapter <- function(old_version = "profile-live",
     },
     state = state)
 }
+
+
+# --- Round-2 review helpers: pure tests never touch the real environment ------
+bridge_pure_config <- function() list(
+  host = "192.168.1.120", port = 5432L,
+  dbname = "lusk_it_contract", user = "lusk_it_contract_pub")
+
+bridge_pure_identity <- function(con) data.frame(
+  database = "lusk_it_contract", role = "lusk_it_contract_pub",
+  stringsAsFactors = FALSE)
+
+bridge_pure_connect <- function(cfg)
+  stop("PURE TEST: DBI::dbConnect must never be called", call. = FALSE)
+
+bridge_pure_env_clear <- function() {
+  vars <- c("LUSK_PUBLISH_HOST", "LUSK_PUBLISH_PORT", "LUSK_PUBLISH_DATABASE",
+            "LUSK_PUBLISH_USER", "PGPASSFILE", "LUSK_SCALAR_SCOPE",
+            "LUSK_BRIDGE_DUMP_CONFIRMED", "LUSK_PUBLISH_OFFRE_TC_BRIDGE",
+            unname(BRIDGE_EXPECTED_ENV), BRIDGE_FACTS_ENV)
+  withr::local_envvar(setNames(rep(list(""), length(vars)), vars))
+}
+
+# Build the operator env values from the registered scope (resolved once) so no
+# domain string is duplicated in the tests.
+bridge_test_env_values <- function(expected, facts_path = "facts.rds", extra = list()) {
+  scope <- bridge_scope()
+  c(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
+    setNames(facts_path, BRIDGE_FACTS_ENV),
+    setNames(paste0(scope$theme, ":", paste(scope$indicators, collapse = ",")),
+             "LUSK_SCALAR_SCOPE"),
+    setNames(c(bridge_pure_config()$dbname, bridge_pure_config()$user),
+             c("LUSK_PUBLISH_DATABASE", "LUSK_PUBLISH_USER")),
+    extra)
+}
+
+bridge_profile_live_rows <- function(reader, con) list(
+  facts = reader$profile_facts(con),
+  axes = reader$profile_axes(con),
+  provenance = reader$profile_provenance(con))
 

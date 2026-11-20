@@ -278,15 +278,14 @@ test_that("the dry-run prints tokens and the diff and never calls the writer", {
   facts_path <- tempfile("bridge-facts-", fileext = ".rds")
   on.exit(unlink(facts_path), add = TRUE)
   saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
-  env <- bridge_fake_env(c(
-    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-    setNames(facts_path, BRIDGE_FACTS_ENV)))
+  env <- bridge_fake_env(bridge_test_env_values(expected, facts_path))
 
   live <- bridge_live_fixture()
   reader <- bridge_fake_reader(bridge_db_rows_from_projection(live))
   write_calls <- 0L
   output <- capture.output(result <- run_offre_tc_bridge(
     "dry-run", env = env, con = structure(list(), class = "fake-con"),
+    config = bridge_pure_config(), identity_reader = bridge_pure_identity,
     live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
     retired_ids = retained_scalar_retirement_ids(),
     publish = function(...) { write_calls <<- write_calls + 1L }))
@@ -303,13 +302,12 @@ test_that("a moved live marker refuses before any write is attempted", {
   expected <- bridge_fixture_expected_tokens()
   moved <- expected
   moved[["scalar"]] <- "someone-else"
-  env <- bridge_fake_env(c(
-    setNames(unname(moved), unname(BRIDGE_EXPECTED_ENV)),
-    setNames("facts.rds", BRIDGE_FACTS_ENV)))
+  env <- bridge_fake_env(bridge_test_env_values(moved))
   reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
   write_calls <- 0L
   expect_error(run_offre_tc_bridge(
     "publish", env = env, con = structure(list(), class = "fake-con"),
+    config = bridge_pure_config(), identity_reader = bridge_pure_identity,
     live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
     retired_ids = retained_scalar_retirement_ids(),
     publish = function(...) { write_calls <<- write_calls + 1L }), "marker mismatch")
@@ -321,14 +319,13 @@ test_that("a missing dump acknowledgement refuses before any write is attempted"
   facts_path <- tempfile("bridge-facts-", fileext = ".rds")
   on.exit(unlink(facts_path), add = TRUE)
   saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
-  env <- bridge_fake_env(c(
-    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-    setNames(facts_path, BRIDGE_FACTS_ENV),
-    setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV)))
+  env <- bridge_fake_env(bridge_test_env_values(
+    expected, facts_path, setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV)))
   reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
   write_calls <- 0L
   capture.output(expect_error(run_offre_tc_bridge(
     "publish", env = env, con = structure(list(), class = "fake-con"),
+    config = bridge_pure_config(), identity_reader = bridge_pure_identity,
     live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
     retired_ids = retained_scalar_retirement_ids(),
     publish = function(...) { write_calls <<- write_calls + 1L }), "verified dump"))
@@ -336,9 +333,11 @@ test_that("a missing dump acknowledgement refuses before any write is attempted"
 })
 
 test_that("the bridge refuses to run without the LUSK_PUBLISH_* configuration", {
+  bridge_pure_env_clear()
   expected <- bridge_fixture_expected_tokens()
-  env <- bridge_fake_env(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)))
-  expect_error(run_offre_tc_bridge("dry-run", env = env), "Publication SQL")
+  env <- bridge_fake_env(bridge_test_env_values(expected))
+  expect_error(run_offre_tc_bridge("dry-run", env = env,
+    connect = bridge_pure_connect), "Publication SQL")
 })
 
 
@@ -377,14 +376,14 @@ test_that("a real write requires the explicit LUSK_PUBLISH_OFFRE_TC_BRIDGE opt-i
   facts_path <- tempfile("bridge-facts-", fileext = ".rds")
   on.exit(unlink(facts_path), add = TRUE)
   saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
-  base <- c(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-            setNames(facts_path, BRIDGE_FACTS_ENV),
-            setNames("dump-ack", BRIDGE_DUMP_ACK_ENV))
+  base <- bridge_test_env_values(
+    expected, facts_path, setNames("dump-ack", BRIDGE_DUMP_ACK_ENV))
   env <- bridge_fake_env(base)
   reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
   write_calls <- 0L
   run_write <- function(e) capture.output(suppressWarnings(run_offre_tc_bridge(
     "publish", env = e, con = structure(list(), class = "fake-con"),
+    config = bridge_pure_config(), identity_reader = bridge_pure_identity,
     live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
     retired_ids = retained_scalar_retirement_ids(),
     publish = function(...) { write_calls <<- write_calls + 1L; list(ok = TRUE) })))
@@ -563,5 +562,146 @@ test_that("the write path takes the scalar advisory lock before any SQL", {
   # Re-entrant in-session: the bridge and the normal scalar publisher both take
   # the same xact lock; at least one call must precede any write.
   expect_gte(lock_calls, 1L)
+})
+
+
+# --- Round-2 review: scope/identity gates and pure-test isolation -------------
+
+test_that("a scope selection other than the registered offre_tc scope refuses", {
+  bridge_pure_env_clear()
+  expected <- bridge_fixture_expected_tokens()
+  values <- bridge_test_env_values(expected)
+  values[["LUSK_SCALAR_SCOPE"]] <- "mobilite:stations_service"
+  env <- bridge_fake_env(values)
+  write_calls <- 0L
+  expect_error(run_offre_tc_bridge(
+    "dry-run", env = env, con = structure(list(), class = "fake-con"),
+    config = bridge_pure_config(), identity_reader = bridge_pure_identity,
+    live_reader = bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture())),
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) { write_calls <<- write_calls + 1L }), "LUSK_SCALAR_SCOPE")
+  expect_identical(write_calls, 0L)
+})
+
+test_that("a missing or malformed scope selection refuses", {
+  bridge_pure_env_clear()
+  expected <- bridge_fixture_expected_tokens()
+  for (selection in c("", "mobilite", "nope:offre_tc")) {
+    values <- bridge_test_env_values(expected)
+    values[["LUSK_SCALAR_SCOPE"]] <- selection
+    expect_error(run_offre_tc_bridge(
+      "dry-run", env = bridge_fake_env(values),
+      con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+      identity_reader = bridge_pure_identity,
+      live_reader = bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture())),
+      read_markers = function() bridge_fixture_markers(expected),
+      retired_ids = retained_scalar_retirement_ids(),
+      publish = function(...) NULL), "LUSK_SCALAR_SCOPE", info = selection)
+  }
+})
+
+test_that("the connection must be the configured database and role", {
+  bridge_pure_env_clear()
+  expected <- bridge_fixture_expected_tokens()
+  values <- bridge_test_env_values(expected)
+  for (bad in list(
+    data.frame(database = "lusk", role = "lusk_it_contract_pub", stringsAsFactors = FALSE),
+    data.frame(database = "lusk_it_contract", role = "lusk_publisher", stringsAsFactors = FALSE))) {
+    expect_error(run_offre_tc_bridge(
+      "dry-run", env = bridge_fake_env(values),
+      con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+      identity_reader = function(con) bad,
+      live_reader = bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture())),
+      read_markers = function() bridge_fixture_markers(expected),
+      retired_ids = retained_scalar_retirement_ids(),
+      publish = function(...) NULL), "connection identity")
+  }
+})
+
+test_that("pure tests never reach DBI::dbConnect even with operator env present", {
+  bridge_pure_env_clear()
+  withr::local_envvar(c(LUSK_PUBLISH_HOST = "serving-host",
+                        LUSK_PUBLISH_DATABASE = "lusk",
+                        LUSK_PUBLISH_USER = "lusk_publisher",
+                        PGPASSFILE = "C:/secret/pgpass.conf"))
+  expected <- bridge_fixture_expected_tokens()
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path)
+  connected <- 0L
+  result <- run_offre_tc_bridge(
+    "dry-run", env = bridge_fake_env(values),
+    config = bridge_pure_config(),
+    connect = function(cfg) { connected <<- connected + 1L
+                              structure(list(), class = "fake-con") },
+    identity_reader = bridge_pure_identity,
+    live_reader = bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture())),
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) stop("no write in dry-run"))
+  expect_identical(connected, 1L)
+  expect_identical(result$mode, "dry-run")
+  expect_error(bridge_pure_connect(bridge_pure_config()), "must never be called")
+})
+
+# --- Round-2 review: profile fact round-trip guards ---------------------------
+
+test_that("the live profile reader keeps deterministic serving row columns", {
+  profiles <- bridge_live_profile_fixture(bridge_fixture_expected_tokens()[["scalar"]])
+  rows <- bridge_db_rows_from_profile_projections(profiles)
+  expect_true(all(c("detail_axis_name", "sex_axis_name") %in% names(rows$profile_facts)))
+  expect_identical(rownames(rows$profile_facts), as.character(seq_len(nrow(rows$profile_facts))))
+  expect_identical(rows$profile_axes$ordinal[rows$profile_axes$axis_name == "detail"], c(0L, 1L, 0L))
+})
+
+test_that("a mutated profile fact refuses at the pre-write round-trip guard", {
+  expected <- bridge_fixture_expected_tokens()
+  profiles <- bridge_live_profile_fixture(expected[["scalar"]])
+  rows <- bridge_db_rows_from_profile_projections(profiles)
+  tampered <- profiles
+  tampered$structure_age$facts$value[[1L]] <- 0.999
+  live_rows <- list(facts = rows$profile_facts, axes = rows$profile_axes,
+                    provenance = rows$profile_provenance)
+  expect_error(assert_bridge_profile_round_trip(tampered, live_rows),
+               "profile round-trip")
+})
+
+test_that("re-read profile rows that moved during the write abort the transaction", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  profiles <- bridge_rebind_profile_lineage(
+    bridge_live_profile_fixture(expected[["scalar"]]),
+    lire_theme_metadata("habitat"), tokens$scalar)
+  lineage <- bridge_profile_lineage_tokens(
+    profiles, bridge_fixture_reference_rows(), expected[["reference"]])
+  rows <- bridge_db_rows_from_profile_projections(
+    bridge_live_profile_fixture(expected[["scalar"]]))
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected,
+               affected = built$affected, live = live, profiles = profiles,
+               profile_lineage = lineage,
+               live_profile_rows = list(facts = rows$profile_facts,
+                                        axes = rows$profile_axes,
+                                        provenance = rows$profile_provenance))
+  moved <- rows
+  moved$profile_facts$value[[1L]] <- 0.999
+  expect_error(publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) force(expr),
+    scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+    comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
+    profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], tokens$scalar),
+    writer = bridge_fake_marker_writer(expected[["scalar"]]),
+    read_profile_rows = function(con) list(
+      facts = moved$profile_facts, axes = moved$profile_axes,
+      provenance = moved$profile_provenance)), "profile round-trip")
 })
 
