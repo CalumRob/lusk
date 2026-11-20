@@ -276,9 +276,6 @@ test_that("the write rolls back as one unit when an adapter fails", {
 
 test_that("the dry-run prints tokens and the diff and never calls the writer", {
   expected <- bridge_fixture_expected_tokens()
-  env <- bridge_fake_env(c(
-    setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-    setNames("E:/Temp/opencode/offre-tc-facts.rds", BRIDGE_FACTS_ENV)))
   facts_path <- tempfile("bridge-facts-", fileext = ".rds")
   on.exit(unlink(facts_path), add = TRUE)
   saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
@@ -327,7 +324,8 @@ test_that("a missing dump acknowledgement refuses before any write is attempted"
   saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
   env <- bridge_fake_env(c(
     setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-    setNames(facts_path, BRIDGE_FACTS_ENV)))
+    setNames(facts_path, BRIDGE_FACTS_ENV),
+    setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV)))
   reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
   write_calls <- 0L
   capture.output(expect_error(run_offre_tc_bridge(
@@ -355,5 +353,48 @@ test_that("the CLI registers both bridge commands without changing --publish", {
   expect_match(source_text, "publish_retained_backend_from_parquet(", fixed = TRUE)
   # The single-command arg contract is unchanged.
   expect_match(source_text, "length(args) != 1L", fixed = TRUE)
+})
+
+
+# --- Review fixes: fail-closed markers and explicit write opt-in --------------
+
+test_that("absent or duplicated descriptor markers refuse with zero writes", {
+  expected <- bridge_fixture_expected_tokens()
+  for (field in c("profile_descriptor", "selected_descriptor")) {
+    missing <- bridge_fixture_markers(expected)
+    missing[[field]] <- missing[[field]][0L, , drop = FALSE]
+    expect_error(assert_bridge_markers(missing, expected), "exactly one marker",
+                 info = paste("missing", field))
+
+    duplicated <- bridge_fixture_markers(expected)
+    duplicated[[field]] <- rbind(duplicated[[field]], duplicated[[field]])
+    expect_error(assert_bridge_markers(duplicated, expected), "exactly one marker",
+                 info = paste("duplicated", field))
+  }
+})
+
+test_that("a real write requires the explicit LUSK_PUBLISH_OFFRE_TC_BRIDGE opt-in", {
+  expected <- bridge_fixture_expected_tokens()
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  base <- c(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
+            setNames(facts_path, BRIDGE_FACTS_ENV),
+            setNames("dump-ack", BRIDGE_DUMP_ACK_ENV))
+  env <- bridge_fake_env(base)
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()))
+  write_calls <- 0L
+  run_write <- function(e) capture.output(suppressWarnings(run_offre_tc_bridge(
+    "publish", env = e, con = structure(list(), class = "fake-con"),
+    live_reader = reader, read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(),
+    publish = function(...) { write_calls <<- write_calls + 1L; list(ok = TRUE) })))
+
+  expect_error(run_write(env), "LUSK_PUBLISH_OFFRE_TC_BRIDGE=1", fixed = TRUE)
+  expect_error(run_write(bridge_fake_env(c(base,
+    setNames("0", BRIDGE_PUBLISH_OPT_IN_ENV)))), "LUSK_PUBLISH_OFFRE_TC_BRIDGE=1", fixed = TRUE)
+  expect_identical(write_calls, 0L)
+  run_write(bridge_fake_env(c(base, setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV))))
+  expect_identical(write_calls, 1L)
 })
 

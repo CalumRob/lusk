@@ -121,7 +121,7 @@ if (!bridge_db_proof_configured()) {
                     setNames(facts_path, BRIDGE_FACTS_ENV))
     env <- bridge_fake_env(env_values)
     reader <- bridge_live_reader()
-    read_markers <- function() bridge_read_markers(connection)
+    read_markers <- function() retained_backend_markers(connection)
     retired_ids <- retained_scalar_retirement_ids()
 
     schema_digest <- function() {

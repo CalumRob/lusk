@@ -21,9 +21,20 @@
 
 # The indicator rebuilt by this bridge is a registered scope, never a literal
 # scattered through the write path (#1071 follow-up of the general contract rule).
-bridge_offre_tc_id <- function() {
-  scalar_scope_contract("mobilite", "offre_tc")$indicators[[1L]]
+# Resolve the whole registered contract ONCE and share it across the reader,
+# metadata and builder; no second theme/indicator lookup at the write site.
+bridge_scope <- function() {
+  registry <- scalar_scope_registry()
+  themes <- names(registry)
+  matches <- themes[vapply(registry, function(entries)
+    any(vapply(entries, function(entry) "offre_tc" %in% entry$indicators, logical(1))),
+    logical(1))]
+  if (length(matches) != 1L)
+    stop("No unique registered scalar scope owns offre_tc", call. = FALSE)
+  scalar_scope_contract(matches[[1L]], "offre_tc")
 }
+
+bridge_offre_tc_id <- function() bridge_scope()$indicators[[1L]]
 
 # Producer-shaped offre_tc rows (the output of produire_offre_tc_mobilite()).
 validate_bridge_offre_tc_rows <- function(rows, indicator_id = bridge_offre_tc_id()) {
@@ -262,6 +273,17 @@ BRIDGE_EXPECTED_ENV <- c(
   habitat = "LUSK_BRIDGE_EXPECT_HABITAT",
   reference = "LUSK_BRIDGE_EXPECT_REFERENCE")
 BRIDGE_FACTS_ENV <- "LUSK_BRIDGE_OFFRE_TC_FACTS"
+BRIDGE_PUBLISH_OPT_IN_ENV <- "LUSK_PUBLISH_OFFRE_TC_BRIDGE"
+
+# The real write needs the same explicit opt-in as --programme-publish /
+# --series-publish. A dry-run never calls this.
+assert_bridge_publish_opt_in <- function(env = Sys.getenv) {
+  value <- env(BRIDGE_PUBLISH_OPT_IN_ENV, unset = "")
+  if (!identical(trimws(value), "1"))
+    stop("Real offre_tc bridge publication requires explicit ",
+         BRIDGE_PUBLISH_OPT_IN_ENV, "=1", call. = FALSE)
+  invisible(TRUE)
+}
 
 bridge_expected_tokens_from_env <- function(env = Sys.getenv) {
   tokens <- vapply(BRIDGE_EXPECTED_ENV, function(name) env(name, unset = ""), character(1))
@@ -280,8 +302,6 @@ assert_bridge_dump_confirmed <- function(env = Sys.getenv) {
          call. = FALSE)
   invisible(ack)
 }
-
-bridge_read_markers <- function(con) retained_backend_markers(con)
 
 # Compare ONLY the five operator-supplied tokens (and the chained input fields
 # that must agree with them). An unrelated owner's newer marker is deliberately
@@ -336,14 +356,21 @@ assert_bridge_markers <- function(markers, expected) {
     add("selected_reading_publication[habitat].reference_content_version",
         selected$reference_content_version[[1L]], expected[["reference"]])
   }
+  # Fail closed: an absent or duplicated descriptor row is NOT a neutral state.
   descriptor <- markers$selected_descriptor
-  if (nrow(descriptor) == 1L)
+  if (nrow(descriptor) != 1L) {
+    add("selected_reading_descriptor[habitat]", NA_character_, "exactly one marker")
+  } else {
     add("selected_reading_descriptor[habitat].descriptor_version",
         descriptor$descriptor_version[[1L]], expected[["habitat"]])
+  }
   profile <- markers$profile_descriptor
-  if (nrow(profile) == 1L)
+  if (nrow(profile) != 1L) {
+    add("profile_descriptor[distribution_dpe]", NA_character_, "exactly one marker")
+  } else {
     add("profile_descriptor[distribution_dpe].required_scalar_version",
         profile$required_scalar_version[[1L]], expected[["scalar"]])
+  }
 
   result <- if (length(mismatches)) do.call(rbind, mismatches) else data.frame(
     marker = character(), live = character(), expected = character(),
@@ -487,17 +514,18 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
     con <- connect(config)
     on.exit(DBI::dbDisconnect(con), add = TRUE)
   }
-  if (is.null(read_markers)) read_markers <- function() bridge_read_markers(con)
+  scope <- bridge_scope()
+  if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)
 
   live <- read_live_scalar_projection(con, reader = live_reader)
   markers <- read_markers()
   assert_bridge_markers(markers, expected)
   if (is.null(fresh_rows))
     fresh_rows <- read_bridge_offre_tc_rows(env(BRIDGE_FACTS_ENV, unset = ""))
-  if (is.null(metadata)) metadata <- lire_theme_metadata(
-    scalar_scope_contract("mobilite", bridge_offre_tc_id())$theme)
+  if (is.null(metadata)) metadata <- lire_theme_metadata(scope$theme)
   built <- build_bridge_scalar_projection(
-    live, fresh_rows, metadata, retired_ids, offre_tc_id = bridge_offre_tc_id())
+    live, fresh_rows, metadata, retired_ids,
+    offre_tc_id = scope$indicators[[1L]])
   diff <- assert_bridge_round_trip(live, built$projection, built$affected)
   tokens <- bridge_compute_new_tokens(
     built$projection, live_reader$reference_rows(con), expected[["reference"]],
@@ -508,6 +536,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   bridge_print_report(plan, mode)
 
   if (identical(mode, "dry-run")) return(invisible(plan))
+  assert_bridge_publish_opt_in(env)
   assert_bridge_dump_confirmed(env)
   publish(con, plan, retired_ids, expected)
 }
