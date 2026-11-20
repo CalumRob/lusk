@@ -9,12 +9,16 @@
  * producer map cannot stay green. Removing a selector from the contract, from
  * one of its producers, or adding a new emitter fails this suite.
  *
- * Emission is read from parsed syntax, not source substrings: SFC templates are
- * walked through `@vue/compiler-sfc` (static `class` and `:class` bindings are
- * tokenised from a real expression AST) and TS/TSX files through the TypeScript
- * AST (JSX attributes, `h()`/`class` object properties, `.className`,
- * `setAttribute` and `classList.add`). Script strings and CSS rules cannot
- * satisfy a producer mapping.
+ * Emission is read from parsed syntax, not just source substrings: SFC
+ * templates are walked through `@vue/compiler-sfc` (static `class` and `:class`
+ * bindings are tokenised from a real expression AST) and TS/TSX files through
+ * the TypeScript AST (JSX attributes, `h()`/`class` object properties,
+ * `.className`, `setAttribute` and `classList.add`). A separate blunt textual
+ * net requires every raw selector mention to be mapped, catching emitters built
+ * through script variables that the AST nets cannot see. LIMITATION: a name
+ * assembled entirely at runtime (e.g. `'argu' + 'ment-copy'`) leaves no literal
+ * for either net to find. Script strings and CSS rules alone cannot satisfy a
+ * precise producer mapping; mention-only files are listed separately.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
@@ -26,8 +30,9 @@ import {
   CAHIER_EXPORT_SURFACE, selectorList,
 } from '@/fiche/prototype/cahierExportSurface'
 import { buildExportSurfaceStylesheet, exportSurfaceScope } from '@/fiche/prototype/cahierNativePdf'
-import { cahierSectionRendererFor, CAHIER_SECTION_RENDERERS } from '@/fiche/prototype/cahierSectionRenderers'
-import type { ContentEvidence } from '@/fiche/content/themeContent'
+import { cahierSectionRendererFor } from '@/fiche/prototype/cahierSectionRenderers'
+import { rendererFor } from '@/fiche/prototype/VarianteCahierLibre.vue'
+import { cahierExportFixture } from './helpers/cahierExportFixtures'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PRO = join(ROOT, 'fiche/prototype')
@@ -95,6 +100,28 @@ const PRODUCERS: Readonly<Record<string, readonly string[]>> = {
   '.page-heading': ['VarianteCahierLibre.vue'],
 }
 
+/**
+ * Files that mention a contract selector without emitting it (comments, CSS,
+ * querySelector consumers). The precise AST net still examines these files for
+ * real emission; only the blunt textual net below needs them listed.
+ */
+const MENTION_ONLY: Readonly<Record<string, readonly string[]>> = {
+  '.cahier-evidence-source': ['cahierPdfGrammaire.ts'],
+  '.concept-group': [
+    'cahierNativePdf.ts', 'cahierPdfComposer.ts', 'cahierPdfGrammaire.ts',
+    'cahierPdfPalette.ts', 'useCahierBaselineGrid.ts',
+  ],
+  '.cahier-page': ['useCahierBaselineGrid.ts'],
+  '.page-heading': [
+    'cahierPdfComposer.ts', 'cahierPdfGrammaire.ts', 'cahierPdfPalette.ts',
+    'useCahierBaselineGrid.ts',
+  ],
+}
+
+function rawNeedle(selector: string): string {
+  return selector.startsWith('[') ? selector.slice(1, -1) : selector
+}
+
 function contractSelectors(): string[] {
   const parts = [
     ...CAHIER_EXPORT_SURFACE.hidden.flatMap(selectorList),
@@ -157,9 +184,10 @@ function expressionClassTokens(expression: string): string[] {
 }
 
 /** Literals and the owner-declared registry accessor shape in a bound expression. */
-function expressionInfo(expression: string): { literals: string[]; registryMember: boolean } {
+function expressionInfo(expression: string): { literals: string[]; registryMember: boolean; accessor?: string } {
   const literals: string[] = []
   let registryMember = false
+  let accessor: string | undefined
   const program = (babelParse(`(${expression})`) as any).program
   walkAny(program, (node: any) => {
     if (node.type === 'StringLiteral') literals.push(String(node.value))
@@ -169,9 +197,10 @@ function expressionInfo(expression: string): { literals: string[]; registryMembe
       && node.property?.type === 'Identifier' && node.property.name === 'exportLayout'
       && node.object?.type === 'CallExpression') {
       registryMember = true
+      if (node.object.callee?.type === 'Identifier') accessor = String(node.object.callee.name)
     }
   })
-  return { literals, registryMember }
+  return { literals, registryMember, accessor }
 }
 
 /** Parse an SFC and read emitted classes/attributes from its template AST. */
@@ -380,6 +409,25 @@ describe('export surface producer drift (#1025)', () => {
     }
   })
 
+  it('maps any raw selector mention in a scanned source (blunt superset net)', () => {
+    // Deliberately textual: a class may be composed in `<script setup>`, a
+    // render function or a TS variable and escape both AST nets. Any raw
+    // occurrence must be mapped. LIMITATION: a name assembled entirely at
+    // runtime (e.g. 'argu' + 'ment-copy') leaves no literal to find and is NOT
+    // caught here — the producer contract still requires a static token.
+    for (const path of CANDIDATES) {
+      const where = relative(ROOT, path)
+      const source = raw(path)
+      for (const selector of contractSelectors()) {
+        const needle = rawNeedle(selector)
+        if (!source.includes(needle)) continue
+        const k = key(selector)
+        const mapped = [...(PRODUCERS[k] ?? []), ...(MENTION_ONLY[k] ?? [])].map(producerPath)
+        expect(mapped, `${where} mentions ${needle} but is not mapped`).toContain(path)
+      }
+    }
+  })
+
   it('builds the host and its stylesheet scope from the one hostClass contract', () => {
     const sf = sourceAst(join(PRO, 'cahierNativePdf.ts'))
     const fn = findFunction(sf, 'avecCorpsNatif')
@@ -450,32 +498,43 @@ describe('export surface producer drift (#1025)', () => {
     expect(proseCalls).toBeGreaterThanOrEqual(3)
   })
 
-  it('resolves the bound layout hook to the contract spread by calling the registry', () => {
+  it('resolves the bound layout hook to the contract spread by CALLING the shell resolver', () => {
     const shell = sfcEmissions(join(PRO, 'VarianteCahierLibre.vue'))
     const bound = shell.attributes.get(CAHIER_EXPORT_SURFACE.layoutHook)?.expressions ?? []
     expect(bound.length, 'the shell no longer binds the layout hook').toBe(1)
     const info = expressionInfo(bound[0]!)
     expect(info.literals).toEqual([])
-    expect(info.registryMember, 'binding is no longer the owner-declared registry accessor').toBe(true)
+    expect(info.registryMember, 'binding is no longer the owner-declared resolver accessor').toBe(true)
+    expect(info.accessor, 'binding no longer uses the shell-exported resolver').toBe('rendererFor')
 
-    // The local accessor really delegates to the registry (AST, not a grep).
     const sf = sourceAst(join(PRO, 'VarianteCahierLibre.vue'))
     const accessor = findFunction(sf, 'rendererFor')
-    expect(accessor).toBeDefined()
+    expect(accessor, 'the shell no longer exports its resolver').toBeDefined()
     let delegates = false
     walkTs(accessor!, (node) => {
       if (ts.isCallExpression(node) && node.expression.getText(sf) === 'cahierSectionRendererFor') delegates = true
     })
     expect(delegates, 'rendererFor no longer reads cahierSectionRendererFor').toBe(true)
 
-    // Call it: every renderer that declares a layout must return the one token.
-    const declared = Object.keys(CAHIER_SECTION_RENDERERS).filter((kind) =>
-      cahierSectionRendererFor({ kind } as ContentEvidence, true).exportLayout !== undefined)
-    expect(declared.length).toBeGreaterThan(0)
-    for (const kind of declared) {
-      expect(cahierSectionRendererFor({ kind } as ContentEvidence, true).exportLayout,
-        `${kind} registry exportLayout`).toBe(CAHIER_EXPORT_SURFACE.layoutSpread)
+    // CALL the very resolver the template binds: a returned object that strips
+    // `exportLayout` for prose sections fails here, even though every grep and
+    // registry-only assertion still passes.
+    const sections = cahierExportFixture({}).content.units.flatMap((unit) => unit.sections)
+    expect(sections.length, 'fixture has no sections').toBeGreaterThan(0)
+    const withLayout: string[] = []
+    const without: string[] = []
+    for (const section of sections) {
+      const declared = cahierSectionRendererFor(section.evidence, true).exportLayout
+      const actual = rendererFor(section, true).exportLayout
+      expect(actual, `${section.key}: shell resolver diverged from its renderer`).toBe(declared)
+      if (declared === undefined) without.push(section.key)
+      else {
+        withLayout.push(section.key)
+        expect(actual, `${section.key}: shell resolver dropped the layout`).toBe(CAHIER_EXPORT_SURFACE.layoutSpread)
+      }
     }
+    expect(withLayout.length, 'no section resolves to the declared layout').toBeGreaterThan(0)
+    expect(without.length, 'no legitimately layout-free section in the fixture').toBeGreaterThan(0)
   })
 })
 

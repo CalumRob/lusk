@@ -3,17 +3,33 @@
  * Screen plate indices (01/02/03/04) used to sit inside the map image box;
  * the image painted over them, so a render showed blank paper while the PDF
  * text layer still exposed the digits. The export hides those screen indices.
+ *
+ * The default run keeps a fast structural check. Rendering nine real PDFs
+ * through spawned Chromium is opt-in with `LUSK_WRITE_REVIEW_PDFS=1`, the same
+ * gate the other review-export specs use, so CI stays quick.
  */
 import { describe, expect, it } from 'vitest'
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { cahierExportHiddenSelectors } from '@/fiche/prototype/cahierExportSurface'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { PDF_FIXTURE_SECTION_KEYS, capturePdfFixture, readyPublications, type PdfFixtureSectionKey } from './helpers/cahierPdfFixtures'
 import { composerCahierPdfNativedansNavigateur } from './helpers/cahierPdfNativeRuntime'
 
+const PLATE_INDEX_ROLES = [
+  '.map-panel-number', '.blank-map-slot__number', '.aedar-diversity-loss-map__number',
+] as const
+
+/** Plate-bearing sections derive from the captures, never from a hardcoded list. */
+function plateBearingKeys(): PdfFixtureSectionKey[] {
+  return PDF_FIXTURE_SECTION_KEYS.filter((key) => {
+    const capture = capturePdfFixture(key, { publications: readyPublications(key) })
+    return capture.capabilities.maps.items.some(
+      (item) => item.declared && item.loaded && item.inlineUrl !== null)
+  })
+}
+
 async function inspect(key: PdfFixtureSectionKey) {
   const capture = capturePdfFixture(key, { publications: readyPublications(key) })
-  // Derive plate-bearing sections from the capture's own declared, settled
-  // maps — never from a hardcoded list of section keys.
   const plateBearing = capture.capabilities.maps.items.some(
     (item) => item.declared && item.loaded && item.inlineUrl !== null)
   const modes = capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.id)
@@ -52,30 +68,45 @@ async function inspect(key: PdfFixtureSectionKey) {
 }
 
 describe('no invisible plate indices in the export (#1025)', () => {
-  it('keeps no two-digit text inside a raster on any page of any plate-bearing section', async () => {
-    const plateSections: string[] = []
-    for (const key of PDF_FIXTURE_SECTION_KEYS) {
-      const result = await inspect(key)
-      expect(result.numPages, `${key}: export has no pages`).toBeGreaterThan(0)
-      if (result.plateBearing) {
-        plateSections.push(key)
-        // A plate-less render would make the "no index inside a raster" check
-        // vacuous. Require EVERY derived plate-bearing section to actually
-        // raster across ALL its pages, not just page 1 of a hardcoded subset.
-        const images = result.pages.reduce((sum, page) => sum + page.images, 0)
-        expect(images, `${key}: no raster image in any of ${result.numPages} pages`).toBeGreaterThan(0)
-      }
-      for (const [index, page] of result.pages.entries()) {
-        const where = `${key} page ${index + 1}/${result.numPages}`
-        // A page carrying two-digit indices with no raster would make its
-        // per-page check vacuous (a continuation page carrying neither is fine).
-        if (result.plateBearing && page.indices > 0) {
-          expect(page.images, `${where}: indices but no raster beneath them`).toBeGreaterThan(0)
-        }
-        expect(page.hidden, `${where}: ${page.hidden.join(', ')}`).toEqual([])
+  // Fast default gate: the hide list and the plate-bearing derivation stay in
+  // place even when the Chromium matrix is not run.
+  it('keeps every plate-index role in the mount hide list and derives plate sections', () => {
+    const hidden = [true, false].map((document) => cahierExportHiddenSelectors(document).join(' '))
+    for (const role of PLATE_INDEX_ROLES) {
+      for (const [index, css] of hidden.entries()) {
+        expect(css, `${role} no longer hidden in ${index === 0 ? 'document' : 'figure'} route`).toContain(role)
       }
     }
-    // The derivation must actually find plates, not silently inspect none.
-    expect(plateSections.length, 'no plate-bearing section derived from the captures').toBeGreaterThan(0)
-  }, 300000)
+    const plates = plateBearingKeys()
+    expect(plates.length, 'no plate-bearing section derived from the captures').toBeGreaterThan(0)
+    expect(plates.length).toBeLessThan(PDF_FIXTURE_SECTION_KEYS.length)
+  })
+
+  it.skipIf(process.env.LUSK_WRITE_REVIEW_PDFS !== '1')(
+    'renders no two-digit text inside a raster on any page of any plate-bearing section',
+    async () => {
+      const plateSections: string[] = []
+      for (const key of PDF_FIXTURE_SECTION_KEYS) {
+        const result = await inspect(key)
+        expect(result.numPages, `${key}: export has no pages`).toBeGreaterThan(0)
+        if (result.plateBearing) {
+          plateSections.push(key)
+          // A plate-less render would make the "no index inside a raster" check
+          // vacuous. Require EVERY derived plate-bearing section to actually
+          // raster across ALL its pages, not just page 1 of a hardcoded subset.
+          const images = result.pages.reduce((sum, page) => sum + page.images, 0)
+          expect(images, `${key}: no raster image in any of ${result.numPages} pages`).toBeGreaterThan(0)
+        }
+        for (const [index, page] of result.pages.entries()) {
+          const where = `${key} page ${index + 1}/${result.numPages}`
+          // A page carrying two-digit indices with no raster would make its
+          // per-page check vacuous (a continuation page carrying neither is fine).
+          if (result.plateBearing && page.indices > 0) {
+            expect(page.images, `${where}: indices but no raster beneath them`).toBeGreaterThan(0)
+          }
+          expect(page.hidden, `${where}: ${page.hidden.join(', ')}`).toEqual([])
+        }
+      }
+      expect(plateSections, 'no plate-bearing section derived from the captures').toEqual(plateBearingKeys())
+    }, 300000)
 })

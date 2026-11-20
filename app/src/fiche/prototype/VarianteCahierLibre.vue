@@ -1,3 +1,19 @@
+<script lang="ts">
+import { cahierSectionRendererFor } from './cahierSectionRenderers'
+
+/**
+ * #1025 — the exact resolver the export-layout binding calls. Exported from the
+ * shell so the drift guard can CALL it: a renderer that silently drops
+ * `exportLayout` must fail the guard, not just look wired in source.
+ */
+export function rendererFor(
+  section: { evidence: import('@/fiche/content/themeContent').ContentSection['evidence'] },
+  aedarEnabled: boolean,
+) {
+  return cahierSectionRendererFor(section.evidence, aedarEnabled)
+}
+</script>
+
 <script setup lang="ts">
 import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
 /**
@@ -32,7 +48,7 @@ import CahierProse from './CahierProse.vue'
 import CahierPdfAction from './CahierPdfAction.vue'
 import type { CahierPdfGenerator } from './cahierPdfExportController'
 import CahierExportScope from './CahierExportScope.vue'
-import { CahierSectionBody, cahierSectionRendererFor } from './cahierSectionRenderers'
+import { CahierSectionBody } from './cahierSectionRenderers'
 import { provideAedarSectionContext } from './aedarSectionContext'
 import { cahierCaptureConsumesReference, cahierCaptureFamily, captureCahierSection } from './cahierExportCapture'
 import type {
@@ -119,9 +135,6 @@ const aedarSection = provideAedarSectionContext(computed(() => props.content),
   computed(() => ({ status: props.comparisonStatus ?? 'idle', error: props.comparisonError, retry: props.retryComparison })),
 )
 const { comparisonEligible } = aedarSection
-function rendererFor(section: ContentSection) {
-  return cahierSectionRendererFor(section.evidence, props.aedarAccessEnabled === true)
-}
 
 /**
  * #1021 — the public capture seam for every section on the shared path. The
@@ -143,7 +156,7 @@ const captureSections = computed(() => {
         section,
         unitKey: currentUnit.key,
         unitLabel: currentUnit.label,
-        body: Boolean(rendererFor(section).body),
+        body: Boolean(rendererFor(section, props.aedarAccessEnabled === true).body),
         unit: currentUnit,
         index,
       })
@@ -573,7 +586,7 @@ onBeforeUnmount(() => {
                 </div>
                 <h3 v-else>{{ section.label }}</h3>
                 <CahierPdfAction
-                  v-if="!nativeRender && rendererFor(section).body"
+                  v-if="!nativeRender && rendererFor(section, props.aedarAccessEnabled === true).body"
                   class="concept-group-pdf-action"
                   :section-key="section.key"
                   :section-label="section.label"
@@ -589,13 +602,13 @@ onBeforeUnmount(() => {
               </div>
 
               <section
-                :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
+                :class="[rendererFor(section, props.aedarAccessEnabled === true).classes, { 'figure-spread--flip': rendererFor(section, props.aedarAccessEnabled === true).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
-                :data-cahier-export-layout="rendererFor(section).exportLayout"
+                :data-cahier-export-layout="rendererFor(section, props.aedarAccessEnabled === true).exportLayout"
               >
                 <div
-                  v-if="rendererFor(section).argument && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"
+                  v-if="rendererFor(section, props.aedarAccessEnabled === true).argument && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"
                   class="argument-side"
                 >
                   <template v-if="section.lecture">
@@ -621,7 +634,7 @@ onBeforeUnmount(() => {
 
                 </div>
 
-                <CahierExportScope v-if="rendererFor(section).body" :section-key="section.key">
+                <CahierExportScope v-if="rendererFor(section, props.aedarAccessEnabled === true).body" :section-key="section.key">
                   <CahierSectionBody
                     :section="section"
                     :unit="{ key: currentUnit.key, label: currentUnit.label }"
