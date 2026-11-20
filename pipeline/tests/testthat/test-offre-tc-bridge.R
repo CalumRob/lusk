@@ -1364,6 +1364,12 @@ bridge_sql_lint <- function(text) {
     call = character(), problem = character(), stringsAsFactors = FALSE)
 }
 
+# BEST-EFFORT STATIC CHECK, not a guarantee. This regex/AST lint can only see
+# literal SQL passed through the named helpers and their local aliases. It CANNOT
+# catch: dynamically assembled table names (paste/sprintf/runtime interpolation),
+# writes performed in other files or other packages, UPDATE/TRUNCATE/COPY/MERGE
+# targets, SQL assembled from variables, or runtime-bound DBI calls that bypass
+# the helper names entirely.
 test_that("the SQL lint is honest on real sources and rejects synthetic errors", {
   bridge <- system.file("..", "R", "publish_serving_bridge.R", package = "lusk")
   expect_identical(nrow(bridge_sql_lint(readLines(bridge, warn = FALSE))), 0L)
@@ -1577,6 +1583,11 @@ test_that("marker guard checks profile comparison and the Habitat chain", {
 
 # --- Review round 5: write-table list is checked against the publishers -------
 
+# BEST-EFFORT STATIC CHECK, not a guarantee. This regex scan of two publisher
+# files sees only literal DELETE/INSERT/dbWriteTable table names. It CANNOT catch:
+# dynamically assembled table names (paste/sprintf/runtime interpolation), writes
+# in other files or other packages, UPDATE/TRUNCATE/COPY/MERGE targets, SQL built
+# from variables, or runtime-bound DBI calls that bypass the scanned patterns.
 test_that("BRIDGE_WRITE_TABLES covers every table the publishers mutate", {
   targets <- character()
   for (file in c("publish_scalar.R", "publish_profile.R")) {
@@ -1609,16 +1620,6 @@ test_that("the write-schema guard checks comparison_source_lineage", {
 
 # --- User decision: operator-confirmed offre_tc descriptor replacement --------
 
-bridge_live_fixture_old_descriptor <- function() {
-  live <- bridge_live_fixture()
-  row <- live$descriptors$indicator_id == bridge_offre_tc_id()
-  live$descriptors$label[row] <- "Part des bÃ¢timents prÃ¨s dâ€™un arrÃªt (Ã  500 m)"
-  live$descriptors$denominator_semantics[row] <-
-    "Part des bÃ¢timents situÃ©s Ã  moins de 500 mÃ¨tres dâ€™un arrÃªt"
-  live$descriptors$descriptor_version[row] <- "building-based-v1"
-  validate_scalar_artifact_projection(live)
-  live
-}
 
 bridge_descriptor_run <- function(live, mode, env_extra = list(), policy = NULL) {
   expected <- bridge_fixture_expected_tokens()
