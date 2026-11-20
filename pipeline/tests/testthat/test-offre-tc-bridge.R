@@ -102,3 +102,86 @@ test_that("the builder refuses malformed retirement policies and fresh rows", {
     live, bad_rows, bridge_fixture_metadata(), retained_scalar_retirement_ids()),
     "unit")
 })
+
+# --- Slice 2: read-only live loader and marker guard --------------------------
+
+test_that("Postgres text arrays and pre-split level vectors both decode", {
+  expect_identical(bridge_parse_text_array("{commune,epci}"), c("commune", "epci"))
+  expect_identical(bridge_parse_text_array(c("commune", "epci")), c("commune", "epci"))
+  expect_identical(bridge_parse_text_array("{}"), character())
+})
+
+test_that("the live loader reconstructs a projection from serving-shaped rows", {
+  live <- bridge_live_fixture()
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(live))
+  loaded <- read_live_scalar_projection(NULL, reader = reader)
+  validate_scalar_artifact_projection(loaded)
+
+  for (field in names(live)) {
+    left <- live[[field]]
+    right <- loaded[[field]]
+    if (field == "descriptors") {
+      # allowed_sources/allowed_levels are list columns: compare as character
+      left$allowed_sources <- lapply(left$allowed_sources, as.character)
+      right$allowed_sources <- lapply(right$allowed_sources, as.character)
+      left$allowed_levels <- lapply(left$allowed_levels, as.character)
+      right$allowed_levels <- lapply(right$allowed_levels, as.character)
+    }
+    keys <- switch(field,
+      facts = c("indicator_id", "territory_id"),
+      descriptors = "indicator_id",
+      provenance = c("indicator_id", "territory_id", "source_id", "vintage_id"),
+      datasets = "source_id",
+      vintages = c("source_id", "vintage_id"),
+      eligible_territories = c("territory_type", "territory_id"))
+    left <- left[do.call(order, c(left[keys], list(na.last = TRUE, method = "radix"))), , drop = FALSE]
+    right <- right[do.call(order, c(right[keys], list(na.last = TRUE, method = "radix"))), , drop = FALSE]
+    rownames(left) <- rownames(right) <- NULL
+    expect_identical(right, left, info = field)
+  }
+})
+
+test_that("the marker guard accepts exactly the operator-supplied tokens", {
+  expected <- bridge_fixture_expected_tokens()
+  expect_equal(nrow(assert_bridge_markers(bridge_fixture_markers(expected), expected)), 0L)
+})
+
+test_that("the marker guard refuses any moved token with a named report", {
+  expected <- bridge_fixture_expected_tokens()
+  for (token in names(expected)) {
+    moved <- expected
+    moved[[token]] <- "moved-token"
+    markers <- bridge_fixture_markers(expected)
+    err <- expect_error(assert_bridge_markers(markers, moved), "REFUSED with zero writes")
+    expect_match(conditionMessage(err), token, fixed = TRUE, info = token)
+  }
+})
+
+test_that("the marker guard also checks chained input fields", {
+  expected <- bridge_fixture_expected_tokens()
+  markers <- bridge_fixture_markers(expected)
+  markers$comparison$scalar_content_version <- "stale"
+  expect_error(assert_bridge_markers(markers, expected), "scalar_content_version")
+
+  markers <- bridge_fixture_markers(expected)
+  markers$profile_descriptor$required_scalar_version <- "stale"
+  expect_error(assert_bridge_markers(markers, expected), "required_scalar_version")
+
+  markers <- bridge_fixture_markers(expected)
+  markers$selected_descriptor$descriptor_version <- "stale"
+  expect_error(assert_bridge_markers(markers, expected), "descriptor_version")
+})
+
+test_that("expected tokens and the dump acknowledgement come only from the environment", {
+  expected <- bridge_fixture_expected_tokens()
+  env <- bridge_fake_env(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)))
+  expect_identical(bridge_expected_tokens_from_env(env), expected)
+
+  partial <- bridge_fake_env(setNames(unname(expected)[-2L], unname(BRIDGE_EXPECTED_ENV)[-2L]))
+  expect_error(bridge_expected_tokens_from_env(partial), "missing publication token")
+
+  expect_error(assert_bridge_dump_confirmed(bridge_fake_env(list())), "verified dump")
+  ack <- assert_bridge_dump_confirmed(bridge_fake_env(setNames("dump-2026-11-20", BRIDGE_DUMP_ACK_ENV)))
+  expect_identical(ack, "dump-2026-11-20")
+})
+

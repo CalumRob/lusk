@@ -148,3 +148,55 @@ bridge_fixture_markers <- function(expected = bridge_fixture_expected_tokens()) 
       indicator_id = "distribution_dpe", descriptor_version = "dpe-live",
       required_scalar_version = unname(expected[["scalar"]]), stringsAsFactors = FALSE))
 }
+
+# Reconstruct the shape RPostgres returns for the serving tables from a
+# projection fixture: descriptors lose their list columns (source rows move to
+# scalar_descriptor_source, levels become a Postgres text-array literal).
+bridge_db_rows_from_projection <- function(projection) {
+  descriptors <- projection$descriptors
+  sources <- do.call(rbind, lapply(seq_len(nrow(descriptors)), function(i)
+    data.frame(indicator_id = descriptors$indicator_id[[i]],
+               source_id = as.character(descriptors$allowed_sources[[i]][[1L]]),
+               stringsAsFactors = FALSE)))
+  pg_array <- function(x) paste0("{", paste(as.character(x), collapse = ","), "}")
+  descriptor_rows <- data.frame(
+    indicator_id = descriptors$indicator_id,
+    theme_id = descriptors$theme_id,
+    label = descriptors$label,
+    unit = descriptors$unit,
+    direction = descriptors$direction,
+    comparison_facet = descriptors$comparison_facet,
+    allowed_levels = vapply(descriptors$allowed_levels, pg_array, character(1)),
+    denominator_semantics = descriptors$denominator_semantics,
+    completeness = descriptors$completeness,
+    descriptor_version = descriptors$descriptor_version,
+    stringsAsFactors = FALSE)
+  facts <- projection$facts
+  facts$support_count <- as.numeric(facts$support_count)
+  facts$denominator_count <- as.numeric(facts$denominator_count)
+  reference <- bridge_fixture_reference_rows()
+  list(
+    facts = facts,
+    descriptors = descriptor_rows,
+    descriptor_sources = sources,
+    provenance = projection$provenance,
+    datasets = projection$datasets,
+    vintages = projection$vintages,
+    territories = reference[c("territory_id", "territory_type")],
+    reference_rows = reference)
+}
+
+bridge_fake_reader <- function(rows) list(
+  facts = function(con) rows$facts,
+  descriptors = function(con) rows$descriptors,
+  descriptor_sources = function(con) rows$descriptor_sources,
+  provenance = function(con) rows$provenance,
+  datasets = function(con) rows$datasets,
+  vintages = function(con) rows$vintages,
+  territories = function(con) rows$territories,
+  reference_rows = function(con) rows$reference_rows)
+
+bridge_fake_env <- function(values) function(name, unset = "") {
+  if (name %in% names(values)) values[[name]] else unset
+}
+

@@ -168,3 +168,196 @@ assert_bridge_round_trip <- function(live, projection, affected) {
          ". REFUSED with zero writes.", call. = FALSE)
   invisible(diff)
 }
+
+# Slice 2 â€” read-only live loader and marker guard -----------------------------
+# RPostgres returns text[] either as an already-split character vector or as a
+# Postgres array literal. Both are decoded here; nothing else parses levels.
+bridge_parse_text_array <- function(x) {
+  if (is.null(x) || length(x) == 0L) return(character())
+  if (is.list(x)) return(as.character(unlist(x, use.names = FALSE)))
+  values <- as.character(x)
+  if (length(values) == 1L && startsWith(values, "{") && endsWith(values, "}")) {
+    inner <- substr(values, 2L, nchar(values) - 1L)
+    if (!nzchar(inner)) return(character())
+    return(strsplit(inner, ",", fixed = TRUE)[[1L]])
+  }
+  values
+}
+
+bridge_live_reader <- function() list(
+  facts = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, territory_id, territory_type, value, status,",
+    "support_count, denominator_count FROM scalar_observation")),
+  descriptors = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, theme_id, label, unit, direction, comparison_facet,",
+    "allowed_levels, denominator_semantics, completeness, descriptor_version",
+    "FROM scalar_descriptor")),
+  descriptor_sources = function(con) DBI::dbGetQuery(con,
+    "SELECT indicator_id, source_id FROM scalar_descriptor_source"),
+  provenance = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, territory_id, source_id, vintage_id",
+    "FROM scalar_observation_source")),
+  datasets = function(con) DBI::dbGetQuery(con,
+    "SELECT source_id, name FROM source_dataset"),
+  vintages = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT source_id, vintage_id, version, reference_date, publication_date",
+    "FROM source_vintage")),
+  territories = function(con) DBI::dbGetQuery(con,
+    "SELECT territory_id, territory_type FROM territory_reference"),
+  reference_rows = function(con) DBI::dbGetQuery(con, "SELECT * FROM territory_reference"))
+
+read_live_scalar_projection <- function(con, reader = bridge_live_reader()) {
+  facts <- reader$facts(con)
+  descriptor_rows <- reader$descriptors(con)
+  descriptor_sources <- reader$descriptor_sources(con)
+  sources_by_indicator <- lapply(descriptor_rows$indicator_id, function(id)
+    as.character(descriptor_sources$source_id[
+      descriptor_sources$indicator_id == id]))
+  levels_by_indicator <- lapply(seq_len(nrow(descriptor_rows)), function(i)
+    bridge_parse_text_array(descriptor_rows$allowed_levels[[i]]))
+  descriptors <- data.frame(
+    indicator_id = as.character(descriptor_rows$indicator_id),
+    theme_id = as.character(descriptor_rows$theme_id),
+    allowed_sources = I(sources_by_indicator),
+    label = as.character(descriptor_rows$label),
+    unit = as.character(descriptor_rows$unit),
+    direction = as.character(descriptor_rows$direction),
+    comparison_facet = as.character(descriptor_rows$comparison_facet),
+    allowed_levels = I(levels_by_indicator),
+    denominator_semantics = as.character(descriptor_rows$denominator_semantics),
+    completeness = as.character(descriptor_rows$completeness),
+    descriptor_version = as.character(descriptor_rows$descriptor_version),
+    stringsAsFactors = FALSE)
+  rownames(descriptors) <- NULL
+  facts$indicator_id <- as.character(facts$indicator_id)
+  facts$territory_id <- as.character(facts$territory_id)
+  facts$territory_type <- as.character(facts$territory_type)
+  facts$status <- as.character(facts$status)
+  facts$value <- as.numeric(facts$value)
+  facts$support_count <- if (all(is.na(facts$support_count))) NA_integer_ else as.integer(facts$support_count)
+  facts$denominator_count <- if (all(is.na(facts$denominator_count))) NA_integer_ else as.integer(facts$denominator_count)
+  vintages <- reader$vintages(con)
+  vintages$reference_date <- as.Date(vintages$reference_date)
+  vintages$publication_date <- as.Date(vintages$publication_date)
+  territories <- reader$territories(con)
+  levels <- unique(unlist(descriptors$allowed_levels, use.names = FALSE))
+  eligible <- unique(territories[territories$territory_type %in% levels,
+                                 c("territory_id", "territory_type"), drop = FALSE])
+  eligible$territory_id <- as.character(eligible$territory_id)
+  eligible$territory_type <- as.character(eligible$territory_type)
+  rownames(eligible) <- NULL
+  projection <- list(
+    facts = facts, descriptors = descriptors,
+    provenance = reader$provenance(con), datasets = reader$datasets(con),
+    vintages = vintages, eligible_territories = eligible)
+  validate_scalar_artifact_projection(projection)
+  projection
+}
+
+BRIDGE_DUMP_ACK_ENV <- "LUSK_BRIDGE_DUMP_CONFIRMED"
+BRIDGE_EXPECTED_ENV <- c(
+  scalar = "LUSK_BRIDGE_EXPECT_SCALAR",
+  comparison = "LUSK_BRIDGE_EXPECT_COMPARISON",
+  profile = "LUSK_BRIDGE_EXPECT_PROFILE",
+  habitat = "LUSK_BRIDGE_EXPECT_HABITAT",
+  reference = "LUSK_BRIDGE_EXPECT_REFERENCE")
+BRIDGE_FACTS_ENV <- "LUSK_BRIDGE_OFFRE_TC_FACTS"
+
+bridge_expected_tokens_from_env <- function(env = Sys.getenv) {
+  tokens <- vapply(BRIDGE_EXPECTED_ENV, function(name) env(name, unset = ""), character(1))
+  missing <- names(tokens)[!nzchar(trimws(tokens))]
+  if (length(missing))
+    stop("Bridge missing publication token(s): ",
+         paste(missing, collapse = ", "), call. = FALSE)
+  tokens
+}
+
+assert_bridge_dump_confirmed <- function(env = Sys.getenv) {
+  ack <- env(BRIDGE_DUMP_ACK_ENV, unset = "")
+  if (!nzchar(trimws(ack)))
+    stop("Bridge refuses to write without ", BRIDGE_DUMP_ACK_ENV,
+         " confirming a verified dump of the affected serving tables",
+         call. = FALSE)
+  invisible(ack)
+}
+
+bridge_read_markers <- function(con) retained_backend_markers(con)
+
+# Compare ONLY the five operator-supplied tokens (and the chained input fields
+# that must agree with them). An unrelated owner's newer marker is deliberately
+# not an expectation here â€” the guard stays scoped to the affected closure, as
+# in #995, and never reads a lost baseline artifact.
+assert_bridge_markers <- function(markers, expected) {
+  needed <- names(BRIDGE_EXPECTED_ENV)
+  if (!is.character(expected) || !all(needed %in% names(expected)) ||
+      anyNA(expected[needed]) || any(!nzchar(trimws(expected[needed]))))
+    stop("Bridge marker check requires all five expected tokens", call. = FALSE)
+  mismatches <- list()
+  add <- function(marker, live, want) {
+    mismatches[[length(mismatches) + 1L]] <<- data.frame(
+      marker = marker,
+      live = if (length(live)) as.character(live[[1L]]) else NA_character_,
+      expected = as.character(want), stringsAsFactors = FALSE)
+  }
+  token_for_table <- c(territory_reference = "reference",
+                       scalar_observation = "scalar",
+                       declared_profile = "profile",
+                       selected_reading = "habitat")
+  table_marker <- function(name, field = "content_version") {
+    rows <- markers$tables[markers$tables$table_name == name, , drop = FALSE]
+    want <- if (identical(field, "reference_content_version"))
+      expected[["reference"]] else expected[[token_for_table[[name]]]]
+    if (nrow(rows) != 1L) add(paste0(name, ".", field), NA_character_, "exactly one marker")
+    else add(paste0(name, ".", field), rows[[field]][[1L]], want)
+  }
+  table_marker("territory_reference", "content_version")
+  table_marker("scalar_observation", "content_version")
+  table_marker("scalar_observation", "reference_content_version")
+  table_marker("declared_profile", "content_version")
+  table_marker("selected_reading", "content_version")
+
+  comparison <- markers$comparison
+  if (nrow(comparison) != 1L) {
+    add("scalar_comparison_publication", NA_character_, "exactly one singleton")
+  } else {
+    add("scalar_comparison_publication.content_version",
+        comparison$content_version[[1L]], expected[["comparison"]])
+    add("scalar_comparison_publication.scalar_content_version",
+        comparison$scalar_content_version[[1L]], expected[["scalar"]])
+    add("scalar_comparison_publication.reference_content_version",
+        comparison$reference_content_version[[1L]], expected[["reference"]])
+  }
+  selected <- markers$selected_publication
+  if (nrow(selected) != 1L) {
+    add("selected_reading_publication[habitat]", NA_character_, "exactly one row")
+  } else {
+    add("selected_reading_publication[habitat].content_version",
+        selected$content_version[[1L]], expected[["habitat"]])
+    add("selected_reading_publication[habitat].reference_content_version",
+        selected$reference_content_version[[1L]], expected[["reference"]])
+  }
+  descriptor <- markers$selected_descriptor
+  if (nrow(descriptor) == 1L)
+    add("selected_reading_descriptor[habitat].descriptor_version",
+        descriptor$descriptor_version[[1L]], expected[["habitat"]])
+  profile <- markers$profile_descriptor
+  if (nrow(profile) == 1L)
+    add("profile_descriptor[distribution_dpe].required_scalar_version",
+        profile$required_scalar_version[[1L]], expected[["scalar"]])
+
+  result <- if (length(mismatches)) do.call(rbind, mismatches) else data.frame(
+    marker = character(), live = character(), expected = character(),
+    stringsAsFactors = FALSE)
+  bad <- result[!mapply(identical, as.character(result$live),
+                        as.character(result$expected)), , drop = FALSE]
+  if (nrow(bad)) {
+    detail <- paste0("  - ", bad$marker, ": live=", ifelse(is.na(bad$live), "<absent>", bad$live),
+                     " expected=", bad$expected, collapse = "\n")
+    stop("Serving marker mismatch: nothing may have moved since inspection. ",
+         "REFUSED with zero writes.\n", detail,
+         "\nVerify the live markers and supply the current operator tokens.",
+         call. = FALSE)
+  }
+  invisible(bad)
+}
+
