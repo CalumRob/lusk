@@ -449,6 +449,7 @@ $env:LUSK_BRIDGE_EXPECT_PROFILE = '<live declared-profile token>'
 $env:LUSK_BRIDGE_EXPECT_HABITAT = '<live Habitat selected-reading token>'
 $env:LUSK_BRIDGE_EXPECT_REFERENCE = '<live territory-reference token>'
 $env:LUSK_BRIDGE_OFFRE_TC_FACTS = '<private path to fresh offre_tc producer rows>'
+$env:LUSK_BRIDGE_DESCRIPTOR_POLICY = 'preserve'  # default; refuses a descriptor change
 $env:LUSK_PUBLISH_HOST = '<serving host>'; $env:LUSK_PUBLISH_DATABASE = 'lusk'
 $env:LUSK_PUBLISH_USER = 'lusk_publisher'; $env:PGPASSFILE = '<private pgpass>'
 
@@ -460,6 +461,14 @@ $env:LUSK_BRIDGE_LOCK_TIMEOUT_MS = '5000'      # bounded lock wait (default 5000
 $env:LUSK_BRIDGE_STATEMENT_TIMEOUT_MS = '120000' # finite statement cap (default 120000)
 Rscript scripts/publish-serving-tables.R --offre-tc-bridge
 ```
+
+If the dry-run prints a descriptor difference (the live `offre_tc` definition is
+the old building-based one), it prints both descriptor rows and a confirmation
+token and then refuses under `preserve`. Re-run the dry-run to capture that token,
+then set `LUSK_BRIDGE_DESCRIPTOR_POLICY='replace'` and
+`LUSK_BRIDGE_CONFIRM_DESCRIPTOR='<token printed by the dry-run>'` before the real
+write, in addition to the opt-in, dump acknowledgement and five expected tokens.
+When the descriptors are identical, `preserve` applies and no token is needed.
 
 The guarded disposable-DB proof is run through
 `pipeline/scripts/run-offre-tc-bridge-db.ps1 -PgPassFile <private pgpass>`; it
