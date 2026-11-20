@@ -83,6 +83,9 @@ function gateResult(territory, key, result) {
     if (audit.numericChecks?.missing?.length) {
       gateFailures.push(`${at}: served values missing from PDF: ${audit.numericChecks.missing.join(', ')}`)
     }
+    if (audit.rankChecks?.missing?.length) {
+      gateFailures.push(`${at}: served ranks missing from PDF: ${audit.rankChecks.missing.join(', ')}`)
+    }
   }
   if (result.comparisonState && !['shown', 'absent'].includes(result.comparisonState)) {
     gateFailures.push(`${at}: comparisonState=${result.comparisonState}`)
@@ -187,12 +190,46 @@ async function sourceReadings(key) {
   }, key)
 }
 
+// Rank chips are served facts. Read them from the screen before export and
+// require the same tokens in the PDF: a transient payload without ranks must
+// fail the run instead of silently shipping an overview with `—` ranks.
+// The shared action may enable before the comparison detail settles (observed:
+// ready at ~3.8s, rank chips at ~5.6s). Exporting in that window silently drops
+// served ranks. Wait for the section's busy indicators to clear first.
+async function waitComparisonSettled(key, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const busy = await page.evaluate((sectionKey) => {
+      const section = document.querySelector(`[data-section="${sectionKey}"]`)
+      if (!section) return false
+      return section.querySelectorAll(
+        '[aria-busy=true], .cahier-comparison-value__spinner, .cahier-loading',
+      ).length > 0
+    }, key)
+    if (!busy) return true
+    await page.waitForTimeout(250)
+  }
+  return false
+}
+
+async function sourceRanks(key) {
+  return page.evaluate((sectionKey) => {
+    const section = document.querySelector(`[data-section="${sectionKey}"]`)
+    if (!section) return []
+    return [...new Set([...section.querySelectorAll('.cahier-rank-ink')]
+      .map((node) => (node.textContent ?? '').trim()).filter(Boolean))]
+  }, key)
+}
+
 async function exportSection(key, territory) {
   const action = (await readActions()).find((a) => a.key === key)
   if (!action) return { key, status: 'absent', reason: 'no PDF action mounted for this section' }
   if (action.blocked) return { key, status: 'blocked', reason: action.reason }
 
+  const comparisonSettled = await waitComparisonSettled(key)
+  if (!comparisonSettled) return { key, status: 'audit-error', reason: 'comparison did not settle before export' }
   const expectedValues = await sourceReadings(key)
+  const expectedRanks = await sourceRanks(key)
   const expectedIdentity = await page.evaluate(() =>
     (document.querySelector('h1')?.textContent ?? '').trim())
   await page.locator(`[data-section="${key}"] .cahier-pdf-action__button`).click()
@@ -229,13 +266,13 @@ async function exportSection(key, territory) {
     file: path.basename(file),
   }
   if (result.status === 'success') {
-    try { result.audit = await audit(file, key, expectedValues, expectedIdentity) }
+    try { result.audit = await audit(file, key, expectedValues, expectedIdentity, expectedRanks) }
     catch (error) { result.status = 'audit-error'; result.reason = String(error).slice(0, 200) }
   }
   return result
 }
 
-async function audit(file, key, expectedValues = [], expectedIdentity = '') {
+async function audit(file, key, expectedValues = [], expectedIdentity = '', expectedRanks = []) {
   const bytes = new Uint8Array(await readFile(file))
   const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
   const pages = []
@@ -311,6 +348,7 @@ async function audit(file, key, expectedValues = [], expectedIdentity = '') {
   const unexpectedOverlaps = classified.filter((pair) => pair.kind === 'unexpected')
   const normalizedText = allText.replace(/[\u202f\u00a0]/gu, ' ')
   const missingValues = expectedValues.filter((value) => !normalizedText.includes(value))
+  const missingRanks = expectedRanks.filter((rank) => !normalizedText.includes(rank))
   return {
     key,
     pageCount: pdf.numPages,
@@ -319,6 +357,7 @@ async function audit(file, key, expectedValues = [], expectedIdentity = '') {
     overlappingTextPairs: classified.length,
     unexpectedOverlaps,
     numericChecks: { expected: expectedValues, missing: missingValues },
+    rankChecks: { expected: expectedRanks, missing: missingRanks },
     hasIdentity: expectedIdentity.length > 0
       && normalizedText.toUpperCase().includes(expectedIdentity.toUpperCase()),
     hasSources: allText.includes('Source(s)'),

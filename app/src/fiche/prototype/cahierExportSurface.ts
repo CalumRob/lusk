@@ -28,6 +28,9 @@ export const CAHIER_EXPORT_SURFACE = {
     // Legend toggles keep their own roles and remain visible.
     '.cahier-action-button',
     '.cahier-comparison-retry',
+    // Loading spinners / warning buttons / tooltips are screen state chrome.
+    // A transient loading comparison must never paint a stray ring in the PDF.
+    '.cahier-comparison-value__state',
     '.cahier-map-gallery-controls',
     '[data-pdf-confirm]',
   ],
