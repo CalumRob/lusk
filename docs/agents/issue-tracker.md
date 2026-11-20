@@ -26,6 +26,16 @@ Issues and PRDs for this repo live as GitHub issues on `CalumRob/lusk`. Use the 
 - Publishing tickets never closes, edits or relabels the parent. The parent stays open until its children are accepted.
 - Titles and bodies use the project's own vocabulary from `CONTEXT.md`; French domain terms stay French (`Cellule`, `Formule`, `Filtre de population`, `Figure d'atelier`, `Page d'indicateur`, `fiche`, `Cahier`).
 
+## Landing
+
+Two ways in, decided by whether anyone reviews the change — not by size or by mood.
+
+- **Direct to main** — docs, chore, build, one-line config. Nothing that changes runtime behaviour, and never while a worktree may be touching the same files. Commit, `git pull --rebase`, push.
+- **Branch + pull request** — everything else, including anything that goes through the review loop. One branch per issue, `issue/<n>-<slug>`, cut from `origin/main`.
+- **Rebase onto `origin/main`** before asking for review and again before merging. Conflicts must surface on the branch while it is small, never at the merge button. `git pull --rebase` before every push gives the same safety to direct commits.
+- **Land with a merge commit.** The branch name carries the issue, every commit carries `(#<n>)`, and the merge node names the PR — `git log --grep '#<n>'` finds the whole slice with or without the topology. Squash only when the branch genuinely is one change and its commit series carries no information.
+- **A worktree owns its branch.** Do not delete the branch at merge time while a worktree is checked out on it; worktree cleanup removes both, and that cleanup is human-only (see `AGENTS.md`).
+
 ## Labels
 
 - **Category**: `bug`, `enhancement`, `documentation`.
