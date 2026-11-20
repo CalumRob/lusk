@@ -575,22 +575,29 @@ def _validate_cellule_combination(resource, coordinates):
             raise ValueError("coordinate combination is not declared for this resource")
 
 
-def _validate_aedar_address(resource, coordinates):
-    """Validate a declared AEDAR Cellule address and enforce family separation."""
-    from api.aedar_models import AEDARAddressError, resolve_aedar_address
+def _validate_aedar_address(resource, coordinates, intent_kind):
+    """Validate a declared AEDAR address; the deprecated alias keeps legacy rules.
+
+    One resolver (`aedar_resolve`) owns family separation, intent shape and the
+    alias semantics, so admission cannot disagree with preflight or read.
+    """
+    from api.aedar_models import AEDARAddressError, aedar_resolve
     try:
-        resolve_aedar_address(resource.resource_kind, coordinates)
+        _typequ, _measures, _family, is_alias = aedar_resolve(
+            resource.resource_kind, coordinates, intent_kind)
     except AEDARAddressError as exc:
         raise ValueError(str(exc)) from exc
+    if is_alias:
+        # Frozen pre-#1076 path: value/combination declarations did not exist.
+        return
     cellule = resource.cellule or {}
     combination_axes = set().union(*(set(point) for point in cellule.get("valid_combinations", ())))
     declared_values = {coordinate["name"]: {value["value"] for value in coordinate["values"]}
                        for coordinate in cellule.get("coordinates", ())}
-    # `typequ` (and the legacy `context` facet) are orthogonal to the measure
-    # combination space: their values are checked against the declared universe
-    # and the combination gate runs on the measure axes only.
+    # `typequ` is orthogonal to the measure combination space: its values are
+    # checked against the declared universe and the gate runs on measure axes.
     constrained = {}
-    for axis, values in coordinates.items():
+    for axis, values in (coordinates or {}).items():
         if axis in declared_values and not set(values) <= declared_values[axis]:
             raise ValueError("coordinate value is not declared for this resource")
         if axis in combination_axes:
@@ -662,32 +669,24 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             raise ValueError("field is not declared for this resource")
     if item.intent.kind != "facts" and item.target.kind != "territory":
         raise ValueError("comparison intents require a territory target")
-    if item.coordinates is not None:
+    if resource.resource_kind in AEDAR_CELLULE_AXES:
+        # The AEDAR resolver owns axis names (declared coordinates only, plus
+        # the deprecated measure alias), family separation and intent shape —
+        # including the 422 for a comparison that omits its coordinates.
+        _validate_aedar_address(resource, item.coordinates, item.intent.kind)
+    elif item.coordinates is not None:
         axes = dict(resource.axis_values)
         # `resource.axes` are the producer-declared public coordinate axis names.
         # Storage axis keys in `axis_values` may differ (e.g. anchored
         # membership exposes `membership` over the `detail` storage key);
         # declaration, not storage shape, decides which axes exist.
         allowed_axes = set(resource.axes) | set(axes)
-        if resource.resource_kind in AEDAR_CELLULE_AXES and "measure" in item.coordinates:
-            raise ValueError("measure is not an AEDAR Cellule address; declare horizon, mode and "
-                             "statistic (per-cell) or horizon, mode and kind (summary)")
-        if resource.resource_kind == "aedar_source_grain" and "kind" in item.coordinates:
-            raise ValueError("summary Cellule coordinates are not declared for the AEDAR per-cell family")
-        if (resource.resource_kind == "aedar_territory_summary"
-                and {"typequ", "statistic"} & set(item.coordinates)):
-            raise ValueError("per-cell Cellule coordinates are not declared for the AEDAR summary family")
         if set(item.coordinates) - allowed_axes:
             raise ValueError("coordinate axis is not declared for this resource")
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])
                for axis, values in item.coordinates.items()):
             raise ValueError("coordinate value is not declared for this resource")
-        if resource.resource_kind in AEDAR_CELLULE_AXES:
-            _validate_aedar_address(resource, item.coordinates)
-        else:
-            _validate_cellule_combination(resource, item.coordinates)
-        if resource.resource_kind == "aedar_source_grain" and "context" in item.coordinates:
-            raise ValueError("AEDAR comparison context belongs in fixed_comparison intent")
+        _validate_cellule_combination(resource, item.coordinates)
     if (resource.resource_kind in AEDAR_CELLULE_AXES and
             item.intent.kind == "fixed_comparison" and
             item.intent.context not in resource.context_values):
@@ -948,14 +947,12 @@ def discover_indicator_resources(metadata_directory: str | Path,
                                                          contract_path)
                              if kind in AEDAR_CELLULE_AXES else None)
             if aedar_cellule is not None:
-                # Discovery exposes the declared Cellule coordinates as the
-                # resource's axes. A client addresses AEDAR by these, never by
-                # a measure key. Comparison `context` stays an admitted legacy
-                # axis (an intent facet, not a Cellule coordinate).
+                # Discovery exposes the declared Cellule coordinates as both the
+                # resource's axes and its coordinate values. `context` is an
+                # intent facet, never a coordinate — the contract's declared
+                # context values remain available through `context_values`.
                 public_axes = tuple(coordinate["name"] for coordinate in aedar_cellule["coordinates"])
-                public_axis_values = (
-                    (("context", tuple(declaration.get("axes", {}).get("context", ()))),)
-                    if kind == "aedar_source_grain" else ())
+                public_axis_values = ()
             else:
                 public_axes = axes
                 public_axis_values = (("groupe", groups),) if kind == "typed_reading" else ()
