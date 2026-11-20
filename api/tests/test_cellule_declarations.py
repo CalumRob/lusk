@@ -9,6 +9,7 @@ producer metadata independently, so they can disagree with the catalogue.
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -40,6 +41,21 @@ def _page(resource_id):
 def _coordinate(resource_id, axis):
     return next(coordinate for coordinate in _public(resource_id)["cellule"]["coordinates"]
                 if coordinate["name"] == axis)
+
+
+@contextmanager
+def _app_overrides(overrides):
+    """Install FastAPI dependency overrides for one request, then restore them."""
+    previous = {key: main.app.dependency_overrides.get(key) for key in overrides}
+    main.app.dependency_overrides.update(overrides)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                main.app.dependency_overrides.pop(key, None)
+            else:
+                main.app.dependency_overrides[key] = value
 
 
 # The canonical Atelier-eligible set with a declaration: every retained scalar
@@ -86,7 +102,7 @@ def _producer_deferred():
         pages = metadata.get("indicator_pages") or {}
         deferred.update(
             resource_id for resource_id, page in pages.items()
-            if (page.get("cellule") or {}).get("defer_coordinate_declaration")
+            if (page.get("cellule") or {}).get("declare") is False
         )
         for route in (metadata.get("owned_series_routes") or {}).values():
             reference = route.get("reference_indicator")
@@ -166,28 +182,32 @@ def test_values_without_separate_wording_use_their_own_key():
             assert [labels[key] for key in keys] == keys, f"{resource_id}/{axis}: key-as-label changed"
 
 
-def test_owned_series_coordinates_come_from_the_producer_declared_series_axis():
-    """Never derive a coordinate universe from a comparison facet."""
+def test_owned_series_coordinates_come_from_the_published_series_axis():
+    """publish_series.R:233 writes the descriptor axis from comparison.details.
+
+    ``comparison_axis_values`` (the trajectory endpoints) is a different facet,
+    not the coordinate universe. A producer that withholds the declaration
+    keeps its descriptor-owned axis and no Cellule coordinates.
+    """
     catalogue = default_resource_catalogue.__wrapped__()
     for path in METADATA.glob("theme_*.json"):
         metadata = json.loads(path.read_text(encoding="utf-8"))
-        routes = metadata.get("owned_series_routes") or {}
-        for resource_id, route in routes.items():
+        for resource_id in (metadata.get("owned_series_routes") or {}):
             page = metadata["indicator_pages"][resource_id]
-            deferred = bool((page.get("cellule") or {}).get("defer_coordinate_declaration"))
+            producer_cellule = page.get("cellule") or {}
+            if "declare" in producer_cellule:
+                assert isinstance(producer_cellule["declare"], bool), (
+                    f"{resource_id}: cellule.declare must be a plain boolean")
             resource = catalogue.resources_by_id[resource_id]
-            if deferred or not route.get("axis_values"):
+            details = (page.get("comparison") or {}).get("details") or ()
+            if producer_cellule.get("declare") is False or not details:
                 assert resource.cellule is None, (
-                    f"{resource_id}: no producer series axis declaration must defer to the descriptor")
+                    f"{resource_id}: a withheld or undeclared series axis must defer to the descriptor")
                 continue
             assert resource.cellule is not None, f"{resource_id}: declared series axis lost"
             values = [value["value"] for value in resource.cellule["coordinates"][0]["values"]]
-            assert values == [str(value) for value in route["axis_values"]], (
-                f"{resource_id}: coordinates do not come from the producer series axis")
-            # The publisher writes the same axis from comparison.details; a drift
-            # between the two producer declarations must fail loudly.
-            assert values == [str(value) for value in page["comparison"]["details"]], (
-                f"{resource_id}: producer series axis and published axis disagree")
+            assert values == [str(value) for value in details], (
+                f"{resource_id}: coordinates do not come from the published series axis")
 
 
 def test_profile_category_units_never_inherit_the_indicator_scalar_unit():
@@ -271,9 +291,6 @@ def test_combination_enforcement_follows_the_declaration_not_the_static_axis_lis
 
 
 def test_public_read_reports_undeclared_combination_before_opening_a_connection(tmp_path):
-    from contextlib import contextmanager
-    from types import SimpleNamespace
-
     class NoConnectionPool:
         @contextmanager
         def connection(self):
@@ -281,27 +298,14 @@ def test_public_read_reports_undeclared_combination_before_opening_a_connection(
             yield
 
     catalogue = _restricted_catalogue(tmp_path)
-    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
-    previous_repository = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
-    main.app.dependency_overrides[main.get_repository] = lambda: SimpleNamespace(
-        connections=NoConnectionPool())
-    try:
+    with _app_overrides({main.get_resource_catalogue: lambda: catalogue,
+               main.get_repository: lambda: SimpleNamespace(connections=NoConnectionPool())}):
         response = TestClient(main.app).post("/api/resources/read", json={
             "resource": "structure_age",
             "target": {"kind": "territory", "type": "commune", "id": "22001"},
             "coordinates": {"detail": ["<15"], "sex": ["M"]},
             "intent": {"kind": "facts"},
         })
-    finally:
-        if previous_catalogue is None:
-            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
-        else:
-            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
-        if previous_repository is None:
-            main.app.dependency_overrides.pop(main.get_repository, None)
-        else:
-            main.app.dependency_overrides[main.get_repository] = previous_repository
 
     assert response.status_code == 422
     assert "coordinate combination is not declared" in response.json()["detail"]
@@ -335,6 +339,8 @@ class _ProfileConnection:
     def execute(self, sql, params=None):
         if sql.startswith("SET TRANSACTION"):
             return _Cursor([])
+        if "SELECT territory_type FROM territory_reference" in sql:
+            return _Cursor([("commune",)])
         if "SELECT allowed_levels FROM profile_descriptor" in sql:
             return _Cursor([(["commune"],)])
         if "FROM profile_descriptor WHERE" in sql:
@@ -362,52 +368,88 @@ class _ProfileConnection:
         raise AssertionError(sql)
 
 
-def test_no_coordinate_read_resolves_to_the_declared_default_point():
-    """At the public HTTP seam, the descriptor default is the declared one."""
-    from contextlib import contextmanager
-    from types import SimpleNamespace
+def _descriptor_reader(*, comparison_preflight=None, comparison_snapshot=None):
+    """A real dispatcher with descriptor-only snapshot seams."""
+    return SemanticResourceReader(
+        indicator_facts_snapshot=lambda *args, **kwargs: {"work_units": 3},
+        indicator_comparison_preflight=comparison_preflight or (lambda *a, **k: {}),
+        indicator_comparison_snapshot=comparison_snapshot or (lambda *a, **k: {}),
+        owned_series_route=lambda *args, **kwargs: None,
+        owned_named_reference_snapshot=lambda *args, **kwargs: {},
+        comparison_field_selection=lambda fields: fields,
+        max_owned_series_provenance_per_point=8,
+    )
 
+
+def _pool_for_default():
     producer_default = _page("structure_age")["comparison"]
-    declared_point = _public("structure_age")["cellule"]["default_point"]
 
     class Pool:
         @contextmanager
         def connection(self):
             yield _ProfileConnection(producer_default["detail"], producer_default["sex"])
 
-    reader = SemanticResourceReader(
-        indicator_facts_snapshot=lambda *args, **kwargs: {"work_units": 3},
-        indicator_comparison_preflight=lambda *args, **kwargs: {},
-        indicator_comparison_snapshot=lambda *args, **kwargs: {},
-        owned_series_route=lambda *args, **kwargs: None,
-        owned_named_reference_snapshot=lambda *args, **kwargs: {},
-        comparison_field_selection=lambda fields: fields,
-        max_owned_series_provenance_per_point=8,
-    )
-    overrides = {
-        main.get_resource_catalogue: lambda: default_resource_catalogue.__wrapped__(),
-        main.get_repository: lambda: SimpleNamespace(connections=Pool()),
-        main.get_semantic_resource_reader: lambda: reader,
-    }
-    previous = {key: main.app.dependency_overrides.get(key) for key in overrides}
-    main.app.dependency_overrides.update(overrides)
-    try:
+    return Pool()
+
+
+def test_no_coordinate_profile_read_exposes_the_declared_default_point_in_its_descriptor():
+    """AC3: each profile/series declares its default point; a no-coordinate
+    read exposes that point in the descriptor; distribution_dpe declares none
+    because its comparison is the linked scalar facet.
+    """
+    producer_default = _page("structure_age")["comparison"]
+    declared_point = _public("structure_age")["cellule"]["default_point"]
+
+    with _app_overrides({main.get_resource_catalogue: lambda: default_resource_catalogue.__wrapped__(),
+               main.get_repository: lambda: SimpleNamespace(connections=_pool_for_default()),
+               main.get_semantic_resource_reader: lambda: _descriptor_reader()}):
         response = TestClient(main.app).post("/api/resources/read", json={
             "resource": "structure_age",
             "target": {"kind": "territory", "type": "commune", "id": "22001"},
             "intent": {"kind": "facts"},
         })
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                main.app.dependency_overrides.pop(key, None)
-            else:
-                main.app.dependency_overrides[key] = value
 
     assert response.status_code == 200, response.text
     descriptor_point = response.json()["descriptor"]["comparison_point"]
     assert (descriptor_point["detail"], descriptor_point["sex"]) == (
         declared_point["detail"], declared_point["sex"])
+    assert declared_point == {"detail": producer_default["detail"], "sex": producer_default["sex"]}
+
+    dpe = _public("distribution_dpe")["cellule"]
+    assert dpe["default_point"] is None
+    assert _page("distribution_dpe")["comparison"]["indicator"] == "part_passoires"
+
+
+def test_no_coordinate_comparison_delegates_the_point_to_the_descriptor_default():
+    """The comparison path names no point of its own: both snapshot seams see
+    `profile_coordinates=None`, so the published descriptor's default resolves
+    the facet — and that descriptor default is the declared default point.
+    """
+    producer_default = _page("structure_age")["comparison"]
+    declared_point = _public("structure_age")["cellule"]["default_point"]
+    calls = []
+
+    def capture(label, result):
+        def spy(*args, **kwargs):
+            calls.append((label, kwargs.get("profile_coordinates")))
+            return result
+        return spy
+
+    reader = _descriptor_reader(
+        comparison_preflight=capture("preflight", {
+            "members": ["22001"], "fixed_context": ("default", "D1", "commune")}),
+        comparison_snapshot=capture("snapshot", {"result": {"status": "available"}}))
+    with _app_overrides({main.get_resource_catalogue: lambda: default_resource_catalogue.__wrapped__(),
+               main.get_repository: lambda: SimpleNamespace(connections=_pool_for_default()),
+               main.get_semantic_resource_reader: lambda: reader}):
+        response = TestClient(main.app).post("/api/resources/read", json={
+            "resource": "structure_age",
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "intent": {"kind": "fixed_comparison", "context": "default"},
+        })
+
+    assert response.status_code == 200, response.text
+    assert calls == [("preflight", None), ("snapshot", None)]
     assert declared_point == {"detail": producer_default["detail"], "sex": producer_default["sex"]}
 
 
