@@ -34,7 +34,7 @@ if (!bridge_db_proof_configured()) {
     skip("run pipeline/scripts/run-offre-tc-bridge-db.ps1 with the disposable DB config")
   })
 } else {
-  test_that("the bridge writes rows and markers atomically on the disposable DB", {
+  test_that("the bridge rolls back on failure and really writes on control", {
     bridge_db_assert_mutex_held()
     database <- Sys.getenv("LUSK_BRIDGE_TEST_DATABASE", unset = "")
     user <- Sys.getenv("LUSK_BRIDGE_TEST_USER", unset = "")
@@ -57,6 +57,7 @@ if (!bridge_db_proof_configured()) {
       "SELECT current_database() AS database, current_user AS role"))
     expect_identical(identity$database[[1L]], "lusk_it_contract")
     expect_identical(identity$role[[1L]], "lusk_it_contract_pub")
+    config <- list(dbname = database, user = user)
 
     schema <- paste0("serving_it_", Sys.getpid(), "_",
                      sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
@@ -82,8 +83,7 @@ if (!bridge_db_proof_configured()) {
                  collapse = "\n")
     for (statement in split_postgres_sql(ddl)) DBI::dbExecute(connection, statement)
 
-    # Seed a coherent live serving snapshot from the fixture. All versions are
-    # produced here through the registered publishers, never copied from text.
+    # Seed the OLD (pre-bridge) serving state through the registered publishers.
     live <- bridge_live_fixture()
     reference_rows <- bridge_fixture_reference_rows()
     reference_version <- "reference-live"
@@ -104,8 +104,6 @@ if (!bridge_db_proof_configured()) {
     publish_registered_scalar_comparison(comparison,
                                          scalar_comparison_postgres_adapter(connection))
 
-    # Seed the declared profiles through the NORMAL registered publisher so the
-    # bridge reads real serving rows (descriptor, axes, facts, comparison).
     seeded_profiles <- bridge_live_profile_fixture(scalar_version)
     seed_base <- names(seeded_profiles)[[1L]]
     seed_registry <- register_profile_publisher(list(), "bridge_test_profiles",
@@ -141,8 +139,9 @@ if (!bridge_db_proof_configured()) {
     facts_path <- tempfile("bridge-facts-", fileext = ".rds")
     on.exit(unlink(facts_path), add = TRUE)
     saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
-    env_values <- c(setNames(unname(expected), unname(BRIDGE_EXPECTED_ENV)),
-                    setNames(facts_path, BRIDGE_FACTS_ENV))
+    env_values <- bridge_test_env_values(expected, facts_path,
+      list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+           setNames("operator-dump", BRIDGE_DUMP_ACK_ENV)))
     env <- bridge_fake_env(env_values)
     reader <- bridge_live_reader()
     read_markers <- function() retained_backend_markers(connection)
@@ -159,20 +158,37 @@ if (!bridge_db_proof_configured()) {
           " t"))$h[[1L]]
       }, character(1))
     }
-    before <- schema_digest()
+    seeded_digest <- schema_digest()
 
-    dry <- capture.output(plan <- run_offre_tc_bridge(
-      "dry-run", env = env, con = connection, live_reader = reader,
-      read_markers = read_markers, retired_ids = retired_ids))
-    expect_identical(schema_digest(), before)
+    capture.output(plan <- run_offre_tc_bridge(
+      "dry-run", env = env, con = connection, config = config,
+      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
+    expect_identical(schema_digest(), seeded_digest)
     expect_identical(plan$mode, "dry-run")
 
-    write_values <- c(env_values,
-                      setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
-                      setNames("operator-dump-2026-11-20", BRIDGE_DUMP_ACK_ENV))
-    write_result <- capture.output(written <- run_offre_tc_bridge(
-      "publish", env = bridge_fake_env(write_values), con = connection,
+    # (A) ROLLBACK against the OLD seeded state. The scalar/comparison/profile
+    # publishers have real work to do (old -> new); the failure is injected only
+    # at the final Habitat rebind. A vacuous no-op would produce a digest that
+    # already equals the new state, so the control below rules that out.
+    fail_before_rebind <- function(con, prepared, retired, tokens, ...) {
+      publish_bridge_snapshot(con, prepared, retired, tokens, ...,
+        writer = list(set_habitat_linked = function(new_linked)
+          stop("injected failure before Habitat rebind", call. = FALSE)))
+    }
+    capture.output(expect_error(run_offre_tc_bridge(
+      "publish", env = env, con = connection, config = config,
+      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
+      publish = fail_before_rebind), "injected failure before Habitat rebind"))
+    expect_identical(schema_digest(), seeded_digest,
+                     info = "failed publication must restore the exact seeded state")
+
+    # (A) CONTROL without injection: the same seeded state really changes when
+    # the bridge succeeds, so the rollback assertion above cannot pass vacuously.
+    capture.output(written <- run_offre_tc_bridge(
+      "publish", env = env, con = connection, config = config,
       live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
+    expect_false(identical(schema_digest(), seeded_digest),
+                 info = "control publication must actually change the schema")
     expect_identical(written$scalar$content_version, plan$tokens$scalar)
     expect_identical(written$comparison$content_version, plan$tokens$comparison)
     expect_identical(written$profile$content_version, plan$profile_lineage$version)
@@ -195,7 +211,7 @@ if (!bridge_db_proof_configured()) {
       habitat_version)
 
     # Post-write hash identity: recompute every dependent token through the SAME
-    # producer functions from the rows now in the DB. A stale lineage fails here.
+    # producer functions from the rows now in the DB.
     after_profile_rows <- bridge_read_live_profile_projections(
       connection, reader = reader, metadata = bridge_profile_contracts(),
       new_scalar = plan$tokens$scalar)
@@ -216,30 +232,6 @@ if (!bridge_db_proof_configured()) {
     expect_identical(DBI::dbGetQuery(connection, paste(
       "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
       plan$tokens$scalar)
-
-    # Rollback proof: inject a failure AFTER the scalar/comparison/profile writes
-    # but BEFORE the Habitat linked rebind. The whole transaction must roll back
-    # byte-for-byte, including the marker and comparison tables.
-    before_rollback <- schema_digest()
-    rollback_expected <- c(
-      scalar = plan$tokens$scalar, comparison = plan$tokens$comparison,
-      profile = plan$profile_lineage$version, habitat = habitat_version,
-      reference = reference_version)
-    rollback_env_values <- c(
-      setNames(unname(rollback_expected), unname(BRIDGE_EXPECTED_ENV)),
-      setNames(facts_path, BRIDGE_FACTS_ENV),
-      setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
-      setNames("operator-dump-rollback", BRIDGE_DUMP_ACK_ENV))
-    fail_after_writes <- function(con, prepared, retired, tokens, ...) {
-      publish_bridge_snapshot(con, prepared, retired, tokens, ...,
-        writer = list(set_habitat_linked = function(new_linked)
-          stop("injected failure before Habitat rebind", call. = FALSE)))
-    }
-    capture.output(expect_error(run_offre_tc_bridge(
-      "publish", env = bridge_fake_env(rollback_env_values), con = connection,
-      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
-      publish = fail_after_writes), "injected failure before Habitat rebind"))
-    expect_identical(schema_digest(), before_rollback)
 
     residual <- DBI::dbGetQuery(connection, paste(
       "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'serving_it_%'",
