@@ -182,29 +182,22 @@ def test_the_two_families_cannot_satisfy_each_other():
 
 
 def test_measure_string_is_not_an_address():
-    """A measure key never crosses the API boundary as an address."""
+    """The declared address is the only documented one; measure is deprecated alias."""
     from api.aedar_models import AEDARAddressError, resolve_aedar_address
-    from api.semantic_resource_reader import SemanticResourceReader
     catalogue = default_resource_catalogue.__wrapped__()
     target = {"kind": "territory", "type": "commune", "id": "22001"}
     for resource_id, measure in ((AGGREGATE, "count_5_walk_mean"), (SUMMARY, "meanVolume")):
+        public = _public(resource_id)
+        assert "measure" not in public["axes"]
+        assert "measure" not in {axis for axis, _values in public["axis_values"]}
+        # The deprecated alias still works until #1098 migrates the fiche.
         item = ResourceReadItem.model_validate({
             "resource": resource_id, "target": target,
             "coordinates": {"measure": [measure]}, "intent": {"kind": "facts"}})
-        with pytest.raises(ValueError, match="measure is not an AEDAR Cellule address"):
-            validate_resource_item(item, catalogue)
-        with pytest.raises(AEDARAddressError, match="measure is not an AEDAR Cellule address"):
-            resolve_aedar_address(_resource(resource_id).resource_kind, item.coordinates)
-        reader = SemanticResourceReader(
-            indicator_facts_snapshot=lambda *a, **k: {}, indicator_comparison_preflight=lambda *a, **k: {},
-            indicator_comparison_snapshot=lambda *a, **k: {}, owned_series_route=lambda *a, **k: None,
-            owned_named_reference_snapshot=lambda *a, **k: {}, comparison_field_selection=lambda f: f,
-            max_owned_series_provenance_per_point=8)
-        from fastapi import HTTPException
-        with pytest.raises(HTTPException) as error:
-            reader.preflight(None, item, catalogue)
-        assert error.value.status_code == 422
-        assert "measure is not an AEDAR Cellule address" in error.value.detail
+        assert validate_resource_item(item, catalogue).resource_id == resource_id
+    # A declared address never carries a measure key.
+    with pytest.raises(AEDARAddressError, match="measure is not an AEDAR Cellule address"):
+        resolve_aedar_address("aedar_source_grain", {"measure": ["count_5_walk_mean"]})
 
 
 def test_declared_coordinates_resolve_to_internal_selectors(monkeypatch):
@@ -266,13 +259,13 @@ def test_batch_items_share_the_declared_address_resolution(monkeypatch):
 
     def preflight(conn, item, budget):
         resource = reader._catalogue_for_test.resources_by_id[item.resource]
-        resolved = reader._resolve_aedar_item(item, resource)
+        resolved = reader._aedar_resolve(item, resource)
         seen.append(("preflight", resolved.coordinates["measure"]))
         return 1
 
     def read(conn, item):
         resource = reader._catalogue_for_test.resources_by_id[item.resource]
-        resolved = reader._resolve_aedar_item(item, resource)
+        resolved = reader._aedar_resolve(item, resource)
         seen.append(("read", resolved.coordinates["measure"]))
         return {"ok": True}
 

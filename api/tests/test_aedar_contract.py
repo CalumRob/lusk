@@ -54,6 +54,12 @@ def test_aedar_summary_resource_has_an_independent_focal_contract_and_keeps_type
         "intent": {"kind": "facts"},
     })
     assert validate_resource_item(summary, catalogue).resource_kind == "aedar_territory_summary"
+    # The deprecated alias keeps the legacy two-summary-measure facts call that
+    # the fiche still makes today (until #1098).
+    legacy_summary = ResourceReadItem.model_validate({
+        **summary.model_dump(),
+        "coordinates": {"measure": ["meanVolume", "meanDiversity"]}})
+    assert validate_resource_item(legacy_summary, catalogue).resource_kind == "aedar_territory_summary"
     typed = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate",
         "target": {"kind": "territory", "type": "epci", "id": "E1"},
@@ -84,7 +90,7 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
         "resource": "aedar_territorial_aggregate", "target": target,
         "coordinates": {"context": ["epci"]}, "intent": {"kind": "facts"},
     })
-    with pytest.raises(ValueError, match="fixed_comparison intent"):
+    with pytest.raises(ValueError, match="coordinate axis is not declared for AEDAR"):
         validate_resource_item(context_as_coordinate, catalogue)
     undeclared_axis = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
@@ -786,6 +792,14 @@ def test_aedar_comparison_grants_rank_fields_per_intent():
                 "statistic": ["mean"]}
     summary = {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]}
     rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
+    # The deprecated alias keeps the legacy two-summary-measure selected
+    # comparison with the same rank grant, exactly as the fiche calls it.
+    legacy_summary = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": {"measure": ["meanDiversity", "meanVolume"]},
+        "fields": rank_fields,
+        "intent": {"kind": "selected_comparison", "members": members}})
+    assert validate_resource_item(legacy_summary, catalogue).resource_id == "aedar_territorial_aggregate"
     # Each family is addressed on its own resource; neither can answer the
     # other's Cellule.
     for resource_id, coordinates in (("aedar_territorial_aggregate", per_cell),

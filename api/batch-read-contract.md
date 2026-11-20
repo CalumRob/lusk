@@ -91,8 +91,15 @@ The guard-by-guard classification is generated in
 
 The catalogue is the source of truth for identifiers, capabilities, field
 projection, coordinate values and target levels. AEDAR is a producer-declared
-source-grain resource in the same single/batch grammar: `typequ` and `measure`
-are coordinates and fixed comparisons use the declared comparison context.
+source-grain resource in the same single/batch grammar: a Cellule is addressed
+by the declared coordinates `{typequ, horizon, mode, statistic}` on
+`aedar_territorial_aggregate` and `{horizon, mode, kind}` on
+`aedar_territory_summary` (#1076), and fixed comparisons use the declared
+comparison context (an intent facet, not a coordinate). The legacy `measure`
+coordinate remains accepted as a **deprecated alias** with its pre-#1076
+semantics ({`typequ`, `measure`} per-cell and `measure`-only summary readings on
+the aggregate) until #1098 migrates the fiche; it is not a declared address and
+is not advertised in discovery.
 AEDAR reference reads use the canonical territory-reference scope: commune EPCI
 and Bretagne values are direct source aggregates, density-class values come from
 the pooled producer artifact, and EPCI/departement same-level presets read the
@@ -177,7 +184,9 @@ are retired; they are not represented as semantic resources.
 ## AEDAR selected comparisons
 
 `aedar_territorial_aggregate` also accepts `selected_comparison` on a territory
-target with `typequ`/`measure` coordinates. The selection must be same-level as
+target, addressed by the declared `{typequ, horizon, mode, statistic}` Cellule
+coordinates (or the deprecated `{typequ, measure}` alias until #1098). The
+selection must be same-level as
 the focal territory: every member is resolved against the published territory
 reference in the same snapshot, and unknown, mistyped, mixed-level or partial
 members fail closed (404/422) naming the failed member. For each requested
@@ -211,9 +220,11 @@ separate signed `transit_gain` measure family is not part of this display
 inventory. Names are `<mode><horizon>Diversity` or `<mode><horizon>Volume`,
 except the existing car/15-minute names `meanDiversity` and `meanVolume`,
 which remain compatible. The producer contract declares all 40 as ranked
-high-is-better facets alongside the 312 per-cell measures. They use the
-existing `measure` coordinate without `typequ`. Direct territorial readings
-come from `aedar_territorial_aggregate`, while aggregate peer ranks read the
+high-is-better facets alongside the 312 per-cell measures. They are addressed
+by the declared summary Cellule `{horizon, mode, kind}` on
+`aedar_territory_summary`; the old `measure`-only form on the aggregate stays
+as the deprecated alias until #1098. Direct territorial readings come from
+`aedar_territorial_aggregate`, while aggregate peer ranks read the
 `aedar_territory_summary` projection (#938); fixed density-class reference
 readings are projected from the already-pooled density artifact and published
 with the comparison generation. Fixed density requests do not aggregate
@@ -257,10 +268,11 @@ TYPEQU observation still has to satisfy `0 ≤ n_observed ≤ n_addresses`.
 ### Fixed per-cell comparison ranks (#951)
 
 The same fixed intent serves the three rank fields for **per-cell** measures
-(a `typequ` + `measure` request). Owner decision 2026-11-10 supersedes #904's
-reference-only boundary for this intent; the aggregate-reading boundary is
-unchanged and the selected intent keeps its existing grant. For each requested
-`(typequ, measure)`:
+(addressed by the declared `{typequ, horizon, mode, statistic}` Cellule, or the
+deprecated `{typequ, measure}` alias until #1098). Owner decision 2026-11-10
+supersedes #904's reference-only boundary for this intent; the aggregate-reading
+boundary is unchanged and the selected intent keeps its existing grant. For each
+requested per-cell reading:
 
 - the focal's published value for that cell is read from
   `aedar_territorial_aggregate` in the same snapshot, alongside the declared
@@ -292,8 +304,8 @@ unchanged and the selected intent keeps its existing grant. For each requested
   semantics are untouched.
 
 Requesting no rank field returns the previous per-cell response exactly: no new
-fields are injected into the default projection. Mixing aggregate readings with
-per-cell measures in one request, or adding a `typequ` coordinate to an
+fields are injected into the default projection. Mixing the two families in one
+declared address (or in the deprecated alias), or attaching equipment to an
 aggregate reading, is still rejected with `422`.
 
 ## Declared-profile comparisons

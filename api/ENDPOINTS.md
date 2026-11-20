@@ -94,8 +94,8 @@ not here.
 
 ### AEDAR Cellules (#1076)
 
-The two AEDAR resources carry the same `cellule` block, declared in the
-producer semantic-resource contract rather than a theme page:
+The two AEDAR resources each carry a `cellule` block, declared in the producer
+semantic-resource contract rather than a theme page. Their axes differ:
 
 - `aedar_territorial_aggregate` declares four coordinates — `typequ` (the 235
   structured producer values: code, readable label, domain, subdomain, gamme
@@ -110,15 +110,28 @@ producer semantic-resource contract rather than a theme page:
   no summary. The car × 15 point is addressed as `car`/`15`/diversity or volume
   even though its legacy comparison-facet keys are `meanDiversity`/`meanVolume`;
   those legacy keys remain comparison facets and are never Cellule addresses.
-- The families are disjoint. A client addresses AEDAR by these declared
-  coordinates: `{typequ, horizon, mode, statistic}` for a per-cell Cellule,
-  `{horizon, mode, kind}` for a summary. The reader alone translates them to
-  the internal measure key. A `measure` coordinate is rejected by name at
-  admission, before any connection; no measure-key string crosses the API
-  boundary as an address. The legacy, measure-free `{typequ}` facts read still
-  returns every published measure of that equipment type; it never names a
-  measure. The retired `AEDAR_COMPARISON_MEASURE_KEYS` union is kept only as a
-  deprecated alias — its replacement is `resolve_aedar_address`.
+- The families are disjoint **on the declared address**. A client addresses
+  AEDAR by these declared coordinates: `{typequ, horizon, mode, statistic}` for
+  a per-cell Cellule, `{horizon, mode, kind}` for a summary. These are the only
+  documented addresses; the reader alone translates them to the internal
+  measure key, so a declared address never carries a measure-key string. A
+  summary point sent to the aggregate (or a per-cell point to the summary) is
+  refused by name. The legacy, measure-free `{typequ}` facts read still returns
+  every published measure of that equipment type; it never names a measure.
+
+**Deprecated `measure` alias.** Until #1098 migrates the fiche, `measure` is
+still accepted as a deprecated address alias on both resources, with its
+**pre-#1076 semantics** frozen: `{typequ, measure: [per-cell key]}` and
+`{measure: [summary key]}` on `aedar_territorial_aggregate` (the latter is a
+summary reading on the aggregate, exactly as the fiche calls it today), and
+`{measure: [summary key]}` on `aedar_territory_summary`. The alias keeps the
+old union selector — a mixed per-cell/summary set is still rejected, as are
+facts naming a summary key on the aggregate. It is not advertised as a declared
+coordinate in discovery and carries no family-separation or combination rules.
+**Removal condition:** #1098 migrates the fiche/AEDAR callers to declared
+Cellule coordinates, after which the alias and the deprecated
+`AEDAR_COMPARISON_MEASURE_KEYS` symbol are removed; declared coordinates then
+become the only accepted address.
 
 The Typequ universe pins the source sha256 of the INSEE registry, hierarchy and
 gamme sheet, so a stale committed projection fails discovery loudly. The gamme
