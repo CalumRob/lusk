@@ -98,6 +98,13 @@ export const routes = [
     component: IndicateursView,
     meta: { title: 'Indicateurs' },
   },
+  // PROTOTYPE — throwaway, never merge to main
+  {
+    path: '/prototype/atelier',
+    name: 'atelier-prototype',
+    component: () => import('../atelier/prototype/AtelierPrototypeView.vue'),
+    meta: { title: 'Atelier (prototype)' },
+  },
   {
     path: CAHIER_EXPORT_ROUTES.indicateur,
     name: 'indicateur',
