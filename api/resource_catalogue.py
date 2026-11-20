@@ -60,8 +60,8 @@ class IndicatorResource:
     # {"facet", "direction", "ranked"}.
     measure_facets: dict[str, dict] = field(default_factory=dict)
     # Addressable Cellule declaration for the Atelier (#1075). None for
-    # non-Cellule resources and for producers whose coordinate identity space
-    # is not yet declared coherently (see the exclusion constant below).
+    # non-Cellule resources and for producers that defer their coordinate
+    # space to the published descriptor (page.cellule.defer_coordinate_declaration).
     cellule: dict | None = None
 
 
@@ -166,6 +166,7 @@ def _axis_values(metadata, indicator_id, page, shapes, parent_indicator=None):
 # AEDAR grains/summaries, typed readings and observed collections are declared
 # by their own producer contracts and are out of scope for this declaration.
 _CELLULE_SHAPES = frozenset({"scalar", "declared_profile", "ordered_series"})
+
 
 def _cellule_labels(metadata, indicator_id, comparison):
     """Producer-owned readable labels for coordinate values.
