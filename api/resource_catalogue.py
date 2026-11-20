@@ -60,8 +60,8 @@ class IndicatorResource:
     # {"facet", "direction", "ranked"}.
     measure_facets: dict[str, dict] = field(default_factory=dict)
     # Addressable Cellule declaration for the Atelier (#1075). None for
-    # non-Cellule resources and for producers that defer their coordinate
-    # space to the published descriptor (page.cellule.defer_coordinate_declaration).
+    # non-Cellule resources and for producers with page.cellule.declare=false,
+    # which defer their coordinate space to the published descriptor.
     cellule: dict | None = None
 
 
@@ -186,16 +186,18 @@ def _cellule_detail_units(metadata, indicator_id):
     return dict(contract.get("detail_units") or {})
 
 
-def _cellule_series_axis_values(metadata, indicator_id, page):
-    """The producer-declared series axis, never a comparison facet.
+def _cellule_series_axis_values(comparison):
+    """The published series axis.
 
-    The publisher writes this route's ``axis_values`` into the series
-    descriptor. A producer that declares no series axis leaves its coordinates
-    to the descriptor; a comparison facet is not a coordinate declaration.
+    ``pipeline/R/publish_series.R:233`` writes the series descriptor's
+    ``axis_values`` from ``page$comparison$details`` for the annual, OCS-GE and
+    price series; ``comparison_axis_values`` (``page$trajectory$endpoints``) is
+    a separate comparison facet, not the coordinate axis. Reading the same
+    producer declaration avoids duplicating the value list in the catalogue.
+    A producer that declares no ``details`` leaves its coordinates to the
+    descriptor.
     """
-    route = (metadata.get("owned_series_routes") or {}).get(indicator_id) or {}
-    return tuple(str(value) for value in (route.get("axis_values")
-                                          or page.get("axis_values") or ()))
+    return tuple(str(value) for value in (comparison.get("details") or ()))
 
 
 def _cellule_values(axis, declared_values, comparison, scalar_unit, labels, detail_units):
@@ -256,9 +258,10 @@ def _cellule_declaration(metadata, indicator_id, page, axes, axis_values, unit, 
     if not _CELLULE_SHAPES.intersection(shapes):
         return None
     producer_cellule = page.get("cellule") or {}
-    if producer_cellule.get("defer_coordinate_declaration"):
+    if producer_cellule.get("declare") is False:
         # The producer, not the API, owns the decision to defer a coordinate
-        # space to the published descriptor (#1096 tracks the open cases).
+        # space to the published descriptor. Reasons are documented in
+        # api/ENDPOINTS.md, not shipped as prose in the browser projection.
         return None
     comparison = page.get("comparison") or {}
     labels = _cellule_labels(metadata, indicator_id, comparison)
@@ -266,7 +269,7 @@ def _cellule_declaration(metadata, indicator_id, page, axes, axis_values, unit, 
     declared_values = {axis: tuple(str(value) for value in values)
                        for axis, values in axis_values}
     if "ordered_series" in shapes:
-        series_values = _cellule_series_axis_values(metadata, indicator_id, page)
+        series_values = _cellule_series_axis_values(comparison)
         if not series_values or not axes:
             # No producer-declared series axis: declare nothing and defer to
             # the descriptor. A comparison facet is never a coordinate axis.
