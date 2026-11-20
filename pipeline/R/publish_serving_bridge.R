@@ -215,7 +215,18 @@ bridge_live_reader <- function() list(
     "FROM source_vintage")),
   territories = function(con) DBI::dbGetQuery(con,
     "SELECT territory_id, territory_type FROM territory_reference"),
-  reference_rows = function(con) DBI::dbGetQuery(con, "SELECT * FROM territory_reference"))
+  reference_rows = function(con) DBI::dbGetQuery(con, "SELECT * FROM territory_reference"),
+  profile_descriptors = function(con) DBI::dbGetQuery(con,
+    "SELECT * FROM profile_descriptor"),
+  profile_sources = function(con) DBI::dbGetQuery(con,
+    "SELECT indicator_id, source_id FROM profile_descriptor_source"),
+  profile_axes = function(con) DBI::dbGetQuery(con, "SELECT * FROM profile_axis"),
+  profile_facts = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, territory_id, territory_type, detail_key, sex_key,",
+    "value, status FROM profile_observation")),
+  profile_provenance = function(con) DBI::dbGetQuery(con, paste(
+    "SELECT indicator_id, territory_id, detail_key, sex_key, source_id, vintage_id",
+    "FROM profile_observation_source")))
 
 read_live_scalar_projection <- function(con, reader = bridge_live_reader()) {
   facts <- reader$facts(con)
@@ -434,33 +445,36 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
        comparison_projection = comparison)
 }
 
-# Marker-only rebind of the two chained descriptor fields. No profile fact,
-# selected-reading row or unrelated owner is rewritten by the bridge. The WHERE
-# clauses use the verified live tokens, so a concurrent move breaks the UPDATE
-# and the whole transaction rolls back.
-bridge_marker_writer <- function(con, old_scalar, old_linked) {
+# Marker-only rebind of the Habitat linked token. The declared-profile binding
+# is written by the NORMAL registered profile publisher together with its
+# recomputed hash lineage. The WHERE clause uses the verified live linked token,
+# so a concurrent move breaks the UPDATE and the whole transaction rolls back.
+bridge_marker_writer <- function(con, old_linked) {
   list(
-    set_profile_scalar_binding = function(new_scalar) DBI::dbExecute(con, paste(
-      "UPDATE profile_descriptor SET required_scalar_version=$1",
-      "WHERE required_scalar_version=$2"),
-      params = list(new_scalar, old_scalar)),
-    set_habitat_linked = function(new_linked) DBI::dbExecute(con, paste(
-      "UPDATE selected_reading_descriptor SET linked_content_version=$1",
-      "WHERE linked_content_version=$2"),
-      params = list(new_linked, old_linked)))
+    set_habitat_linked = function(new_linked) {
+      changed <- DBI::dbExecute(con, paste(
+        "UPDATE selected_reading_descriptor SET linked_content_version=$1",
+        "WHERE linked_content_version=$2"),
+        params = list(new_linked, old_linked))
+      if (!identical(as.integer(changed), 1L))
+        stop("Habitat linked-token rebind affected ", changed,
+             " rows; expected exactly one. REFUSED, rolling back.", call. = FALSE)
+      invisible(TRUE)
+    })
 }
 
 publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
                                     transaction = with_publication_transaction,
                                     scalar_adapter = NULL,
                                     comparison_adapter = NULL,
+                                    profile_adapter = NULL,
                                     writer = NULL) {
   if (is.null(scalar_adapter)) scalar_adapter <- scalar_postgres_adapter(con)
   if (is.null(comparison_adapter)) comparison_adapter <- scalar_comparison_postgres_adapter(con)
+  if (is.null(profile_adapter)) profile_adapter <- profile_postgres_adapter(con)
   if (is.null(writer))
     writer <- bridge_marker_writer(
-      con, expected[["scalar"]],
-      plan$markers$selected_descriptor$linked_content_version[[1L]])
+      con, plan$markers$selected_descriptor$linked_content_version[[1L]])
   registry <- register_scalar_publisher(list(), "bridge_scalar_snapshot",
     project = function(canonical) canonical,
     publish = function(projection, db, version) db$replace(projection, version))
@@ -476,9 +490,27 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
            call. = FALSE)
     comparison <- publish_registered_scalar_comparison(
       plan$tokens$comparison_projection, comparison_adapter)
-    writer$set_profile_scalar_binding(scalar$content_version)
+    # The scalar-binding change cascades into the declared-profile descriptor
+    # hash, the declared_profile marker and the profile comparison marker. The
+    # NORMAL registered profile publisher recomputes all three (and rewrites the
+    # comparison rows with the new version) from the live-read, rebound profile
+    # projections — the same producer functions the #1068 artifact path uses.
+    profile <- NULL
+    if (!is.null(plan$profiles) && length(plan$profiles)) {
+      base <- names(plan$profiles)[[1L]]
+      registry <- register_profile_publisher(list(), "bridge_declared_profiles",
+        project = function(canonical) canonical,
+        publish = function(projection, db, version) db$replace(projection, version))
+      profile <- publish_registered_profile(
+        registry, "bridge_declared_profiles", plan$profiles[[base]], profile_adapter,
+        additional_projections = plan$profiles[setdiff(names(plan$profiles), base)])
+      if (!identical(as.character(profile$content_version),
+                     as.character(plan$profile_lineage$version)))
+        stop("The written profile token differs from the recomputed lineage",
+             call. = FALSE)
+    }
     writer$set_habitat_linked(plan$tokens$linked)
-    invisible(list(scalar = scalar, comparison = comparison,
+    invisible(list(scalar = scalar, comparison = comparison, profile = profile,
                    linked = plan$tokens$linked))
   })
 }
@@ -530,14 +562,166 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   tokens <- bridge_compute_new_tokens(
     built$projection, live_reader$reference_rows(con), expected[["reference"]],
     markers, expected)
+  # The scalar token change also rebinds every scalar-backed declared profile.
+  # Reconstruct those owners from the live rows and recompute their hash lineage
+  # through the SAME producer functions the #1068 artifact path uses.
+  profiles <- bridge_read_live_profile_projections(
+    con, reader = live_reader, metadata = bridge_profile_contracts(),
+    new_scalar = tokens$scalar)
+  lineage <- bridge_profile_lineage_tokens(
+    profiles, live_reader$reference_rows(con), expected[["reference"]])
   plan <- list(mode = mode, projection = built$projection, live = live,
                diff = diff, tokens = tokens, markers = markers,
-               expected = expected, retired_ids = retired_ids)
+               expected = expected, retired_ids = retired_ids,
+               profiles = profiles, profile_lineage = lineage)
   bridge_print_report(plan, mode)
 
   if (identical(mode, "dry-run")) return(invisible(plan))
   assert_bridge_publish_opt_in(env)
   assert_bridge_dump_confirmed(env)
   publish(con, plan, retired_ids, expected)
+}
+
+
+# --- Review fix 4: profile hash lineage from live-read projections ------------
+# The DPE descriptor hash, the declared_profile marker and the profile comparison
+# marker all chain from required_scalar_version. The #1068 path refreshes the
+# profile ARTIFACT metadata-only and re-runs the registered profile publisher.
+# Here the artifacts are lost, so the same producer functions run over profile
+# projections read back from the LIVE serving rows. No hash is hand-built.
+bridge_recompute_profile_descriptor_version <- function(owner, descriptor, axes,
+                                                        metadata) {
+  binding <- descriptor$required_scalar_version
+  if (is.null(binding) || length(binding) == 0L || is.na(binding))
+    return(descriptor$descriptor_version)
+  contracts <- if (!is.null(metadata$profile_contracts)) metadata$profile_contracts else metadata
+  contract <- contracts[[owner]]
+  if (!is.list(contract))
+    stop("Recomputing profile lineage requires the producer contract for ", owner,
+         call. = FALSE)
+  without_version <- descriptor
+  without_version$descriptor_version <- NULL
+  # Exactly the hash input of project_dpe_profile() / the producer owners.
+  profile_content_version(list(without_version, axes, contract))
+}
+
+bridge_read_live_profile_projections <- function(con, reader = bridge_live_reader(),
+                                                 metadata, new_scalar) {
+  rows <- reader$profile_descriptors(con)
+  if (!is.data.frame(rows) || !nrow(rows))
+    stop("Bridge cannot rebind profile lineage: no live declared-profile rows",
+         call. = FALSE)
+  sources <- reader$profile_sources(con)
+  axes_rows <- reader$profile_axes(con)
+  facts <- reader$profile_facts(con)
+  provenance <- reader$profile_provenance(con)
+  vintages <- reader$vintages(con)
+  datasets <- reader$datasets(con)
+  territories <- reader$territories(con)
+  profiles <- lapply(seq_len(nrow(rows)), function(i) {
+    row <- rows[i, , drop = FALSE]
+    owner <- as.character(row$indicator_id[[1L]])
+    owner_axes <- axes_rows[axes_rows$indicator_id == owner,
+                            c("axis_name", "axis_key", "label", "ordinal", "unit"),
+                            drop = FALSE]
+    owner_axes$axis_name <- as.character(owner_axes$axis_name)
+    owner_axes$axis_key <- as.character(owner_axes$axis_key)
+    owner_axes$ordinal <- as.integer(owner_axes$ordinal)
+    rownames(owner_axes) <- NULL
+    details <- owner_axes$axis_key[owner_axes$axis_name == "detail"]
+    sexes <- owner_axes$axis_key[owner_axes$axis_name == "sex"]
+    scalar_bound <- !is.na(row$required_scalar_version[[1L]])
+    descriptor <- list(
+      indicator_id = owner, theme_id = as.character(row$theme_id[[1L]]),
+      levels = as.character(row$allowed_levels[[1L]]),
+      details = details, sexes = sexes,
+      label = as.character(row$label[[1L]]), unit = as.character(row$unit[[1L]]),
+      source = as.character(sources$source_id[sources$indicator_id == owner]),
+      comparison_detail = if (is.na(row$comparison_detail[[1L]])) NA_character_ else as.character(row$comparison_detail[[1L]]),
+      comparison_sex = if (is.na(row$comparison_sex[[1L]])) NA_character_ else as.character(row$comparison_sex[[1L]]),
+      comparison_direction = as.character(row$comparison_direction[[1L]]),
+      completeness = as.character(row$completeness[[1L]]))
+    if (scalar_bound) {
+      descriptor$comparison_scalar <- as.character(row$comparison_scalar[[1L]])
+      descriptor$required_scalar_version <- as.character(new_scalar)
+      descriptor$descriptor_version <- bridge_recompute_profile_descriptor_version(
+        owner, descriptor, owner_axes, metadata)
+    } else {
+      descriptor$denominator_semantics <- if (is.na(row$denominator_semantics[[1L]])) NULL else as.character(row$denominator_semantics[[1L]])
+      descriptor$detail_units_required <- isTRUE(row$detail_units_required[[1L]])
+      descriptor$descriptor_version <- as.character(row$descriptor_version[[1L]])
+    }
+    owner_facts <- facts[facts$indicator_id == owner, , drop = FALSE]
+    owner_facts <- data.frame(
+      territory_id = as.character(owner_facts$territory_id),
+      territory_type = as.character(owner_facts$territory_type),
+      detail = as.character(owner_facts$detail_key),
+      sex = as.character(owner_facts$sex_key),
+      value = as.numeric(owner_facts$value),
+      status = as.character(owner_facts$status), stringsAsFactors = FALSE)
+    rownames(owner_facts) <- NULL
+    used_sources <- unique(as.character(provenance$source_id[
+      provenance$indicator_id == owner]))
+    eligible <- unique(territories[territories$territory_type %in% descriptor$levels,
+                                   c("territory_id", "territory_type"), drop = FALSE])
+    rownames(eligible) <- NULL
+    profile_provenance <- provenance[provenance$indicator_id == owner, , drop = FALSE]
+    profile_datasets <- datasets[datasets$source_id %in% used_sources, , drop = FALSE]
+    profile_vintages <- vintages[vintages$source_id %in% used_sources, , drop = FALSE]
+    rownames(profile_provenance) <- rownames(profile_datasets) <- rownames(profile_vintages) <- NULL
+    list(facts = owner_facts, axes = owner_axes, descriptor = descriptor,
+         provenance = profile_provenance, datasets = profile_datasets,
+         vintages = profile_vintages, eligible_territories = eligible)
+  })
+  names(profiles) <- as.character(rows$indicator_id)
+  profiles
+}
+
+bridge_rebind_profile_lineage <- function(profiles, metadata, new_scalar) {
+  rebound <- profiles
+  for (owner in names(profiles)) {
+    descriptor <- profiles[[owner]]$descriptor
+    if (!is.null(descriptor$required_scalar_version)) {
+      descriptor$required_scalar_version <- as.character(new_scalar)
+      descriptor$descriptor_version <- bridge_recompute_profile_descriptor_version(
+        owner, descriptor, profiles[[owner]]$axes, metadata)
+      rebound[[owner]]$descriptor <- descriptor
+    }
+  }
+  rebound
+}
+
+bridge_profile_lineage_tokens <- function(profiles, reference_rows,
+                                          reference_version) {
+  # Mirror publish_registered_profile()'s assembly EXACTLY: the base projection
+  # comes first (unnamed in the c() call), additional owners keep their names,
+  # then the list is ordered by declared indicator id. Reordering or renaming
+  # changes the RDS hash, so the token must be built the same way.
+  base <- names(profiles)[[1L]]
+  assembled <- c(list(profiles[[base]]), profiles[setdiff(names(profiles), base)])
+  ids <- vapply(assembled, function(p) p$descriptor$indicator_id, character(1))
+  assembled <- assembled[order(ids)]
+  projection <- if (length(assembled) == 1L) assembled[[1L]] else list(profiles = assembled)
+  version <- profile_content_version(projection)
+  comparisons <- project_declared_profile_comparisons(
+    assembled, reference_rows, version, reference_version)
+  list(version = version, comparison_version = profile_content_version(comparisons),
+       comparison = comparisons, projection = projection)
+}
+
+
+# Profile owners span themes; gather their producer contracts from the canonical
+# metadata files instead of assuming a single theme owns every declared profile.
+bridge_profile_contracts <- function() {
+  directory <- system.file("extdata", "theme-metadata", package = "lusk")
+  files <- list.files(directory, pattern = "^theme_.*\\.json$", full.names = TRUE)
+  if (!length(files)) stop("No canonical theme metadata for profile lineage", call. = FALSE)
+  contracts <- list()
+  for (path in files) {
+    metadata <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+    for (name in names(metadata$profile_contracts %||% list()))
+      contracts[[name]] <- metadata$profile_contracts[[name]]
+  }
+  contracts
 }
 

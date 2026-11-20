@@ -247,8 +247,6 @@ test_that("the write composes the registered publishers inside ONE transaction",
   expect_identical(write$comparison$content_version, tokens$comparison)
   expect_identical(scalar_db$state$retired, retained_scalar_retirement_ids())
   expect_identical(comparison_db$state$replaced, tokens$comparison)
-  expect_identical(writer$state$profile, "scalar-live")
-  expect_identical(writer$state$profile_new, tokens$scalar)
   expect_identical(writer$state$linked_new, tokens$linked)
 })
 
@@ -396,5 +394,103 @@ test_that("a real write requires the explicit LUSK_PUBLISH_OFFRE_TC_BRIDGE opt-i
   expect_identical(write_calls, 0L)
   run_write(bridge_fake_env(c(base, setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV))))
   expect_identical(write_calls, 1L)
+})
+
+
+# --- Review fix: profile hash lineage from live-read projections --------------
+
+test_that("the DPE descriptor version is recomputed with the producer hash function", {
+  expected <- bridge_fixture_expected_tokens()
+  profiles <- bridge_live_profile_fixture(expected[["scalar"]])
+  dpe <- profiles$distribution_dpe
+  new_scalar <- "scalar-new"
+  descriptor <- dpe$descriptor
+  descriptor$required_scalar_version <- new_scalar
+  contract <- lire_theme_metadata("habitat")$profile_contracts$distribution_dpe
+  want <- profile_content_version(list(within(descriptor, rm(descriptor_version)),
+                                       dpe$axes, contract))
+  got <- bridge_recompute_profile_descriptor_version(
+    "distribution_dpe", descriptor, dpe$axes, lire_theme_metadata("habitat"))
+  expect_identical(got, want)
+  expect_false(identical(got, dpe$descriptor$descriptor_version))
+})
+
+test_that("the live profile loader rebinds only the scalar token and descriptor hash", {
+  expected <- bridge_fixture_expected_tokens()
+  profiles <- bridge_live_profile_fixture(expected[["scalar"]])
+  rows <- bridge_db_rows_from_profile_projections(profiles)
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()),
+                               profile_rows = rows)
+  loaded <- bridge_read_live_profile_projections(
+    NULL, reader = reader, metadata = lire_theme_metadata("habitat"),
+    new_scalar = "scalar-new")
+  expect_setequal(names(loaded), c("distribution_dpe", "structure_age"))
+  for (owner in names(profiles)) {
+    expect_identical(loaded[[owner]]$facts, profiles[[owner]]$facts)
+    expect_identical(loaded[[owner]]$axes, profiles[[owner]]$axes)
+    expect_identical(loaded[[owner]]$provenance, profiles[[owner]]$provenance)
+  }
+  dpe <- loaded$distribution_dpe
+  expect_identical(dpe$descriptor$required_scalar_version, "scalar-new")
+  contract <- lire_theme_metadata("habitat")$profile_contracts$distribution_dpe
+  d <- dpe$descriptor; d$descriptor_version <- NULL
+  expect_identical(dpe$descriptor$descriptor_version,
+                   profile_content_version(list(d, dpe$axes, contract)))
+  # The non-scalar-bound owner keeps its live descriptor hash.
+  expect_identical(loaded$structure_age$descriptor$descriptor_version,
+                   profiles$structure_age$descriptor$descriptor_version)
+  expect_null(loaded$structure_age$descriptor$required_scalar_version)
+})
+
+test_that("profile marker and comparison tokens equal a fresh producer recompute", {
+  expected <- bridge_fixture_expected_tokens()
+  profiles <- bridge_live_profile_fixture(expected[["scalar"]])
+  rebound <- bridge_rebind_profile_lineage(
+    profiles, lire_theme_metadata("habitat"), "scalar-new")
+  tokens <- bridge_profile_lineage_tokens(
+    rebound, bridge_fixture_reference_rows(), expected[["reference"]])
+
+  base <- names(rebound)[[1L]]
+  assembled <- c(list(rebound[[base]]), rebound[setdiff(names(rebound), base)])
+  ids <- vapply(assembled, function(p) p$descriptor$indicator_id, character(1))
+  assembled <- assembled[order(ids)]
+  want_version <- profile_content_version(list(profiles = assembled))
+  want_comparison <- project_declared_profile_comparisons(
+    assembled, bridge_fixture_reference_rows(), want_version, expected[["reference"]])
+  expect_identical(tokens$version, want_version)
+  expect_identical(tokens$comparison_version, profile_content_version(want_comparison))
+  expect_false(identical(tokens$version, expected[["profile"]]))
+})
+
+test_that("the registered profile publisher writes the recomputed lineage in the same transaction", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(
+    live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
+    retained_scalar_retirement_ids())
+  tokens <- bridge_compute_new_tokens(
+    built$projection, bridge_fixture_reference_rows(), expected[["reference"]],
+    markers = bridge_fixture_markers(expected), expected = expected)
+  profiles <- bridge_rebind_profile_lineage(
+    bridge_live_profile_fixture(expected[["scalar"]]),
+    lire_theme_metadata("habitat"), tokens$scalar)
+  lineage <- bridge_profile_lineage_tokens(
+    profiles, bridge_fixture_reference_rows(), expected[["reference"]])
+  plan <- list(projection = built$projection, tokens = tokens,
+               markers = bridge_fixture_markers(expected), expected = expected,
+               profiles = profiles, profile_lineage = lineage)
+  profile_db <- bridge_fake_profile_adapter(expected[["profile"]], tokens$scalar)
+  calls <- 0L
+  write <- publish_bridge_snapshot(
+    NULL, plan, retained_scalar_retirement_ids(), expected,
+    transaction = function(con, expr) { calls <<- calls + 1L; force(expr) },
+    scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+    comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
+    writer = bridge_fake_marker_writer(expected[["scalar"]]),
+    profile_adapter = profile_db)
+  expect_identical(calls, 1L)
+  expect_identical(profile_db$state$replaced, lineage$version)
+  expect_identical(profile_db$state$comparisons, lineage$version)
+  expect_identical(write$profile$content_version, lineage$version)
 })
 

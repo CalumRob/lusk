@@ -187,15 +187,25 @@ bridge_db_rows_from_projection <- function(projection) {
     reference_rows = reference)
 }
 
-bridge_fake_reader <- function(rows) list(
-  facts = function(con) rows$facts,
-  descriptors = function(con) rows$descriptors,
-  descriptor_sources = function(con) rows$descriptor_sources,
-  provenance = function(con) rows$provenance,
-  datasets = function(con) rows$datasets,
-  vintages = function(con) rows$vintages,
-  territories = function(con) rows$territories,
-  reference_rows = function(con) rows$reference_rows)
+bridge_fake_reader <- function(rows, profile_rows = NULL) {
+  if (is.null(profile_rows))
+    profile_rows <- bridge_db_rows_from_profile_projections(bridge_live_profile_fixture())
+  c(list(
+    facts = function(con) rows$facts,
+    descriptors = function(con) rows$descriptors,
+    descriptor_sources = function(con) rows$descriptor_sources,
+    provenance = function(con) rows$provenance,
+    datasets = function(con) rows$datasets,
+    vintages = function(con) rows$vintages,
+    territories = function(con) rows$territories,
+    reference_rows = function(con) rows$reference_rows),
+    list(
+      profile_descriptors = function(con) profile_rows$profile_descriptors,
+      profile_sources = function(con) profile_rows$profile_sources,
+      profile_axes = function(con) profile_rows$profile_axes,
+      profile_facts = function(con) profile_rows$profile_facts,
+      profile_provenance = function(con) profile_rows$profile_provenance))
+}
 
 bridge_fake_env <- function(values) function(name, unset = "") {
   if (name %in% names(values)) values[[name]] else unset
@@ -251,16 +261,153 @@ bridge_fake_comparison_adapter <- function(old_version, input_scalar = "scalar-n
     state = state)
 }
 
-bridge_fake_marker_writer <- function(old_scalar = "scalar-live") {
+bridge_fake_marker_writer <- function(old_linked = NULL) {
   state <- new.env(parent = emptyenv())
-  state$profile <- old_scalar
   list(
-    set_profile_scalar_binding = function(new_scalar) {
-      state$profile_new <- new_scalar
-      invisible(TRUE)
-    },
     set_habitat_linked = function(new_linked) {
       state$linked_new <- new_linked
+      invisible(TRUE)
+    },
+    state = state)
+}
+
+
+# Live declared-profile projections for the lineage proof. Descriptor field
+# order intentionally matches project_dpe_profile()/project_structure_age_profile()
+# because those exact lists are the hash input of profile_content_version().
+bridge_live_profile_fixture <- function(scalar_version = "scalar-live") {
+  habitat <- lire_theme_metadata("habitat")
+  demographie <- lire_theme_metadata("demographie")
+  dpe_contract <- habitat$profile_contracts$distribution_dpe
+  dpe_axes <- data.frame(
+    axis_name = c("detail", "detail"), axis_key = c("ancien", "recent"),
+    label = c("Ancien", "RÃ©cent"), ordinal = c(0L, 1L), unit = "%",
+    stringsAsFactors = FALSE)
+  dpe_descriptor <- list(
+    indicator_id = "distribution_dpe", theme_id = "habitat", levels = "commune",
+    details = c("ancien", "recent"), sexes = character(), label = "DPE", unit = "%",
+    source = "fixture_source", comparison_detail = NA_character_,
+    comparison_sex = NA_character_, comparison_direction = "low",
+    comparison_scalar = "part_passoires", required_scalar_version = scalar_version,
+    completeness = "dense_complete")
+  dpe_descriptor$descriptor_version <- profile_content_version(
+    list(dpe_descriptor, dpe_axes, dpe_contract))
+  communes <- c("29001", "29002", "35001")
+  dpe_facts <- data.frame(
+    territory_id = rep(communes, each = 2L), territory_type = "commune",
+    detail = rep(c("ancien", "recent"), length(communes)), sex = "",
+    value = rep(c(0.3, 0.7), length(communes)), status = "measured",
+    stringsAsFactors = FALSE)
+  dpe_provenance <- data.frame(
+    indicator_id = "distribution_dpe", territory_id = rep(communes, each = 2L),
+    detail_key = rep(c("ancien", "recent"), length(communes)), sex_key = "",
+    source_id = "fixture_source", vintage_id = "fixture/2025",
+    stringsAsFactors = FALSE)
+
+  structure_axes <- data.frame(
+    axis_name = "detail", axis_key = "jeune", label = "Jeune", ordinal = 0L,
+    unit = "%", stringsAsFactors = FALSE)
+  structure_descriptor <- list(
+    indicator_id = "structure_age", theme_id = "demographie", levels = "commune",
+    details = "jeune", sexes = character(), label = "Structure", unit = "%",
+    source = "fixture_source", comparison_detail = "jeune",
+    comparison_sex = NA_character_, comparison_direction = "high",
+    completeness = "dense_complete")
+  structure_descriptor$descriptor_version <- profile_content_version(
+    list(structure_descriptor, structure_axes))
+  structure_facts <- data.frame(
+    territory_id = communes, territory_type = "commune", detail = "jeune",
+    sex = "", value = c(0.25, 0.30, 0.20), status = "measured",
+    stringsAsFactors = FALSE)
+  structure_provenance <- data.frame(
+    indicator_id = "structure_age", territory_id = communes, detail_key = "jeune",
+    sex_key = "", source_id = "fixture_source", vintage_id = "fixture/2025",
+    stringsAsFactors = FALSE)
+
+  vintage <- data.frame(
+    source_id = "fixture_source", vintage_id = "fixture/2025", version = "fixture",
+    reference_date = as.Date("2025-01-01"), publication_date = as.Date("2025-01-02"),
+    stringsAsFactors = FALSE)
+  dataset <- data.frame(source_id = "fixture_source", name = "Fixture source",
+                        stringsAsFactors = FALSE)
+  eligible <- data.frame(territory_id = communes, territory_type = "commune",
+                         stringsAsFactors = FALSE)
+  make <- function(descriptor, axes, facts, provenance) list(
+    facts = facts, axes = axes, descriptor = descriptor, provenance = provenance,
+    datasets = dataset, vintages = vintage, eligible_territories = eligible)
+  profiles <- list(
+    distribution_dpe = make(dpe_descriptor, dpe_axes, dpe_facts, dpe_provenance),
+    structure_age = make(structure_descriptor, structure_axes, structure_facts,
+                         structure_provenance))
+  profiles
+}
+
+# Shape the profile projections exactly as the serving tables hold them, so the
+# read-only R loader can be exercised without a database.
+bridge_db_rows_from_profile_projections <- function(profiles) {
+  descriptors <- do.call(rbind, lapply(profiles, function(p) {
+    d <- p$descriptor
+    data.frame(
+      indicator_id = d$indicator_id, label = d$label, unit = d$unit,
+      allowed_levels = I(list(as.character(d$levels))),
+      completeness = d$completeness, descriptor_version = d$descriptor_version,
+      denominator_semantics = if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics,
+      detail_units_required = isTRUE(d$detail_units_required),
+      comparison_detail = if (is.null(d$comparison_detail)) NA_character_ else d$comparison_detail,
+      comparison_sex = if (is.null(d$comparison_sex)) NA_character_ else d$comparison_sex,
+      comparison_direction = d$comparison_direction,
+      theme_id = d$theme_id,
+      comparison_scalar = if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
+      required_scalar_version = if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version,
+      stringsAsFactors = FALSE)
+  }))
+  rownames(descriptors) <- NULL
+  sources <- do.call(rbind, lapply(profiles, function(p)
+    data.frame(indicator_id = p$descriptor$indicator_id,
+               source_id = as.character(p$descriptor$source), stringsAsFactors = FALSE)))
+  axes <- do.call(rbind, lapply(names(profiles), function(owner) {
+    a <- profiles[[owner]]$axes
+    a$indicator_id <- owner
+    a
+  }))
+  facts <- do.call(rbind, lapply(names(profiles), function(owner) {
+    f <- profiles[[owner]]$facts
+    data.frame(indicator_id = owner, territory_id = f$territory_id,
+               territory_type = f$territory_type, detail_key = f$detail,
+               sex_key = f$sex, value = f$value, status = f$status,
+               stringsAsFactors = FALSE)
+  }))
+  provenance <- do.call(rbind, lapply(profiles, `[[`, "provenance"))
+  list(profile_descriptors = descriptors, profile_sources = sources,
+       profile_axes = axes, profile_facts = facts,
+       profile_provenance = provenance)
+}
+
+# A fake profile adapter for publish_registered_profile(); records the exact
+# version/lineage the registered publisher would send to PostgreSQL.
+bridge_fake_profile_adapter <- function(old_version = "profile-live",
+                                        scalar_version = "scalar-live") {
+  state <- new.env(parent = emptyenv())
+  state$replaced <- NULL
+  state$comparisons <- NULL
+  list(
+    transaction = function(expr) force(expr),
+    lock = function(owner) invisible(NULL),
+    marker = function(name) data.frame(
+      content_version = if (identical(name, "scalar_observation")) scalar_version else old_version,
+      reference_content_version = "reference-live", stringsAsFactors = FALSE),
+    reference_marker = function() data.frame(
+      content_version = "reference-live", row_count = 5L, actual_rows = 5L,
+      stringsAsFactors = FALSE),
+    validate_territories = function(territories, descriptor) invisible(TRUE),
+    validate_scalar_facet = function(descriptor) invisible(TRUE),
+    set_reference_version = function(version) invisible(NULL),
+    prepare_comparisons = function(profiles, version, reference_version) {
+      state$comparisons <- version
+      list(stale = TRUE, projection = NULL)
+    },
+    replace = function(projection, version) {
+      state$replaced <- version
       invisible(TRUE)
     },
     state = state)
