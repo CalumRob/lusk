@@ -458,7 +458,7 @@ bridge_rebind_linked_version <- function(live_linked, live_tokens, new_tokens) {
 }
 
 bridge_compute_new_tokens <- function(projection, reference_rows, reference_version,
-                                      markers, expected) {
+                                      markers, expected, profile_version = NULL) {
   scalar_version <- scalar_content_version(projection)
   comparison <- project_scalar_comparisons(
     projection, reference_rows,
@@ -466,8 +466,12 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
     reference_content_version = reference_version)
   live_linked <- markers$selected_descriptor$linked_content_version[[1L]]
   live_tokens <- expected[c("profile", "scalar", "reference")]
-  new_tokens <- c(profile = expected[["profile"]], scalar = scalar_version,
-                  reference = reference_version)
+  # The profile publisher advances declared_profile's content version. The
+  # linked token MUST chain to that NEW profile version (the producer's formula),
+  # otherwise the state we write fails the very chain check we use to read it.
+  new_tokens <- c(profile = if (is.null(profile_version)) expected[["profile"]]
+                  else as.character(profile_version),
+                  scalar = scalar_version, reference = reference_version)
   list(scalar = scalar_version, comparison = comparison$content_version,
        reference = reference_version,
        linked = bridge_rebind_linked_version(live_linked, live_tokens, new_tokens),
@@ -657,15 +661,13 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
     live, fresh_rows, metadata, retired_ids,
     offre_tc_id = scope$indicators[[1L]])
   diff <- assert_bridge_round_trip(live, built$projection, built$affected)
-  tokens <- bridge_compute_new_tokens(
-    built$projection, live_reader$reference_rows(con), expected[["reference"]],
-    markers, expected)
+  scalar_version <- scalar_content_version(built$projection)
   # The scalar token change also rebinds every scalar-backed declared profile.
   # Reconstruct those owners from the live rows and recompute their hash lineage
   # through the SAME producer functions the #1068 artifact path uses.
   profiles <- bridge_read_live_profile_projections(
     con, reader = live_reader, metadata = bridge_profile_contracts(),
-    new_scalar = tokens$scalar)
+    new_scalar = scalar_version)
   # The registered profile publisher rewrites every profile row. Prove first
   # that the reconstructed projections are exactly the live rows (apart from the
   # declared token changes), otherwise the rewrite could silently change data.
@@ -673,6 +675,11 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   assert_bridge_profile_round_trip(profiles, live_profile_rows)
   lineage <- bridge_profile_lineage_tokens(
     profiles, live_reader$reference_rows(con), expected[["reference"]])
+  # Chain the Habitat linked token to the NEW declared_profile version the
+  # profile publisher is about to write, not to the pre-write marker.
+  tokens <- bridge_compute_new_tokens(
+    built$projection, live_reader$reference_rows(con), expected[["reference"]],
+    markers, expected, profile_version = lineage$version)
   plan <- list(mode = mode, projection = built$projection, live = live,
                diff = diff, tokens = tokens, markers = markers,
                expected = expected, retired_ids = retired_ids,

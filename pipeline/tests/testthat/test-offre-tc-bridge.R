@@ -1391,3 +1391,88 @@ test_that("SQL lint rejects bare quote() and hand-built identifiers", {
   }
 })
 
+
+# --- Review round 8: linked-token chain must match producer + #1068 guard ----
+
+test_that("bridge linked token equals the producer's own formula", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  scalar_version <- scalar_content_version(built$projection)
+  profiles <- bridge_read_live_profile_projections(NULL,
+    reader = bridge_fake_reader(bridge_db_rows_from_projection(live),
+      profile_rows = bridge_db_rows_from_profile_projections(
+        bridge_live_profile_fixture(expected[["scalar"]]))),
+    metadata = lire_theme_metadata("habitat"), new_scalar = scalar_version)
+  lineage <- bridge_profile_lineage_tokens(profiles, bridge_fixture_reference_rows(),
+                                           expected[["reference"]])
+  tokens <- bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
+    expected[["reference"]], bridge_fixture_markers(expected), expected,
+    profile_version = lineage$version)
+
+  producer <- retained_selected_linked_version(
+    list(linked_content_version = "canonical"), lineage$version, tokens$scalar,
+    expected[["reference"]])
+  expect_identical(tokens$linked, producer)
+  expect_identical(tokens$linked, paste("canonical", lineage$version,
+                                         tokens$scalar, expected[["reference"]], sep = "-"))
+})
+
+test_that("the #1068 marker verifier accepts the state a bridge write produces", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture()
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
+    bridge_fixture_metadata(), retained_scalar_retirement_ids())
+  scalar_version <- scalar_content_version(built$projection)
+  profiles <- bridge_read_live_profile_projections(NULL,
+    reader = bridge_fake_reader(bridge_db_rows_from_projection(live),
+      profile_rows = bridge_db_rows_from_profile_projections(
+        bridge_live_profile_fixture(expected[["scalar"]]))),
+    metadata = lire_theme_metadata("habitat"), new_scalar = scalar_version)
+  lineage <- bridge_profile_lineage_tokens(profiles, bridge_fixture_reference_rows(),
+                                           expected[["reference"]])
+  tokens <- bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
+    expected[["reference"]], bridge_fixture_markers(expected), expected,
+    profile_version = lineage$version)
+
+  markers <- bridge_fixture_markers(expected)
+  markers$tables$content_version[markers$tables$table_name == "scalar_observation"] <- tokens$scalar
+  markers$tables$content_version[markers$tables$table_name == "declared_profile"] <- lineage$version
+  markers$comparison$content_version <- tokens$comparison
+  markers$comparison$scalar_content_version <- tokens$scalar
+  markers$profile_descriptor$required_scalar_version <- tokens$scalar
+  markers$selected_descriptor$linked_content_version <- tokens$linked
+  markers$profile_comparison$profile_content_version <- lineage$version
+  markers$profile_comparison$content_version <- lineage$comparison_version
+
+  # Markers the bridge does not own; the verifier still requires them present.
+  owned_tables <- markers$tables$table_name
+  extra_names <- c("demographic_typed_reading", "economy_typed_reading",
+    "economy_activity_evidence", "milieux_typed_reading", "milieux_reading_absence")
+  extra_versions <- c("demo-v1", "eco-v1", "eco-v1", "milieux-v1", "milieux-v1")
+  markers$tables <- rbind(markers$tables, data.frame(
+    table_name = setdiff(extra_names, owned_tables), content_version = extra_versions,
+    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
+  markers$series <- rbind(markers$series, data.frame(
+    dataset_id = "ocsge_artif_etats", content_version = "series-v1",
+    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
+  expectations <- list(
+    reference = expected[["reference"]], scalar = tokens$scalar,
+    comparison = tokens$comparison, comparison_scalar = tokens$scalar,
+    typed = c(demographie = "demo-v1", habitat = expected[["habitat"]],
+              economie = "eco-v1", milieux = "milieux-v1"),
+    series = list(dataset_id = "ocsge_artif_etats", content_version = "series-v1"),
+    profile_version = lineage$version,
+    profile_comparison_version = lineage$comparison_version,
+    profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
+    profile_required_scalar = tokens$scalar,
+    habitat_version = expected[["habitat"]], selected_linked = tokens$linked)
+  expect_identical(nrow(verifier_retained_backend_baseline(markers, expectations)), 0L)
+  # A stale linked token in the written state must be caught.
+  stale <- markers
+  stale$selected_descriptor$linked_content_version <- paste0("-", expected[["profile"]],
+    "-", tokens$scalar, "-", expected[["reference"]])
+  expect_gt(nrow(verifier_retained_backend_baseline(stale, expectations)), 0L)
+})
+

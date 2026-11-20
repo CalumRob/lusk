@@ -134,6 +134,7 @@ if (!bridge_db_proof_configured()) {
       "reference_content_version,row_count,published_at) VALUES",
       "('habitat',$1,$2,1,now())"), params = list(habitat_version, reference_version))
 
+    seed_markers <- retained_backend_markers(connection)
     expected <- c(scalar = scalar_version, comparison = comparison$content_version,
                   profile = profile_version, habitat = habitat_version,
                   reference = reference_version)
@@ -218,6 +219,41 @@ if (!bridge_db_proof_configured()) {
       "SELECT content_version FROM table_publication WHERE table_name='selected_reading'"))$content_version[[1L]],
       habitat_version)
 
+    # Independent #1068 verifier check on the state the bridge just wrote.
+    written_markers <- retained_backend_markers(connection)
+    marker_version_of <- function(name) DBI::dbGetQuery(connection,
+      "SELECT content_version FROM table_publication WHERE table_name=$1",
+      params = list(name))$content_version[[1L]]
+    typed_of <- function(name) {
+      rows <- written_markers$tables[written_markers$tables$table_name == name, , drop = FALSE]
+      if (nrow(rows)) rows$content_version[[1L]] else NA_character_
+    }
+    verifier_expected <- list(
+      reference = reference_version, scalar = plan$tokens$scalar,
+      comparison = plan$tokens$comparison, comparison_scalar = plan$tokens$scalar,
+      typed = c(demographie = typed_of("demographic_typed_reading"),
+                habitat = habitat_version,
+                economie = typed_of("economy_typed_reading"),
+                milieux = typed_of("milieux_typed_reading")),
+      series = list(dataset_id = if (nrow(written_markers$series)) written_markers$series$dataset_id[[1L]] else NA_character_,
+                    content_version = if (nrow(written_markers$series)) written_markers$series$content_version[[1L]] else NA_character_),
+      profile_version = plan$profile_lineage$version,
+      profile_comparison_version = plan$profile_lineage$comparison_version,
+      profile_descriptor_version = DBI::dbGetQuery(connection, paste(
+        "SELECT descriptor_version FROM profile_descriptor",
+        "WHERE indicator_id='distribution_dpe'"))$descriptor_version[[1L]],
+      profile_required_scalar = plan$tokens$scalar,
+      habitat_version = habitat_version, selected_linked = plan$tokens$linked)
+    verifier_mismatches <- verifier_retained_backend_baseline(written_markers, verifier_expected)
+    owned_prefixes <- c("scalar_observation", "scalar_comparison_publication",
+      "declared_profile", "profile_comparison_publication",
+      "profile_descriptor[distribution_dpe]", "selected_reading_descriptor[habitat]")
+    owned_mask <- rep(FALSE, nrow(verifier_mismatches))
+    for (prefix in owned_prefixes)
+      owned_mask <- owned_mask | startsWith(verifier_mismatches$marker, prefix)
+    owned_bad <- verifier_mismatches[owned_mask, , drop = FALSE]
+    expect_identical(nrow(owned_bad), 0L)
+    cat("non-owned verifier mismatches:", nrow(verifier_mismatches) - nrow(owned_bad), "\n")
     # Post-write hash identity: recompute every dependent token through the SAME
     # producer functions from the rows now in the DB.
     after_profile_rows <- bridge_read_live_profile_projections(
@@ -241,8 +277,11 @@ if (!bridge_db_proof_configured()) {
       "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
       plan$tokens$scalar)
 
-    # Live-shaped addendum: after the control run the retired ids are gone but
-    # offre_tc is present with the new values, exactly like the serving DB.
+    # Live-shaped addendum: this phase intentionally re-runs on the state the
+    # control run left behind (retired ids gone, offre_tc freshly published),
+    # which matches the real serving DB. Its expected tokens are therefore NOT
+    # the seed tokens: they are re-derived from the live markers below, including
+    # the NEW declared_profile version and the linked token chained to it.
     after_markers <- retained_backend_markers(connection)
     marker_value <- function(name) bridge_db_query(connection,
       "SELECT content_version FROM table_publication WHERE table_name=$1",
