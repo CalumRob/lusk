@@ -89,8 +89,38 @@ default:
 The declaration is derived from the same producer metadata the publisher
 validates the descriptor against. The published descriptor remains the factual
 source for label, unit and ordinal; this is a declaration, not a second source
-of truth. AEDAR source grains, the TYPEQU universe, the AEDAR summary family and
-observed collections are declared by #1076, not here.
+of truth. Observed collections are declared by their own producer contracts,
+not here.
+
+### AEDAR Cellules (#1076)
+
+The two AEDAR resources carry the same `cellule` block, declared in the
+producer semantic-resource contract rather than a theme page:
+
+- `aedar_territorial_aggregate` declares three measure coordinates — `horizon`
+  (5/10/15/20 minutes), `mode` (the six source modes including `transit_gain`)
+  and `statistic` (share, min, max, déciles 1–9, mean). Its 312 valid
+  combinations are the full cross product; none is inferred from a key string.
+  Its `typequ_universe` is the 235 structured producer values (code, readable
+  label, domain, subdomain, gamme status, source order) projected from the
+  pinned INSEE registry and hierarchy — an app never infers a domain from a
+  code's first letter or keeps its own equipment table.
+- `aedar_territory_summary` declares its own family and address with `horizon`,
+  the five display `mode`s and `kind` (diversité / volume). Its 40 combinations
+  are that product; `transit_gain` is declared in `no_summary_modes` as having
+  no summary. The car × 15 point is addressed as `car`/`15`/diversity or volume
+  even though its legacy comparison-facet keys are `meanDiversity`/`meanVolume`;
+  those legacy keys remain comparison facets and are never Cellule addresses.
+- The families are disjoint: a measure selector resolves to exactly one of them,
+  and a mixed or unknown selector is rejected before any connection is opened.
+  Legacy `measure` addressing keeps working for existing readers; the declared
+  coordinates are the addressing vocabulary a new client reads from discovery.
+
+Only the *membership* of a TYPEQU in a gamme is declared. The readable gamme
+labels are not: the only tracked copy of the official INSEE gamme sheet is an
+ASCII-degraded test fixture ("Proximit?"), and the authoritative labels live in
+the raw INSEE download, which this declaration does not regenerate. No label
+was guessed to fill the gap.
 
 Where a producer page sets `cellule.declare: false`, discovery emits no
 `cellule` and the published descriptor owns the coordinate space. The complete

@@ -33,9 +33,43 @@ AEDAR_AGGREGATE_READINGS = {
     for kind in ("diversity", "volume")
 }
 
-# The full comparison `measure` coordinate vocabulary: the 312 per-cell
-# measures plus the two registry-wide aggregate readings.
-AEDAR_COMPARISON_MEASURE_KEYS = frozenset(AEDAR_MEASURE_KEYS) | frozenset(AEDAR_AGGREGATE_READINGS)
+# Declared Cellule axes for the two AEDAR families (#1076). They share
+# `horizon` and `mode`; `statistic` belongs only to the 312-key aggregate and
+# `kind` only to the 40 summary readings. Their product rebuilds the source
+# measure vocabulary exactly — no family can satisfy the other's point.
+AEDAR_MEASURE_HORIZONS = tuple(str(value) for value in AEDAR_AGGREGATE_HORIZONS)
+AEDAR_MEASURE_MODES = ("walk", "transit", "transit_gain", "bike_lts2", "bike_lts4", "car")
+AEDAR_MEASURE_STATISTICS = (
+    "share", "min", "max", *(f"decile{i}" for i in range(1, 10)), "mean")
+AEDAR_SUMMARY_KINDS = ("diversity", "volume")
+
+
+def aedar_axes_match_registered_measures():
+    """The declared aggregate axes reconstruct the registered 312 keys exactly."""
+    rebuilt = {
+        f"count_{horizon}_{mode}_{statistic}"
+        for horizon in AEDAR_MEASURE_HORIZONS
+        for mode in AEDAR_MEASURE_MODES
+        for statistic in AEDAR_MEASURE_STATISTICS
+    }
+    return rebuilt == AEDAR_MEASURE_KEYS
+
+
+def aedar_measure_family(measures):
+    """Name the one declared family a measure selector belongs to, or None.
+
+    The old ``AEDAR_COMPARISON_MEASURE_KEYS`` union let one selector vocabulary
+    span both families. A request now resolves to exactly one family; a mixed
+    or unknown set belongs to neither and is rejected before any read.
+    """
+    requested = set(measures)
+    if not requested:
+        return None
+    if requested <= AEDAR_MEASURE_KEYS:
+        return "per_cell"
+    if requested <= set(AEDAR_AGGREGATE_READINGS):
+        return "summary"
+    return None
 
 
 class ThemeTerritorySelection(BaseModel):

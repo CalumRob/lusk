@@ -320,16 +320,16 @@ class SemanticResourceReader:
             measures = coordinates.get("measure")
             # (a) Request-shape validation runs first: a malformed request must
             # fail with 422 rather than be misreported as a publication problem.
-            from api.aedar_models import (AEDAR_AGGREGATE_READINGS,
-                                          AEDAR_COMPARISON_MEASURE_KEYS, AEDAR_MEASURE_KEYS)
-            if measures:
-                if not set(measures) <= AEDAR_COMPARISON_MEASURE_KEYS:
-                    raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
-                if item.intent.kind == "facts" and not set(measures) <= AEDAR_MEASURE_KEYS:
-                    raise HTTPException(422, "Aggregate readings are comparison facets, not facts")
-            aggregate = bool(measures) and set(measures) <= set(AEDAR_AGGREGATE_READINGS)
-            if measures and not aggregate and not set(measures) <= AEDAR_MEASURE_KEYS:
-                raise HTTPException(422, "Coordinate measure mixes aggregate readings with per-cell measures")
+            from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS,
+                                          aedar_measure_family)
+            family = aedar_measure_family(measures) if measures else None
+            if measures and family is None:
+                if set(measures) <= set(AEDAR_MEASURE_KEYS) | set(AEDAR_AGGREGATE_READINGS):
+                    raise HTTPException(422, "Coordinate measure mixes aggregate readings with per-cell measures")
+                raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
+            if item.intent.kind == "facts" and family == "summary":
+                raise HTTPException(422, "Aggregate readings are comparison facets, not facts")
+            aggregate = family == "summary"
             if item.intent.kind == "fixed_comparison":
                 if not measures or len(measures) != 1:
                     raise HTTPException(422, "AEDAR comparison requires one measure coordinate")
