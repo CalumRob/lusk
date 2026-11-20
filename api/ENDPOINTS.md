@@ -61,6 +61,51 @@ eligibility is not declared for them) and `counts_available: false`. Invalid
 capability types and declarations naming unknown indicators fail discovery;
 the API does not guess or repair producer declarations.
 
+Retained scalar, declared-profile and owned-series resources also carry a
+`cellule` declaration, the producer-owned addressing space an Atelier reader
+uses to bind a Cellule without parsing a key, guessing a label or hardcoding a
+default:
+
+- `coordinates` names each coordinate axis and declares every value with a
+  readable `label` and its `unit`. For a detail axis the unit is the producer's
+  per-detail unit, else the page's `comparison.unit`, else `null` — a profile's
+  categories never inherit the indicator's scalar unit. Non-detail axes keep
+  the `comparison.unit`/scalar fallback. Where the producer declares no wording,
+  the value's own key is a valid label — a year, a DPE class or the F/M keys are
+  not reformulated at runtime. A series coordinate universe is the producer's
+  `comparison.details`, which the publisher writes as the descriptor's
+  `axis_values`; the separate `trajectory.endpoints` comparison facet is not a
+  coordinate axis.
+- `valid_combinations` lists the addressable coordinate combinations. It is the
+  full cross product where every combination exists, or the producer's explicit
+  narrower set where it does not. A read naming a combination outside that set
+  fails with `422 coordinate combination is not declared for this resource`
+  instead of returning an empty cohort. A resource with no declaration keeps
+  the existing axis-by-axis admission and the descriptor's own membership.
+- `default_point` is the declared comparison point of a profile or series, so a
+  consumer never hardcodes one. A scalar has no coordinates and no default; a
+  profile backed by a linked scalar facet has no detail default of its own.
+
+The declaration is derived from the same producer metadata the publisher
+validates the descriptor against. The published descriptor remains the factual
+source for label, unit and ordinal; this is a declaration, not a second source
+of truth. AEDAR source grains, the TYPEQU universe, the AEDAR summary family and
+observed collections are declared by #1076, not here.
+
+Where a producer page sets `cellule.declare: false`, discovery emits no
+`cellule` and the published descriptor owns the coordinate space. The complete
+deferred set among Cellule-eligible resources is:
+
+- `raccordement_courbe` — its published axis keys are t-codes (`t0090`) while
+  discovery carries the minute input grid (`90`); #1096 owns that decision and
+  no source is silently reconciled here.
+- `subventions_annuelles` — its annual axis is data-driven, so the producer
+  declares no static value list and the descriptor owns it.
+
+`raccordement_reference` is excluded by shape (a named reference, not a cohort
+Cellule), and `raccordement_tc` is an ordinary scalar and is declared. The
+reasons live here, not in the browser projection: `declare` is a plain boolean.
+
 `POST /api/resources/read` accepts the shared semantic item (`resource`, typed
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item

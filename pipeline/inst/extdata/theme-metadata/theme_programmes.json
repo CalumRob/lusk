@@ -111,6 +111,7 @@
   },
   "indicator_pages": {
     "subventions_annuelles": {
+      "cellule": { "declare": false },
       "indicator": "subventions_annuelles",
       "series_dataset_id": "subventions_annuelles",
       "axis_kind": "year",
