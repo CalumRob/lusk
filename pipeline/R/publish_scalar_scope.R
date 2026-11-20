@@ -160,25 +160,25 @@ scalar_scope_reference_universe <- function(metadata, reference_rows) {
   universe[order(universe$territory_type, universe$territory_id), , drop = FALSE]
 }
 
-# identical_scalar_descriptor ---------------------------------------------------
-# Égalité SÉMANTIQUE d'un descripteur existant et de celui que la métadonnée
-# courante produit. Un changement de libellé, d'unité, de niveau, de source,
-# de direction, de complétude ou de calcul invalide la préservation. Le
-# `descriptor_version` est EXCLU : c'est un jeton de contenu de la métadonnée,
-# et une retouche documentaire d'une page (définition/caveat) sans changement
-# sémantique ne doit pas forcer la régénération du thème. Le descripteur publié
-# est alors préservé TEL QUEL — il n'est pas republié — et la dérive est
-# rapportée par la matérialisation, jamais silencieuse.
+# The SINGLE definition of a scalar descriptor's semantic identity. Both the
+# scoped producer guard and the bridge's confirmation token derive from it,
+# so they can never drift. descriptor_version is a metadata content token,
+# explicitly NOT semantic (a documentation-only edit must not force rebuilding).
+SCALAR_DESCRIPTOR_SEMANTIC_FIELDS <- c("indicator_id", "theme_id", "label",
+  "unit", "direction", "comparison_facet", "denominator_semantics",
+  "completeness")
+SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS <- c("allowed_sources", "allowed_levels")
+SCALAR_DESCRIPTOR_SEMANTICS <- c(SCALAR_DESCRIPTOR_SEMANTIC_FIELDS,
+                                SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS)
+
 identical_scalar_descriptor <- function(existing, expected) {
-  fields <- c("indicator_id", "theme_id", "label", "unit", "direction",
-              "comparison_facet", "denominator_semantics", "completeness")
-  all(vapply(fields, function(field)
+  same_scalar <- all(vapply(SCALAR_DESCRIPTOR_SEMANTIC_FIELDS, function(field)
     identical(as.character(existing[[field]][[1L]]),
-              as.character(expected[[field]][[1L]])), logical(1))) &&
-    identical(as.character(unlist(existing$allowed_sources, use.names = FALSE)),
-              as.character(unlist(expected$allowed_sources, use.names = FALSE))) &&
-    identical(as.character(unlist(existing$allowed_levels, use.names = FALSE)),
-              as.character(unlist(expected$allowed_levels, use.names = FALSE)))
+              as.character(expected[[field]][[1L]])), logical(1)))
+  same_lists <- all(vapply(SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS, function(field)
+    identical(as.character(unlist(existing[[field]], use.names = FALSE)),
+              as.character(unlist(expected[[field]], use.names = FALSE))), logical(1)))
+  same_scalar && same_lists
 }
 
 # assert_scalar_scope_base ------------------------------------------------------

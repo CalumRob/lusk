@@ -358,3 +358,179 @@ atomic transaction. The operator still needs the private publisher role, the
 maintenance window, and the guard; the verified canonical recovery copy above
 is the approved backup path. This document does not perform the production
 publication.
+
+## One-off offre_tc serving bridge (#1071, epic #1048)
+
+The normal scoped path above is unchanged and remains the first choice: it
+requires `LUSK_SCALAR_BASELINE_SORTIE`, the exact generation the serving DB was
+published from. For the one-off publication of the **address-based `offre_tc`**
+and the **29 owner-retired legacy accessibility ids**, that counterpart
+generation no longer exists (the live markers are from a generation whose
+artifacts were not kept). Rebuilding it would mean regenerating or overwriting
+the serving tables, which the guard deliberately forbids.
+
+For **that one publication only**, `pipeline/R/publish_serving_bridge.R` builds a
+new scalar snapshot in R from the **live serving rows** plus the freshly built
+`offre_tc` facts (`produire_offre_tc_mobilite()`), removes the 29 retirements,
+and writes rows + markers through the **existing registered publishers and
+adapters** in **one publication transaction**. The Hash chain is not
+reimplemented in SQL: the new scalar token is `scalar_content_version()`
+(`md5(saveRDS(projection, version = 3))`), the comparison token comes from
+`project_scalar_comparisons()`, and the chained declared-profile binding
+(`required_scalar_version`) and Habitat `linked_content_version` are rebound
+from the verified live tokens.
+
+### Guards (all refuse with zero writes)
+
+1. **Round-trip proof** â€” every indicator other than `offre_tc` and the 29
+   retired ids must be identical as data (facts, descriptors, provenance)
+   between the live rows read back and the new projection.
+2. **Live markers** â€” the five tokens supplied by the operator
+   (`LUSK_BRIDGE_EXPECT_SCALAR`, `_COMPARISON`, `_PROFILE`, `_HABITAT`,
+   `_REFERENCE`) must equal the live marker inventory, including the chained
+   input fields.
+3. **`--dry-run`** prints the new tokens and the per-indicator diff and writes
+   nothing.
+4. **Dump acknowledgement** â€” the write command refuses unless
+   `LUSK_BRIDGE_DUMP_CONFIRMED=<path-or-id>` confirms a verified `pg_dump` of the
+   affected tables. The tool does not take or restore the dump.
+5. **Scope and identity** — `LUSK_SCALAR_SCOPE` must select exactly the registered
+   `offre_tc` scope, and `SELECT current_database(), current_user` on the live
+   connection must equal `LUSK_PUBLISH_DATABASE` / `LUSK_PUBLISH_USER`. Checked
+   before any read or write, including dry-run.
+6. **Credentials** â€” host/database/role come from `LUSK_PUBLISH_HOST`,
+   `LUSK_PUBLISH_DATABASE`, `LUSK_PUBLISH_USER` (optional `_PORT`); the password
+   comes only from the private libpq passfile (`PGPASSFILE`, never inside the
+   repository).
+7. **Write schema** — the connection's `search_path` must put the serving schema
+   first: all tables the publishers replace are checked with
+   `to_regclass(current_schema() || '.' || table)` and a missing one refuses with
+   zero writes. The dry-run prints the resolved schema.
+8. **FK pre-flight** — a read-only `pg_constraint` inventory refuses with zero
+   writes if a table the bridge does not manage has rows referencing a
+   wholesale-replaced scalar table. The dry-run prints the inventory and which
+   metadata-derived retirement ids are actually present live (normally none).
+
+### Offre TC descriptor replacement (operator-confirmed)
+
+The live serving DB currently holds the OLD, building-based `offre_tc`
+descriptor (`Part des bâtiments près d’un arrêt (à 500 m)`) while current
+metadata declares the address-based definition. The bridge's default
+`LUSK_BRIDGE_DESCRIPTOR_POLICY=preserve` therefore refuses that difference,
+exactly as ADR-0044 decision 4 requires — never silently relabel a fact.
+
+This one-off bridge makes a **deliberate, operator-confirmed exception** to
+that rule for this single transition: the indicator was re-defined from
+buildings to residential addresses, and the new values and definition must be
+published together. The dry-run always prints the live and metadata descriptor
+rows and a deterministic CONFIRMATION TOKEN (md5 of `saveRDS` over both rows'
+semantic fields in a fixed order). A real write with a differing descriptor
+requires `LUSK_BRIDGE_CONFIRM_DESCRIPTOR=<that token>`; a missing, wrong or
+different-transition token refuses with zero writes. When the descriptors are
+already identical, `preserve` applies and no token is required. The replacement
+is part of the same transaction and rolls back with everything else.
+
+This exception is confined to the one-off bridge; it must be retired once a
+real baseline exists and the normal registered publication path can carry the
+new definition. The ADR itself is unchanged.
+
+The fresh facts are supplied as a private RDS/CSV path in
+`LUSK_BRIDGE_OFFRE_TC_FACTS` (the producer row shape: territory, indicator,
+value, unit and source/vintage stamps). The retirement policy is derived from
+the canonical metadata contracts, not copied into the tool.
+
+### Operator sequence
+
+```powershell
+# From pipeline/, after a verified dump and the maintenance window:
+$env:LUSK_BRIDGE_EXPECT_SCALAR = '<live scalar token>'
+$env:LUSK_BRIDGE_EXPECT_COMPARISON = '<live comparison token>'
+$env:LUSK_BRIDGE_EXPECT_PROFILE = '<live declared-profile token>'
+$env:LUSK_BRIDGE_EXPECT_HABITAT = '<live Habitat selected-reading token>'
+$env:LUSK_BRIDGE_EXPECT_REFERENCE = '<live territory-reference token>'
+$env:LUSK_BRIDGE_OFFRE_TC_FACTS = '<private path to fresh offre_tc producer rows>'
+$env:LUSK_BRIDGE_DESCRIPTOR_POLICY = 'preserve'  # default; refuses a descriptor change
+$env:LUSK_PUBLISH_HOST = '<serving host>'; $env:LUSK_PUBLISH_DATABASE = 'lusk'
+$env:LUSK_PUBLISH_USER = 'lusk_publisher'; $env:PGPASSFILE = '<private pgpass>'
+
+Rscript scripts/publish-serving-tables.R --offre-tc-bridge-dry-run
+# review: changes only to offre_tc values + the 29 retirements
+$env:LUSK_BRIDGE_DUMP_CONFIRMED = '<dump path or id>'
+$env:LUSK_PUBLISH_OFFRE_TC_BRIDGE = '1'   # explicit write opt-in, like --series-publish
+$env:LUSK_BRIDGE_LOCK_TIMEOUT_MS = '5000'      # bounded lock wait (default 5000)
+$env:LUSK_BRIDGE_STATEMENT_TIMEOUT_MS = '120000' # finite statement cap (default 120000)
+Rscript scripts/publish-serving-tables.R --offre-tc-bridge
+```
+
+If the dry-run prints a descriptor difference (the live `offre_tc` definition is
+the old building-based one), it prints both descriptor rows and a confirmation
+token and then refuses under `preserve`. Re-run the dry-run to capture that token,
+then set `LUSK_BRIDGE_DESCRIPTOR_POLICY='replace'` and
+`LUSK_BRIDGE_CONFIRM_DESCRIPTOR='<token printed by the dry-run>'` before the real
+write, in addition to the opt-in, dump acknowledgement and five expected tokens.
+When the descriptors are identical, `preserve` applies and no token is needed.
+
+The guarded disposable-DB proof is run through
+`pipeline/scripts/run-offre-tc-bridge-db.ps1 -PgPassFile <private pgpass>`; it
+holds the shared `Local\LuskIntegrationContractDb` mutex for the whole R process
+and the R test verifies the mutex is held before it connects.
+
+### Limits â€” what this is NOT
+
+- It is **not** a new publication path and does **not** change the #1068 scoped
+  guard or `#publish` semantics. `publish_scoped_retained_backend()` still
+  requires `LUSK_SCALAR_BASELINE_SORTIE`; this bridge is a separate, guarded,
+  one-off command for the lost-baseline case only.
+- It does **not** repair or recreate the lost artifacts, and does **not** add
+  per-indicator/per-theme versioning to the serving tables (the underlying
+  design problem, left for a follow-up). The scalar tables remain whole-table
+  snapshots.
+- It rewrites the scalar snapshot/comparison and, through the **normal registered
+  profile publisher**, the whole declared-profile snapshot (descriptor, axes,
+  facts, provenance and comparison). Those profile rows are rewritten with
+  **identical data**: the reconstructed projections are proved equal to the live
+  rows before the write and re-read and compared again inside the transaction;
+  only `required_scalar_version` and the hashes derived from it change.
+  Because `scalar_observation` is one whole-table snapshot, the scalar fact rows
+  of the Demography, Economy, Milieux and Habitat owners (and the owned-series
+  scalar facet) are also deleted and re-inserted — with **identical data**, as the
+  round-trip proof requires — and the global `scalar_observation` marker advances
+  with the new snapshot. Their own typed-reading / owned-series markers are not
+  read as expectations and are not rewritten. The Habitat **selected reading**
+  rows are not rewritten, but its `selected_reading_descriptor.linked_content_version`
+  **is** written by the bridge because that token chains from the scalar version.
+- **Known limitation:** the fresh-recompute tests establish parity with the
+  producer *functions* applied to the bridge's own live-row reconstruction. They
+  are **not** parity against a canonical artifact — those generation artifacts
+  are the lost baseline. Equality of unrelated indicators is therefore proved
+  against the live serving rows read back at run time, not against a frozen
+  golden copy.
+- It has **no built-in rollback**: recovery is the operator's verified dump.
+  A failure mid-write rolls the whole transaction back.
+- Tests never touch the serving database. The pure fixtures run by default;
+  the write proof is a separate guarded test that skips unless
+  `LUSK_BRIDGE_TEST_*` names the disposable `lusk_it_contract` target and the
+  shared mutex is held (see `api/tests/integration/README.md`). The operator
+  performs the real publication and captures the retirement receipt.
+
+
+### Explicit, temporary exception to ADR-0044 decision 8
+
+ADR-0044 decision 8 says only the registered owners write the serving tables.
+The bridge is a **documented, one-off exception** to that rule: for this single
+publication the owner artifacts for the affected declared-profile generation
+(the `LUSK_SCALAR_BASELINE_SORTIE` counterpart) are lost, so the normal scoped
+owner path cannot run. It is not a precedent for routine publication and must
+be **retired as soon as a real baseline exists**. What compensates for bypassing
+the owner-artifact path: the round-trip data proof, the five-token live guard,
+the verified-dump acknowledgement, the explicit write opt-in, the single
+transaction with fail-closed (exactly-one-row) marker updates, the advisory lock
+held across check and write, and the re-derivation of every dependent profile
+hash through the registered producer functions from live-read rows. The scalar
+tables are whole-table snapshots, so other themes' scalar rows (and the
+owned-series scalar facet) are deleted and re-inserted with identical data, and
+the global scalar marker advances; their own typed-reading / owned-series
+markers are neither read as expectations nor written. The Habitat linked
+descriptor token is rewritten because it chains from the scalar version. The
+ADR itself is unchanged.
+
