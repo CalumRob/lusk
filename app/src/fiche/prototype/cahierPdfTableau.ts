@@ -162,8 +162,14 @@ export interface OptionsTableauPdf {
  * reserved row height and the label runs into the separator. One owner, used by
  * both measurement and painting.
  */
-export function roleCelluleTableau(raw: boolean) {
-  return raw ? ROLE_PDF.libelleTableau : ROLE_PDF.valeurTableau
+/** The one raw-cell fact: read from the cell, never from a column kind that
+ *  can disagree with it. Measurement, row height and painting all use this. */
+export function estCelluleBrute(cell: CahierTableCell): boolean {
+  return cell.raw === true
+}
+
+export function roleCelluleTableau(cell: CahierTableCell) {
+  return estCelluleBrute(cell) ? ROLE_PDF.libelleTableau : ROLE_PDF.valeurTableau
 }
 
 function largeurCellule(
@@ -380,12 +386,11 @@ export function construireTableauxPdf(
   const affichage: ColonneAffichage[] = []
   for (const column of colonnesOrdonnees) {
     const cellules = table.rows.map((row) => row.cells.find((cell) => cell.columnKey === column.key))
-    const roleCellule = roleCelluleTableau(column.kind === 'raw')
     const numerique = Math.max(
       0,
       ...cellules
         .filter((cell): cell is CahierTableCell => Boolean(cell) && estNumerique(cell!))
-        .map((cell) => largeurCellule(cell, mesure, roleCellule)),
+        .map((cell) => largeurCellule(cell, mesure, roleCelluleTableau(cell))),
     )
     // Natural width is the honest one-line advance of the whole header label
     // and of every cell display, read from the embedded face. Keeping the full
@@ -399,7 +404,8 @@ export function construireTableauxPdf(
       : mesure.largeur(column.label, roleEntete.police, roleEntete.taille)
     const texte = Math.max(
       0,
-      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => largeurCellule(cell, mesure, roleCellule)),
+      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell))
+        .map((cell) => largeurCellule(cell, mesure, roleCelluleTableau(cell))),
     )
     // A served comparison header carries the `¹` link; reserve its advance so
     // the mark never spills into the neighbouring `Rang` column.
@@ -621,7 +627,7 @@ export function construireTableauxPdf(
         // Same role the composer uses to paint this cell: a raw/Mode label is
         // set larger, so measuring it at the value role would reserve too few
         // lines and let a wrapped `Transports en commun` cross the row rule.
-        const roleCellule = roleCelluleTableau(cellule.cell.raw)
+        const roleCellule = roleCelluleTableau(cellule.cell)
         const lignes = plierTexte(cellule.display, mesure, {
           police: roleCellule.police,
           taillePt: roleCellule.taille,

@@ -51,7 +51,69 @@ const chapters = [
 const EXPECTED_ABSENT = {
   region: ['reseaux', 'stationnement-ravitaillement'],
 }
+// Explicit harness fixture expectations — not arbitrary literals: these are the
+// frozen French-grouping regression values and the two-level table header
+// vocabulary owned by cahierPdfTableau / cahierPdfGrammaire. They are checked
+// against the PDF text, never written into the document.
+const FIXTURE_EXPECTATIONS = Object.freeze({
+  collapsedGrouping: ['6440', '12881', '12081'],
+  rowHeaders: ['Statistique', 'Temps'],
+  subHeaders: ['Rennes', 'Groupe¹'],
+})
 const gateFailures = []
+
+/** Every recorded abnormal state is a gate failure, not just an annotation. */
+function gateResult(territory, key, result) {
+  const at = `${territory}/${key}`
+  const status = result.status
+  if (['error', 'no-download', 'audit-error', 'blocked'].includes(status)) {
+    gateFailures.push(`${at}: status=${status} (${result.reason ?? ''})`)
+  }
+  if (result.audit) {
+    const audit = result.audit
+    if (audit.headerAligned === false) gateFailures.push(`${at}: headerAligned=false`)
+    if (audit.separatorsPreserved === false) gateFailures.push(`${at}: separatorsPreserved=false`)
+    if (audit.replacementGlyph) gateFailures.push(`${at}: replacement glyph in PDF text`)
+    if (!audit.canonicalHostOnly && audit.siteLinkCount > 0) {
+      gateFailures.push(`${at}: non-canonical Lusk link host`)
+    }
+    if (audit.unexpectedOverlaps?.length) {
+      gateFailures.push(`${at}: ${audit.unexpectedOverlaps.length} unexpected text overlap(s)`)
+    }
+    if (audit.numericChecks?.missing?.length) {
+      gateFailures.push(`${at}: served values missing from PDF: ${audit.numericChecks.missing.join(', ')}`)
+    }
+  }
+  if (result.comparisonState && !['shown', 'absent'].includes(result.comparisonState)) {
+    gateFailures.push(`${at}: comparisonState=${result.comparisonState}`)
+  }
+  if (pageErrors.length) gateFailures.push(`${at}: ${pageErrors.length} page error(s)`)
+}
+
+async function gateSelfTest() {
+  const synth = [
+    ['commune/35238', 'a', { status: 'error', comparisonState: 'shown' }],
+    ['commune/35238', 'b', { status: 'no-download', comparisonState: 'shown' }],
+    ['commune/35238', 'c', { status: 'audit-error', comparisonState: 'shown' }],
+    ['commune/35238', 'd', { status: 'blocked', comparisonState: 'shown' }],
+    ['commune/35238', 'e', { status: 'success', comparisonState: 'error', audit: {} }],
+    ['commune/35238', 'f', { status: 'success', audit: { headerAligned: false, separatorsPreserved: false, replacementGlyph: true } }],
+  ]
+  const before = gateFailures.length
+  for (const [territory, key, result] of synth) gateResult(territory, key, result)
+  pageErrors.push('injected page error')
+  gateResult('commune/35238', 'g', { status: 'success', audit: {} })
+  const fired = gateFailures.slice(before).join('\n')
+  for (const needle of [
+    'status=error', 'status=no-download', 'status=audit-error', 'status=blocked',
+    'comparisonState=error', 'headerAligned=false', 'separatorsPreserved=false',
+    'replacement glyph', 'page error',
+  ]) {
+    if (!fired.includes(needle)) throw new Error(`gate self-test failed: ${needle} did not fire`)
+  }
+  console.log('GATE SELF-TEST OK: ' + (gateFailures.length - before) + ' injected defects all fired')
+  gateFailures.length = 0
+}
 
 const executablePath = process.env.CAHIER_PDF_CHROMIUM
 if (!executablePath) {
@@ -71,6 +133,12 @@ page.on('console', (message) => {
     pageErrors.push('console: ' + message.text().slice(0, 200))
   }
 })
+
+if (process.env.CAHIER_PDF_GATE_SELFTEST === '1') {
+  await gateSelfTest()
+  await browser.close()
+  process.exit(0)
+}
 
 await page.goto(`${origin}/territoire/${type}/${code}?theme=mobilite#${chapters[0].anchor}`, {
   waitUntil: 'domcontentloaded', timeout: 60000,
@@ -213,13 +281,14 @@ async function audit(file, key, expectedValues = [], expectedIdentity = '') {
   }
   // Native French grouping uses U+202F; jsPDF maps it to a plain space in the
   // text layer. The separated forms must survive, never the collapsed digits.
-  const collapsedGrouping = ['6440', '12881', '12081'].filter((value) => allText.includes(value))
+  const collapsedGrouping = FIXTURE_EXPECTATIONS.collapsedGrouping
+    .filter((value) => allText.includes(value))
   // Two-level table headers: the row dimension (Statistique / Temps / Mode)
   // must share the painted baseline block of its one-line sub-headers, not sit
   // on a line of its own above them.
   const headerText = (needle) => textItems.find((item) => item.str === needle)?.y ?? null
-  const rowHeaders = textItems.filter((item) => item.str === 'Statistique' || item.str === 'Temps').map((item) => item.y)
-  const subHeaders = textItems.filter((item) => item.str === 'Rennes' || item.str === 'Groupe¹').map((item) => item.y)
+  const rowHeaders = textItems.filter((item) => FIXTURE_EXPECTATIONS.rowHeaders.includes(item.str)).map((item) => item.y)
+  const subHeaders = textItems.filter((item) => FIXTURE_EXPECTATIONS.subHeaders.includes(item.str)).map((item) => item.y)
   // Several tables can share one PDF; compare each row dimension with its
   // nearest one-line sub-header baseline, never a label from another table.
   const headerAligned = rowHeaders.length === 0 || subHeaders.length === 0 ? null
@@ -376,24 +445,20 @@ try {
           if (/groupe comparé/i.test(text)) return 'shown'
           return 'absent'
         }, key)
+        let result
         if (blocked.some((b) => b.key === key)) {
-          results.push({ territory, comparisonState, ...blocked.find((b) => b.key === key) })
-          continue
+          result = { ...blocked.find((b) => b.key === key), comparisonState }
+        } else {
+          result = { ...await exportSection(key, territory), comparisonState }
         }
-        const result = await exportSection(key, territory)
         if (result.status === 'absent' && !(EXPECTED_ABSENT[territoryType] ?? []).includes(key)) {
           gateFailures.push(`${territory}/${key}: absent but not expected absent`)
         }
         if (result.status === 'success' && result.audit?.hasIdentity === false) {
           gateFailures.push(`${territory}/${key}: success without territory identity in the PDF`)
         }
-        if (result.audit?.unexpectedOverlaps?.length) {
-          gateFailures.push(`${territory}/${key}: ${result.audit.unexpectedOverlaps.length} unexpected text overlap(s)`)
-        }
-        if (result.audit?.numericChecks?.missing?.length) {
-          gateFailures.push(`${territory}/${key}: served values missing from PDF: ${result.audit.numericChecks.missing.join(', ')}`)
-        }
-        results.push({ territory, comparisonState, ...result })
+        gateResult(territory, key, result)
+        results.push(result)
         console.log(JSON.stringify({ territory, progress: key, comparisonState, status: result.status, reason: result.reason ?? null }))
       }
     }

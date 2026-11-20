@@ -57,6 +57,7 @@ import {
   CahierPdfTableLayoutError,
   construireTableauxPdf,
   hauteurEnteteTableau,
+  roleCelluleTableau,
   separateurVertical,
   type LigneTableauPdf,
   type TableauPdfPart,
@@ -1265,11 +1266,9 @@ function dessinerTableau(
         cellX += colonne.width
         continue
       }
-      // The approved flat table's `Mode` cell keeps the row-label role (14 px)
-      // and its series ink; numeric value cells use the legend role.
-      const roleCellule = colonne.column.kind === 'raw'
-        ? ROLE_PDF.libelleTableau
-        : ROLE_PDF.valeurTableau
+      // One role fact for measurement, row height and painting: the cell's own
+      // `raw` marker, never a column-level kind that can disagree with it.
+      const roleCellule = roleCelluleTableau(cellule.cell)
       const lignes = plierTexte(cellule.display, mesure, {
         police: roleCellule.police,
         taillePt: roleCellule.taille,

@@ -312,7 +312,15 @@ selector used to hide it in the mount, removes it regardless of any remaining
 source stamp, then collapses the authored tracks to the figure children while
 pinning every figure's pre-pass width, height and mutual gap. Only the block's
 position changes; no figure is stretched or shrunk. No layout class name
-participates and there is one mechanism only.
+participates and there is one mechanism only. That pin applies **only to
+containers the pass actually visits**. For a container it does not visit, the
+owning component's CSS may legitimately re-lay-out its tracks when the export
+CSS removes prose: the diversity-loss comparison row is the accepted case,
+where `repeat(auto-fit, minmax(0, 1fr))` changes the four plates from
+171.64 pt / 16.82 pt gap to **185.09 pt / 80.02 pt gap**. This is an explicit
+owner decision dated **2026-11-20** — accepted geometry, not drift to be
+"corrected" back. `cahier-diversity-geometry.spec.ts` pins those numbers in
+both territories so a future change returns to the owner instead of shipping.
 
 The same pass also centres the figure's *bands* — the title/caption, any
 subtitle or unit line, and the legend/scale band — on the body axis. The sole

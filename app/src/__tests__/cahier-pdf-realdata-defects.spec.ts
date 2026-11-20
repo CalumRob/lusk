@@ -5,8 +5,16 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { formatTimeRampNumber } from '@/fiche/prototype/cahierFigureReadings'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
-import { roleCelluleTableau } from '@/fiche/prototype/cahierPdfTableau'
+import { estCelluleBrute, roleCelluleTableau } from '@/fiche/prototype/cahierPdfTableau'
+import { plierTexte, type MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
+import type { CahierTableCell } from '@/fiche/prototype/cahierExportAdapters'
 import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from '@/fiche/prototype/cahierExportSurface'
+
+const MESURE_TABLEAU_FIXE: MesureTexte = {
+  largeur: (texte, _police, taillePt) => texte.length * taillePt * 0.35,
+  hauteurLigne: (_police, taillePt) => taillePt,
+  espace: (_police, taillePt) => taillePt * 0.3,
+}
 
 function rect(width: number): DOMRect {
   return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 80, width, height: 80, toJSON() {} } as DOMRect
@@ -37,9 +45,32 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(formatTimeRampNumber(6440)).not.toMatch(/[\u202f\u00a0]/u)
   })
 
-  it('measures raw/Mode cells with the role the composer paints', () => {
-    expect(roleCelluleTableau(true)).toEqual(ROLE_PDF.libelleTableau)
-    expect(roleCelluleTableau(false)).toEqual(ROLE_PDF.valeurTableau)
+  it('uses one cell-role fact for measurement, row height and painting', () => {
+    const crue = { raw: true } as CahierTableCell
+    const formatee = { raw: false } as CahierTableCell
+    expect(estCelluleBrute(crue)).toBe(true)
+    expect(estCelluleBrute(formatee)).toBe(false)
+    expect(roleCelluleTableau(crue)).toEqual(ROLE_PDF.libelleTableau)
+    expect(roleCelluleTableau(formatee)).toEqual(ROLE_PDF.valeurTableau)
+  })
+
+  it('reserves one consistent role height for a raw cell and a formatted cell', () => {
+    const crue = { raw: true } as CahierTableCell
+    const formatee = { raw: false } as CahierTableCell
+    const display = 'Transports en commun'
+    // The row-height code and the painter both call roleCelluleTableau(cell):
+    // each cell reserves exactly the role its glyphs are painted with, so a
+    // raw label cannot be measured short and cross the row separator.
+    const hauteurReservee = (cell: CahierTableCell) =>
+      plierTexte(display, MESURE_TABLEAU_FIXE, {
+        police: roleCelluleTableau(cell).police,
+        taillePt: roleCelluleTableau(cell).taille,
+        largeurMax: 120,
+        casserMotsLongs: true,
+      }).length
+    expect(hauteurReservee(crue)).toBeGreaterThanOrEqual(hauteurReservee(formatee))
+    expect(estCelluleBrute(crue)).toBe(true)
+    expect(estCelluleBrute(formatee)).toBe(false)
   })
 
   it('collapses a prose+figure spread even when the prose still shows a source stamp', () => {
@@ -144,26 +175,97 @@ describe('real-data PDF defect regressions (#1025)', () => {
     vi.restoreAllMocks()
   })
 
-  it('leaves a container untouched when hidden prose exists elsewhere but was not removed here', () => {
-    document.body.innerHTML = `<div id="root">
-      <p class="argument-copy" style="display:none">Prose cachée ailleurs</p>
-      <figure id="block">
-        <figcaption id="title">Titre</figcaption>
-        <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr">
-          <figure id="plate"><svg></svg></figure>
-        </div>
-      </figure>
-    </div>`
+  it('leaves a container untouched when the mount hides its prose but it owns no figure', () => {
+    // Mount CSS hides prose BEFORE the pass. A container with hidden prose but
+    // no figure child cannot form a plan and must remain byte-for-byte intact.
+    document.body.innerHTML = `<div id="root"><figure id="block">
+      <figcaption id="title">Titre</figcaption>
+      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr">
+        <p class="argument-copy" style="display:none">Prose cachée par le mount</p>
+      </div>
+    </figure></div>`
     const root = document.getElementById('root') as HTMLElement
     const spread = document.getElementById('spread') as HTMLElement
     const title = document.getElementById('title') as HTMLElement
-    const plate = document.getElementById('plate') as HTMLElement
     reflowVisibleFigureTracks(root)
     expect(spread.style.gridTemplateColumns).not.toContain('repeat(')
     expect(spread.style.justifyItems).toBe('')
-    expect(plate.style.width).toBe('')
     expect(title.style.translate).toBe('')
     expect(title.style.textAlign).toBe('')
+  })
+
+  it('never hides an overview aside that owns both prose and the scalar figure', () => {
+    // Real CahierAedarOverviewSection markup: the aside holds the prose AND
+    // figure.aedar-car-overview-scalars. The mount CSS hides prose BEFORE the
+    // pass runs, so only the nested-prose branch is exercised here.
+    const markup = `<div id="root"%s>
+      <div class="evidence-side evidence-figure"><svg></svg></div>
+      <aside class="argument-side aedar-car-overview-reading">
+        <div class="aedar-car-overview-copy">
+          <div class="argument-copy cahier-prose" style="display:none">Texte</div>
+          <p class="cahier-evidence-source" style="display:none">Source</p>
+        </div>
+        <figure id="scalars" class="aedar-car-overview-scalars">
+          <figcaption class="cahier-figure-title">Scalaires</figcaption>
+          <div class="summary-metrics"><span>209,3</span></div>
+        </figure>
+      </aside>
+    </div>`
+    for (const documentRoute of [true, false]) {
+      document.body.innerHTML = markup.replace('%s',
+        documentRoute ? ' data-cahier-export-layout="spread"' : '')
+      if (!documentRoute) {
+        const inner = document.getElementById('root')!
+        inner.innerHTML = `<div data-cahier-export-layout="spread">${inner.innerHTML}</div>`
+      }
+      const root = document.getElementById('root') as HTMLElement
+      const scalars = document.getElementById('scalars') as HTMLElement
+      const prose = document.querySelector('.argument-copy') as HTMLElement
+      const figureStyle = getComputedStyle(scalars)
+      reflowVisibleFigureTracks(root)
+      // The scalars survive in both routes; only prose is removed.
+      expect(scalars.style.display).toBe('')
+      expect(figureStyle.display).not.toBe('none')
+      expect(prose.style.display).toBe('none')
+      expect(scalars.textContent).toContain('209,3')
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('sees a section-level export-layout declaration when the root is the section', () => {
+    document.body.innerHTML = `<section id="root" data-cahier-export-layout="spread"
+      style="display:grid;grid-template-columns:1fr 1fr">
+      <div id="prose"><p class="argument-copy" style="display:none">Texte</p></div>
+      <figure id="figure"></figure>
+    </section>`
+    const root = document.getElementById('root') as HTMLElement
+    reflowVisibleFigureTracks(root)
+    // If the root were skipped by querySelectorAll, no plan would exist.
+    expect(root.style.gridTemplateColumns).toBe('repeat(1, minmax(0, 1fr))')
+    expect(document.getElementById('figure')!.style.width).toBe('0px')
+  })
+
+  it('sees all nine section-level declarations in both routes', () => {
+    const section = (id: number) => `<section id="s${id}" data-cahier-export-layout="spread"
+      style="display:grid;grid-template-columns:1fr 1fr">
+      <div><p class="argument-copy" style="display:none">Texte</p></div>
+      <figure id="f${id}"><svg></svg></figure>
+    </section>`
+    for (const documentRoute of [true, false]) {
+      document.body.innerHTML = `<div id="root">${Array.from({ length: 9 }, (_, i) => section(i)).join('')}</div>`
+      const root = document.getElementById('root') as HTMLElement
+      if (documentRoute) {
+        // In the document route each section is the pass root itself.
+        for (let i = 0; i < 9; i += 1) reflowVisibleFigureTracks(document.getElementById(`s${i}`) as HTMLElement)
+      } else {
+        reflowVisibleFigureTracks(root)
+      }
+      for (let i = 0; i < 9; i += 1) {
+        expect(document.getElementById(`s${i}`)!.style.gridTemplateColumns,
+          `${documentRoute ? 'document' : 'figure'} route section ${i}`).toBe('repeat(1, minmax(0, 1fr))')
+      }
+    }
+    vi.restoreAllMocks()
   })
 
   it('shares one owned prose list between the mount hide and the reflow removal', () => {

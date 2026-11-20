@@ -153,7 +153,7 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
     .join('\n')
   // The mount hides exactly the roles in the one owned prose list, and the
   // reflow pass removes exactly that same list — never two diverging selectors.
-  const hidden = cahierExportHiddenSelectors()
+  const hidden = cahierExportHiddenSelectors(layout.document)
     .map((selector) => `${scope} ${selector} { display:none!important }`)
     .join('\n')
   sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }

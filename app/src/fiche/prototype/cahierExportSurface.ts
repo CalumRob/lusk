@@ -16,6 +16,9 @@ export const CAHIER_EXPORT_SURFACE = {
   layoutSpread: 'spread',
   /** The single owned prose list, shared by the mount and the reflow pass. */
   proseSelector: '.argument-copy, .page-subtitle, .cahier-evidence-source:not(.cahier-map-legend__note)',
+  /** Evidence stamps are explanatory prose only in the document route; the
+   *  figure route keeps the in-figure source of every section that owns one. */
+  documentOnlyProse: '.cahier-evidence-source:not(.cahier-map-legend__note)',
   hidden: [
     '.cahier-section-footer',
     '[role=tooltip]',
@@ -37,9 +40,16 @@ export const CAHIER_EXPORT_SURFACE = {
   ],
 } as const
 
-/** The mount's hide list, built from the one owned prose list — never a second copy. */
-export function cahierExportHiddenSelectors(): string[] {
-  return [...CAHIER_EXPORT_SURFACE.hidden, CAHIER_EXPORT_SURFACE.proseSelector]
+/** The mount's hide list, built from the one owned prose list — never a second
+ *  copy. The evidence-stamp role is applied only in the document route; the
+ *  figure route keeps in-figure sources as before. */
+export function cahierExportHiddenSelectors(document = true): string[] {
+  const prose = document ? CAHIER_EXPORT_SURFACE.proseSelector
+    : CAHIER_EXPORT_SURFACE.proseSelector
+      .split(',').map((part) => part.trim())
+      .filter((part) => part !== CAHIER_EXPORT_SURFACE.documentOnlyProse)
+      .join(', ')
+  return [...CAHIER_EXPORT_SURFACE.hidden, prose]
 }
 
 /**
@@ -52,14 +62,22 @@ export function cahierExportHiddenSelectors(): string[] {
  */
 export function reflowVisibleFigureTracks(root: HTMLElement): void {
   const surface = CAHIER_EXPORT_SURFACE
-  const layouts = root.querySelectorAll<HTMLElement>(
-    `[${surface.layoutHook}="${surface.layoutSpread}"]`,
-  )
+  const selector = `[${surface.layoutHook}="${surface.layoutSpread}"]`
+  // In the document route the section itself carries the attribute; in the
+  // figure route it is a descendant. querySelectorAll excludes the root, so
+  // include it explicitly or the section declaration is inert in one route.
+  const layouts = [...root.querySelectorAll<HTMLElement>(selector)]
+  if (root.matches(selector)) layouts.unshift(root)
   const isFigure = (element: Element) =>
     element.tagName === 'FIGURE' || element.matches('[data-cahier-native-figure]')
       || element.querySelector(':scope > figure, :scope > [data-cahier-native-figure]') !== null
-  const isProse = (element: Element) =>
-    element.matches(surface.proseSelector) || element.querySelector(surface.proseSelector) !== null
+  const hasProse = (element: Element) => element.querySelector(surface.proseSelector) !== null
+  const isProseNode = (element: Element) => element.matches(surface.proseSelector)
+  // A wrapper that only holds prose may be hidden as a unit. An ancestor that
+  // also owns a figure (the overview aside owns the scalar figure) must NEVER
+  // be hidden: only its prose descendants may be removed.
+  const isProseChild = (element: Element) =>
+    isProseNode(element) || (hasProse(element) && !element.querySelector('figure, [data-cahier-native-figure]'))
   const plans: {
     layout: HTMLElement
     prose: HTMLElement[]
@@ -71,7 +89,7 @@ export function reflowVisibleFigureTracks(root: HTMLElement): void {
     const style = getComputedStyle(layout)
     if (style.display !== 'grid') continue
     const children = [...layout.children] as HTMLElement[]
-    const directProse = children.filter((child) => !isFigure(child) && isProse(child)
+    const directProse = children.filter((child) => !isFigure(child) && isProseChild(child)
       && getComputedStyle(child).display !== 'none')
     // Prose nested in the layout and already hidden by the mount is owned by
     // this container too: removing it (same shared selector) makes a real plan.
@@ -79,6 +97,9 @@ export function reflowVisibleFigureTracks(root: HTMLElement): void {
       .filter((element) => getComputedStyle(element).display === 'none')
     const prose = [...new Set([...directProse, ...nestedProse])]
     if (!prose.length) continue
+    // A child that OWNS a figure is still a figure for geometry purposes (the
+    // overview aside owns the scalars; the diversity comparison row is an
+    // owner-declared figure grid). It is simply never treated as prose above.
     const figures = children.filter((child) => !directProse.includes(child) && isFigure(child))
     if (!figures.length) continue
     plans.push({
