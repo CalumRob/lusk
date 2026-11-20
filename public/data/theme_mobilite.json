@@ -646,7 +646,7 @@
       "family": "scalar"
     },
     "raccordement_courbe": {
-      "cellule": { "defer_coordinate_declaration": "t-code published axis vs minute input grid; decision #1096" },
+      "cellule": { "declare": false },
       "indicator": "raccordement_courbe",
       "label": "Courbe de population bretonne jointe selon le temps de trajet",
       "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun de ce territoire, selon la durée du trajet planifié aller simple.",

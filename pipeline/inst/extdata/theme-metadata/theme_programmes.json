@@ -111,7 +111,7 @@
   },
   "indicator_pages": {
     "subventions_annuelles": {
-      "cellule": { "defer_coordinate_declaration": "annual axis is data-driven; published descriptor owns its values" },
+      "cellule": { "declare": false },
       "indicator": "subventions_annuelles",
       "series_dataset_id": "subventions_annuelles",
       "axis_kind": "year",
