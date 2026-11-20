@@ -67,8 +67,10 @@ uses to bind a Cellule without parsing a key, guessing a label or hardcoding a
 default:
 
 - `coordinates` names each coordinate axis and declares every value with a
-  readable `label` and its `unit` (the producer's per-detail unit wins over the
-  indicator's scalar unit). Where the producer declares no separate wording,
+  readable `label` and its `unit`. For a detail axis the unit is the producer's
+  per-detail unit, else the page's `comparison.unit`, else `null` — a profile's
+  categories never inherit the indicator's scalar unit. Non-detail axes keep
+  the `comparison.unit`/scalar fallback. Where the producer declares no wording,
   the value's own key is a valid label — a year, a DPE class or the F/M keys are
   not reformulated at runtime. A series coordinate universe is the producer's
   `comparison.details`, which the publisher writes as the descriptor's
