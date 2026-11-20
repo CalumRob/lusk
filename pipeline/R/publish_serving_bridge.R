@@ -86,9 +86,10 @@ assert_bridge_live_projection <- function(live) {
 # silent relabelling: 'preserve' refuses a semantic difference; 'replace' is
 # allowed only against an explicit confirmation token for THAT transition.
 BRIDGE_CONFIRM_DESCRIPTOR_ENV <- "LUSK_BRIDGE_CONFIRM_DESCRIPTOR"
-BRIDGE_DESCRIPTOR_FIELDS <- c("indicator_id", "theme_id", "label", "unit",
-  "direction", "comparison_facet", "allowed_levels",
-  "denominator_semantics", "completeness", "descriptor_version")
+
+# Fixed canonical order for the confirmation payload, derived from the SAME
+# semantic-field definition used by identical_scalar_descriptor().
+BRIDGE_DESCRIPTOR_FIELDS <- SCALAR_DESCRIPTOR_SEMANTICS
 
 bridge_descriptor_confirmation_token <- function(live_descriptor, scoped_descriptor) {
   canonical <- function(row) {
@@ -115,10 +116,16 @@ bridge_offre_tc_descriptor <- function(live_descriptor, scoped_descriptor,
   same <- nrow(live_descriptor) == 1L &&
     identical_scalar_descriptor(live_descriptor, scoped_descriptor)
   if (same) return(list(descriptor = live_descriptor, changed = FALSE, token = NULL))
-  if (identical(policy, "preserve"))
-    stop("The live offre_tc descriptor differs from current metadata; ",
-         "preserve policy refuses with zero writes. Re-run with descriptor ",
-         "policy 'replace' and the confirmed transition token.", call. = FALSE)
+  if (identical(policy, "preserve")) {
+    message <- paste0("The live offre_tc descriptor differs from current metadata; ",
+      "preserve policy refuses with zero writes. To publish this transition set ",
+      "LUSK_BRIDGE_DESCRIPTOR_POLICY='replace' and ",
+      "LUSK_BRIDGE_CONFIRM_DESCRIPTOR=", token, " (from the dry-run).")
+    if (!isTRUE(enforce))
+      return(list(descriptor = live_descriptor, changed = FALSE,
+                  token = token, refusal = message))
+    stop(message, call. = FALSE)
+  }
   if (isTRUE(enforce) &&
       (is.null(confirmation) || !nzchar(trimws(confirmation)) ||
        !identical(trimws(confirmation), token)))
@@ -186,7 +193,8 @@ build_bridge_scalar_projection <- function(live, offre_tc_rows, metadata,
                               metadata = metadata_descriptor,
                               token = descriptor_token,
                               changed = descriptor_decision$changed,
-                              policy = descriptor_policy))
+                              policy = descriptor_policy,
+                              refusal = descriptor_decision$refusal))
 }
 
 # Row-normalised per-indicator data comparison. Order is not data; column types
@@ -795,7 +803,11 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                 descriptor_info = built$descriptor_info)
   bridge_print_report(plan, mode)
 
-  if (identical(mode, "dry-run")) return(invisible(plan))
+  if (identical(mode, "dry-run")) {
+    if (!is.null(plan$descriptor_info$refusal))
+      stop(plan$descriptor_info$refusal, call. = FALSE)
+    return(invisible(plan))
+  }
   assert_bridge_publish_opt_in(env)
   assert_bridge_dump_confirmed(env)
   publish(con, plan, retired_ids, expected,

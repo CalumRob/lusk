@@ -1456,6 +1456,20 @@ test_that("bridge linked token equals the producer's own formula", {
                                          tokens$scalar, expected[["reference"]], sep = "-"))
 })
 
+# Independently derive the scalar snapshot token from the SAME inputs using
+# producer projectors only — never the bridge's token computation.
+bridge_independent_scalar_version <- function(live, fresh_rows, metadata = bridge_fixture_metadata()) {
+  scoped <- project_scalar_canonical_rows(fresh_rows, metadata, bridge_offre_tc_id(),
+                                           live$eligible_territories)
+  affected <- union(retained_scalar_retirement_ids(), bridge_offre_tc_id())
+  keep <- function(frame) frame[!frame$indicator_id %in% affected, , drop=FALSE]
+  kept <- list(facts = keep(live$facts), descriptors = keep(live$descriptors),
+               provenance = keep(live$provenance), datasets = live$datasets,
+               vintages = live$vintages,
+               eligible_territories = live$eligible_territories)
+  scalar_content_version(combine_scalar_projections(kept, scoped))
+}
+
 test_that("the #1068 marker verifier accepts the state a bridge write produces", {
   expected <- bridge_fixture_expected_tokens()
   live <- bridge_live_fixture()
@@ -1473,6 +1487,13 @@ test_that("the #1068 marker verifier accepts the state a bridge write produces",
     expected[["reference"]], bridge_fixture_markers(expected), expected,
     profile_version = lineage$version)
 
+  independent_scalar <- bridge_independent_scalar_version(live, bridge_fresh_offre_tc_rows())
+  expect_identical(tokens$scalar, independent_scalar)
+  independent_comparison <- project_scalar_comparisons(
+    built$projection, bridge_fixture_reference_rows(),
+    input_scalar_content_version = independent_scalar,
+    reference_content_version = expected[["reference"]])
+  expect_identical(tokens$comparison, independent_comparison$content_version)
   markers <- bridge_fixture_markers(expected)
   markers$tables$content_version[markers$tables$table_name == "scalar_observation"] <- tokens$scalar
   markers$tables$content_version[markers$tables$table_name == "declared_profile"] <- lineage$version
@@ -1495,15 +1516,15 @@ test_that("the #1068 marker verifier accepts the state a bridge write produces",
     dataset_id = "ocsge_artif_etats", content_version = "series-v1",
     reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
   expectations <- list(
-    reference = expected[["reference"]], scalar = tokens$scalar,
-    comparison = tokens$comparison, comparison_scalar = tokens$scalar,
+    reference = expected[["reference"]], scalar = independent_scalar,
+    comparison = independent_comparison$content_version, comparison_scalar = independent_scalar,
     typed = c(demographie = "demo-v1", habitat = expected[["habitat"]],
               economie = "eco-v1", milieux = "milieux-v1"),
     series = list(dataset_id = "ocsge_artif_etats", content_version = "series-v1"),
     profile_version = lineage$version,
     profile_comparison_version = lineage$comparison_version,
     profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
-    profile_required_scalar = tokens$scalar,
+    profile_required_scalar = independent_scalar,
     habitat_version = expected[["habitat"]], selected_linked = tokens$linked)
   expect_identical(nrow(verifier_retained_backend_baseline(markers, expectations)), 0L)
   # A stale linked token in the written state must be caught.
@@ -1727,5 +1748,91 @@ test_that("the replaced descriptor keeps all chained tokens #1068-consistent", {
     profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
     profile_required_scalar = written$tokens$scalar,
     habitat_version = expected[["habitat"]], selected_linked = written$tokens$linked))), 0L)
+})
+
+
+# --- Final review: semantic fields, dry-run refusal, comparison-shape change --
+
+test_that("confirmation token fields equal the shared semantic definition", {
+  expect_identical(BRIDGE_DESCRIPTOR_FIELDS, SCALAR_DESCRIPTOR_SEMANTICS)
+  expect_true(all(SCALAR_DESCRIPTOR_SEMANTIC_FIELDS %in% BRIDGE_DESCRIPTOR_FIELDS))
+  expect_true(all(SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS %in% BRIDGE_DESCRIPTOR_FIELDS))
+  expect_false("descriptor_version" %in% BRIDGE_DESCRIPTOR_FIELDS)
+  base <- bridge_live_fixture_old_descriptor()
+  row <- base$descriptors[base$descriptors$indicator_id == bridge_offre_tc_id(), , drop=FALSE]
+  changed <- row
+  changed$allowed_sources <- I(list(c("korrigo", "other_source")))
+  t1 <- bridge_descriptor_confirmation_token(row, row)
+  t2 <- bridge_descriptor_confirmation_token(row, changed)
+  expect_false(identical(t1, t2))
+  expect_true(identical_scalar_descriptor(row, row))
+  expect_false(identical_scalar_descriptor(row, changed))
+})
+
+test_that("dry-run with preserve prints both descriptors then refuses", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture_old_descriptor()
+  facts_path <- tempfile("bridge-facts-", fileext=".rds")
+  on.exit(unlink(facts_path), add=TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  values <- bridge_test_env_values(expected, facts_path)
+  output <- character(); err <- NULL
+  output <- capture.output(err <- tryCatch(run_offre_tc_bridge(
+    "dry-run", env = bridge_fake_env(values),
+    con = structure(list(), class="fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity,
+    live_reader = bridge_fake_reader(bridge_db_rows_from_projection(live)),
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids()), error = function(e) conditionMessage(e)))
+  expect_match(paste(output, collapse="\n"), "offre_tc live descriptor", fixed=TRUE)
+  expect_match(paste(output, collapse="\n"), "offre_tc metadata descriptor", fixed=TRUE)
+  expect_match(paste(output, collapse="\n"), "descriptor confirmation token", fixed=TRUE)
+  expect_true(grepl("LUSK_BRIDGE_DESCRIPTOR_POLICY='replace'", err, fixed=TRUE))
+  expect_true(grepl("LUSK_BRIDGE_CONFIRM_DESCRIPTOR=", err, fixed=TRUE))
+  # A real write with preserve refuses with zero writes.
+  expect_error(bridge_descriptor_run(live, "publish", policy = "preserve"),
+               "preserve policy refuses")
+})
+
+test_that("a facet/direction/levels transition rewrites the comparison chain", {
+  expected <- bridge_fixture_expected_tokens()
+  live <- bridge_live_fixture_old_descriptor()
+  metadata <- lire_theme_metadata("mobilite")
+  metadata$indicator_pages$offre_tc$direction <- "low"
+  metadata$scalar_contracts$offre_tc$comparison_facet <- "offre_tc"
+  metadata$scalar_contracts$offre_tc$allowed_levels <- c("commune", "epci")
+  rows_probe <- project_scalar_canonical_rows(bridge_fresh_offre_tc_rows(), metadata,
+    bridge_offre_tc_id(), live$eligible_territories)
+  meta_desc <- rows_probe$descriptors[1L, , drop=FALSE]
+  token <- bridge_descriptor_confirmation_token(
+    live$descriptors[live$descriptors$indicator_id == bridge_offre_tc_id(), , drop=FALSE],
+    meta_desc)
+  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(), metadata,
+    retained_scalar_retirement_ids(), descriptor_policy="replace",
+    descriptor_confirmation=token)
+  expect_identical(as.character(built$projection$descriptors$direction[
+    built$projection$descriptors$indicator_id == bridge_offre_tc_id()]), "low")
+  expect_identical(as.character(unlist(built$projection$descriptors$allowed_levels[
+    built$projection$descriptors$indicator_id == bridge_offre_tc_id()])),
+    c("commune", "epci"))
+  # Independent expectation: producer functions on a fresh projection, not the bridge.
+  independent <- project_scalar_canonical_rows(bridge_fresh_offre_tc_rows(), metadata,
+    bridge_offre_tc_id(), live$eligible_territories)
+  idx <- built$projection$descriptors$indicator_id == bridge_offre_tc_id()
+  actual_row <- built$projection$descriptors[idx, , drop=FALSE]
+  rownames(actual_row) <- NULL
+  expected_row <- independent$descriptors
+  rownames(expected_row) <- NULL
+  expect_identical(actual_row, expected_row)
+  expected_projection <- built$projection
+  expected_projection$descriptors[idx, ] <- independent$descriptors[1L, ]
+  expect_identical(scalar_content_version(built$projection),
+                   scalar_content_version(expected_projection))
+  comparison <- project_scalar_comparisons(independent, bridge_fixture_reference_rows(),
+    input_scalar_content_version = scalar_content_version(independent),
+    reference_content_version = expected[["reference"]])
+  expect_true(nrow(comparison$groups) > 0L)
+  expect_true(any(comparison$groups$indicator_id == bridge_offre_tc_id()))
+  expect_identical(built$descriptor_info$token, token)
 })
 
