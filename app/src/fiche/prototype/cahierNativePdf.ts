@@ -9,7 +9,7 @@ import { chargerPolicePdf } from './cahierPdfFonts'
 import { LARGEUR_CORPS_PT, LARGEUR_FIGURE_STANDARD_PT, PAGE_APPROUVEE, ptDepuisCssPx } from './cahierPdfGrammaire'
 import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 import { CAHIER_EXPORT_ROUTES } from './cahierExportRoutes'
-import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from './cahierExportSurface'
+import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks, selectorList } from './cahierExportSurface'
 import type { OptionsCompositionCahierPdf } from './cahierPdfComposer'
 
 export class CahierNativePdfError extends Error {
@@ -112,24 +112,6 @@ function nativeBreakBlocks(root: HTMLElement, scale: number, maxHeight: number):
     return rows.flatMap((row) => height(row) * scale <= maxHeight ? [row] : row.flatMap(walk))
   }
   return walk(root)
-}
-
-/** Split a selector LIST on top-level commas only — never inside `:not(...)`/brackets. */
-export function selectorList(value: string): string[] {
-  const parts: string[] = []
-  let depth = 0
-  let start = 0
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index]
-    if (char === '(' || char === '[') depth += 1
-    else if (char === ')' || char === ']') depth -= 1
-    else if (char === ',' && depth === 0) {
-      parts.push(value.slice(start, index).trim())
-      start = index + 1
-    }
-  }
-  parts.push(value.slice(start).trim())
-  return parts.filter(Boolean)
 }
 
 /** The one offscreen host scope, built from the one `hostClass` contract value. */
