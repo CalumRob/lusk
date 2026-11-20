@@ -58,6 +58,10 @@ class IndicatorResource:
     # measure key or registry-wide aggregate reading key ->
     # {"facet", "direction", "ranked"}.
     measure_facets: dict[str, dict] = field(default_factory=dict)
+    # Addressable Cellule declaration for the Atelier (#1075). None for
+    # non-Cellule resources and for producers whose coordinate identity space
+    # is not yet declared coherently (see the exclusion constant below).
+    cellule: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +159,123 @@ def _axis_values(metadata, indicator_id, page, shapes, parent_indicator=None):
     if categories:
         result.append(("detail", tuple(str(value) for value in categories)))
     return tuple(result)
+
+
+# Shapes whose published facts are addressable as Atelier Cellules (#1075).
+# AEDAR grains/summaries, typed readings and observed collections are declared
+# by their own producer contracts and are out of scope for this declaration.
+_CELLULE_SHAPES = frozenset({"scalar", "declared_profile", "ordered_series"})
+
+# The two duration resources publish their observations under t-coded axis
+# keys (``t0090``) — the published descriptor, the app and ``detail_labels``
+# all use that space — while this catalogue's legacy ``axis_values`` still
+# carries the minute input grid (``90``). A Cellule must name coordinates in
+# the published identity space; declaring one from the minute grid would make
+# an unaddressable Cellule look addressable. Neither source is silently
+# reconciled here: this is reported as an open question for #1075.
+_CELLULE_COORDINATE_SPACE_PENDING = frozenset({
+    "raccordement_courbe", "raccordement_reference",
+})
+
+
+def _cellule_value_labels(metadata, indicator_id, page):
+    """Producer-owned readable labels for coordinate values.
+
+    ``comparison.labels`` is the page's own declaration; ``detail_labels`` is
+    the theme-wide producer declaration the publisher validates the descriptor
+    against. A value with no declared label (a year, a DPE class, the F/M keys)
+    is its own readable label — never a key parsed or invented here.
+    """
+    labels = dict((page.get("comparison") or {}).get("labels") or {})
+    labels.update((metadata.get("detail_labels") or {}).get(indicator_id, {}))
+    return {str(key): str(value) for key, value in labels.items()}
+
+
+def _cellule_values(page, axis, declared_values, scalar_unit, labels, detail_units):
+    comparison = page.get("comparison") or {}
+    values = tuple(str(value) for value in declared_values)
+    if not values:
+        # A dynamic series axis has no static producer value list; its declared
+        # comparison points are the only producer-owned value declaration.
+        points = tuple(comparison.get("dimensions") or comparison.get("details") or ())
+        if comparison.get("detail") is not None:
+            points += (comparison["detail"],)
+        values = tuple(dict.fromkeys(str(value) for value in points))
+    default_unit = comparison.get("unit") or scalar_unit or None
+    result = []
+    for value in values:
+        # A profile's categories never inherit the indicator's scalar unit:
+        # the producer's per-detail unit wins where one is declared.
+        unit = detail_units.get(value) if axis == "detail" else None
+        if unit is None:
+            unit = default_unit
+        result.append({
+            "value": value,
+            "label": labels.get(value, value),
+            "unit": str(unit) if unit is not None else None,
+        })
+    return result
+
+
+def _cellule_default_point(page, axes):
+    comparison = page.get("comparison") or {}
+    point = {}
+    detail = comparison.get("detail")
+    if detail is not None:
+        axis = "detail" if "detail" in axes else (axes[0] if axes else "detail")
+        point[axis] = str(detail)
+    if comparison.get("sex") is not None and "sex" in axes:
+        point["sex"] = str(comparison["sex"])
+    if not point:
+        dimension = comparison.get("dimension")
+        if dimension is None and comparison.get("dimensions"):
+            dimension = comparison["dimensions"][0]
+        if dimension is not None and axes:
+            point[axes[0]] = str(dimension)
+    return point or None
+
+
+def _cellule_combinations(coordinates, declared_subset):
+    """Valid coordinate combinations: a producer subset or the full product.
+
+    The declaration is explicit either way: the cross product is declared when
+    every combination exists, and a producer may declare a narrower set where
+    it does not. No consumer has to infer which combinations are addressable.
+    """
+    if declared_subset is not None:
+        return [dict(combination) for combination in declared_subset]
+    combinations = [{}]
+    for coordinate in coordinates:
+        combinations = [
+            {**combination, coordinate["name"]: value["value"]}
+            for combination in combinations
+            for value in coordinate["values"]
+        ]
+    return combinations
+
+
+def _cellule_declaration(metadata, indicator_id, page, axes, axis_values, unit, shapes):
+    """Project producer metadata into the public Cellule addressing declaration."""
+    if not _CELLULE_SHAPES.intersection(shapes):
+        return None
+    if indicator_id in _CELLULE_COORDINATE_SPACE_PENDING:
+        return None
+    labels = _cellule_value_labels(metadata, indicator_id, page)
+    detail_units = ((metadata.get("profile_contracts") or {}).get(indicator_id, {})
+                    .get("detail_units") or {})
+    declared_values = dict(axis_values)
+    coordinates = [
+        {"name": axis,
+         "values": _cellule_values(page, axis, declared_values.get(axis, ()),
+                                   unit, labels, detail_units)}
+        for axis in axes
+    ]
+    declared_subset = (page.get("cellule") or {}).get("valid_combinations")
+    return {
+        "coordinates": coordinates,
+        "valid_combinations": _cellule_combinations(coordinates, declared_subset),
+        "default_point": _cellule_default_point(page, tuple(axes)),
+    }
 
 
 _FIELDS_BY_SHAPE = {
@@ -517,6 +638,9 @@ def discover_indicator_resources(metadata_directory: str | Path,
                     "scalar" in shapes
                     and scalar_contracts.get(indicator_id, {}).get("counts_available", False)
                 ),
+                cellule=_cellule_declaration(
+                    metadata, indicator_id, page_descriptor, axes, axis_values,
+                    page_descriptor.get("unit", ""), shapes),
             ))
 
     # A source-declared key cannot silently disappear because another map was
