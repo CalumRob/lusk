@@ -144,7 +144,9 @@ if (!bridge_db_proof_configured()) {
     descriptor_token <- bridge_descriptor_confirmation_token(old_descriptor, metadata_descriptor)
     env_values <- bridge_test_env_values(expected, facts_path,
       list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
-           setNames("operator-dump", BRIDGE_DUMP_ACK_ENV)))
+           setNames("operator-dump", BRIDGE_DUMP_ACK_ENV),
+            setNames("replace", "LUSK_BRIDGE_DESCRIPTOR_POLICY"),
+            setNames(descriptor_token, BRIDGE_CONFIRM_DESCRIPTOR_ENV)))
     env <- bridge_fake_env(env_values)
     reader <- bridge_live_reader()
     read_markers <- function() retained_backend_markers(connection)
