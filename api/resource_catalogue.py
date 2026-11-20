@@ -201,14 +201,16 @@ def _cellule_series_axis_values(comparison):
 
 
 def _cellule_values(axis, declared_values, comparison, scalar_unit, labels, detail_units):
-    default_unit = comparison.get("unit") or scalar_unit or None
+    fallback_unit = comparison.get("unit") or scalar_unit or None
     result = []
     for value in declared_values:
         # A profile's categories never inherit the indicator's scalar unit:
-        # the producer's per-detail unit wins where one is declared.
-        unit = detail_units.get(value) if axis == "detail" else None
-        if unit is None:
-            unit = default_unit
+        # for a detail axis only the producer's per-detail unit or the page's
+        # comparison unit can declare one; otherwise the unit is unknown (null).
+        if axis == "detail":
+            unit = detail_units.get(value) or comparison.get("unit") or None
+        else:
+            unit = fallback_unit
         result.append({
             "value": value,
             "label": labels.get(value, value),
@@ -467,20 +469,20 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         # #1075: a declared Cellule combination set is authoritative across
         # axes. Validating each axis independently would let a request name a
         # combination that does not exist and receive an empty cohort instead
-        # of a named error. Enforce it whenever the declaration covers the
-        # requested axes — not only when they appear in the legacy static axis
-        # list. Resources whose producer defers the declaration keep the
-        # existing axis-by-axis contract and the descriptor's own membership.
+        # of a named error. Resources whose producer defers the declaration keep
+        # the existing axis-by-axis contract and the descriptor's membership.
         declared_combinations = (resource.cellule or {}).get("valid_combinations") or []
-        if (declared_combinations and item.coordinates
-                and all(set(item.coordinates) <= set(combination)
-                        for combination in declared_combinations)):
-            combinations = declared_combinations
+        if declared_combinations and item.coordinates:
             requested_axes = sorted(item.coordinates)
-            allowed = {
-                tuple(combination.get(axis) for axis in requested_axes)
-                for combination in combinations
-            }
+            # A partial producer declaration must not bypass the gate: if no
+            # declared point names all the requested axes, the request is not
+            # addressable and fails with the same named error.
+            covering = [combination for combination in declared_combinations
+                        if set(requested_axes) <= set(combination)]
+            if not covering:
+                raise ValueError("coordinate combination is not declared for this resource")
+            allowed = {tuple(combination.get(axis) for axis in requested_axes)
+                       for combination in covering}
             for point in itertools.product(*(item.coordinates[axis] for axis in requested_axes)):
                 if point not in allowed:
                     raise ValueError("coordinate combination is not declared for this resource")
