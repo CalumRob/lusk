@@ -394,7 +394,11 @@ from the verified live tokens.
 4. **Dump acknowledgement** â€” the write command refuses unless
    `LUSK_BRIDGE_DUMP_CONFIRMED=<path-or-id>` confirms a verified `pg_dump` of the
    affected tables. The tool does not take or restore the dump.
-5. **Credentials** â€” host/database/role come from `LUSK_PUBLISH_HOST`,
+5. **Scope and identity** — `LUSK_SCALAR_SCOPE` must select exactly the registered
+   `offre_tc` scope, and `SELECT current_database(), current_user` on the live
+   connection must equal `LUSK_PUBLISH_DATABASE` / `LUSK_PUBLISH_USER`. Checked
+   before any read or write, including dry-run.
+6. **Credentials** â€” host/database/role come from `LUSK_PUBLISH_HOST`,
    `LUSK_PUBLISH_DATABASE`, `LUSK_PUBLISH_USER` (optional `_PORT`); the password
    comes only from the private libpq passfile (`PGPASSFILE`, never inside the
    repository).
@@ -439,10 +443,20 @@ and the R test verifies the mutex is held before it connects.
   per-indicator/per-theme versioning to the serving tables (the underlying
   design problem, left for a follow-up). The scalar tables remain whole-table
   snapshots.
-- It rewrites only the scalar snapshot/comparison and the two chained
-  descriptor fields. Demographic, economy, Milieux, owned-series, profile
-  *facts* and the Habitat selected-reading rows are neither expectations nor
-  writes; their markers stay as they were.
+- It rewrites the scalar snapshot/comparison and, through the **normal registered
+  profile publisher**, the whole declared-profile snapshot (descriptor, axes,
+  facts, provenance and comparison). Those profile rows are rewritten with
+  **identical data**: the reconstructed projections are proved equal to the live
+  rows before the write and re-read and compared again inside the transaction;
+  only `required_scalar_version` and the hashes derived from it change.
+  Demographic, economy, Milieux, owned-series rows and the Habitat selected-reading
+  rows are neither expectations nor written; their markers stay as they were.
+- **Known limitation:** the fresh-recompute tests establish parity with the
+  producer *functions* applied to the bridge's own live-row reconstruction. They
+  are **not** parity against a canonical artifact — those generation artifacts
+  are the lost baseline. Equality of unrelated indicators is therefore proved
+  against the live serving rows read back at run time, not against a frozen
+  golden copy.
 - It has **no built-in rollback**: recovery is the operator's verified dump.
   A failure mid-write rolls the whole transaction back.
 - Tests never touch the serving database. The pure fixtures run by default;
