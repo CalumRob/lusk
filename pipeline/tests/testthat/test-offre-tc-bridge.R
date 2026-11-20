@@ -763,3 +763,53 @@ test_that("schema cleanup refuses unsafe schemas, wrong databases and missing op
   expect_length(dropped, 0L)
 })
 
+
+# --- Round-4: seed through the registered publisher, producer-valid -----------
+
+test_that("the seeded old-state projection is producer-valid and FK-coherent", {
+  live <- bridge_live_fixture()
+  validate_scalar_projection(live$facts, live$descriptors, live$eligible_territories)
+  validate_scalar_artifact_projection(live)
+
+  # In-memory mirror of the serving FKs exercised by api/schema.sql:
+  # scalar_observation -> scalar_descriptor;
+  # scalar_observation_source -> descriptor and (source_dataset, source_vintage);
+  # scalar_descriptor_source -> descriptor and source_dataset.
+  descriptor_ids <- as.character(live$descriptors$indicator_id)
+  dataset_ids <- as.character(live$datasets$source_id)
+  vintage_keys <- paste(live$vintages$source_id, live$vintages$vintage_id, sep = "\r")
+  expect_true(all(live$facts$indicator_id %in% descriptor_ids))
+  expect_true(all(live$provenance$indicator_id %in% descriptor_ids))
+  expect_true(all(live$provenance$source_id %in% dataset_ids))
+  expect_true(all(paste(live$provenance$source_id, live$provenance$vintage_id, sep = "\r")
+                  %in% vintage_keys))
+  expect_true(all(unlist(live$descriptors$allowed_sources, use.names = FALSE) %in% dataset_ids))
+
+  # The old state contains a registry-derived retired id plus the old offre_tc.
+  retired <- retained_scalar_retirement_ids()
+  expect_true(any(retired %in% descriptor_ids))
+  expect_false(bridge_offre_tc_id() %in% retired)
+  expect_true(bridge_offre_tc_id() %in% descriptor_ids)
+  expect_equal(max(live$facts$value[live$facts$indicator_id == bridge_offre_tc_id()]), 0.20)
+})
+
+test_that("scalar seeding goes through the publisher transaction before replace", {
+  calls <- character()
+  adapter <- bridge_fake_scalar_adapter("seed-version")
+  base_replace <- adapter$replace
+  adapter$transaction <- function(expr) { calls <<- c(calls, "transaction"); force(expr) }
+  adapter$replace <- function(projection, version, retired_indicator_ids = character()) {
+    calls <<- c(calls, "replace")
+    base_replace(projection, version, retired_indicator_ids)
+  }
+  registry <- register_scalar_publisher(list(), "seed",
+    project = function(canonical) canonical,
+    publish = function(projection, db, version) db$replace(projection, version))
+  publish_registered_scalar(registry, "seed", bridge_live_fixture(), adapter,
+                            retired_indicator_ids = retained_scalar_retirement_ids())
+  # A direct adapter$replace call would skip the transaction; the deferred FK
+  # and descriptor-source triggers require descriptor and source inserts to
+  # commit together (this is what failed when the DB proof seeded directly).
+  expect_identical(calls, c("transaction", "replace"))
+})
+

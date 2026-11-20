@@ -40,10 +40,15 @@ bridge_live_fixture <- function() {
   metadata <- bridge_fixture_metadata()
   eligible <- bridge_fixture_eligible()
   offre_tc_descriptor <- scalar_descriptor_row(metadata, "offre_tc")
+  # The old serving state carries every owner-retired id, derived from the
+  # canonical contract registry (never a literal list in the fixture).
+  retired_ids <- retained_scalar_retirement_ids()
+  retired_descriptors <- do.call(rbind, lapply(retired_ids, function(id)
+    bridge_fixture_simple_descriptor(id, paste("Retired", id), id)))
   descriptors <- rbind(
     bridge_fixture_simple_descriptor("kept_scalar", "Kept", "kept_scalar"),
     bridge_fixture_simple_descriptor("other_kept", "Other kept"),
-    bridge_fixture_simple_descriptor("tot_loss_t", "Retired legacy", "tot_loss_t"),
+    retired_descriptors,
     # The DPE declared profile binds to this scalar facet; it must be present
     # for the registered profile publisher's facet validation.
     (function() {
@@ -68,22 +73,26 @@ bridge_live_fixture <- function() {
                territory_type = "commune", value = c(0.1, 0.2), status = "measured",
                support_count = NA_integer_, denominator_count = NA_integer_,
                stringsAsFactors = FALSE),
-    data.frame(indicator_id = "tot_loss_t", territory_id = "29001",
-               territory_type = "commune", value = 0.4, status = "measured",
-               support_count = NA_integer_, denominator_count = NA_integer_,
-               stringsAsFactors = FALSE),
+    do.call(rbind, lapply(retired_ids, function(id) data.frame(
+      indicator_id = id, territory_id = "29001", territory_type = "commune",
+      value = 0.4, status = "measured", support_count = NA_integer_,
+      denominator_count = NA_integer_, stringsAsFactors = FALSE))),
     data.frame(indicator_id = "offre_tc", territory_id = c("29001", "29002"),
                territory_type = "commune", value = c(0.10, 0.20), status = "measured",
                support_count = NA_integer_, denominator_count = NA_integer_,
                stringsAsFactors = FALSE))
   rownames(facts) <- NULL
+  n_kept <- 2L + 1L + 2L  # kept_scalar, other_kept, part_passoires
+  n_retired <- length(retired_ids)
   provenance <- data.frame(
     indicator_id = c(rep("kept_scalar", 2L), "other_kept",
-                     rep("part_passoires", 2L), "tot_loss_t",
+                     rep("part_passoires", 2L), retired_ids,
                      rep("offre_tc", 2L)),
-    territory_id = c("29001", "29002", "29001", "29001", "29002", "29001", "29001", "29002"),
-    source_id = c(rep("fixture_source", 6L), rep("korrigo", 2L)),
-    vintage_id = c(rep("fixture/2025", 6L), rep("2026-02/2026-02-28", 2L)),
+    territory_id = c("29001", "29002", "29001", "29001", "29002",
+                     rep("29001", n_retired), "29001", "29002"),
+    source_id = c(rep("fixture_source", n_kept + n_retired), rep("korrigo", 2L)),
+    vintage_id = c(rep("fixture/2025", n_kept + n_retired),
+                   rep("2026-02/2026-02-28", 2L)),
     stringsAsFactors = FALSE)
   fixture_vintage <- data.frame(
     source_id = "fixture_source", vintage_id = "fixture/2025", version = "fixture",

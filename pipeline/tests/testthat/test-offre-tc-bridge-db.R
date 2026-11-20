@@ -87,10 +87,16 @@ if (!bridge_db_proof_configured()) {
       "reference_content_version,published_at) VALUES",
       "('territory_reference',$1,$2,NULL,now())"),
       params = list(reference_version, nrow(reference_rows)))
+    # Seed through the REGISTERED publisher, not a direct adapter call: the
+    # publisher's transaction keeps descriptor, descriptor_source and observation
+    # inserts in one commit, which the deferred FK/trigger constraints require.
     scalar_version <- scalar_content_version(live)
     scalar_adapter <- scalar_postgres_adapter(connection)
-    scalar_adapter$replace(live, scalar_version,
-                           retired_indicator_ids = retained_scalar_retirement_ids())
+    seed_scalar_registry <- register_scalar_publisher(list(), "bridge_test_scalar",
+      project = function(canonical) canonical,
+      publish = function(projection, db, version) db$replace(projection, version))
+    publish_registered_scalar(seed_scalar_registry, "bridge_test_scalar", live,
+      scalar_adapter, retired_indicator_ids = retained_scalar_retirement_ids())
     comparison <- project_scalar_comparisons(
       live, reference_rows, input_scalar_content_version = scalar_version,
       reference_content_version = reference_version)
