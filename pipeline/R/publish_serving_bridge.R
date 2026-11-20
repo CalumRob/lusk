@@ -19,6 +19,18 @@
 # No serving connection is opened by loading this file. The worker never runs
 # the real publication: the operator does, after a verified dump.
 
+# RPostgres rejects `params = list()` on a statement with no placeholders
+# ("Query does not require parameters"). Route EVERY parameterised-or-not query
+# and statement through these two helpers: they omit `params` when there is none.
+bridge_db_query <- function(con, sql, params = list()) {
+  if (length(params)) DBI::dbGetQuery(con, sql, params = params)
+  else DBI::dbGetQuery(con, sql)
+}
+
+bridge_db_exec <- function(con, sql, params = list()) {
+  if (length(params)) DBI::dbExecute(con, sql, params = params)
+  else DBI::dbExecute(con, sql)
+}
 # The indicator rebuilt by this bridge is a registered scope, never a literal
 # scattered through the write path (#1071 follow-up of the general contract rule).
 # Resolve the whole registered contract ONCE and share it across the reader,
@@ -203,38 +215,38 @@ bridge_parse_text_array <- function(x) {
 }
 
 bridge_live_reader <- function() list(
-  facts = function(con) DBI::dbGetQuery(con, paste(
+  facts = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, territory_id, territory_type, value, status,",
     "support_count, denominator_count FROM scalar_observation")),
-  descriptors = function(con) DBI::dbGetQuery(con, paste(
+  descriptors = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, theme_id, label, unit, direction, comparison_facet,",
     "allowed_levels, denominator_semantics, completeness, descriptor_version",
     "FROM scalar_descriptor")),
-  descriptor_sources = function(con) DBI::dbGetQuery(con,
+  descriptor_sources = function(con) bridge_db_query(con,
     "SELECT indicator_id, source_id FROM scalar_descriptor_source"),
-  provenance = function(con) DBI::dbGetQuery(con, paste(
+  provenance = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, territory_id, source_id, vintage_id",
     "FROM scalar_observation_source")),
-  datasets = function(con) DBI::dbGetQuery(con,
+  datasets = function(con) bridge_db_query(con,
     "SELECT source_id, name FROM source_dataset"),
-  vintages = function(con) DBI::dbGetQuery(con, paste(
+  vintages = function(con) bridge_db_query(con, paste(
     "SELECT source_id, vintage_id, version, reference_date, publication_date",
     "FROM source_vintage")),
-  territories = function(con) DBI::dbGetQuery(con,
+  territories = function(con) bridge_db_query(con,
     "SELECT territory_id, territory_type FROM territory_reference"),
-  reference_rows = function(con) DBI::dbGetQuery(con, "SELECT * FROM territory_reference"),
-  profile_descriptors = function(con) DBI::dbGetQuery(con, paste(
+  reference_rows = function(con) bridge_db_query(con, "SELECT * FROM territory_reference"),
+  profile_descriptors = function(con) bridge_db_query(con, paste(
     "SELECT * FROM profile_descriptor ORDER BY indicator_id")),
-  profile_sources = function(con) DBI::dbGetQuery(con, paste(
+  profile_sources = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, source_id FROM profile_descriptor_source",
     "ORDER BY indicator_id, source_id")),
-  profile_axes = function(con) DBI::dbGetQuery(con, paste(
+  profile_axes = function(con) bridge_db_query(con, paste(
     "SELECT * FROM profile_axis ORDER BY indicator_id, axis_name, ordinal")),
-  profile_facts = function(con) DBI::dbGetQuery(con, paste(
+  profile_facts = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, territory_id, territory_type, detail_key, sex_key,",
     "detail_axis_name, sex_axis_name, value, status FROM profile_observation",
     "ORDER BY indicator_id, territory_id, territory_type, detail_key, sex_key")),
-  profile_provenance = function(con) DBI::dbGetQuery(con, paste(
+  profile_provenance = function(con) bridge_db_query(con, paste(
     "SELECT indicator_id, territory_id, detail_key, sex_key, source_id, vintage_id",
     "FROM profile_observation_source ORDER BY indicator_id, territory_id,",
     "detail_key, sex_key, source_id, vintage_id")))
@@ -467,7 +479,7 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
 # recomputed hash lineage. The WHERE clause uses the verified live linked token,
 # so a concurrent move breaks the UPDATE and the whole transaction rolls back.
 bridge_marker_writer <- function(con, old_linked, execute = NULL) {
-  exec <- if (is.null(execute)) function(sql, params) DBI::dbExecute(con, sql, params = params) else execute
+  exec <- if (is.null(execute)) function(sql, params) bridge_db_exec(con, sql, params = params) else execute
   list(
     set_habitat_linked = function(new_linked) {
       changed <- exec(paste(
@@ -497,7 +509,7 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
   registry <- bridge_identity_registry("bridge_scalar_snapshot", register_scalar_publisher)
 
   if (is.null(apply_timeouts)) apply_timeouts <- function(sql) {
-    if (!is.null(con) && !inherits(con, "fake-con")) DBI::dbExecute(con, sql)
+    if (!is.null(con) && !inherits(con, "fake-con")) bridge_db_exec(con, sql)
   }
   transaction(con, {
     bridge_write_timeouts(lock_timeout_ms, statement_timeout_ms, set = apply_timeouts)
@@ -613,13 +625,13 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   # not execute SQL.
   if (is.null(lock)) lock <- function(con) {
     if (inherits(con, "fake-con")) invisible(NULL)
-    else DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
+    else bridge_db_query(con, "SELECT pg_advisory_lock(594, 1)")
   }
   lock(con)
   on.exit({
     if (!is.null(unlock)) unlock(con)
     else if (!inherits(con, "fake-con"))
-      try(DBI::dbGetQuery(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
+      try(bridge_db_query(con, "SELECT pg_advisory_unlock(594, 1)"), silent = TRUE)
   }, add = TRUE)
   if (is.null(read_markers)) read_markers <- function() retained_backend_markers(con)
   if (is.null(fk_reader)) fk_reader <- function(con) {
@@ -855,7 +867,7 @@ assert_bridge_scope_env <- function(selection, scope) {
 }
 
 bridge_connection_identity <- function(con, reader = NULL) {
-  if (is.null(reader)) reader <- function(con) DBI::dbGetQuery(con, paste(
+  if (is.null(reader)) reader <- function(con) bridge_db_query(con, paste(
     "SELECT current_database() AS database, current_user AS role"))
   reader(con)
 }
@@ -1004,8 +1016,8 @@ bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
   if (is.null(open)) open <- function(config) do.call(DBI::dbConnect,
     c(list(drv = RPostgres::Postgres()), config))
   if (is.null(query)) query <- function(con, sql, params = list())
-    DBI::dbGetQuery(con, sql, params = params)
-  if (is.null(execute)) execute <- function(con, sql) DBI::dbExecute(con, sql)
+    bridge_db_query(con, sql, params = params)
+  if (is.null(execute)) execute <- function(con, sql) bridge_db_exec(con, sql)
   if (is.null(close)) close <- function(con) DBI::dbDisconnect(con)
 
   con <- open(config)
@@ -1107,7 +1119,7 @@ assert_bridge_no_foreign_scalar_fks <- function(inventory) {
 bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES,
                                 query = NULL, schema = NULL, quote = NULL) {
   if (is.null(query)) query <- function(sql, params = list())
-    DBI::dbGetQuery(con, sql, params = params)
+    bridge_db_query(con, sql, params = params)
   if (is.null(schema))
     schema <- query("SELECT current_schema() AS schema")$schema[[1L]]
   if (!is.character(schema) || length(schema) != 1L || is.na(schema) || !nzchar(schema))

@@ -56,7 +56,7 @@ if (!bridge_db_proof_configured()) {
     connection <- DBI::dbConnect(RPostgres::Postgres(), host = host, port = port,
                                  dbname = database, user = user, passfile = passfile)
     on.exit(try(DBI::dbDisconnect(connection), silent = TRUE), add = TRUE)
-    identity <- DBI::dbGetQuery(connection, paste(
+    identity <- bridge_db_query(connection, paste(
       "SELECT current_database() AS database, current_user AS role"))
     assert_bridge_connected_test_db(identity)  # HARD stop before any DDL
     config <- list(dbname = database, user = user)
@@ -69,14 +69,14 @@ if (!bridge_db_proof_configured()) {
       list(host = host, port = port, dbname = cfg$dbname, user = cfg$user,
            passfile = passfile)))
 
-    DBI::dbExecute(connection, paste0("CREATE SCHEMA ", quoted_schema))
+    bridge_db_exec(connection, paste0("CREATE SCHEMA ", quoted_schema))
     # Register cleanup IMMEDIATELY, on a FRESH connection: the publication
     # connection may be broken (observed bad_weak_ptr) and any failure between
     # here and the first assertion must still drop this run's schema.
     on.exit(bridge_db_cleanup_schema(schema, config, open = open_fresh), add = TRUE)
-    DBI::dbExecute(connection, paste0("SET search_path TO ", quoted_schema))
+    bridge_db_exec(connection, paste0("SET search_path TO ", quoted_schema))
     ddl <- paste(readLines(bridge_db_schema_path(), warn = FALSE), collapse = "\n")
-    for (statement in split_postgres_sql(ddl)) DBI::dbExecute(connection, statement)
+    for (statement in split_postgres_sql(ddl)) bridge_db_exec(connection, statement)
 
     # Seed the OLD (pre-bridge) serving state through the registered publishers.
     live <- bridge_live_fixture()
@@ -84,7 +84,7 @@ if (!bridge_db_proof_configured()) {
     reference_version <- "reference-live"
     DBI::dbWriteTable(connection, "territory_reference", reference_rows,
                       append = TRUE, row.names = FALSE)
-    DBI::dbExecute(connection, paste(
+    bridge_db_exec(connection, paste(
       "INSERT INTO table_publication(table_name,content_version,row_count,",
       "reference_content_version,published_at) VALUES",
       "('territory_reference',$1,$2,NULL,now())"),
@@ -117,19 +117,19 @@ if (!bridge_db_proof_configured()) {
     profile_version <- profile_seed$content_version
 
     habitat_version <- "habitat-live"
-    DBI::dbExecute(connection, paste(
+    bridge_db_exec(connection, paste(
       "INSERT INTO table_publication(table_name,content_version,row_count,",
       "reference_content_version,published_at) VALUES",
       "('selected_reading',$1,1,$2,now())"),
       params = list(habitat_version, reference_version))
-    DBI::dbExecute(connection, paste(
+    bridge_db_exec(connection, paste(
       "INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,",
       "source_id,vintage_id,linked_content_version) VALUES",
       "('habitat',$1,'fixture_source','fixture/2025',$2)"),
       params = list(habitat_version,
                     paste("canonical", profile_version, scalar_version,
                           reference_version, sep = "-")))
-    DBI::dbExecute(connection, paste(
+    bridge_db_exec(connection, paste(
       "INSERT INTO selected_reading_publication(theme_id,content_version,",
       "reference_content_version,row_count,published_at) VALUES",
       "('habitat',$1,$2,1,now())"), params = list(habitat_version, reference_version))
@@ -149,11 +149,11 @@ if (!bridge_db_proof_configured()) {
     retired_ids <- retained_scalar_retirement_ids()
 
     schema_digest <- function() {
-      tables <- DBI::dbGetQuery(connection, paste(
+      tables <- bridge_db_query(connection, paste(
         "SELECT table_name FROM information_schema.tables",
         "WHERE table_schema=$1 ORDER BY table_name"), params = list(schema))$table_name
       vapply(tables, function(table) {
-        DBI::dbGetQuery(connection, paste0(
+        bridge_db_query(connection, paste0(
           "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) AS h ",
           "FROM ", quoted_schema, ".", as.character(DBI::dbQuoteIdentifier(connection, table)),
           " t"))$h[[1L]]
@@ -201,20 +201,20 @@ if (!bridge_db_proof_configured()) {
     expect_identical(written$comparison$content_version, plan$tokens$comparison)
     expect_identical(written$profile$content_version, plan$profile_lineage$version)
 
-    live_ids <- DBI::dbGetQuery(connection,
+    live_ids <- bridge_db_query(connection,
       "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
     expect_false(any(retired_ids %in% live_ids))
-    fresh_values <- DBI::dbGetQuery(connection, paste(
+    fresh_values <- bridge_db_query(connection, paste(
       "SELECT value FROM scalar_observation WHERE indicator_id='offre_tc'",
       "ORDER BY territory_id"))$value
     expect_equal(sort(fresh_values), sort(c(0.9968, 0.9261)))
-    expect_identical(DBI::dbGetQuery(connection, paste(
+    expect_identical(bridge_db_query(connection, paste(
       "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"))$content_version[[1L]],
       plan$tokens$scalar)
-    expect_identical(DBI::dbGetQuery(connection,
+    expect_identical(bridge_db_query(connection,
       "SELECT linked_content_version FROM selected_reading_descriptor")$linked_content_version[[1L]],
       plan$tokens$linked)
-    expect_identical(DBI::dbGetQuery(connection, paste(
+    expect_identical(bridge_db_query(connection, paste(
       "SELECT content_version FROM table_publication WHERE table_name='selected_reading'"))$content_version[[1L]],
       habitat_version)
 
@@ -225,26 +225,26 @@ if (!bridge_db_proof_configured()) {
       new_scalar = plan$tokens$scalar)
     after_lineage <- bridge_profile_lineage_tokens(
       after_profile_rows, reader$reference_rows(connection), reference_version)
-    expect_identical(DBI::dbGetQuery(connection, paste(
+    expect_identical(bridge_db_query(connection, paste(
       "SELECT descriptor_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$descriptor_version[[1L]],
       after_profile_rows$distribution_dpe$descriptor$descriptor_version)
-    expect_identical(DBI::dbGetQuery(connection, paste(
+    expect_identical(bridge_db_query(connection, paste(
       "SELECT content_version FROM table_publication WHERE table_name='declared_profile'"))$content_version[[1L]],
       after_lineage$version)
-    expect_identical(DBI::dbGetQuery(connection,
+    expect_identical(bridge_db_query(connection,
       "SELECT profile_content_version FROM profile_comparison_publication")$profile_content_version[[1L]],
       after_lineage$version)
-    expect_identical(DBI::dbGetQuery(connection,
+    expect_identical(bridge_db_query(connection,
       "SELECT content_version FROM profile_comparison_publication")$content_version[[1L]],
       after_lineage$comparison_version)
-    expect_identical(DBI::dbGetQuery(connection, paste(
+    expect_identical(bridge_db_query(connection, paste(
       "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
       plan$tokens$scalar)
 
     # Live-shaped addendum: after the control run the retired ids are gone but
     # offre_tc is present with the new values, exactly like the serving DB.
     after_markers <- retained_backend_markers(connection)
-    marker_value <- function(name) DBI::dbGetQuery(connection,
+    marker_value <- function(name) bridge_db_query(connection,
       "SELECT content_version FROM table_publication WHERE table_name=$1",
       params = list(name))$content_version[[1L]]
     expected_live <- c(
@@ -271,14 +271,14 @@ if (!bridge_db_proof_configured()) {
     })
     expect_length(live_plan$retired_present, 0L)
     expect_identical(live_written$scalar$content_version, live_plan$tokens$scalar)
-    live_ids_now <- DBI::dbGetQuery(connection,
+    live_ids_now <- bridge_db_query(connection,
       "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
     expect_false(any(retired_ids %in% live_ids_now))
-    live_values_now <- sort(DBI::dbGetQuery(connection, paste(
+    live_values_now <- sort(bridge_db_query(connection, paste(
       "SELECT value FROM scalar_observation WHERE indicator_id='offre_tc'",
       "ORDER BY territory_id"))$value)
     expect_equal(live_values_now, c(0.55, 0.65))
-    residual <- DBI::dbGetQuery(connection, paste(
+    residual <- bridge_db_query(connection, paste(
       "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'serving_it_%'",
       "ORDER BY nspname"))$nspname
     expect_setequal(residual, schema)

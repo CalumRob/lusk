@@ -1281,3 +1281,68 @@ test_that("FK inventory tolerates an empty catalog and an unresolved schema", {
     data.frame(schema = NA_character_)), "could not resolve the target schema")
 })
 
+
+# --- Round-6: mechanical SQL lint of every bridge_db_query/exec call ----------
+# What it covers: statically visible SQL string literals, their $n placeholders
+# and the shape of the params argument at each call site; a few catalog-probe
+# invariants. What it does NOT cover: SQL assembled from variables at runtime,
+# DBI internals, or actual PostgreSQL parsing (no connection is made).
+test_that("every bridge SQL call has matching params and safe catalog probes", {
+  lint_source <- function(path) {
+    src <- readLines(path, warn = FALSE)
+    expr <- parse(text = paste(src, collapse = "\n"), keep.source = TRUE)
+    pd <- getParseData(expr)
+    funcs <- pd[pd$token == "SYMBOL_FUNCTION_CALL" &
+                  pd$text %in% c("bridge_db_query", "bridge_db_exec"), , drop = FALSE]
+    expect_gt(nrow(funcs), 0L)
+    texts <- character()
+    for (i in seq_len(nrow(funcs))) {
+      parent <- pd[pd$id == funcs$parent[i], , drop = FALSE]
+      if (!nrow(parent)) next
+      lines <- src[parent$line1:parent$line2]
+      lines[[1L]] <- substr(lines[[1L]], parent$col1, nchar(lines[[1L]]))
+      last <- length(lines)
+      lines[[last]] <- substr(lines[[last]], 1L, parent$col2)
+      texts <- c(texts, paste(lines, collapse = "\n"))
+    }
+    for (call in texts) {
+      literals <- unlist(regmatches(call,
+        gregexpr("([\"'])(?:\\1|(?!\\1).)+\\1", call, perl = TRUE)))
+      sql <- paste(literals, collapse = " ")
+      placeholders <- as.integer(unique(regmatches(sql, gregexpr("\\$[0-9]+", sql))[[1L]]))
+      placeholders <- as.integer(sub("\\$", "", placeholders))
+      max_placeholder <- if (length(placeholders)) max(placeholders) else 0L
+      has_params <- grepl("params\\s*=", call)
+      empty_params <- grepl("params\\s*=\\s*list\\(\\s*\\)", call)
+      if (max_placeholder > 0L) {
+        expect_true(has_params, info = call)
+        expect_false(empty_params, info = call)
+        # When the params argument is a flat literal list, pin exact arity.
+        pm <- regmatches(call, regexpr("params\\s*=\\s*list\\([^)]*\\)", call))
+        if (length(pm)) {
+          args <- sub("^params\\s*=\\s*list\\(", "", pm)
+          args <- sub("\\)$", "", args)
+          expect_identical(length(strsplit(args, ",", fixed = TRUE)[[1L]]),
+                           max_placeholder, info = call)
+        }
+      } else {
+        expect_false(grepl("params\\s*=\\s*list\\([^)]+\\)", call), info = call)
+      }
+      # Catalog probes must be schema-aware and bounded.
+      if (grepl("pg_constraint", sql)) {
+        expect_match(sql, "nspname", info = call)
+        expect_match(sql, "pg_namespace", info = call)
+      }
+      if (grepl("pg_attribute", sql)) expect_match(sql, "attrelid", info = call)
+      if (grepl("SELECT EXISTS", sql, fixed = TRUE))
+        expect_match(sql, "EXISTS", info = call)  # EXISTS is inherently bounded
+    }
+    length(texts)
+  }
+  n <- lint_source(system.file("..", "R", "publish_serving_bridge.R", package = "lusk"))
+  expect_gte(n, 15L)
+  # The DB proof uses the same helpers; lint it too.
+  db_test <- file.path(testthat::test_path(), "test-offre-tc-bridge-db.R")
+  expect_gte(lint_source(db_test), 5L)
+})
+
