@@ -67,6 +67,11 @@
 !/docs/scalar-scoped-publication.md
 # Cahier renderer ownership and preservation boundary (#956).
 !/docs/cahier-section-rendering.md
+# Per-repo configuration consumed by the engineering skills: which tracker,
+# which triage strings, which domain docs. Versioned so every session reads
+# the same contract instead of inferring it.
+!/docs/agents/
+!/docs/agents/*.md
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
 # est l'artefact de décision versionné, comme les rapports d'audit des
 # PRs #451/#452/#455/#491.
