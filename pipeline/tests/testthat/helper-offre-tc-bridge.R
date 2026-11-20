@@ -357,7 +357,7 @@ bridge_live_profile_fixture <- function(scalar_version = "scalar-live") {
                          stringsAsFactors = FALSE)
   make <- function(descriptor, axes, facts, provenance) list(
     facts = facts, axes = axes, descriptor = descriptor, provenance = provenance,
-    datasets = dataset, vintages = vintage, eligible_territories = eligible)
+    vintages = vintage, datasets = dataset, eligible_territories = eligible)
   profiles <- list(
     distribution_dpe = make(dpe_descriptor, dpe_axes, dpe_facts, dpe_provenance),
     structure_age = make(structure_descriptor, structure_axes, structure_facts,
@@ -367,12 +367,17 @@ bridge_live_profile_fixture <- function(scalar_version = "scalar-live") {
 
 # Shape the profile projections exactly as the serving tables hold them, so the
 # read-only R loader can be exercised without a database.
-bridge_db_rows_from_profile_projections <- function(profiles) {
+
+# RPostgres returns PostgreSQL text[] as array-literal STRINGS, not list columns.
+# raw_arrays = TRUE forces that exact wire shape so the bridge readers are tested
+# against what they actually receive in production.
+bridge_db_rows_from_profile_projections <- function(profiles, raw_arrays = FALSE) {
+  pg_array <- function(x) paste0("{", paste(as.character(x), collapse = ","), "}")
   descriptors <- do.call(rbind, lapply(profiles, function(p) {
     d <- p$descriptor
     data.frame(
       indicator_id = d$indicator_id, label = d$label, unit = d$unit,
-      allowed_levels = I(list(as.character(d$levels))),
+      allowed_levels = if (raw_arrays) pg_array(d$levels) else I(list(as.character(d$levels))),
       completeness = d$completeness, descriptor_version = d$descriptor_version,
       denominator_semantics = if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics,
       detail_units_required = isTRUE(d$detail_units_required),
@@ -393,6 +398,8 @@ bridge_db_rows_from_profile_projections <- function(profiles) {
     a$indicator_id <- owner
     a
   }))
+  axes <- axes[order(axes$indicator_id, axes$axis_name, axes$ordinal), , drop = FALSE]
+  rownames(axes) <- NULL
   facts <- do.call(rbind, lapply(names(profiles), function(owner) {
     f <- profiles[[owner]]$facts
     data.frame(indicator_id = owner, territory_id = f$territory_id,
@@ -402,10 +409,12 @@ bridge_db_rows_from_profile_projections <- function(profiles) {
                sex_axis_name = if (length(profiles[[owner]]$descriptor$sexes)) "sex" else NA_character_,
                value = f$value, status = f$status, stringsAsFactors = FALSE)
   }))
+  rownames(facts) <- NULL
   provenance <- do.call(rbind, lapply(profiles, `[[`, "provenance"))
+  rownames(provenance) <- NULL
   list(profile_descriptors = descriptors, profile_sources = sources,
        profile_axes = axes, profile_facts = facts,
-       profile_provenance = provenance)
+       profile_provenance = provenance, raw_arrays = raw_arrays)
 }
 
 # A fake profile adapter for publish_registered_profile(); records the exact

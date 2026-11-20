@@ -813,3 +813,72 @@ test_that("scalar seeding goes through the publisher transaction before replace"
   expect_identical(calls, c("transaction", "replace"))
 })
 
+
+# --- Round-5: RPostgres raw shapes -> producer-identical projections ----------
+
+bridge_canon_profile <- function(p) {
+  p$facts <- bridge_fresh_frame(p$facts)
+  p$axes <- bridge_fresh_frame(p$axes)
+  p$provenance <- bridge_fresh_frame(p$provenance)
+  p$vintages <- bridge_fresh_frame(p$vintages)
+  p$datasets <- bridge_fresh_frame(p$datasets)
+  p$eligible_territories <- bridge_fresh_frame(p$eligible_territories)
+  p
+}
+
+bridge_canon_scalar <- function(p) {
+  p$facts <- bridge_fresh_frame(p$facts)
+  p$descriptors <- bridge_fresh_frame(p$descriptors)
+  p$provenance <- bridge_fresh_frame(p$provenance)
+  p$datasets <- bridge_fresh_frame(p$datasets)
+  p$vintages <- bridge_fresh_frame(p$vintages)
+  p$eligible_territories <- bridge_fresh_frame(p$eligible_territories)
+  p
+}
+
+test_that("Postgres array text shapes parse to producer vectors, including empty/NULL", {
+  expect_identical(bridge_parse_text_array("{commune,epci}"), c("commune", "epci"))
+  expect_identical(bridge_parse_text_array("{}"), character())
+  expect_identical(bridge_parse_text_array(NA_character_), NA_character_)
+  expect_identical(bridge_parse_text_array(c("commune", "epci")), c("commune", "epci"))
+  expect_identical(bridge_parse_text_array(list(c("a", "b"))), c("a", "b"))
+})
+
+test_that("a raw RPostgres scalar projection is producer-equal and hash-equal", {
+  live <- bridge_live_fixture()
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(live))
+  loaded <- read_live_scalar_projection(NULL, reader = reader)
+  expect_identical(loaded, live)
+  validate_scalar_artifact_projection(loaded)
+  # The token is md5(saveRDS()); canonicalise both sides so incidental ALTREP /
+  # attribute-order differences cannot mask a real type or content difference.
+  expect_identical(scalar_content_version(bridge_canon_scalar(loaded)),
+                   scalar_content_version(bridge_canon_scalar(live)))
+})
+
+test_that("a raw RPostgres profile projection is producer-equal and hash-equal", {
+  producer <- bridge_live_profile_fixture("scalar-live")
+  profile_rows <- bridge_db_rows_from_profile_projections(producer, raw_arrays = TRUE)
+  expect_true(is.character(profile_rows$profile_descriptors$allowed_levels))
+  expect_match(profile_rows$profile_descriptors$allowed_levels[[1L]], "^\\{")
+  reader <- bridge_fake_reader(bridge_db_rows_from_projection(bridge_live_fixture()),
+                               profile_rows = profile_rows)
+  loaded <- bridge_read_live_profile_projections(
+    NULL, reader = reader, metadata = lire_theme_metadata("habitat"),
+    new_scalar = "scalar-live")
+
+  expect_identical(loaded, producer)
+  for (owner in names(producer)) {
+    validate_declared_profile(loaded[[owner]]$facts, loaded[[owner]]$descriptor,
+                              loaded[[owner]]$axes, loaded[[owner]]$eligible_territories)
+    expect_identical(profile_content_version(bridge_canon_profile(loaded[[owner]])),
+                     profile_content_version(bridge_canon_profile(producer[[owner]])))
+  }
+
+  # The original production failure: reconstructed levels must be a character
+  # vector suitable for comparison_context_membership, not "{a,b}".
+  comparisons <- project_declared_profile_comparisons(
+    loaded, bridge_fixture_reference_rows(), "profile-live", "reference-live")
+  expect_setequal(unique(comparisons$groups$comparison_context),
+                  c("bretagne", "density_class", "epci", "littoral"))
+})

@@ -187,7 +187,8 @@ bridge_parse_text_array <- function(x) {
   if (is.null(x) || length(x) == 0L) return(character())
   if (is.list(x)) return(as.character(unlist(x, use.names = FALSE)))
   values <- as.character(x)
-  if (length(values) == 1L && startsWith(values, "{") && endsWith(values, "}")) {
+  if (length(values) == 1L && !is.na(values) &&
+      startsWith(values, "{") && endsWith(values, "}")) {
     inner <- substr(values, 2L, nchar(values) - 1L)
     if (!nzchar(inner)) return(character())
     return(strsplit(inner, ",", fixed = TRUE)[[1L]])
@@ -271,7 +272,7 @@ read_live_scalar_projection <- function(con, reader = bridge_live_reader()) {
                                  c("territory_id", "territory_type"), drop = FALSE])
   eligible$territory_id <- as.character(eligible$territory_id)
   eligible$territory_type <- as.character(eligible$territory_type)
-  rownames(eligible) <- NULL
+  eligible <- bridge_fresh_frame(eligible)
   projection <- list(
     facts = facts, descriptors = descriptors,
     provenance = reader$provenance(con), datasets = reader$datasets(con),
@@ -677,28 +678,40 @@ bridge_read_live_profile_projections <- function(con, reader = bridge_live_reade
     owner_axes$axis_name <- as.character(owner_axes$axis_name)
     owner_axes$axis_key <- as.character(owner_axes$axis_key)
     owner_axes$ordinal <- as.integer(owner_axes$ordinal)
-    rownames(owner_axes) <- NULL
+    owner_axes <- bridge_fresh_frame(owner_axes)
     details <- owner_axes$axis_key[owner_axes$axis_name == "detail"]
     sexes <- owner_axes$axis_key[owner_axes$axis_name == "sex"]
     scalar_bound <- !is.na(row$required_scalar_version[[1L]])
     descriptor <- list(
       indicator_id = owner, theme_id = as.character(row$theme_id[[1L]]),
-      levels = as.character(row$allowed_levels[[1L]]),
+      # RPostgres returns text[] as a PostgreSQL array literal ("{a,b}") —
+      # as.character() would keep the braces and break comparison membership.
+      levels = bridge_parse_text_array(row$allowed_levels[[1L]]),
       details = details, sexes = sexes,
       label = as.character(row$label[[1L]]), unit = as.character(row$unit[[1L]]),
       source = sort(as.character(sources$source_id[sources$indicator_id == owner])),
       comparison_detail = if (is.na(row$comparison_detail[[1L]])) NA_character_ else as.character(row$comparison_detail[[1L]]),
       comparison_sex = if (is.na(row$comparison_sex[[1L]])) NA_character_ else as.character(row$comparison_sex[[1L]]),
-      comparison_direction = as.character(row$comparison_direction[[1L]]),
-      completeness = as.character(row$completeness[[1L]]))
+      comparison_direction = as.character(row$comparison_direction[[1L]]))
     if (scalar_bound) {
+      # Field order mirrors project_dpe_profile() exactly: the descriptor is the
+      # hash input of profile_content_version(), so order is semantic.
       descriptor$comparison_scalar <- as.character(row$comparison_scalar[[1L]])
       descriptor$required_scalar_version <- as.character(new_scalar)
+      descriptor$completeness <- as.character(row$completeness[[1L]])
       descriptor$descriptor_version <- bridge_recompute_profile_descriptor_version(
         owner, descriptor, owner_axes, metadata)
     } else {
-      descriptor$denominator_semantics <- if (is.na(row$denominator_semantics[[1L]])) NULL else as.character(row$denominator_semantics[[1L]])
-      descriptor$detail_units_required <- isTRUE(row$detail_units_required[[1L]])
+      descriptor$completeness <- as.character(row$completeness[[1L]])
+      # project_structure_age_profile() carries neither field; the detail
+      # profile producer carries both. Mirror that shape exactly so the hash
+      # input (and identical()) matches the producer, not a superset.
+      has_detail_units <- isTRUE(row$detail_units_required[[1L]]) ||
+        (!is.na(row$denominator_semantics[[1L]]) && nzchar(row$denominator_semantics[[1L]]))
+      if (has_detail_units) {
+        descriptor$denominator_semantics <- as.character(row$denominator_semantics[[1L]])
+        descriptor$detail_units_required <- TRUE
+      }
       descriptor$descriptor_version <- as.character(row$descriptor_version[[1L]])
     }
     owner_facts <- facts[facts$indicator_id == owner, , drop = FALSE]
@@ -714,14 +727,17 @@ bridge_read_live_profile_projections <- function(con, reader = bridge_live_reade
       provenance$indicator_id == owner]))
     eligible <- unique(territories[territories$territory_type %in% descriptor$levels,
                                    c("territory_id", "territory_type"), drop = FALSE])
-    rownames(eligible) <- NULL
-    profile_provenance <- provenance[provenance$indicator_id == owner, , drop = FALSE]
-    profile_datasets <- datasets[datasets$source_id %in% used_sources, , drop = FALSE]
-    profile_vintages <- vintages[vintages$source_id %in% used_sources, , drop = FALSE]
-    rownames(profile_provenance) <- rownames(profile_datasets) <- rownames(profile_vintages) <- NULL
+    eligible <- bridge_fresh_frame(eligible)
+    profile_provenance <- bridge_fresh_frame(
+      provenance[provenance$indicator_id == owner, , drop = FALSE])
+    profile_datasets <- bridge_fresh_frame(
+      datasets[datasets$source_id %in% used_sources, , drop = FALSE])
+    profile_vintages <- bridge_fresh_frame(
+      vintages[vintages$source_id %in% used_sources, , drop = FALSE])
+    # Projection field order matches the producer's project_*_profile() result.
     list(facts = owner_facts, axes = owner_axes, descriptor = descriptor,
-         provenance = profile_provenance, datasets = profile_datasets,
-         vintages = profile_vintages, eligible_territories = eligible)
+         provenance = profile_provenance, vintages = profile_vintages,
+         datasets = profile_datasets, eligible_territories = eligible)
   })
   names(profiles) <- as.character(rows$indicator_id)
   profiles
@@ -958,5 +974,24 @@ bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
          call. = FALSE)
   execute(con, paste0("DROP SCHEMA \"", schema, "\" CASCADE"))
   invisible(TRUE)
+}
+
+
+# RPostgres / data.frame subsetting leaves compact ALTREP and differing attribute
+# orders that change md5(saveRDS()) without changing the data. Rebuild frames the
+# same way the producer's data.frame() calls do, so content versions are stable.
+bridge_fresh_frame <- function(frame, columns = names(frame)) {
+  values <- lapply(columns, function(col) {
+    value <- frame[[col]]
+    if (is.integer(value) && is.null(attr(value, "class"))) as.integer(value + 0L)
+    else if (is.double(value) && is.null(attr(value, "class"))) as.numeric(value + 0)
+    else if (is.list(value)) I(lapply(value, function(item)
+      if (is.null(item)) item else as.character(item)))
+    else value
+  })
+  names(values) <- columns
+  out <- do.call(data.frame, c(values, list(stringsAsFactors = FALSE, check.names = FALSE)))
+  rownames(out) <- NULL
+  out
 }
 
