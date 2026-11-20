@@ -420,8 +420,14 @@ $env:LUSK_PUBLISH_USER = 'lusk_publisher'; $env:PGPASSFILE = '<private pgpass>'
 Rscript scripts/publish-serving-tables.R --offre-tc-bridge-dry-run
 # review: changes only to offre_tc values + the 29 retirements
 $env:LUSK_BRIDGE_DUMP_CONFIRMED = '<dump path or id>'
+$env:LUSK_PUBLISH_OFFRE_TC_BRIDGE = '1'   # explicit write opt-in, like --series-publish
 Rscript scripts/publish-serving-tables.R --offre-tc-bridge
 ```
+
+The guarded disposable-DB proof is run through
+`pipeline/scripts/run-offre-tc-bridge-db.ps1 -PgPassFile <private pgpass>`; it
+holds the shared `Local\LuskIntegrationContractDb` mutex for the whole R process
+and the R test verifies the mutex is held before it connects.
 
 ### Limits â€” what this is NOT
 
@@ -444,4 +450,20 @@ Rscript scripts/publish-serving-tables.R --offre-tc-bridge
   `LUSK_BRIDGE_TEST_*` names the disposable `lusk_it_contract` target and the
   shared mutex is held (see `api/tests/integration/README.md`). The operator
   performs the real publication and captures the retirement receipt.
+
+
+### Explicit, temporary exception to ADR-0044 decision 8
+
+ADR-0044 decision 8 says only the registered owners write the serving tables.
+The bridge is a **documented, one-off exception** to that rule: for this single
+publication the owner artifacts for the affected declared-profile generation
+(the `LUSK_SCALAR_BASELINE_SORTIE` counterpart) are lost, so the normal scoped
+owner path cannot run. It is not a precedent for routine publication and must
+be **retired as soon as a real baseline exists**. What compensates for bypassing
+the owner-artifact path: the round-trip data proof, the five-token live guard,
+the verified-dump acknowledgement, the explicit write opt-in, the single
+transaction with fail-closed (exactly-one-row) marker updates, the advisory lock
+held across check and write, and the re-derivation of every dependent profile
+hash through the registered producer functions from live-read rows. Unrelated
+owners are neither read as expectations nor written. The ADR itself is unchanged.
 

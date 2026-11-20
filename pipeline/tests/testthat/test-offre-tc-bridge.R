@@ -43,7 +43,8 @@ test_that("the round-trip proof accepts a bridge that changes only the affected 
   diff <- assert_bridge_round_trip(live, built$projection, built$affected)
 
   preserved <- diff[diff$status == "preserved", , drop = FALSE]
-  expect_setequal(preserved$indicator_id, c("kept_scalar", "other_kept"))
+  expect_setequal(preserved$indicator_id,
+                  c("kept_scalar", "other_kept", "part_passoires"))
   expect_true(all(preserved$facts_identical))
   expect_true(all(preserved$descriptors_identical))
   expect_true(all(preserved$provenance_identical))

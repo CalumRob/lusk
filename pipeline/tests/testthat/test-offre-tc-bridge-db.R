@@ -1,8 +1,9 @@
 # Guarded disposable-database proof for the #1071 bridge.
 # NEVER targets the serving database `lusk`. This whole file skips unless the
-# operator has configured the guarded lusk_it_contract target, holds the shared
-# named mutex for the process, and opted into schema cleanup. No connection is
-# opened at load time. See api/tests/integration/README.md.
+# operator configured the guarded lusk_it_contract target and runs it through
+# pipeline/scripts/run-offre-tc-bridge-db.ps1, which holds the shared Windows
+# named mutex 'Local\LuskIntegrationContractDb' across the whole R process.
+# No connection is opened at load time. See api/tests/integration/README.md.
 
 bridge_db_proof_configured <- function() {
   required <- c("LUSK_BRIDGE_TEST_DATABASE", "LUSK_BRIDGE_TEST_USER",
@@ -11,12 +12,30 @@ bridge_db_proof_configured <- function() {
   all(nzchar(Sys.getenv(required, unset = "")))
 }
 
+# Match the guarded Python/R suites: prove the named mutex is actually held by
+# the wrapper instead of trusting an environment flag alone. WaitOne(0) can only
+# succeed when nobody else holds the mutex; if it does, we release and fail.
+bridge_db_assert_mutex_held <- function() {
+  script <- tempfile("bridge-mutex-", fileext = ".ps1")
+  on.exit(unlink(script), add = TRUE)
+  writeLines(c(
+    "$name = 'Local\\LuskIntegrationContractDb'",
+    "$m = New-Object System.Threading.Mutex($false, $name)",
+    "$free = $m.WaitOne(0)",
+    "if ($free) { $m.ReleaseMutex() }",
+    "$m.Dispose()",
+    "if ($free) { 'FREE' } else { 'HELD' }"), script)
+  output <- system2("powershell", c("-NoProfile", "-File", shQuote(script)), stdout = TRUE)
+  expect_identical(trimws(paste(output, collapse = "")), "HELD")
+}
+
 if (!bridge_db_proof_configured()) {
   test_that("the guarded bridge database proof is skipped by default", {
-    skip("set LUSK_BRIDGE_TEST_* and PGPASSFILE to exercise the disposable DB")
+    skip("run pipeline/scripts/run-offre-tc-bridge-db.ps1 with the disposable DB config")
   })
 } else {
   test_that("the bridge writes rows and markers atomically on the disposable DB", {
+    bridge_db_assert_mutex_held()
     database <- Sys.getenv("LUSK_BRIDGE_TEST_DATABASE", unset = "")
     user <- Sys.getenv("LUSK_BRIDGE_TEST_USER", unset = "")
     host <- Sys.getenv("LUSK_BRIDGE_TEST_HOST", unset = "192.168.1.120")
@@ -64,7 +83,7 @@ if (!bridge_db_proof_configured()) {
     for (statement in split_postgres_sql(ddl)) DBI::dbExecute(connection, statement)
 
     # Seed a coherent live serving snapshot from the fixture. All versions are
-    # produced here, never copied from the issue text (no token literals).
+    # produced here through the registered publishers, never copied from text.
     live <- bridge_live_fixture()
     reference_rows <- bridge_fixture_reference_rows()
     reference_version <- "reference-live"
@@ -85,20 +104,25 @@ if (!bridge_db_proof_configured()) {
     publish_registered_scalar_comparison(comparison,
                                          scalar_comparison_postgres_adapter(connection))
 
-    profile_version <- "profile-live"
+    # Seed the declared profiles through the NORMAL registered publisher so the
+    # bridge reads real serving rows (descriptor, axes, facts, comparison).
+    seeded_profiles <- bridge_live_profile_fixture(scalar_version)
+    seed_base <- names(seeded_profiles)[[1L]]
+    seed_registry <- register_profile_publisher(list(), "bridge_test_profiles",
+      project = function(canonical) canonical,
+      publish = function(projection, db, version) db$replace(projection, version))
+    profile_seed <- publish_registered_profile(
+      seed_registry, "bridge_test_profiles", seeded_profiles[[seed_base]],
+      profile_postgres_adapter(connection),
+      additional_projections = seeded_profiles[setdiff(names(seeded_profiles), seed_base)])
+    profile_version <- profile_seed$content_version
+
     habitat_version <- "habitat-live"
     DBI::dbExecute(connection, paste(
       "INSERT INTO table_publication(table_name,content_version,row_count,",
       "reference_content_version,published_at) VALUES",
-      "('declared_profile',$1,1,$2,now()), ('selected_reading',$1,1,$2,now())"),
-      params = list(profile_version, reference_version))
-    DBI::dbExecute(connection, paste(
-      "INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,",
-      "completeness,descriptor_version,comparison_direction,theme_id,",
-      "comparison_scalar,required_scalar_version) VALUES",
-      "('distribution_dpe','DPE','class',ARRAY['commune']::text[],",
-      "'dense_complete','dpe-live','high','habitat',",
-      "'part_passoires',$1)"), params = list(scalar_version))
+      "('selected_reading',$1,1,$2,now())"),
+      params = list(habitat_version, reference_version))
     DBI::dbExecute(connection, paste(
       "INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,",
       "source_id,vintage_id,linked_content_version) VALUES",
@@ -143,13 +167,15 @@ if (!bridge_db_proof_configured()) {
     expect_identical(schema_digest(), before)
     expect_identical(plan$mode, "dry-run")
 
-    env_write <- bridge_fake_env(c(env_values,
-      setNames("operator-dump-2026-11-20", BRIDGE_DUMP_ACK_ENV)))
+    write_values <- c(env_values,
+                      setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+                      setNames("operator-dump-2026-11-20", BRIDGE_DUMP_ACK_ENV))
     write_result <- capture.output(written <- run_offre_tc_bridge(
-      "publish", env = env_write, con = connection, live_reader = reader,
-      read_markers = read_markers, retired_ids = retired_ids))
+      "publish", env = bridge_fake_env(write_values), con = connection,
+      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids))
     expect_identical(written$scalar$content_version, plan$tokens$scalar)
     expect_identical(written$comparison$content_version, plan$tokens$comparison)
+    expect_identical(written$profile$content_version, plan$profile_lineage$version)
 
     live_ids <- DBI::dbGetQuery(connection,
       "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
@@ -162,18 +188,58 @@ if (!bridge_db_proof_configured()) {
       "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"))$content_version[[1L]],
       plan$tokens$scalar)
     expect_identical(DBI::dbGetQuery(connection,
-      "SELECT required_scalar_version FROM profile_descriptor")$required_scalar_version[[1L]],
-      plan$tokens$scalar)
-    expect_identical(DBI::dbGetQuery(connection,
       "SELECT linked_content_version FROM selected_reading_descriptor")$linked_content_version[[1L]],
       plan$tokens$linked)
-    # Unrelated owner markers are untouched.
-    expect_identical(DBI::dbGetQuery(connection, paste(
-      "SELECT content_version FROM table_publication WHERE table_name='declared_profile'"))$content_version[[1L]],
-      profile_version)
     expect_identical(DBI::dbGetQuery(connection, paste(
       "SELECT content_version FROM table_publication WHERE table_name='selected_reading'"))$content_version[[1L]],
       habitat_version)
+
+    # Post-write hash identity: recompute every dependent token through the SAME
+    # producer functions from the rows now in the DB. A stale lineage fails here.
+    after_profile_rows <- bridge_read_live_profile_projections(
+      connection, reader = reader, metadata = bridge_profile_contracts(),
+      new_scalar = plan$tokens$scalar)
+    after_lineage <- bridge_profile_lineage_tokens(
+      after_profile_rows, reader$reference_rows(connection), reference_version)
+    expect_identical(DBI::dbGetQuery(connection, paste(
+      "SELECT descriptor_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$descriptor_version[[1L]],
+      after_profile_rows$distribution_dpe$descriptor$descriptor_version)
+    expect_identical(DBI::dbGetQuery(connection, paste(
+      "SELECT content_version FROM table_publication WHERE table_name='declared_profile'"))$content_version[[1L]],
+      after_lineage$version)
+    expect_identical(DBI::dbGetQuery(connection,
+      "SELECT profile_content_version FROM profile_comparison_publication")$profile_content_version[[1L]],
+      after_lineage$version)
+    expect_identical(DBI::dbGetQuery(connection,
+      "SELECT content_version FROM profile_comparison_publication")$content_version[[1L]],
+      after_lineage$comparison_version)
+    expect_identical(DBI::dbGetQuery(connection, paste(
+      "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]],
+      plan$tokens$scalar)
+
+    # Rollback proof: inject a failure AFTER the scalar/comparison/profile writes
+    # but BEFORE the Habitat linked rebind. The whole transaction must roll back
+    # byte-for-byte, including the marker and comparison tables.
+    before_rollback <- schema_digest()
+    rollback_expected <- c(
+      scalar = plan$tokens$scalar, comparison = plan$tokens$comparison,
+      profile = plan$profile_lineage$version, habitat = habitat_version,
+      reference = reference_version)
+    rollback_env_values <- c(
+      setNames(unname(rollback_expected), unname(BRIDGE_EXPECTED_ENV)),
+      setNames(facts_path, BRIDGE_FACTS_ENV),
+      setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+      setNames("operator-dump-rollback", BRIDGE_DUMP_ACK_ENV))
+    fail_after_writes <- function(con, prepared, retired, tokens, ...) {
+      publish_bridge_snapshot(con, prepared, retired, tokens, ...,
+        writer = list(set_habitat_linked = function(new_linked)
+          stop("injected failure before Habitat rebind", call. = FALSE)))
+    }
+    capture.output(expect_error(run_offre_tc_bridge(
+      "publish", env = bridge_fake_env(rollback_env_values), con = connection,
+      live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
+      publish = fail_after_writes), "injected failure before Habitat rebind"))
+    expect_identical(schema_digest(), before_rollback)
 
     residual <- DBI::dbGetQuery(connection, paste(
       "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'serving_it_%'",
