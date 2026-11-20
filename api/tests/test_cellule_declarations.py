@@ -104,11 +104,6 @@ def _producer_deferred():
             resource_id for resource_id, page in pages.items()
             if (page.get("cellule") or {}).get("declare") is False
         )
-        for route in (metadata.get("owned_series_routes") or {}).values():
-            reference = route.get("reference_indicator")
-            if reference and reference in deferred:
-                # A named reference reuses its parent series page descriptor.
-                deferred.add(reference)
     return deferred
 
 
@@ -223,6 +218,25 @@ def test_profile_category_units_never_inherit_the_indicator_scalar_unit():
     assert units["protege_km_1000"] != public["unit"]
 
 
+def test_detail_axis_never_inherits_the_scalar_unit_without_a_producer_declaration(tmp_path):
+    """AC4: no detail_units and no comparison.unit means unit null, not scalar."""
+    for metadata in METADATA.glob("theme_*.json"):
+        (tmp_path / metadata.name).write_bytes(metadata.read_bytes())
+    path = tmp_path / "theme_demographie.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    metadata["indicator_pages"]["structure_age"]["comparison"].pop("unit", None)
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    resource = discover_indicator_resources(tmp_path).resources_by_id["structure_age"]
+    detail = next(coordinate for coordinate in resource.cellule["coordinates"]
+                  if coordinate["name"] == "detail")
+    sex = next(coordinate for coordinate in resource.cellule["coordinates"]
+               if coordinate["name"] == "sex")
+    assert resource.unit == "%"  # the scalar unit exists but is not a detail unit
+    assert all(value["unit"] is None for value in detail["values"])
+    assert all(value["unit"] == "%" for value in sex["values"])  # non-detail keeps fallback
+
+
 def test_default_points_are_declared_for_profiles_and_series():
     expected = {
         "structure_age": {"detail": "<15", "sex": "F"},
@@ -288,6 +302,33 @@ def test_combination_enforcement_follows_the_declaration_not_the_static_axis_lis
     assert validate_resource_item(_age_request("<15", "F"), catalogue).resource_id == "structure_age"
     with pytest.raises(ValueError, match="coordinate combination is not declared"):
         validate_resource_item(_age_request("<15", "M"), catalogue)
+
+
+def test_partial_combination_declaration_cannot_bypass_the_admission_gate():
+    """A declared point that omits an axis must not silently disable the 422."""
+    from dataclasses import replace
+
+    base = default_resource_catalogue.__wrapped__()
+    resource = replace(base.resources_by_id["structure_age"],
+                       cellule={"coordinates": [], "valid_combinations": [
+                           {"detail": "<15"}, {"detail": "15-24"}], "default_point": None})
+    catalogue = ResourceCatalogue(base.declarations,
+        tuple(resource if other.resource_id == "structure_age" else other
+              for other in base.resources), base.excluded)
+
+    detail_only = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "coordinates": {"detail": ["<15"]},
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(detail_only, catalogue).resource_id == "structure_age"
+    with pytest.raises(ValueError, match="coordinate combination is not declared"):
+        validate_resource_item(_age_request("<15", "F"), catalogue)
+    undeclared_detail = ResourceReadItem.model_validate({
+        **detail_only.model_dump(), "coordinates": {"detail": ["80+"]}})
+    with pytest.raises(ValueError, match="coordinate combination is not declared"):
+        validate_resource_item(undeclared_detail, catalogue)
 
 
 def test_public_read_reports_undeclared_combination_before_opening_a_connection(tmp_path):
@@ -392,14 +433,12 @@ def _pool_for_default():
     return Pool()
 
 
-def test_no_coordinate_profile_read_exposes_the_declared_default_point_in_its_descriptor():
-    """AC3: each profile/series declares its default point; a no-coordinate
-    read exposes that point in the descriptor; distribution_dpe declares none
-    because its comparison is the linked scalar facet.
-    """
-    producer_default = _page("structure_age")["comparison"]
-    declared_point = _public("structure_age")["cellule"]["default_point"]
+def test_no_coordinate_profile_read_exposes_the_descriptors_comparison_point():
+    """A no-coordinate read surfaces the descriptor's published comparison point.
 
+    That the descriptor agrees with the producer declaration is the publisher's
+    contract; a DB-free test cannot prove it and does not assert it here.
+    """
     with _app_overrides({main.get_resource_catalogue: lambda: default_resource_catalogue.__wrapped__(),
                main.get_repository: lambda: SimpleNamespace(connections=_pool_for_default()),
                main.get_semantic_resource_reader: lambda: _descriptor_reader()}):
@@ -411,22 +450,18 @@ def test_no_coordinate_profile_read_exposes_the_declared_default_point_in_its_de
 
     assert response.status_code == 200, response.text
     descriptor_point = response.json()["descriptor"]["comparison_point"]
-    assert (descriptor_point["detail"], descriptor_point["sex"]) == (
-        declared_point["detail"], declared_point["sex"])
-    assert declared_point == {"detail": producer_default["detail"], "sex": producer_default["sex"]}
+    assert (descriptor_point["detail"], descriptor_point["sex"]) == ("<15", "F")
 
     dpe = _public("distribution_dpe")["cellule"]
     assert dpe["default_point"] is None
     assert _page("distribution_dpe")["comparison"]["indicator"] == "part_passoires"
 
 
-def test_no_coordinate_comparison_delegates_the_point_to_the_descriptor_default():
-    """The comparison path names no point of its own: both snapshot seams see
-    `profile_coordinates=None`, so the published descriptor's default resolves
-    the facet — and that descriptor default is the declared default point.
+def test_no_coordinate_comparison_passes_no_point_to_the_snapshot_seams():
+    """With no coordinates named, both comparison seams receive None; the
+    published descriptor is left to resolve the facet. The SQL that selects
+    that facet is not exercised by this DB-free test.
     """
-    producer_default = _page("structure_age")["comparison"]
-    declared_point = _public("structure_age")["cellule"]["default_point"]
     calls = []
 
     def capture(label, result):
@@ -450,7 +485,26 @@ def test_no_coordinate_comparison_delegates_the_point_to_the_descriptor_default(
 
     assert response.status_code == 200, response.text
     assert calls == [("preflight", None), ("snapshot", None)]
-    assert declared_point == {"detail": producer_default["detail"], "sex": producer_default["sex"]}
+
+
+def test_declared_values_match_pinned_expected_literals():
+    """Independent pins: a shared bug in projection and re-derivation cannot pass."""
+    assert [value["label"] for value in _coordinate("structure_age", "detail")["values"]] == [
+        "Moins de 15 ans", "15 à 24 ans", "25 à 39 ans", "40 à 54 ans",
+        "55 à 64 ans", "65 à 79 ans", "80 ans et plus",
+    ]
+    assert [value["label"] for value in _coordinate("structure_age", "sex")["values"]] == [
+        "F", "M",
+    ]
+    assert _public("structure_age")["cellule"]["default_point"] == {"detail": "<15", "sex": "F"}
+
+    years = [value["value"] for value in _coordinate("prix_m2", "year")["values"]]
+    assert years == ["2021", "2022", "2023", "2024", "2025"]
+    assert [value["label"] for value in _coordinate("prix_m2", "year")["values"]] == years
+    assert _public("prix_m2")["cellule"]["default_point"] == {"year": "2025"}
+
+    scalar = _public("densite")["cellule"]
+    assert scalar == {"coordinates": [], "valid_combinations": [{}], "default_point": None}
 
 
 def test_cellule_declaration_names_every_coordinate_value_with_a_readable_label():
