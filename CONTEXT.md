@@ -212,6 +212,36 @@ _Avoid_: vue de synthèse (that is the Facette résumée's role, not the profile
 The declared cross-territory cloud of a **relationship**-family **Page d'indicateur** (#441): two semantic roles (x × y) declared in the page descriptor, each a published theme key carrying its OWN public label and unit — roles are contract fields, never inferred from indicator names, and no raw key ever renders (ADR-0023). The between-territory comparison is driven by the **scalar facet** (`comparison` — a published key with its required public label, mirroring the distribution family's Facette résumée): it alone drives median, extremes, table ordering and Carte; the relation is never presented as a single-score model. Cloud points and table rows resolve to the same territories by construction — same facet-comparable population, same direction-aware ex-aequo ranks (#437), highlight and fiche handoff preserved end-to-end; chart scales derive from actual values, and incomplete points are named rather than stacked at fixed coordinates. Four honest states like the signature/profil models: no selection affirms nothing, a territory outside the level is « absent », missing coordinates are « incomplet », otherwise « complet ».
 _Avoid_: nuage de points (the chart type, not the grammar's sense), corrélation (never claimed — the cloud reads two declared forces side by side), scatter plot (English)
 
+**Atelier**:
+The public, expert-register exploration page (`/atelier`, decided 2026-11-20, ADR-0046) where a reader builds their own **Figures d'atelier** from published **Cellules** and **Formules**. It shares the visual language of the current production cahier pages but is not the Cahier: Lusk writes no Lecture, Marelle or Page rundown there and never claims a reading. The reader may title the page and each figure and write their own prose blocks, in a small Markdown subset (headings, bold, italic, lists) that never renders links; that text is the reader's, never presented as Lusk's. A blank Atelier opens on an empty page with « Ajouter une figure »; its whole state lives in its link, so an Atelier is shared by sharing its URL. Entry points: the main navigation, a Page d'indicateur (its cell pre-filled), and a fiche section (its cells, its territory selected, and its **Contexte de comparaison** expressed as a **Filtre de population**).
+_Avoid_: playground (English), Cahier (the fiche's visual model), Carnet (confusable with the Cahier), explorateur, labo
+
+**Figure d'atelier**:
+One reader-built figure in an Atelier — a nuage, a distribution, a table, or a classement — with its own level, its own **Filtre de population**, its own reader-editable title and axis titles, and its own **variables** (x, y, taille, couleur), each bound to one Cellule, a Formule, or (couleur only) a Catégorie or Appartenance. Figures and the reader's prose blocks flow as one reorderable page, with no sections, numbering or figure frames; a selected territory is highlighted in every figure that contains it. Territories of another level may appear only as labelled overlay marks carrying their own published facts. A figure has no rank, direction or comparison statistic of its own.
+_Avoid_: graphique, widget, Figure family (the fiche's declared evidence shapes), Relation (the declared cloud of a Page d'indicateur)
+
+**Cellule**:
+One published number per territory: an **Indicateur** plus a value for every one of its declared coordinates — e.g. `structure_age` · 60–74 ans · femmes, or an AEDAR equipment type · vélo · 15 min · accès, or `prix_m2` · 2022. Every published fact (scalar, profile, series, AEDAR) is reachable as a Cellule; its identity is its producer identity and coordinates, never its label. A Cellule no longer published is shown as such, never silently dropped or replaced.
+_Avoid_: variable (too generic), colonne, métrique
+
+**Formule**:
+A reader-written expression bound to one variable of a figure (x, y, size or colour), over Cellules chosen for that expression (named A, B, C… within it), with arithmetic operators, constants and a closed set of functions. Its label is the formula itself, marked as computed by the reader; the sources of the Cellules it uses are listed beneath the figure; mixing units warns but does not block. A territory with any missing input — or a division by zero — is not plotted and is counted as such, never treated as zero. A Formule is not a published indicator, has no direction and no rank (ADR-0046).
+_Avoid_: indicateur calculé (suggests producer authority), indice, score
+
+**Catégorie territoriale**:
+What a commune *is* according to a producer-owned classification — its **Classe de densité communale**, its **Classification littorale communale**, later its position within an aire d'attraction. Usable as a filter and as a categorical colour.
+_Avoid_: contexte (taken by Contexte de comparaison), type de commune, profil
+
+**Appartenance territoriale**:
+What a commune *belongs to* — its département, its EPCI, later its aire d'attraction or unité urbaine. Usable as a filter and as a categorical colour.
+_Avoid_: contexte (taken by Contexte de comparaison), périmètre (the EPCI's Breton part already uses it), parent
+
+**Filtre de population**:
+The one vocabulary for narrowing a level's territories by **Catégories** and **Appartenances** (and, in the Atelier, by value thresholds on Cellules or Formules). Every comparison preset is a Filtre de population: the same filter names the fiche's preset comparison groups and an Atelier figure's population, and must resolve to the same members wherever it is evaluated. In an Atelier figure, excluded territories are either hidden or greyed out as context.
+_Avoid_: scope (ambiguous with level), sélection (the Sélection de comparaison is an explicit assortment, not a filter)
+
+**Open question (2026-11-20): Pages d'indicateur après l'Atelier.** Once the Atelier ships, the owner may reduce each Page d'indicateur to describing its indicator (reversing ADR-0024's data-first role). Deliberately not decided until the Atelier is in real use.
+
 ## Themes & indicators
 
 **Thème**:

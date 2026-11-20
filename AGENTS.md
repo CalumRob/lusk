@@ -79,6 +79,12 @@ only (rendered/element rules are not exercised by that pass).
 - Before adding a domain-looking literal, identify whether it is stable app presentation or a fact
   owned upstream, and put it in that owner's layer. Add or update a contract test proving factual
   consumers use the source contract rather than silently duplicating it.
+- **Sole exception — the Atelier (`/atelier`, ADR-0046):** reader-written **Formules**, population
+  filters and value filters are evaluated in the browser over published Cellules. A Formule is the
+  reader's computation (labelled by its expression, marked computed, no direction/rank, missing ⇒
+  not plotted and counted, never zero), not a published fact. The exception does not extend to any
+  other surface, and Atelier code must not feed derived values back into fiche, indicator-page or
+  map readings.
 
 ### Theme acquisition contract
 
