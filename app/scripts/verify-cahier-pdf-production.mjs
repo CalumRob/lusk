@@ -45,6 +45,14 @@ const chapters = [
   { anchor: 'figure-offre-transports-commun', sections: ['couverture-du-territoire', 'visiter-la-bretagne'] },
 ]
 
+// Sections with no served data at a level are legitimately absent. Every other
+// absence is a harness failure; a region PDF still exporting those would also
+// violate this expectation.
+const EXPECTED_ABSENT = {
+  region: ['reseaux', 'stationnement-ravitaillement'],
+}
+const gateFailures = []
+
 const executablePath = process.env.CAHIER_PDF_CHROMIUM
 if (!executablePath) {
   throw new Error('CAHIER_PDF_CHROMIUM doit désigner l\'exécutable Chromium/Chrome à utiliser pour ce harnais.')
@@ -91,11 +99,34 @@ async function waitReady(keys, timeoutMs = 60000) {
   return readActions()
 }
 
-async function exportSection(key) {
+// Independent numeric witness: read specific served values/ranks straight from
+// the section's own DOM (the source facts the screen renders), then require the
+// PDF to contain those exact strings. A 10x scale error or swapped columns in
+// the document composer cannot pass this check.
+async function sourceReadings(key) {
+  return page.evaluate((sectionKey) => {
+    const section = document.querySelector(`[data-section="${sectionKey}"]`)
+    if (!section) return []
+    const nodes = section.querySelectorAll(
+      '.cahier-figure-scalar-value, .cahier-figure-scalar-reference, .cahier-comparison-value',
+    )
+    const values = new Set()
+    for (const node of nodes) {
+      const text = (node.textContent ?? '').trim().replace(/[\u202f\u00a0]/gu, ' ')
+      if (/^\d{1,4}(?:[ ,]\d{1,3})*(?:\s?%)?$/.test(text) && text.length <= 12) values.add(text)
+    }
+    return [...values].slice(0, 8)
+  }, key)
+}
+
+async function exportSection(key, territory) {
   const action = (await readActions()).find((a) => a.key === key)
   if (!action) return { key, status: 'absent', reason: 'no PDF action mounted for this section' }
   if (action.blocked) return { key, status: 'blocked', reason: action.reason }
 
+  const expectedValues = await sourceReadings(key)
+  const expectedIdentity = await page.evaluate(() =>
+    (document.querySelector('h1')?.textContent ?? '').trim())
   await page.locator(`[data-section="${key}"] .cahier-pdf-action__button`).click()
   if (await page.locator('dialog[open]').count()) {
     const boxes = page.locator('dialog[open] .cahier-pdf-dialog__modes input[type="checkbox"]')
@@ -110,7 +141,10 @@ async function exportSection(key) {
     const after = await readActions()
     return { key, status: 'no-download', reason: after.find((a) => a.key === key)?.reason ?? String(error).slice(0, 160) }
   }
-  const file = path.join(outDir, `${type}-${code}-${key}.pdf`)
+  // File names come from the territory actually being driven in this loop, not
+  // the CLI default — otherwise every level overwrites the commune PDF.
+  const [fileType, fileCode] = territory.split('/')
+  const file = path.join(outDir, `${fileType}-${fileCode}-${key}.pdf`)
   await download.saveAs(file)
   const deadline = Date.now() + 60000
   let settled = null
@@ -127,19 +161,19 @@ async function exportSection(key) {
     file: path.basename(file),
   }
   if (result.status === 'success') {
-    try { result.audit = await audit(file, key) }
+    try { result.audit = await audit(file, key, expectedValues, expectedIdentity) }
     catch (error) { result.status = 'audit-error'; result.reason = String(error).slice(0, 200) }
   }
   return result
 }
 
-async function audit(file, key) {
+async function audit(file, key, expectedValues = [], expectedIdentity = '') {
   const bytes = new Uint8Array(await readFile(file))
   const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
   const pages = []
   let allText = ''
   let imageXObjects = 0
-  let overlappingTextPairs = 0
+  const overlapPairs = []
   const textItems = []
   const links = []
   for (let index = 1; index <= pdf.numPages; index += 1) {
@@ -156,6 +190,7 @@ async function audit(file, key) {
       y: item.transform[5],
       w: item.width,
       h: Math.abs(item.transform[3]),
+      a: item.transform[0], b: item.transform[1],
     }))
     textItems.push(...boxes)
     for (let a = 0; a < boxes.length; a += 1) {
@@ -163,7 +198,11 @@ async function audit(file, key) {
         const left = boxes[a], right = boxes[b]
         if (Math.abs(left.y - right.y) > Math.max(left.h, right.h) * 0.5) continue
         const overlap = Math.min(left.x + left.w, right.x + right.w) - Math.max(left.x, right.x)
-        if (overlap > 0.6) overlappingTextPairs += 1
+        if (overlap > 0.6) overlapPairs.push({
+          page: index, overlap: +overlap.toFixed(2),
+          a: { str: left.str, x: +left.x.toFixed(1), y: +left.y.toFixed(1), w: +left.w.toFixed(1), h: +left.h.toFixed(1), a: left.a, b: left.b },
+          b: { str: right.str, x: +right.x.toFixed(1), y: +right.y.toFixed(1), w: +right.w.toFixed(1), h: +right.h.toFixed(1), a: right.a, b: right.b },
+        })
       }
     }
     const operators = await pdfPage.getOperatorList()
@@ -189,17 +228,35 @@ async function audit(file, key) {
   // attributions are owner-owned and preserved verbatim, not treated as drift.
   const siteLinks = links.filter((url) => /lusk\./i.test(url))
   const hostOf = (url) => { try { return new URL(url).host } catch { return '?' } }
+  // The ONE permitted overlap: a 90°-rotated axis title crossing a short
+  // numeric tick on the same baseline. Declared with geometry (rotation, tick
+  // width, numeric text and a bounded overlap), never a blanket allowance.
+  const rotated = (item) => Math.abs(item.b) > Math.abs(item.a) * 2 && Math.abs(item.b) > 1
+  const shortTick = (item) => item.w <= 12
+    && /^\d{1,4}(?:[ ,][\d]{1,3})*$/u.test(item.str.trim())
+  const classified = overlapPairs.map((pair) => ({
+    ...pair,
+    kind: ((rotated(pair.a) && shortTick(pair.b)) || (rotated(pair.b) && shortTick(pair.a)))
+      && pair.overlap <= 12 ? 'known-rotated-axis-tick' : 'unexpected',
+  }))
+  const unexpectedOverlaps = classified.filter((pair) => pair.kind === 'unexpected')
+  const normalizedText = allText.replace(/[\u202f\u00a0]/gu, ' ')
+  const missingValues = expectedValues.filter((value) => !normalizedText.includes(value))
   return {
     key,
     pageCount: pdf.numPages,
     pages,
-    hasIdentity: /RENNES|ALLINEUC/i.test(allText),
+    overlapPairs: classified,
+    overlappingTextPairs: classified.length,
+    unexpectedOverlaps,
+    numericChecks: { expected: expectedValues, missing: missingValues },
+    hasIdentity: expectedIdentity.length > 0
+      && normalizedText.toUpperCase().includes(expectedIdentity.toUpperCase()),
     hasSources: allText.includes('Source(s)'),
     hasValuesTable: allText.includes('Valeurs du graphique') || allText.includes('Valeurs des graphiques'),
     hasRank: allText.includes('Rang'),
     replacementGlyph: allText.includes('\ufffd'),
     imageXObjects,
-    overlappingTextPairs,
     headerAligned,
     collapsedGrouping,
     separatorsPreserved: collapsedGrouping.length === 0,
@@ -209,10 +266,86 @@ async function audit(file, key) {
   }
 }
 
+// Production-path interaction checks that do not alter served data. The
+// comparison loading/empty states are deliberately NOT driven here: reaching
+// them would require replacing the read-only API response for the comparison
+// endpoint, which the harness never does. They are reported as undrivable.
+async function driveInteractions() {
+  const checks = {}
+  const key = 'aedar-access'
+  const button = page.locator(`[data-section="${key}"] .cahier-pdf-action__button`)
+  await button.focus()
+  checks.keyboardFocus = await button.evaluate((node) => document.activeElement === node)
+  let downloads = 0
+  const onDownload = () => { downloads += 1 }
+  page.on('download', onDownload)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(700)
+  checks.enterActivates = (await page.locator('dialog[open]').count()) > 0 || downloads > 0
+  if (await page.locator('dialog[open]').count()) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+  }
+  checks.escapeClosesDialog = (await page.locator('dialog[open]').count()) === 0
+  // Let any download started by Enter settle before measuring cancellation.
+  await page.waitForTimeout(5000)
+  downloads = 0
+
+  // Three-mode limit: try to check more than three modes in the real dialog.
+  await button.click()
+  const boxes = page.locator('dialog[open] .cahier-pdf-dialog__modes input[type="checkbox"]')
+  const count = await boxes.count()
+  for (let i = 0; i < Math.min(count, 5); i += 1) await boxes.nth(i).check()
+  checks.threeModeLimit = (await page.locator('dialog[open] .cahier-pdf-dialog__modes input[type="checkbox"]:checked').count()) <= 3
+  // Cancel keeps the controller idle: no download, dialog dismissed.
+  checks.cancelApplicable = (await page.locator('dialog[open]').count()) > 0
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  checks.cancelNoDownload = checks.cancelApplicable ? downloads === 0 : null
+  checks.cancelClosesDialog = (await page.locator('dialog[open]').count()) === 0
+
+  // Double-click the action: the controller must not emit two downloads.
+  downloads = 0
+  await button.dblclick()
+  try { await page.waitForEvent('download', { timeout: 60000 }) } catch { /* no download */ }
+  await page.waitForTimeout(600)
+  if (await page.locator('dialog[open]').count()) {
+    const modeBoxes = page.locator('dialog[open] .cahier-pdf-dialog__modes input[type="checkbox"]')
+    const n = Math.min(3, await modeBoxes.count())
+    for (let i = 0; i < n; i += 1) await modeBoxes.nth(i).check()
+    await page.locator('dialog[open] [data-pdf-confirm]').click()
+    try { await page.waitForEvent('download', { timeout: 60000 }) } catch { /* no download */ }
+  }
+  checks.doubleClickOneDownload = downloads === 1
+
+  // Mobile target: the shared action button keeps a usable tap size.
+  await page.setViewportSize({ width: 390, height: 844 })
+  checks.mobileTarget = await button.evaluate((node) => {
+    const r = node.getBoundingClientRect()
+    return r.width >= 24 && r.height >= 24
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  page.off('download', onDownload)
+  checks.comparisonLoadingDriven = false
+  checks.comparisonEmptyDriven = false
+  checks.undrivableReason = 'Comparison loading/empty require substituting the read-only API comparison response; the harness never rewrites served data.'
+  return checks
+}
+
 const territories = (process.env.CAHIER_PDF_TERRITORIES || `${type}/${code}`)
   .split(',').map((value) => value.trim()).filter(Boolean)
 const results = []
+let interactions = {}
 try {
+  interactions = await driveInteractions()
+  console.log('INTERACTIONS ' + JSON.stringify(interactions))
+  for (const [check, passed] of Object.entries(interactions)) {
+    if (typeof passed !== 'boolean' || passed) continue
+    // Informational: some sections export directly and never open a dialog,
+    // so cancellation is not applicable there. Loading/empty are undrivable.
+    if (check === 'cancelApplicable' || check.startsWith('comparison')) continue
+    gateFailures.push(`interaction ${check} failed`)
+  }
   for (const territory of territories) {
     const [territoryType, territoryCode] = territory.split('/')
     await page.goto(`${origin}/territoire/${territoryType}/${territoryCode}?theme=mobilite`, {
@@ -227,15 +360,39 @@ try {
         const comparisonState = await page.evaluate((sectionKey) => {
           const section = document.querySelector(`[data-section="${sectionKey}"]`)
           if (!section) return 'absent'
-          if (section.querySelector('[role=status], .cahier-comparison-retry')) return 'error'
-          if (section.querySelector('.cahier-loading, [aria-busy=true]')) return 'loading'
-          return section.textContent?.includes('Groupe comparé') ? 'shown' : 'absent'
+          // A generic role="status" is NOT a comparison error: the explorer
+          // always announces its selected equipment with that role. Detect the
+          // comparison by its own explicit affordances and wording instead.
+          if (section.querySelector('.cahier-comparison-retry')) return 'error'
+          const alert = [...section.querySelectorAll('[role=alert]')]
+            .some((node) => /compar/i.test(node.textContent ?? ''))
+          if (alert) return 'error'
+          const busy = [...section.querySelectorAll('[aria-busy=true]')]
+            .some((node) => /compar|référence|groupe/i.test(node.getAttribute('aria-label') ?? node.textContent ?? ''))
+          const loading = /chargement[^.]*compar|compar[^.]*chargement/i.test(section.textContent ?? '')
+          if (busy || loading) return 'loading'
+          const text = section.textContent ?? ''
+          if (/groupe comparé\s*:\s*indisponible|aucun groupe comparé/i.test(text)) return 'empty'
+          if (/groupe comparé/i.test(text)) return 'shown'
+          return 'absent'
         }, key)
         if (blocked.some((b) => b.key === key)) {
           results.push({ territory, comparisonState, ...blocked.find((b) => b.key === key) })
           continue
         }
-        const result = await exportSection(key)
+        const result = await exportSection(key, territory)
+        if (result.status === 'absent' && !(EXPECTED_ABSENT[territoryType] ?? []).includes(key)) {
+          gateFailures.push(`${territory}/${key}: absent but not expected absent`)
+        }
+        if (result.status === 'success' && result.audit?.hasIdentity === false) {
+          gateFailures.push(`${territory}/${key}: success without territory identity in the PDF`)
+        }
+        if (result.audit?.unexpectedOverlaps?.length) {
+          gateFailures.push(`${territory}/${key}: ${result.audit.unexpectedOverlaps.length} unexpected text overlap(s)`)
+        }
+        if (result.audit?.numericChecks?.missing?.length) {
+          gateFailures.push(`${territory}/${key}: served values missing from PDF: ${result.audit.numericChecks.missing.join(', ')}`)
+        }
         results.push({ territory, comparisonState, ...result })
         console.log(JSON.stringify({ territory, progress: key, comparisonState, status: result.status, reason: result.reason ?? null }))
       }
@@ -249,15 +406,30 @@ try {
   }))
   const receipt = {
     territories,
+    interactions,
     origin,
     canonicalHost,
     at: new Date().toISOString(),
     pageErrors: pageErrors.slice(0, 30),
+    expectedAbsent: EXPECTED_ABSENT,
+    gateFailures,
     coverage,
     results,
+  }
+  // One aggregate receipt and one per territory, so every level's evidence
+  // survives independently (including the two legitimately-absent région keys).
+  for (const territory of territories) {
+    const [t, c] = territory.split('/')
+    const own = { ...receipt, territory, results: results.filter((result) => result.territory === territory),
+      coverage: coverage.filter((entry) => entry.territory === territory) }
+    await writeFile(path.join(outDir, `receipt-${t}-${c}.json`), JSON.stringify(own, null, 2))
   }
   const receiptPath = path.join(outDir, 'receipt.json')
   await writeFile(receiptPath, JSON.stringify(receipt, null, 2))
   console.log('RECEIPT ' + receiptPath)
   await browser.close()
+  if (gateFailures.length) {
+    console.error('GATE FAILURES:\n' + gateFailures.join('\n'))
+    process.exitCode = 1
+  }
 }

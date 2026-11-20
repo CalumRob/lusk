@@ -9,7 +9,7 @@ import { chargerPolicePdf } from './cahierPdfFonts'
 import { LARGEUR_CORPS_PT, LARGEUR_FIGURE_STANDARD_PT, PAGE_APPROUVEE, ptDepuisCssPx } from './cahierPdfGrammaire'
 import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 import { CAHIER_EXPORT_ROUTES } from './cahierExportRoutes'
-import { CAHIER_EXPORT_SURFACE, reflowVisibleFigureTracks } from './cahierExportSurface'
+import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from './cahierExportSurface'
 import type { OptionsCompositionCahierPdf } from './cahierPdfComposer'
 
 export class CahierNativePdfError extends Error {
@@ -151,14 +151,15 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
   const neutral = CAHIER_EXPORT_SURFACE.neutralised
     .map((selector) => `${scope} ${selector} { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }`)
     .join('\n')
-  const hidden = CAHIER_EXPORT_SURFACE.hidden
+  // The mount hides exactly the roles in the one owned prose list, and the
+  // reflow pass removes exactly that same list — never two diverging selectors.
+  const hidden = cahierExportHiddenSelectors()
     .map((selector) => `${scope} ${selector} { display:none!important }`)
     .join('\n')
   sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }
 ${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}px; margin-inline:auto }
 ${neutral}
-${hidden}
-${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { display:none!important }` : ''}`
+${hidden}`
   const target = document.createElement('div')
   host.append(sheet, target)
   // The mounted sections resolve exploration links by named routes. They are

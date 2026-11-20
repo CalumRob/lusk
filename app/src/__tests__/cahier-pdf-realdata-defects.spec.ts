@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { formatTimeRampNumber } from '@/fiche/prototype/cahierFigureReadings'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import { roleCelluleTableau } from '@/fiche/prototype/cahierPdfTableau'
-import { CAHIER_EXPORT_SURFACE, reflowVisibleFigureTracks } from '@/fiche/prototype/cahierExportSurface'
+import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from '@/fiche/prototype/cahierExportSurface'
 
 function rect(width: number): DOMRect {
   return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 80, width, height: 80, toJSON() {} } as DOMRect
@@ -109,26 +109,79 @@ describe('real-data PDF defect regressions (#1025)', () => {
     reflowVisibleFigureTracks(root)
     expect(prose.style.display).toBe('none')
     // The title band lives outside the reflowed layout; the legend band lives
-    // inside it. Both are centred generically on the same axis as the plates.
-    expect(title.style.textAlign).toBe('center')
-    expect(title.style.transform).toBe('translateX(110px)')
-    expect(legend.style.textAlign).toBe('center')
-    expect(legend.style.transform).toBe('translateX(120px)')
+    // inside it. Both are translated only: authored alignment/wrapping stay.
+    expect(title.style.translate).toBe('110px')
+    expect(legend.style.translate).toBe('120px')
+    expect(title.style.textAlign).toBe('')
+    expect(legend.style.textAlign).toBe('')
+    expect(title.style.transform).toBe('')
     vi.restoreAllMocks()
   })
 
-  it('leaves every band untouched when the container is not reflowed', () => {
+  it('never translates a band wider than the body, so it cannot overrun the page', () => {
     document.body.innerHTML = `<div id="root"><figure id="block">
-      <figcaption id="title">Titre</figcaption>
-      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr">
-        <figure id="plate"><svg></svg></figure>
+      <figcaption id="title">Titre très large</figcaption>
+      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr 1fr">
+        <div id="prose"><p class="argument-copy">Texte</p></div>
+        <figure id="plate"></figure>
       </div>
     </figure></div>`
     const root = document.getElementById('root') as HTMLElement
     const title = document.getElementById('title') as HTMLElement
+    const boxes = new WeakMap<Element, { x: number; width: number }>([
+      [document.getElementById('spread')!, { x: 100, width: 200 }], // body [100,300]
+      [document.getElementById('plate')!, { x: 100, width: 200 }],
+      [title, { x: -100, width: 500 }], // wider than the body: no translation can fit
+      [document.getElementById('prose')!, { x: 0, width: 100 }],
+    ])
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const b = boxes.get(this) ?? { x: 0, width: 0 }
+      return { x: b.x, y: 0, top: 0, left: b.x, right: b.x + b.width,
+        bottom: 80, width: b.width, height: 80, toJSON() {} } as DOMRect
+    })
     reflowVisibleFigureTracks(root)
-    expect(title.style.transform).toBe('')
+    expect(title.style.translate).toBe('')
+    vi.restoreAllMocks()
+  })
+
+  it('leaves a container untouched when hidden prose exists elsewhere but was not removed here', () => {
+    document.body.innerHTML = `<div id="root">
+      <p class="argument-copy" style="display:none">Prose cachée ailleurs</p>
+      <figure id="block">
+        <figcaption id="title">Titre</figcaption>
+        <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr">
+          <figure id="plate"><svg></svg></figure>
+        </div>
+      </figure>
+    </div>`
+    const root = document.getElementById('root') as HTMLElement
+    const spread = document.getElementById('spread') as HTMLElement
+    const title = document.getElementById('title') as HTMLElement
+    const plate = document.getElementById('plate') as HTMLElement
+    reflowVisibleFigureTracks(root)
+    expect(spread.style.gridTemplateColumns).not.toContain('repeat(')
+    expect(spread.style.justifyItems).toBe('')
+    expect(plate.style.width).toBe('')
+    expect(title.style.translate).toBe('')
     expect(title.style.textAlign).toBe('')
+  })
+
+  it('shares one owned prose list between the mount hide and the reflow removal', () => {
+    const selector = CAHIER_EXPORT_SURFACE.proseSelector
+    // Chrome-hidden figure notes and CahierProse's implementation class are not
+    // prose roles: the one list excludes both.
+    expect(selector).not.toContain('.cahier-prose')
+    expect(selector).toContain('.cahier-evidence-source:not(.cahier-map-legend__note)')
+    // The mount builds its hide CSS from that very constant.
+    expect(cahierExportHiddenSelectors()).toContain(selector)
+    // The reflow pass removes exactly that role, not a parallel list.
+    document.body.innerHTML = `<div id="root"><div id="spread" data-cahier-export-layout="spread"
+      style="display:grid;grid-template-columns:1fr 1fr"><div id="prose">
+      <p class="${selector.split(',')[0]!.trim().slice(1)}">Texte</p></div><figure id="plate"></figure></div></div>`
+    const root = document.getElementById('root') as HTMLElement
+    const prose = document.getElementById('prose') as HTMLElement
+    reflowVisibleFigureTracks(root)
+    expect(prose.style.display).toBe('none')
   })
 
 })

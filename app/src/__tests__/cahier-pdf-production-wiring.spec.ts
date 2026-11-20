@@ -7,8 +7,6 @@
  * by their own suites; this spec proves only that production actually wires the
  * real factory and stays honest while that factory is still loading.
  */
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -25,6 +23,17 @@ import { routes } from '@/router'
 import { aedarReadyFixtures, cahierExportFixture } from './helpers/cahierExportFixtures'
 
 const GENERATEUR_EN_ATTENTE = 'La génération du PDF n’est pas encore disponible.'
+
+// A stand-in for the composer module only so the test can OBSERVE when the
+// production wrapper imports it. Production never installs this stand-in: it
+// installs a wrapper that calls the real factory on export intent.
+const composer = vi.hoisted(() => ({ factoryCalls: 0, generator: vi.fn() }))
+vi.mock('../fiche/prototype/cahierPdfComposer', () => ({
+  creerGenerateurCahierPdf: () => {
+    composer.factoryCalls += 1
+    return composer.generator
+  },
+}))
 
 function control(): ControleComparaison {
   return {
@@ -67,20 +76,29 @@ async function mountProduction() {
 }
 
 describe('production Cahier PDF wiring (#1025)', () => {
-  it('installs a lazy generator at mount and defers the composer chunk to export intent', async () => {
+  it('delegates export intent to the real composer factory, not a mock or timer', async () => {
+    composer.factoryCalls = 0
     const wrapper = await mountProduction()
     const shell = () => wrapper.getComponent(VarianteCahierLibre)
 
-    // The installed generator is a thin wrapper: it is a function immediately
-    // (no pending/unavailable state), but the 84.5 kB composer module is only
-    // imported when the function is actually invoked by an export.
-    const generator = shell().props('pdfGenerator')
+    // The installed generator is a function at mount, but the composer factory
+    // has not been called: import and factory creation happen on export intent.
+    const generator = shell().props('pdfGenerator') as (...args: unknown[]) => Promise<unknown>
     expect(typeof generator).toBe('function')
+    expect(composer.factoryCalls).toBe(0)
     expect(wrapper.findAll('.cahier-pdf-action')).toHaveLength(9)
     expect(wrapper.findAll('.cahier-pdf-action__reason')
       .some((reason) => reason.text() === GENERATEUR_EN_ATTENTE)).toBe(false)
     await flushPromises()
-    expect(shell().props('pdfGenerator')).toBe(generator)
+    expect(composer.factoryCalls).toBe(0)
+
+    // Acting on the public generator calls the real factory and returns its
+    // result directly — no simulated success, no deferred timer, no object URL.
+    const artifact = { blob: new Blob(['%PDF-1.7']), fileName: 'reel.pdf' }
+    composer.generator.mockResolvedValueOnce(artifact)
+    const result = await generator({}, { signal: new AbortController().signal })
+    expect(composer.factoryCalls).toBe(1)
+    expect(result).toBe(artifact)
     wrapper.unmount()
   })
 
@@ -98,14 +116,15 @@ describe('production Cahier PDF wiring (#1025)', () => {
     wrapper.unmount()
   })
 
-  it('wires the real composer factory without a mock generator, timer or object URL', () => {
-    const source = readFileSync(
-      join(process.cwd(), 'src', 'fiche', 'mobilite', 'ProductionMobiliteAedar.vue'),
-      'utf-8',
-    )
-    expect(source).toContain('creerGenerateurCahierPdf')
-    expect(source).not.toContain('setTimeout')
-    expect(source).not.toContain('createObjectURL')
-    expect(source).not.toContain('mock')
+  it('installs one real generator that reports an honest failure when the composer rejects', async () => {
+    composer.factoryCalls = 0
+    const wrapper = await mountProduction()
+    const generator = wrapper.getComponent(VarianteCahierLibre).props('pdfGenerator') as
+      (...args: unknown[]) => Promise<unknown>
+    const failure = new Error('composer indisponible')
+    composer.generator.mockRejectedValueOnce(failure)
+    await expect(generator({}, { signal: new AbortController().signal })).rejects.toThrow(failure)
+    expect(composer.factoryCalls).toBe(1)
+    wrapper.unmount()
   })
 })

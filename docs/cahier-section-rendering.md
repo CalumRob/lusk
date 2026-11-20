@@ -286,12 +286,16 @@ is started. The only mount is the inert, offscreen export host created inside
 
 **Export surface contract.** `cahierExportSurface.ts` is the single app-owned
 list of screen chrome hidden in that host: section footer, tooltips, the screen
-rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`), screen-only
-interactive CTAs/controls (`.cahier-action-button`, retries, carousels) and, in
-the document route, standalone evidence sources. Figure titles, captions, axis and
-legend labels, scalar labels and figure-attached reading notes keep their own
-roles and are not hidden. A drift test fails if a listed producer selector
-disappears. The screen router owns the shared route identities
+rank chip, screen-only interactive CTAs/controls (`.cahier-action-button`,
+retries, carousels). Prose is hidden by the **same single owned list**
+(`CAHIER_EXPORT_SURFACE.proseSelector`) that the reflow pass uses to remove it;
+`cahierExportHiddenSelectors()` is the mount's only hide list. That list is
+`.argument-copy, .page-subtitle, .cahier-evidence-source:not(.cahier-map-legend__note)`
+— it deliberately excludes `.cahier-prose` (an implementation class carried by
+figure titles too) and preserves the map-legend note. Figure titles, captions,
+axis and legend labels, scalar labels and figure-attached reading notes keep
+their own roles and are not hidden. A drift test fails if a listed producer
+selector disappears. The screen router owns the shared route identities
 (`CAHIER_EXPORT_ROUTES` is exported from `src/router/index.ts`), and the
 standard figure width and desktop viewport constants come from their figure
 owners.
@@ -311,11 +315,15 @@ position changes; no figure is stretched or shrunk. No layout class name
 participates and there is one mechanism only.
 
 The same pass also centres the figure's *bands* — the title/caption, any
-subtitle or unit line, and the legend/scale band — on the axis of the reflowed
-plate grid. Bands are recognised generically as the non-figure, text-bearing
-children of the figure block and the layout; each is translated horizontally
-only, with no per-section selectors. A figure block whose plates are not on the
-body axis is left untouched, so unreflowed sections keep their exact rendering.
+subtitle or unit line, and the legend/scale band — on the body axis. The sole
+guard is the reflow plan: a container where prose was actually removed. Bands
+are recognised generically as the non-figure, text-bearing children of the
+figure block and the layout; each is moved by a pure horizontal translation,
+clamped to the body so it cannot overrun the page. Authored alignment and
+wrapping are never rewritten — no `text-align` is imposed by the shell — and a
+band already on the axis, or wider than the body, is left untouched. A
+container that was not reflowed is never visited, so unreflowed sections keep
+their exact rendering.
 
 Declarations: the five AEDAR section bodies and the Mobilité
 `mobilite-section-spread` wrappers; the diversity-loss layout and the access

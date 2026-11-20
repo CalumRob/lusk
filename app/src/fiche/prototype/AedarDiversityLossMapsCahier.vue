@@ -124,7 +124,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
     </figcaption>
 
     <div class="aedar-diversity-loss__layout" data-cahier-export-layout="spread">
-      <div class="aedar-diversity-loss__comparisons">
+      <div class="aedar-diversity-loss__comparisons" data-cahier-native-figure>
         <section
           v-for="group in comparisonGroups"
           :key="group.key"

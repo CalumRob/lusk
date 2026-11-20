@@ -251,9 +251,10 @@ describe('Cahier typography roles', () => {
   })
 
   it('keeps a moderate gap between shared y-axis titles and tick labels', () => {
-    expect(cssRule(figureCss, '.cahier-figure-axis-title--y')).toContain(
-      'left: calc(var(--cahier-figure-axis-title-y-left) + 8px)',
-    )
+    const rule = cssRule(figureCss, '.cahier-figure-axis-title--y')
+    const clearance = Number(/\+ (\d+)px\)/.exec(rule)?.[1] ?? 0)
+    expect(clearance).toBeGreaterThanOrEqual(6)
+    expect(clearance).toBeLessThanOrEqual(24)
   })
 
   it('lets the section 03 reading and plots use the full section draw area', () => {

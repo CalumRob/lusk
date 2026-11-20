@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import './cahierEvidenceSource.css'
 import { computed } from 'vue'
+import { formatTimeRampNumber } from './cahierFigureReadings'
 
 const props = defineProps<{
   title: string
@@ -13,11 +14,9 @@ const props = defineProps<{
   ariaLabel?: string
 }>()
 
-// Same visible grouping as the shared ramp formatter: a normal space survives
-// the DOM-to-PDF glyph painting, U+202F does not.
-const tickFormatter = { format: (value: number) =>
-  new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value).replace(/\u202f|\u00a0/gu, ' ') }
-const labels = computed(() => props.tickLabels ?? props.ticks?.map((tick) => tickFormatter.format(tick)) ?? [])
+// The shared formatter emits the normal space that survives DOM-to-PDF glyph
+// painting; no local Intl reimplementation.
+const labels = computed(() => props.tickLabels ?? props.ticks?.map(formatTimeRampNumber) ?? [])
 const accessibleLabel = computed(() => props.ariaLabel ?? [
   props.title.replace(/\*$/, ''),
   props.minimum === undefined || props.maximum === undefined

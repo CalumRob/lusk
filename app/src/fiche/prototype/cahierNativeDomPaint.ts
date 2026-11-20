@@ -17,6 +17,16 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
   canvas.width = canvas.height = 1
   const measure = canvas.getContext('2d', { willReadFrequently: true })!
   const range = document.createRange()
+  // Two native boxes can paint the same string at the same point (a duplicated
+  // comparator scalar). Emitting both overprints the glyphs; paint each
+  // string/position once. Identical strings at different positions are kept.
+  const painted = new Set<string>()
+  const once = (x: number, y: number, text: string) => {
+    const key = `${x.toFixed(2)}:${y.toFixed(2)}:${text}`
+    if (painted.has(key)) return false
+    painted.add(key)
+    return true
+  }
   const rgba = (value: string): [number, number, number, number] => {
     measure.clearRect(0, 0, 1, 1)
     measure.fillStyle = 'transparent'
@@ -82,7 +92,9 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
           // Draw from the run's start and offset y by half its measured length
           // so the visual line is centred on the native box's centre.
           const runLength = doc.getTextWidth(text)
-          doc.text(text, pos.x, pos.y + runLength / 2, { angle: -cssAngle, baseline: 'middle' })
+          const yText = pos.y + runLength / 2
+          if (!once(pos.x, yText, text)) return
+          doc.text(text, pos.x, yText, { angle: -cssAngle, baseline: 'middle' })
           return
         }
       }
@@ -99,7 +111,10 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
         const rect = range.getBoundingClientRect()
         if (rect.width < .01 || rect.height < 1 || /[\n\r]/.test(char)) continue
         const pos = box(rect)
-        doc.text(s.textTransform === 'uppercase' ? char.toLocaleUpperCase('fr-FR') : char, pos.x, pos.y + ascent * scale)
+        const drawn = s.textTransform === 'uppercase' ? char.toLocaleUpperCase('fr-FR') : char
+        const yText = pos.y + ascent * scale
+        if (!once(pos.x, yText, drawn)) continue
+        doc.text(drawn, pos.x, yText)
       }
       return
     }
