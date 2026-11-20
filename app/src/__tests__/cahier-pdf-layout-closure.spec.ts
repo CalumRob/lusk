@@ -196,12 +196,9 @@ describe('#1024 — rapport indisponible : une seule sémantique de cellule', ()
     expect(ligne).toBeTruthy()
     const indisponibles = ligne.items.filter((item) => item.str === 'Indisponible')
     expect(indisponibles, ligne.texte).toHaveLength(2)
-    // The rank has no served ordinal and keeps the approved em dash. A raw
-    // cell now uses the label role, whose larger face sits 0.5pt off the rank
-    // value's baseline, so match the same row band rather than one exact y.
-    const rowBand = lecture.lignes.filter((candidate) => Math.abs(candidate.y - ligne.y) <= 1)
-    expect(rowBand.flatMap((candidate) => candidate.items).filter((item) => item.str === '—'))
-      .toHaveLength(1)
+    // The rank has no served ordinal and keeps the approved em dash on the
+    // row's own baseline (value-role typography, restored from the column kind).
+    expect(ligne.items.filter((item) => item.str === '—')).toHaveLength(1)
     expect(lecture.texteComplet).toContain('Rapport indisponible')
   })
 })

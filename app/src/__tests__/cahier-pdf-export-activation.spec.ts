@@ -125,6 +125,13 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
       comparisonStatus: 'unavailable',
       publications: readyPublications('reseaux'),
     }))).toEqual({ ready: true })
+    // An explicitly empty selection also does not wait for an in-flight
+    // comparison read: the absence is the owner's decision, not a pending fact.
+    expect(evaluerDisponibiliteExportPdf(capturePdfFixture('reseaux', {
+      selection: { etat: 'vide' },
+      comparisonStatus: 'loading',
+      publications: readyPublications('reseaux'),
+    }))).toEqual({ ready: true })
     expect(evaluerDisponibiliteExportPdf(capturePdfFixture('couverture-du-territoire', {
       comparisonEligible: false,
       comparisonStatus: 'error',
@@ -276,6 +283,28 @@ describe('shared PDF activation policy — wait for completeness (#1023)', () =>
     // Settled to ready: the action enables and the served ranks can be captured.
     expect(evaluerDisponibiliteExportPdf(capturePdfFixture('aedar-car-overview', {
       comparisonStatus: 'ready', publications,
+    }))).toEqual({ ready: true })
+  })
+
+  it('stays pending for an out-of-order payload whose status settles before its ranks', () => {
+    const publications = readyPublications('aedar-car-overview')
+    const base = capturePdfFixture('aedar-car-overview')
+    const evidence = base.nativeRender!.content.units[0]!.sections[0]!.evidence as any
+    const pendingScalars = evidence.scalars.map((scalar: any) => ({
+      ...scalar,
+      reference: { kind: 'selection-mean', label: 'Moyenne', value: 165.6, unit: '%' },
+      rank: null, rankSize: null, rankUnavailableLabel: null,
+    }))
+    expect(blockReason(capturePdfFixture('aedar-car-overview', {
+      comparisonStatus: 'ready', publications,
+      evidencePatch: { scalars: pendingScalars },
+    }))).toBe('comparison-loading')
+    const settledScalars = pendingScalars.map((scalar: any) => ({
+      ...scalar, rank: 1, rankSize: 43,
+    }))
+    expect(evaluerDisponibiliteExportPdf(capturePdfFixture('aedar-car-overview', {
+      comparisonStatus: 'ready', publications,
+      evidencePatch: { scalars: settledScalars },
     }))).toEqual({ ready: true })
   })
 

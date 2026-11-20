@@ -231,6 +231,22 @@ function comparisonBlockReason(
   return referenceBlockReason(comparison)
 }
 
+/**
+ * A served comparison can settle its status before the ranks it carries reach
+ * the scalar model. Readiness must use the same completeness fact the capture
+ * consumes: a displayed reference without a published rank (and without the
+ * owner's explicit unavailability wording) is still a half-loaded comparison.
+ */
+function overviewRanksPending(
+  capture: CahierExportCapture,
+  comparison: CahierCaptureComparison,
+): boolean {
+  if (!comparisonRelevant(comparison)) return false
+  return capture.figures.some((figure) => figure.family === 'aedar-car-overview'
+    && figure.model.scalars.some((scalar) => scalar.reference !== null
+      && scalar.rank == null && scalar.rankSize == null && !scalar.rankUnavailableLabel))
+}
+
 interface FigureResourceFailures {
   readonly resources: readonly string[]
   readonly comparisons: readonly string[]
@@ -305,6 +321,7 @@ export function evaluerDisponibiliteExportPdf(capture: CahierExportCapture): Cah
 
   const comparisonReason = comparisonBlockReason(capture.comparison)
   if (comparisonReason) return bloque(comparisonReason)
+  if (overviewRanksPending(capture, capture.comparison)) return bloque('comparison-loading')
 
   const figureReason = figureBlockReason(capture, capture.comparison)
   if (figureReason) return bloque(figureReason)

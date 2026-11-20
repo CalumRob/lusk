@@ -218,13 +218,11 @@ describe('grammaire PDF — rôles approuvés et métriques réelles', () => {
 
   // RETIRED (#1024 native switch): Pins the deleted painter's measured glyph/raster geometry; native DOM paint owns those boxes now.
   it('garde une terminaison compacte et une continuation sans réduction globale', async () => {
-    // Evidence for the relaxed bound: restoring `toBe(1)` fails with 2 pages
-    // (vitest cahier-pdf-fidelity 2026-11-20). Full published statistics plus
-    // the measured header band legitimately continue this one-mode case;
-    // production receipts agree (FINAL10: EPCI explorer pageCount 2, commune 1).
+    // Approved consequence of the measured 4 mm header band: the compact
+    // one-mode case with full published statistics takes exactly two pages.
     const base = captureExplorerRangs()
     const compact = await generer(base, [base.capabilities.selectableSeries[0]!.id])
-    expect(compact.lecture.pages).toBeGreaterThanOrEqual(2)
+    expect(compact.lecture.pages).toBe(2)
     // The dense two-table document is the measured continuation: both value
     // tables continue with complete rows, ranks and repeated identity/sources.
     const dense = captureProfilRangsDense()

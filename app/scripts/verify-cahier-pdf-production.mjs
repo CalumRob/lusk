@@ -45,12 +45,10 @@ const chapters = [
   { anchor: 'figure-offre-transports-commun', sections: ['couverture-du-territoire', 'visiter-la-bretagne'] },
 ]
 
-// Sections with no served data at a level are legitimately absent. Every other
-// absence is a harness failure; a region PDF still exporting those would also
-// violate this expectation.
-const EXPECTED_ABSENT = {
-  region: ['reseaux', 'stationnement-ravitaillement'],
-}
+// No hard-coded absence allow-list. mobiliteSections.ts builds `evidence:null`
+// when the publisher serves no facts for a section at the current level, and
+// VarianteCahierLibre mounts no action for such a section. The harness derives
+// legitimacy from that component contract (no rendered section) instead.
 // Explicit harness fixture expectations — not arbitrary literals: these are the
 // frozen French-grouping regression values and the two-level table header
 // vocabulary owned by cahierPdfTableau / cahierPdfGrammaire. They are checked
@@ -222,7 +220,20 @@ async function sourceRanks(key) {
 
 async function exportSection(key, territory) {
   const action = (await readActions()).find((a) => a.key === key)
-  if (!action) return { key, status: 'absent', reason: 'no PDF action mounted for this section' }
+  if (!action) {
+    // Component contract: a section with no published evidence renders no
+    // action. An absent ACTION on a still-rendered section is a real failure.
+    // The section is still rendered as a placeholder:VarianteCahierLibre marks
+    // an evidence-less publisher section with `cahier-section--absent` and
+    // mounts no action. That class is the component-side contract, not a
+    // harness allow-list.
+    const section = await page.evaluate((sectionKey) => {
+      const node = document.querySelector(`[data-section="${sectionKey}"]`)
+      return node ? { rendered: true, absent: node.classList.contains('cahier-section--absent') } : { rendered: false, absent: false }
+    }, key)
+    return { key, status: 'absent', sectionRendered: section.rendered, sectionAbsent: section.absent,
+      reason: 'no PDF action mounted for this section' }
+  }
   if (action.blocked) return { key, status: 'blocked', reason: action.reason }
 
   const comparisonSettled = await waitComparisonSettled(key)
@@ -543,8 +554,8 @@ try {
         } else {
           result = { ...await exportSection(key, territory), comparisonState }
         }
-        if (result.status === 'absent' && !(EXPECTED_ABSENT[territoryType] ?? []).includes(key)) {
-          gateFailures.push(`${territory}/${key}: absent but not expected absent`)
+        if (result.status === 'absent' && result.sectionAbsent !== true) {
+          gateFailures.push(`${territory}/${key}: no action without the publisher's cahier-section--absent contract`)
         }
         if (result.status === 'success' && result.audit?.hasIdentity === false) {
           gateFailures.push(`${territory}/${key}: success without territory identity in the PDF`)
@@ -569,7 +580,9 @@ try {
     canonicalHost,
     at: new Date().toISOString(),
     pageErrors: pageErrors.slice(0, 30),
-    expectedAbsent: EXPECTED_ABSENT,
+    absentSections: results.filter((result) => result.status === 'absent')
+      .map((result) => ({ territory: result.territory, key: result.key,
+        sectionRendered: result.sectionRendered, sectionAbsent: result.sectionAbsent })),
     gateFailures,
     coverage,
     results,

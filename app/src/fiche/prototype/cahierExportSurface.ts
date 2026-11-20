@@ -24,14 +24,15 @@ export const CAHIER_EXPORT_SURFACE = {
     '[role=tooltip]',
     // The served rank belongs to the exported `Rang` column, not a screen chip.
     '.cahier-rank',
+    // Screen-only plate indices sit inside the raster box; the image paints
+    // over them, leaving selectable but invisible text in the export.
+    '.map-panel-number, .blank-map-slot__number, .aedar-diversity-loss-map__number',
     // Screen-only interactive chrome: CTAs, retries and carousel/control affordances.
     // Legend toggles keep their own roles and remain visible.
     '.cahier-action-button',
-    '.cahier-comparison-retry',
     // Loading spinners / warning buttons / tooltips are screen state chrome.
     // A transient loading comparison must never paint a stray ring in the PDF.
     '.cahier-comparison-value__state',
-    '.cahier-map-gallery-controls',
     '[data-pdf-confirm]',
   ],
   neutralised: [
@@ -96,8 +97,12 @@ export function reflowVisibleFigureTracks(root: HTMLElement): void {
       && getComputedStyle(child).display !== 'none')
     // Prose nested in the layout and already hidden by the mount is owned by
     // this container too: removing it (same shared selector) makes a real plan.
+    // Only prose NESTED inside a still-visible child counts: a direct child
+    // already hidden by the mount is not prose this pass removes, so it must
+    // not form a plan on its own.
     const nestedProse = [...layout.querySelectorAll<HTMLElement>(surface.proseSelector)]
-      .filter((element) => getComputedStyle(element).display === 'none')
+      .filter((element) => element.parentElement !== layout
+        && getComputedStyle(element).display === 'none')
     const prose = [...new Set([...directProse, ...nestedProse])]
     if (!prose.length) continue
     // A child that OWNS a figure is still a figure for geometry purposes (the

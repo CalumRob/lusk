@@ -7,7 +7,7 @@ import { formatTimeRampNumber } from '@/fiche/prototype/cahierFigureReadings'
 import { ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
 import { estCelluleBrute, roleCelluleTableau } from '@/fiche/prototype/cahierPdfTableau'
 import { plierTexte, type MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
-import type { CahierTableCell } from '@/fiche/prototype/cahierExportAdapters'
+import type { CahierTableCell, CahierTableColumn } from '@/fiche/prototype/cahierExportAdapters'
 import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from '@/fiche/prototype/cahierExportSurface'
 
 const MESURE_TABLEAU_FIXE: MesureTexte = {
@@ -45,32 +45,35 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(formatTimeRampNumber(6440)).not.toMatch(/[\u202f\u00a0]/u)
   })
 
-  it('uses one cell-role fact for measurement, row height and painting', () => {
-    const crue = { raw: true } as CahierTableCell
-    const formatee = { raw: false } as CahierTableCell
-    expect(estCelluleBrute(crue)).toBe(true)
-    expect(estCelluleBrute(formatee)).toBe(false)
-    expect(roleCelluleTableau(crue)).toEqual(ROLE_PDF.libelleTableau)
-    expect(roleCelluleTableau(formatee)).toEqual(ROLE_PDF.valeurTableau)
+  it('derives the presentation role from the column kind, not the measurement flag', () => {
+    const mode = { kind: 'raw' } as CahierTableColumn
+    const focal = { kind: 'focal' } as CahierTableColumn
+    expect(estCelluleBrute(mode)).toBe(true)
+    expect(estCelluleBrute(focal)).toBe(false)
+    expect(roleCelluleTableau(mode)).toEqual(ROLE_PDF.libelleTableau)
+    expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
+    // A served numeric cell may carry raw:true in a focal column; it is still
+    // a value cell and must keep the 13px medium value face.
+    const rawNumeric = { raw: true } as CahierTableCell
+    expect(rawNumeric.raw).toBe(true)
+    expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
   })
 
-  it('reserves one consistent role height for a raw cell and a formatted cell', () => {
-    const crue = { raw: true } as CahierTableCell
-    const formatee = { raw: false } as CahierTableCell
+  it('reserves one consistent role height for a raw column and a value column', () => {
+    const mode = { kind: 'raw' } as CahierTableColumn
+    const focal = { kind: 'focal' } as CahierTableColumn
     const display = 'Transports en commun'
-    // The row-height code and the painter both call roleCelluleTableau(cell):
+    // The row-height code and the painter both call roleCelluleTableau(column):
     // each cell reserves exactly the role its glyphs are painted with, so a
     // raw label cannot be measured short and cross the row separator.
-    const hauteurReservee = (cell: CahierTableCell) =>
+    const hauteurReservee = (column: CahierTableColumn) =>
       plierTexte(display, MESURE_TABLEAU_FIXE, {
-        police: roleCelluleTableau(cell).police,
-        taillePt: roleCelluleTableau(cell).taille,
+        police: roleCelluleTableau(column).police,
+        taillePt: roleCelluleTableau(column).taille,
         largeurMax: 120,
         casserMotsLongs: true,
       }).length
-    expect(hauteurReservee(crue)).toBeGreaterThanOrEqual(hauteurReservee(formatee))
-    expect(estCelluleBrute(crue)).toBe(true)
-    expect(estCelluleBrute(formatee)).toBe(false)
+    expect(hauteurReservee(mode)).toBeGreaterThanOrEqual(hauteurReservee(focal))
   })
 
   it('collapses a prose+figure spread even when the prose still shows a source stamp', () => {
@@ -173,6 +176,23 @@ describe('real-data PDF defect regressions (#1025)', () => {
     reflowVisibleFigureTracks(root)
     expect(title.style.translate).toBe('')
     vi.restoreAllMocks()
+  })
+
+  it('does not form a plan when the only prose is already display:none', () => {
+    document.body.innerHTML = `<div id="root"><figure id="block">
+      <div id="spread" data-cahier-export-layout="spread" style="display:grid;grid-template-columns:1fr 1fr">
+        <p class="argument-copy" style="display:none">Déjà cachée</p>
+        <figure id="plate"><svg></svg></figure>
+      </div>
+    </figure></div>`
+    const root = document.getElementById('root') as HTMLElement
+    const spread = document.getElementById('spread') as HTMLElement
+    const plate = document.getElementById('plate') as HTMLElement
+    reflowVisibleFigureTracks(root)
+    expect(spread.style.gridTemplateColumns).not.toContain('repeat(')
+    expect(spread.style.justifyItems).toBe('')
+    expect(plate.style.width).toBe('')
+    expect(plate.style.translate).toBe('')
   })
 
   it('leaves a container untouched when the mount hides its prose but it owns no figure', () => {

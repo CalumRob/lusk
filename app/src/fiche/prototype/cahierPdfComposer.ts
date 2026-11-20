@@ -1266,9 +1266,10 @@ function dessinerTableau(
         cellX += colonne.width
         continue
       }
-      // One role fact for measurement, row height and painting: the cell's own
-      // `raw` marker, never a column-level kind that can disagree with it.
-      const roleCellule = roleCelluleTableau(cellule.cell)
+      // One role fact for measurement, row height and painting: the column's
+      // presentation kind. `cell.raw` is a measurement flag on numeric focal
+      // cells too and must never switch their typography to the label role.
+      const roleCellule = roleCelluleTableau(colonne.column)
       const lignes = plierTexte(cellule.display, mesure, {
         police: roleCellule.police,
         taillePt: roleCellule.taille,

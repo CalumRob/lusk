@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
+import { aedarOverviewScalarDisplayValue } from '@/fiche/prototype/aedarFigureReadings'
 import { capturePdfFixture } from './helpers/cahierPdfFixtures'
 import { composerCahierPdfNativedansNavigateur } from './helpers/cahierPdfNativeRuntime'
 
@@ -26,7 +27,13 @@ describe('overview scalars in every export route (#1025)', () => {
     })
     const text = await textOf(result.blob)
     expect(text).toMatch(/Diversité de l’offre accessible/i)
-    expect(text).toMatch(/\d[\d ,]*%|\d[\d ,]*/u)
+    // Assert the exact served scalar tokens, not "any digit".
+    const evidence = capture.nativeRender!.content.units[0]!.sections[0]!.evidence as any
+    const tokens = (evidence.scalars as readonly unknown[])
+      .map((scalar) => aedarOverviewScalarDisplayValue(scalar as any))
+      .filter((token) => token !== '—')
+    expect(tokens.length).toBeGreaterThan(0)
+    for (const token of tokens) expect(text).toContain(token)
   }, 60000)
 
   it('pins two served 1er/43 ranks when the overview comparison supplies them', async () => {

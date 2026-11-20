@@ -76,6 +76,16 @@ async function mountProduction() {
 }
 
 describe('production Cahier PDF wiring (#1025)', () => {
+  it('paints a pending action with an honest reason on the first render', async () => {
+    const wrapper = await mountProduction()
+    const action = wrapper.findAll('.cahier-pdf-action')[0]!
+    // This assertion runs before a readiness flush is awaited: the first paint
+    // must already carry aria-disabled and the capture-unavailable reason.
+    expect(action.find('.cahier-pdf-action__button').attributes('aria-disabled')).toBe('true')
+    expect(action.find('.cahier-pdf-action__reason').text()).toContain('pas prête')
+    await flushPromises()
+    wrapper.unmount()
+  })
   it('delegates export intent to the real composer factory, not a mock or timer', async () => {
     composer.factoryCalls = 0
     const wrapper = await mountProduction()
