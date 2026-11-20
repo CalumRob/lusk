@@ -580,6 +580,9 @@ bridge_print_report <- function(plan, mode) {
   cat("new scalar token:", plan$tokens$scalar, "\n")
   cat("new comparison token:", plan$tokens$comparison, "\n")
   cat("new Habitat linked token:", plan$tokens$linked, "\n")
+  fk <- plan$fk_inventory
+  cat("FK pre-flight:", if (is.data.frame(fk)) nrow(fk) else "unknown",
+      "target-schema reference(s) checked\n")
   present <- plan$retired_present %||% character()
   cat("policy retirements:", length(plan$retired_ids),
       "; present live:", length(present),
@@ -1003,7 +1006,7 @@ bridge_profile_live_rows <- function(reader, con) list(
 # observed bad_weak_ptr). Registers immediately after CREATE SCHEMA in the DB
 # proof so no failure between create and the first assertion can leak a schema.
 bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
-                                     execute = NULL, close = NULL, quote = NULL,
+                                     execute = NULL, close = NULL, quote_id = NULL,
                                      cleanup_flag = Sys.getenv("LUSK_BRIDGE_TEST_CLEANUP", unset = "")) {
   if (!identical(cleanup_flag, "1")) {
     stop("Refusing cleanup without the explicit LUSK_BRIDGE_TEST_CLEANUP=1 opt-in",
@@ -1032,9 +1035,9 @@ bridge_db_cleanup_schema <- function(schema, config, open = NULL, query = NULL,
       !isTRUE(check$owned[[1L]]))
     stop("Refusing cleanup: schema identity is not this guarded test schema",
          call. = FALSE)
-  if (is.null(quote)) quote <- function(con, schema)
+  if (is.null(quote_id)) quote_id <- function(con, schema)
     as.character(DBI::dbQuoteIdentifier(con, schema))
-  execute(con, paste0("DROP SCHEMA ", quote(con, schema), " CASCADE"))
+  execute(con, paste0("DROP SCHEMA ", quote_id(con, schema), " CASCADE"))
   invisible(TRUE)
 }
 
@@ -1117,9 +1120,11 @@ assert_bridge_no_foreign_scalar_fks <- function(inventory) {
 # Read-only FK inventory from the live catalog. has_rows is evaluated per FK via
 # a quoted-identifier EXISTS query; no DDL or mutation is issued here.
 bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES,
-                                query = NULL, schema = NULL, quote = NULL) {
+                                 query = NULL, schema = NULL, quote_id = NULL) {
   if (is.null(query)) query <- function(sql, params = list())
     bridge_db_query(con, sql, params = params)
+  if (is.null(quote_id)) quote_id <- function(id)
+    as.character(DBI::dbQuoteIdentifier(con, id))
   if (is.null(schema))
     schema <- query("SELECT current_schema() AS schema")$schema[[1L]]
   if (!is.character(schema) || length(schema) != 1L || is.na(schema) || !nzchar(schema))
@@ -1158,9 +1163,9 @@ bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES,
       " AND attnum = ANY($2::smallint[]) ORDER BY attnum"),
       params = list(fks$referencing_oid[[i]], fks$conkey[[i]]))$attname
     table_id <- DBI::Id(schema = schema, table = fks$referencing_table[[i]])
-    quoted <- quote(table_id)
+    quoted <- quote_id(table_id)
     predicate <- if (length(columns))
-      paste(paste0("t.", vapply(columns, function(col) quote(col), character(1)),
+      paste(paste0("t.", vapply(columns, quote_id, character(1)),
                    " IS NOT NULL"), collapse = " OR ") else "TRUE"
     query(paste0("SELECT EXISTS (SELECT 1 FROM ", quoted, " t WHERE ",
                  predicate, ") AS has_rows"))$has_rows[[1L]]

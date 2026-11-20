@@ -732,7 +732,7 @@ test_that("schema cleanup runs after an early error and drops only this run's sc
     on.exit(bridge_db_cleanup_schema(
       schema, bridge_pure_config(), open = open_stub, query = query_stub,
       execute = execute_stub, close = close_stub,
-      quote = function(con, schema) paste0('"', schema, '"'),
+      quote_id = function(con, schema) paste0('"', schema, '"'),
       cleanup_flag = "1"), add = TRUE)
     stop("boom between CREATE SCHEMA and the first assertion")
   }), "boom between CREATE SCHEMA")
@@ -1193,6 +1193,7 @@ test_that("the live-shaped no-retirement scenario publishes cleanly", {
     read_markers = function() bridge_fixture_markers(expected),
     retired_ids = retired))
   expect_match(paste(report, collapse = "\n"), "none present live", fixed = TRUE)
+  expect_match(paste(report, collapse = "\n"), "FK pre-flight:", fixed = TRUE)
   expect_length(result$retired_present, 0L)
   expect_identical(result$projection, built$projection)
 
@@ -1253,7 +1254,7 @@ test_that("FK inventory ignores other schemas and probes quoted qualified tables
     }
     stop("unexpected catalog query: ", sql)
   }
-  inventory <- bridge_fk_inventory(NULL, query = query_stub, quote = quote_stub)
+  inventory <- bridge_fk_inventory(NULL, query = query_stub, quote_id = quote_stub)
   expect_identical(nrow(inventory), 1L)
   expect_identical(inventory$referencing_table, "inside_owner")
   expect_length(probes, 1L)
@@ -1344,5 +1345,49 @@ test_that("every bridge SQL call has matching params and safe catalog probes", {
   # The DB proof uses the same helpers; lint it too.
   db_test <- file.path(testthat::test_path(), "test-offre-tc-bridge-db.R")
   expect_gte(lint_source(db_test), 5L)
+})
+
+
+# --- Round-7: full FK probe through real DBI S4 dispatch ----------------------
+
+test_that("FK probe SQL is exactly quoted and column-derived (real DBI dispatch)", {
+  target <- "serving_it_real"
+  catalog <- data.frame(
+    referencing_table = "inside_owner", referenced_table = "scalar_descriptor",
+    constraint_name = "fk_inside", referencing_oid = 42L,
+    conkey = I(list(c(2L, 3L))), schema = target, stringsAsFactors = FALSE)
+  con <- bridge_mock_connection(list(
+    data.frame(schema = target), catalog,
+    data.frame(attname = c("indicator_id", "source_id")),
+    data.frame(has_rows = TRUE)))
+  inventory <- bridge_fk_inventory(con)
+  expect_identical(inventory$has_rows, TRUE)
+  calls <- con@state$calls
+  expect_identical(calls[[4L]], paste(
+    'SELECT EXISTS (SELECT 1 FROM "serving_it_real"."inside_owner" t',
+    'WHERE t."indicator_id" IS NOT NULL OR t."source_id" IS NOT NULL) AS has_rows'))
+  # The stub's other-schema catalog rows (if any) are filtered before probing.
+  expect_false(any(grepl("other_it_schema", calls, fixed = TRUE)))
+})
+
+test_that("schema cleanup uses DBI identifier quoting via real dispatch", {
+  dropped <- character()
+  con <- bridge_mock_connection(list(
+    data.frame(database = "lusk_it_contract", owned = TRUE, stringsAsFactors = FALSE)))
+  expect_true(bridge_db_cleanup_schema("serving_it_999_abcdef",
+    bridge_pure_config(), open = function(config) con,
+    execute = function(con, sql) { dropped <<- c(dropped, sql); 1L },
+    cleanup_flag = "1"))
+  expect_identical(dropped,
+    'DROP SCHEMA "serving_it_999_abcdef" CASCADE')
+})
+
+test_that("SQL lint rejects bare quote() and hand-built identifiers", {
+  for (path in c(system.file("..", "R", "publish_serving_bridge.R", package = "lusk"),
+                 file.path(testthat::test_path(), "test-offre-tc-bridge-db.R"))) {
+    text <- paste(readLines(path, warn = FALSE), collapse = "\n")
+    expect_false(grepl("\\bquote\\s*\\(", text), info = path)
+    expect_false(grepl("paste0\\(['\"]\"", text), info = path)
+  }
 })
 

@@ -550,3 +550,41 @@ bridge_live_fixture_no_retirements <- function() {
   out
 }
 
+
+# Minimal DBI-compliant mock: stub tests exercise the SAME generic dispatch as
+library(DBI)
+# production, including dbQuoteIdentifier(Id) for schema-qualified probes.
+setClass("BridgeMockConnection", contains = "DBIConnection",
+  slots = c(replies = "list", state = "environment"))
+
+setMethod("dbGetQuery", signature(conn = "BridgeMockConnection", statement = "character"),
+  function(conn, statement, ...) {
+    conn@state$calls <- c(conn@state$calls, statement)
+    i <- conn@state$query_index
+    conn@state$query_index <- i + 1L
+    if (i <= length(conn@replies)) conn@replies[[i]] else data.frame()
+  })
+
+setMethod("dbExecute", signature(conn = "BridgeMockConnection", statement = "character"),
+  function(conn, statement, ...) {
+    conn@state$calls <- c(conn@state$calls, statement)
+    1L
+  })
+
+setMethod("dbQuoteIdentifier", signature(conn = "BridgeMockConnection", x = "character"),
+  function(conn, x, ...) DBI::SQL(paste0('"', x, '"')))
+
+setMethod("dbQuoteIdentifier", signature(conn = "BridgeMockConnection", x = "Id"),
+  function(conn, x, ...) DBI::SQL(paste0('"', x@name[["schema"]], '"."',
+                                        x@name[["table"]], '"')))
+
+setMethod("dbDisconnect", signature(conn = "BridgeMockConnection"),
+  function(conn, ...) invisible(TRUE))
+
+bridge_mock_connection <- function(replies) {
+  state <- new.env(parent = emptyenv())
+  state$calls <- character()
+  state$query_index <- 1L
+  new("BridgeMockConnection", replies = replies, state = state)
+}
+
