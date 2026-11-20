@@ -81,6 +81,52 @@ assert_bridge_live_projection <- function(live) {
   invisible(live)
 }
 
+# The descriptor decision is isolated here so a confirmed replacement can be
+# added without touching the projection builder. ADR-0044 decision 4 forbids
+# silent relabelling: 'preserve' refuses a semantic difference; 'replace' is
+# allowed only against an explicit confirmation token for THAT transition.
+BRIDGE_CONFIRM_DESCRIPTOR_ENV <- "LUSK_BRIDGE_CONFIRM_DESCRIPTOR"
+BRIDGE_DESCRIPTOR_FIELDS <- c("indicator_id", "theme_id", "label", "unit",
+  "direction", "comparison_facet", "allowed_levels",
+  "denominator_semantics", "completeness", "descriptor_version")
+
+bridge_descriptor_confirmation_token <- function(live_descriptor, scoped_descriptor) {
+  canonical <- function(row) {
+    out <- lapply(BRIDGE_DESCRIPTOR_FIELDS, function(field) {
+      value <- row[[field]][[1L]]
+      if (is.list(value)) as.character(unlist(value, use.names = FALSE)) else as.character(value)
+    })
+    names(out) <- BRIDGE_DESCRIPTOR_FIELDS
+    out
+  }
+  payload <- list(live = canonical(live_descriptor),
+                  metadata = canonical(scoped_descriptor))
+  path <- tempfile("bridge-descriptor-token-")
+  on.exit(unlink(path), add = TRUE)
+  saveRDS(payload, path, version = 3)
+  unname(tools::md5sum(path))
+}
+
+bridge_offre_tc_descriptor <- function(live_descriptor, scoped_descriptor,
+                                       policy = c("preserve", "replace"),
+                                       confirmation = NULL, token = NULL,
+                                       enforce = TRUE) {
+  policy <- match.arg(policy)
+  same <- nrow(live_descriptor) == 1L &&
+    identical_scalar_descriptor(live_descriptor, scoped_descriptor)
+  if (same) return(list(descriptor = live_descriptor, changed = FALSE, token = NULL))
+  if (identical(policy, "preserve"))
+    stop("The live offre_tc descriptor differs from current metadata; ",
+         "preserve policy refuses with zero writes. Re-run with descriptor ",
+         "policy 'replace' and the confirmed transition token.", call. = FALSE)
+  if (isTRUE(enforce) &&
+      (is.null(confirmation) || !nzchar(trimws(confirmation)) ||
+       !identical(trimws(confirmation), token)))
+    stop("Descriptor replacement requires LUSK_BRIDGE_CONFIRM_DESCRIPTOR equal ",
+         "to the printed transition token; refusing with zero writes", call. = FALSE)
+  list(descriptor = scoped_descriptor[1L, , drop = FALSE], changed = TRUE, token = token)
+}
+
 # Slice 1 — pure builder -------------------------------------------------------
 # `live` is the projection read back from the serving rows; `offre_tc_rows` are
 # the fresh address-based producer facts; `retired_ids` is the explicit policy
@@ -90,7 +136,10 @@ assert_bridge_live_projection <- function(live) {
 build_bridge_scalar_projection <- function(live, offre_tc_rows, metadata,
                                            retired_ids,
                                            offre_tc_id = bridge_offre_tc_id(),
-                                           source_vintages = NULL) {
+                                           source_vintages = NULL,
+                                           descriptor_policy = "preserve",
+                                           descriptor_confirmation = NULL,
+                                           descriptor_enforce = TRUE) {
   assert_bridge_live_projection(live)
   assert_bridge_retirement_policy(retired_ids, offre_tc_id)
   validate_bridge_offre_tc_rows(offre_tc_rows, offre_tc_id)
@@ -100,17 +149,16 @@ build_bridge_scalar_projection <- function(live, offre_tc_rows, metadata,
     offre_tc_rows, metadata, offre_tc_id, live$eligible_territories,
     source_vintages = source_vintages)
 
-  # The published descriptor is preserved: only the mesure (facts) changes.
-  # A semantic difference against current metadata is a hard refusal — the
-  # bridge must never silently relabel an old fact (ADR-0044 decision 4).
   live_descriptor <- live$descriptors[
     live$descriptors$indicator_id == offre_tc_id, , drop = FALSE]
-  if (nrow(live_descriptor) != 1L ||
-      !identical_scalar_descriptor(live_descriptor, scoped$descriptors))
-    stop("The live offre_tc descriptor is missing, duplicated or semantically ",
-         "different from current metadata; a full theme regeneration is ",
-         "required, refusing with zero writes", call. = FALSE)
-  scoped$descriptors <- live_descriptor
+  metadata_descriptor <- scoped$descriptors[1L, , drop = FALSE]
+  descriptor_token <- bridge_descriptor_confirmation_token(live_descriptor,
+                                                           metadata_descriptor)
+  descriptor_decision <- bridge_offre_tc_descriptor(
+    live_descriptor, metadata_descriptor, descriptor_policy,
+    confirmation = descriptor_confirmation, token = descriptor_token,
+    enforce = descriptor_enforce)
+  scoped$descriptors <- descriptor_decision$descriptor
 
   keep_rows <- function(frame) frame[!frame$indicator_id %in% affected, , drop = FALSE]
   kept <- list(
@@ -133,7 +181,12 @@ build_bridge_scalar_projection <- function(live, offre_tc_rows, metadata,
     stop("Bridge projection does not reflect the retirement policy", call. = FALSE)
 
   list(projection = projection, scoped = scoped, kept = kept,
-       affected = affected, base = live, indicator_id = offre_tc_id)
+       affected = affected, base = live, indicator_id = offre_tc_id,
+       descriptor_info = list(live = live_descriptor,
+                              metadata = metadata_descriptor,
+                              token = descriptor_token,
+                              changed = descriptor_decision$changed,
+                              policy = descriptor_policy))
 }
 
 # Row-normalised per-indicator data comparison. Order is not data; column types
@@ -607,6 +660,20 @@ bridge_print_report <- function(plan, mode) {
   cat("new declared-profile token:", plan$profile_lineage$version, "\n")
   cat("new profile comparison token:", plan$profile_lineage$comparison_version, "\n")
   cat("new Habitat linked token:", plan$tokens$linked, "\n")
+  info <- plan$descriptor_info
+  if (!is.null(info)) {
+    show_descriptor <- function(row) paste(
+      paste0(BRIDGE_DESCRIPTOR_FIELDS, "=", vapply(BRIDGE_DESCRIPTOR_FIELDS,
+        function(f) {
+          v <- row[[f]][[1L]]
+          if (is.list(v)) v <- unlist(v, use.names = FALSE)
+          paste(as.character(v), collapse = ",")
+        }, character(1))), collapse = "; ")
+    cat("offre_tc live descriptor:", show_descriptor(info$live), "\n")
+    cat("offre_tc metadata descriptor:", show_descriptor(info$metadata), "\n")
+    cat("descriptor confirmation token:", info$token, "\n")
+    cat("descriptor policy:", info$policy, "; changed:", info$changed, "\n")
+  }
   fk <- plan$fk_inventory
   cat("write schema:", plan$write_schema %||% "<unknown>", "\n")
   cat("FK pre-flight:", if (is.data.frame(fk)) nrow(fk) else "unknown",
@@ -632,7 +699,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                                 fresh_rows = NULL, metadata = NULL,
                                 retired_ids = retained_scalar_retirement_ids(),
                                 publish = publish_bridge_snapshot, lock = NULL, unlock = NULL,
-                                 identity_reader = NULL, fk_reader = NULL, schema_reader = NULL) {
+                                 identity_reader = NULL, fk_reader = NULL, schema_reader = NULL, policy = NULL) {
   mode <- match.arg(mode)
   expected <- bridge_expected_tokens_from_env(env)
   # Resolve the registered scope once and require the operator to select exactly
@@ -686,9 +753,15 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
     fresh_rows <- read_bridge_offre_tc_rows(env(BRIDGE_FACTS_ENV, unset = ""),
                                             indicator_id = scope$indicators[[1L]])
   if (is.null(metadata)) metadata <- lire_theme_metadata(scope$theme)
+  descriptor_policy <- if (is.null(policy))
+    env("LUSK_BRIDGE_DESCRIPTOR_POLICY", unset = "preserve") else policy
+  descriptor_confirmation <- env(BRIDGE_CONFIRM_DESCRIPTOR_ENV, unset = "")
   built <- build_bridge_scalar_projection(
     live, fresh_rows, metadata, retired_ids,
-    offre_tc_id = scope$indicators[[1L]])
+    offre_tc_id = scope$indicators[[1L]],
+    descriptor_policy = descriptor_policy,
+    descriptor_confirmation = descriptor_confirmation,
+    descriptor_enforce = identical(mode, "publish"))
   diff <- assert_bridge_round_trip(live, built$projection, built$affected)
   scalar_version <- scalar_content_version(built$projection)
   # The scalar token change also rebinds every scalar-backed declared profile.
@@ -718,7 +791,8 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                 retired_present = intersect(retired_ids,
                   unique(as.character(live$facts$indicator_id))),
                 fk_inventory = fk_inventory, write_schema = write_schema,
-                live_profile_rows = live_profile_rows)
+                live_profile_rows = live_profile_rows,
+                descriptor_info = built$descriptor_info)
   bridge_print_report(plan, mode)
 
   if (identical(mode, "dry-run")) return(invisible(plan))
@@ -1274,7 +1348,8 @@ BRIDGE_WRITE_TABLES <- c(
   "profile_descriptor", "profile_descriptor_source", "profile_axis",
   "profile_observation", "profile_observation_source",
   "profile_comparison_group", "profile_comparison_territory",
-  "profile_comparison_publication", "selected_reading_descriptor",
+  "profile_comparison_publication", "comparison_source_lineage",
+  "selected_reading_descriptor",
   "selected_reading_publication", "source_dataset", "source_vintage",
   "table_publication", "territory_reference")
 

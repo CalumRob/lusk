@@ -293,6 +293,9 @@ test_that("the dry-run prints tokens and the diff and never calls the writer", {
   expect_identical(write_calls, 0L)
   expect_match(paste(output, collapse = "\n"), "new scalar token", fixed = TRUE)
   expect_match(paste(output, collapse = "\n"), "new comparison token", fixed = TRUE)
+  expect_match(paste(output, collapse = "\n"), "new declared-profile token", fixed = TRUE)
+  expect_match(paste(output, collapse = "\n"), "new profile comparison token", fixed = TRUE)
+  expect_match(paste(output, collapse = "\n"), "new Habitat linked token", fixed = TRUE)
   expect_match(paste(output, collapse = "\n"), "offre_tc")
   expect_identical(result$mode, "dry-run")
   expect_true("tot_loss_t" %in% result$diff$indicator_id)
@@ -832,8 +835,8 @@ test_that("a raw RPostgres scalar projection is producer-equal and hash-equal", 
   loaded <- read_live_scalar_projection(NULL, reader = reader)
   expect_identical(loaded, live)
   validate_scalar_artifact_projection(loaded)
-  # The token is md5(saveRDS()); canonicalise both sides so incidental ALTREP /
-  # attribute-order differences cannot mask a real type or content difference.
+  # The token is md5(saveRDS()); no test-only canonicalisation is applied — the
+  # production reader already builds byte-stable frames, so this pins real parity.
   expect_identical(scalar_content_version(loaded),
                    scalar_content_version(live))
 })
@@ -1274,10 +1277,24 @@ bridge_sql_lint <- function(text) {
     add("<parse>", "unparseable_source")
   } else {
     calls <- list()
+    source_text <- paste(lines, collapse = "\n")
+    src_lines <- strsplit(source_text, "\n", fixed = TRUE)[[1L]]
+    aliases <- character()
+    for (k in seq_along(src_lines)) {
+      line <- src_lines[[k]]
+      if (!grepl("^\\s*\\w+\\s*<-\\s*function\\(", line)) next
+      nm <- sub("^\\s*(\\w+)\\s*<-.*$", "\\1", line)
+      next_line <- if (k < length(src_lines)) src_lines[[k + 1L]] else ""
+      if ((grepl("function\\(", line) &&
+           grepl("bridge_db_(query|exec)\\(", line)) ||
+          grepl("^\\s*bridge_db_(query|exec)\\(", next_line))
+        aliases <- c(aliases, nm)
+    }
+    lint_heads <- c("bridge_db_query", "bridge_db_exec", aliases)
     walk <- function(e) {
       if (is.call(e)) {
         fn <- if (is.symbol(e[[1L]])) as.character(e[[1L]]) else ""
-        if (fn %in% c("bridge_db_query", "bridge_db_exec"))
+        if (fn %in% lint_heads)
           calls[[length(calls) + 1L]] <<- e
         for (i in seq_along(e)) if (is.call(e[[i]])) walk(e[[i]])
       }
@@ -1319,8 +1336,13 @@ bridge_sql_lint <- function(text) {
     for (call in calls) {
       label <- paste(deparse(call, width.cutoff = 200L), collapse = " ")
       as_list <- as.list(call)[-1L]
-      if (length(as_list) < 2L) { add(label, "missing_sql"); next }
-      sql <- literal_sql(as_list[[2L]])
+      if (length(as_list) < 2L) {
+        if (startsWith(label, "bridge_db_")) add(label, "missing_sql")
+        next
+      }
+      head_name <- as.character(call[[1L]])
+      sql_index <- if (head_name %in% c("bridge_db_query", "bridge_db_exec")) 2L else 1L
+      sql <- literal_sql(as_list[[sql_index]])
       idx <- which(names(as_list) == "params")
       plen <- if (length(idx)) params_len(as_list[[idx[[1L]]]]) else 0L
       tokens <- unlist(regmatches(sql, gregexpr("\\$[0-9]+", sql)))
@@ -1353,11 +1375,15 @@ test_that("the SQL lint is honest on real sources and rejects synthetic errors",
     'bridge_db_query(con, "SELECT $1")',
     'bridge_db_query(con, "SELECT 1", params = list(1))',
     'x <- quote(foo)',
-    'bridge_db_query(con, paste("SELECT * FROM pg_constraint WHERE x = $1"))')
+    'bridge_db_query(con, paste("SELECT * FROM pg_constraint WHERE x = $1"))',
+    'q <- function(sql, params = list()) bridge_db_query(con, sql, params = params)',
+    'q("SELECT $1, $2", params = list(1))')
   problems <- bridge_sql_lint(bad)
   for (kind in c("arity_mismatch", "placeholders_without_params",
                  "params_without_placeholders", "bare_quote", "unscoped_catalog"))
     expect_true(any(problems$problem == kind), info = kind)
+  aliased <- problems[problems$problem == "arity_mismatch", , drop = FALSE]
+  expect_true(any(grepl("q\\(\"SELECT", aliased$call)), info = "aliased call linted")
 })
 # --- Round-7: full FK probe through real DBI S4 dispatch ----------------------
 
@@ -1525,5 +1551,181 @@ test_that("marker guard checks profile comparison and the Habitat chain", {
   stale_link <- markers
   stale_link$selected_descriptor$linked_content_version <- "canonical-stale-stale-stale"
   expect_error(assert_bridge_markers(stale_link, expected), "linked_content_version")
+})
+
+
+# --- Review round 5: write-table list is checked against the publishers -------
+
+test_that("BRIDGE_WRITE_TABLES covers every table the publishers mutate", {
+  targets <- character()
+  for (file in c("publish_scalar.R", "publish_profile.R")) {
+    path <- system.file("..", "R", file, package = "lusk")
+    text <- paste(readLines(path, warn = FALSE), collapse = "\n")
+    for (pattern in c("DELETE FROM ([a-z_]+)", "INSERT INTO ([a-z_]+)",
+                      'dbWriteTable\\(con,\\s*"([a-z_]+)"')) {
+      hits <- regmatches(text, gregexpr(pattern, text, perl = TRUE))[[1L]]
+      for (hit in hits) {
+        capture <- regmatches(hit, regexec(pattern, hit, perl = TRUE))[[1L]]
+        if (length(capture) > 1L) targets <- c(targets, capture[[2L]])
+      }
+    }
+  }
+  tables <- unique(targets)
+  expect_gt(length(tables), 10L)
+  expect_identical(setdiff(tables, BRIDGE_WRITE_TABLES), character())
+})
+
+test_that("the write-schema guard checks comparison_source_lineage", {
+  expect_true("comparison_source_lineage" %in% BRIDGE_WRITE_TABLES)
+  replies <- c(list(data.frame(schema = "serving_it_ok")),
+               lapply(BRIDGE_WRITE_TABLES, function(t)
+                 data.frame(reg = if (identical(t, "comparison_source_lineage"))
+                   NA_character_ else "serving_it_ok")))
+  expect_error(bridge_assert_write_schema(bridge_mock_connection(replies)),
+               "comparison_source_lineage")
+})
+
+
+# --- User decision: operator-confirmed offre_tc descriptor replacement --------
+
+bridge_live_fixture_old_descriptor <- function() {
+  live <- bridge_live_fixture()
+  row <- live$descriptors$indicator_id == bridge_offre_tc_id()
+  live$descriptors$label[row] <- "Part des bÃ¢timents prÃ¨s dâ€™un arrÃªt (Ã  500 m)"
+  live$descriptors$denominator_semantics[row] <-
+    "Part des bÃ¢timents situÃ©s Ã  moins de 500 mÃ¨tres dâ€™un arrÃªt"
+  live$descriptors$descriptor_version[row] <- "building-based-v1"
+  validate_scalar_artifact_projection(live)
+  live
+}
+
+bridge_descriptor_run <- function(live, mode, env_extra = list(), policy = NULL) {
+  expected <- bridge_fixture_expected_tokens()
+  facts_path <- tempfile("bridge-facts-", fileext = ".rds")
+  on.exit(unlink(facts_path), add = TRUE)
+  saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+  extra <- env_extra
+  if (identical(mode, "publish"))
+    extra <- c(list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
+                    setNames("dump", BRIDGE_DUMP_ACK_ENV)), extra)
+  values <- bridge_test_env_values(expected, facts_path, extra)
+  pre_rows <- bridge_db_rows_from_projection(live)
+  state <- new.env(parent = emptyenv())
+  state$written <- FALSE
+  state$post <- NULL
+  reader <- bridge_fake_reader(pre_rows)
+  make_field <- function(field) {
+    force(field)
+    function(con) {
+    rows <- if (isTRUE(state$written)) state$post else pre_rows
+    rows[[field]]
+    }
+  }
+  for (field in c("facts", "descriptors", "provenance", "datasets", "vintages"))
+    reader[[field]] <- make_field(field)
+  capture.output(plan <- run_offre_tc_bridge(
+    mode, env = bridge_fake_env(values),
+    con = structure(list(), class = "fake-con"), config = bridge_pure_config(),
+    identity_reader = bridge_pure_identity, live_reader = reader,
+    read_markers = function() bridge_fixture_markers(expected),
+    retired_ids = retained_scalar_retirement_ids(), policy = policy,
+    publish = function(con, plan, retired_ids, tokens, ...) {
+      state$post <- bridge_db_rows_from_projection(plan$projection)
+      state$written <- TRUE
+      result <- publish_bridge_snapshot(con, plan, retired_ids, tokens, ...,
+        transaction = function(con, expr) force(expr),
+        scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
+        comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]],
+                                                           plan$tokens$scalar),
+        profile_adapter = bridge_fake_profile_adapter(expected[["profile"]],
+                                                     plan$tokens$scalar),
+        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+      c(plan, result)
+    }))
+  plan
+}
+
+test_that("dry-run prints both descriptors and the confirmation token", {
+  plan <- bridge_descriptor_run(bridge_live_fixture_old_descriptor(), "dry-run",
+                                 policy = "replace")
+  expect_true(plan$descriptor_info$changed)
+  expect_match(plan$descriptor_info$token, "^[a-f0-9]{32}$")
+  expect_identical(as.character(plan$descriptor_info$live$label[[1L]]),
+                   "Part des bÃ¢timents prÃ¨s dâ€™un arrÃªt (Ã  500 m)")
+  expect_match(as.character(plan$descriptor_info$metadata$label[[1L]]), "adresses",
+               ignore.case = TRUE)
+})
+
+test_that("descriptor replacement refuses without a matching confirmation token", {
+  live <- bridge_live_fixture_old_descriptor()
+  expect_error(bridge_descriptor_run(live, "publish", policy = "replace"),
+               "LUSK_BRIDGE_CONFIRM_DESCRIPTOR")
+  token <- bridge_descriptor_run(live, "dry-run", policy = "replace")$descriptor_info$token
+  expect_error(bridge_descriptor_run(live, "publish",
+    list(setNames("wrong-token", BRIDGE_CONFIRM_DESCRIPTOR_ENV)), policy = "replace"),
+    "LUSK_BRIDGE_CONFIRM_DESCRIPTOR")
+  # A token from a different transition must not authorise this one.
+  other_token <- bridge_descriptor_run(bridge_live_fixture(), "dry-run",
+                                        policy = "replace")$descriptor_info$token
+  expect_false(identical(other_token, token))
+  expect_error(bridge_descriptor_run(live, "publish",
+    list(setNames(other_token, BRIDGE_CONFIRM_DESCRIPTOR_ENV)), policy = "replace"),
+    "LUSK_BRIDGE_CONFIRM_DESCRIPTOR")
+})
+
+test_that("a confirmed descriptor replacement succeeds; identical descriptors need no token", {
+  live_old <- bridge_live_fixture_old_descriptor()
+  token <- bridge_descriptor_run(live_old, "dry-run", policy = "replace")$descriptor_info$token
+  written <- bridge_descriptor_run(live_old, "publish",
+    list(setNames(token, BRIDGE_CONFIRM_DESCRIPTOR_ENV)), policy = "replace")
+  expect_true(written$descriptor_info$changed)
+  expect_identical(as.character(written$projection$descriptors$label[
+    written$projection$descriptors$indicator_id == bridge_offre_tc_id()]),
+    as.character(written$descriptor_info$metadata$label[[1L]]))
+  expect_false("LUSK_BRIDGE_CONFIRM_DESCRIPTOR" %in% names(
+    bridge_descriptor_run(bridge_live_fixture(), "publish")))
+  # Preserve policy still refuses a differing descriptor.
+  expect_error(bridge_descriptor_run(live_old, "publish"),
+               "preserve policy refuses")
+})
+
+test_that("the replaced descriptor keeps all chained tokens #1068-consistent", {
+  live_old <- bridge_live_fixture_old_descriptor()
+  token <- bridge_descriptor_run(live_old, "dry-run", policy = "replace")$descriptor_info$token
+  written <- bridge_descriptor_run(live_old, "publish",
+    list(setNames(token, BRIDGE_CONFIRM_DESCRIPTOR_ENV)), policy = "replace")
+  expected <- bridge_fixture_expected_tokens()
+  markers <- bridge_fixture_markers(expected)
+  markers$tables$content_version[markers$tables$table_name == "scalar_observation"] <- written$tokens$scalar
+  markers$tables$content_version[markers$tables$table_name == "declared_profile"] <- written$profile_lineage$version
+  markers$comparison$content_version <- written$tokens$comparison
+  markers$comparison$scalar_content_version <- written$tokens$scalar
+  markers$profile_descriptor$required_scalar_version <- written$tokens$scalar
+  markers$selected_descriptor$linked_content_version <- written$tokens$linked
+  markers$profile_comparison$profile_content_version <- written$profile_lineage$version
+  markers$profile_comparison$content_version <- written$profile_lineage$comparison_version
+  producer_linked <- retained_selected_linked_version(list(linked_content_version = "canonical"),
+    written$profile_lineage$version, written$tokens$scalar, expected[["reference"]])
+  expect_identical(written$tokens$linked, producer_linked)
+  expect_identical(scalar_content_version(written$projection), written$tokens$scalar)
+  markers$tables <- rbind(markers$tables, data.frame(
+    table_name = c("demographic_typed_reading", "economy_typed_reading",
+      "economy_activity_evidence", "milieux_typed_reading", "milieux_reading_absence"),
+    content_version = c("demo-v1", "eco-v1", "eco-v1", "milieux-v1", "milieux-v1"),
+    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
+  markers$series <- rbind(markers$series, data.frame(dataset_id = "ocsge_artif_etats",
+    content_version = "series-v1", reference_content_version = expected[["reference"]],
+    stringsAsFactors = FALSE))
+  expect_identical(nrow(verifier_retained_backend_baseline(markers, list(
+    reference = expected[["reference"]], scalar = written$tokens$scalar,
+    comparison = written$tokens$comparison, comparison_scalar = written$tokens$scalar,
+    typed = c(demographie = "demo-v1", habitat = expected[["habitat"]],
+              economie = "eco-v1", milieux = "milieux-v1"),
+    series = list(dataset_id = "ocsge_artif_etats", content_version = "series-v1"),
+    profile_version = written$profile_lineage$version,
+    profile_comparison_version = written$profile_lineage$comparison_version,
+    profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
+    profile_required_scalar = written$tokens$scalar,
+    habitat_version = expected[["habitat"]], selected_linked = written$tokens$linked))), 0L)
 })
 

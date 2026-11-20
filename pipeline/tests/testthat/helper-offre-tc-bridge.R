@@ -588,3 +588,17 @@ bridge_mock_connection <- function(replies) {
   new("BridgeMockConnection", replies = replies, state = state)
 }
 
+
+# Live-shaped OLD offre_tc descriptor (the building-based definition currently
+# in the serving DB), used by the DB proof's confirmed-replacement phase.
+bridge_live_fixture_old_descriptor <- function() {
+  live <- bridge_live_fixture()
+  row <- live$descriptors$indicator_id == bridge_offre_tc_id()
+  live$descriptors$label[row] <- "Part des bÃ¢timents prÃ¨s dâ€™un arrÃªt (Ã  500 m)"
+  live$descriptors$denominator_semantics[row] <-
+    "Part des bÃ¢timents situÃ©s Ã  moins de 500 mÃ¨tres dâ€™un arrÃªt"
+  live$descriptors$descriptor_version[row] <- "building-based-v1"
+  validate_scalar_artifact_projection(live)
+  live
+}
+

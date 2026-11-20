@@ -411,6 +411,29 @@ from the verified live tokens.
    wholesale-replaced scalar table. The dry-run prints the inventory and which
    metadata-derived retirement ids are actually present live (normally none).
 
+### Offre TC descriptor replacement (operator-confirmed)
+
+The live serving DB currently holds the OLD, building-based `offre_tc`
+descriptor (`Part des bâtiments près d’un arrêt (à 500 m)`) while current
+metadata declares the address-based definition. The bridge's default
+`LUSK_BRIDGE_DESCRIPTOR_POLICY=preserve` therefore refuses that difference,
+exactly as ADR-0044 decision 4 requires — never silently relabel a fact.
+
+This one-off bridge makes a **deliberate, operator-confirmed exception** to
+that rule for this single transition: the indicator was re-defined from
+buildings to residential addresses, and the new values and definition must be
+published together. The dry-run always prints the live and metadata descriptor
+rows and a deterministic CONFIRMATION TOKEN (md5 of `saveRDS` over both rows'
+semantic fields in a fixed order). A real write with a differing descriptor
+requires `LUSK_BRIDGE_CONFIRM_DESCRIPTOR=<that token>`; a missing, wrong or
+different-transition token refuses with zero writes. When the descriptors are
+already identical, `preserve` applies and no token is required. The replacement
+is part of the same transaction and rolls back with everything else.
+
+This exception is confined to the one-off bridge; it must be retired once a
+real baseline exists and the normal registered publication path can carry the
+new definition. The ADR itself is unchanged.
+
 The fresh facts are supplied as a private RDS/CSV path in
 `LUSK_BRIDGE_OFFRE_TC_FACTS` (the producer row shape: territory, indicator,
 value, unit and source/vintage stamps). The retirement policy is derived from

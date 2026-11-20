@@ -78,7 +78,7 @@ if (!bridge_db_proof_configured()) {
     for (statement in split_postgres_sql(ddl)) bridge_db_exec(connection, statement)
 
     # Seed the OLD (pre-bridge) serving state through the registered publishers.
-    live <- bridge_live_fixture()
+    live <- bridge_live_fixture_old_descriptor()
     reference_rows <- bridge_fixture_reference_rows()
     reference_version <- "reference-live"
     DBI::dbWriteTable(connection, "territory_reference", reference_rows,
@@ -139,6 +139,9 @@ if (!bridge_db_proof_configured()) {
     facts_path <- tempfile("bridge-facts-", fileext = ".rds")
     on.exit(unlink(facts_path), add = TRUE)
     saveRDS(bridge_fresh_offre_tc_rows(), facts_path)
+    old_descriptor <- live$descriptors[live$descriptors$indicator_id == bridge_offre_tc_id(), , drop = FALSE]
+    metadata_descriptor <- scalar_descriptor_row(lire_theme_metadata("mobilite"), bridge_offre_tc_id())
+    descriptor_token <- bridge_descriptor_confirmation_token(old_descriptor, metadata_descriptor)
     env_values <- bridge_test_env_values(expected, facts_path,
       list(setNames("1", BRIDGE_PUBLISH_OPT_IN_ENV),
            setNames("operator-dump", BRIDGE_DUMP_ACK_ENV)))
@@ -187,6 +190,16 @@ if (!bridge_db_proof_configured()) {
     expect_identical(schema_digest(), seeded_digest,
                      info = "failed publication must restore the exact seeded state")
 
+    # A wrong descriptor confirmation token must refuse with zero writes.
+    wrong_env_values <- c(env_values,
+      setNames("wrong-token", BRIDGE_CONFIRM_DESCRIPTOR_ENV))
+    withr::with_envvar(as.list(wrong_env_values), {
+      capture.output(expect_error(run_offre_tc_bridge(
+        "publish", env = bridge_fake_env(wrong_env_values), con = connection,
+        config = config, live_reader = reader, read_markers = read_markers,
+        retired_ids = retired_ids), "LUSK_BRIDGE_CONFIRM_DESCRIPTOR"))
+    })
+    expect_identical(schema_digest(), seeded_digest)
     # (A) CONTROL without injection: the same seeded state really changes when
     # the bridge succeeds, so the rollback assertion above cannot pass vacuously.
     withr::with_envvar(as.list(env_values), {
@@ -199,6 +212,10 @@ if (!bridge_db_proof_configured()) {
     expect_identical(written$scalar$content_version, plan$tokens$scalar)
     expect_identical(written$comparison$content_version, plan$tokens$comparison)
     expect_identical(written$profile$content_version, plan$profile_lineage$version)
+    replaced_label <- DBI::dbGetQuery(connection, paste(
+      "SELECT label FROM scalar_descriptor WHERE indicator_id='offre_tc'"))$label[[1L]]
+    expect_identical(replaced_label, metadata_descriptor$label[[1L]])
+    expect_false(identical(replaced_label, old_descriptor$label[[1L]]))
 
     live_ids <- bridge_db_query(connection,
       "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
