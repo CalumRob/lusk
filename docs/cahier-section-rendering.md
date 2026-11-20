@@ -194,18 +194,22 @@ by this seam; the shared `CahierDialog` keeps closed slot content mounted so
 existing owners (notably the waffle table's mount-time `ResizeObserver`) retain
 their refs and lifecycle.
 
-Until integration lot E wires the real composer, `VarianteCahierLibre`'s
-`pdfGenerator` prop is null. Every action remains mounted but inert, visibly
-labelled `PDF`, focusable with `aria-disabled` and an accessible reason; it does
-not simulate a download or a success. The action also accepts a later
-`definirGenerateur` update at the same public seam (latest prop wins; a change
-while a generation is in flight is queued) so E may supply the composer
-asynchronously without remounting; no production stub is shipped.
+`VarianteCahierLibre`'s `pdfGenerator` public seam is now wired in production by
+`ProductionMobiliteAedar.vue`: it installs a thin wrapper that dynamically
+imports `creerGenerateurCahierPdf` on export INTENT only, so an ordinary fiche
+visitor never downloads the composer chunk. The action stays mounted and
+visibly labelled `PDF`, focusable with `aria-disabled`/`aria-busy` and an
+accessible reason while blocked or preparing; it never simulates a download or
+a success. The same seam still accepts a `definirGenerateur` update (latest prop
+wins; a change while a generation is in flight is queued) — that is how the
+asynchronous wrapper is installed without remounting. The controller owns
+capture, delivery, retry and cleanup; a failed import rejects as a generation
+error and surfaces `Réessayer`.
 `cahier-pdf-export-activation.spec.ts`, `cahier-pdf-export-controller.spec.ts`,
-`cahier-pdf-action.spec.ts` and the mounted `cahier-pdf-shell.spec.ts` exercise
-the policy matrix, controller machine, desktop/mobile/keyboard action and the
-real nine-section mount with an injected generator. Production generation
-remains E's acceptance work.
+`cahier-pdf-action.spec.ts`, the mounted `cahier-pdf-shell.spec.ts` and
+`cahier-pdf-production-wiring.spec.ts` exercise the policy matrix, controller
+machine, desktop/mobile/keyboard action, the real nine-section mount and the
+actual production junction.
 
 The production Mobilité path is `layoutVariant: 'indexed-sections'`, whose
 common section heading has no section number. Its mobile header keeps the title
@@ -699,8 +703,8 @@ dimensions. The bounded raster is a synthetic 2×2 PNG, not live map/data parity
 Missing URL/invalid bytes return typed `asset` errors; pre-abort and abort after
 decode return `AbortError`, with every created bitmap closed. Desktop/mobile-host
 PDFs prove document grammar is host-width independent, not product integration.
-Actual PDF examples still require the owner's visual approval before merge;
-these fixture receipts do not grant it or unblock integration lot E.
+Actual PDF examples still require the owner's visual approval; these fixture
+receipts do not grant it.
 
 Visual evidence is generated outside tracked assets via
 `CAHIER_PDF_EVIDENCE_DIR` and `CAHIER_PDF_REPORT=1` while running the spec.

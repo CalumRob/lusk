@@ -114,6 +114,51 @@ function nativeBreakBlocks(root: HTMLElement, scale: number, maxHeight: number):
   return walk(root)
 }
 
+/** Split a selector LIST on top-level commas only — never inside `:not(...)`/brackets. */
+export function selectorList(value: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '(' || char === '[') depth += 1
+    else if (char === ')' || char === ']') depth -= 1
+    else if (char === ',' && depth === 0) {
+      parts.push(value.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  parts.push(value.slice(start).trim())
+  return parts.filter(Boolean)
+}
+
+/** The one offscreen host scope, built from the one `hostClass` contract value. */
+export function exportSurfaceScope(document: boolean): string {
+  const host = `.${CAHIER_EXPORT_SURFACE.hostClass}`
+  return document ? `${host}[data-native-document]` : `${host}:not([data-native-document])`
+}
+
+/**
+ * The full mount stylesheet. EVERY selector — including each segment of a
+ * comma-joined contract entry — is prefixed with the host scope, so no
+ * `display:none`/neutralisation rule can leak onto the live page while the
+ * inert host is appended. Exported so a spec can audit the generated text.
+ */
+export function buildExportSurfaceStylesheet(
+  scope: string, widthPt: number, scale: number, document: boolean,
+): string {
+  const neutral = CAHIER_EXPORT_SURFACE.neutralised.flatMap(selectorList)
+    .map((selector) => `${scope} ${selector} { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }`)
+    .join('\n')
+  const hidden = cahierExportHiddenSelectors(document).flatMap(selectorList)
+    .map((selector) => `${scope} ${selector} { display:none!important }`)
+    .join('\n')
+  return `${scope} .concept-group { max-width:${widthPt / scale}px; margin-inline:auto;${document ? 'background:transparent!important' : ''} }
+${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}px; margin-inline:auto }
+${neutral}
+${hidden}`
+}
+
 async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePdfOptions,
   layout: { readonly widthPt: number; readonly document: boolean; readonly maxHeightPt?: number },
   use: (bodies: readonly CorpsNatifMesure[]) => Promise<T>,
@@ -145,21 +190,11 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
   host.setAttribute('aria-hidden', 'true')
   host.style.cssText = `position:fixed;left:-20000px;top:0;width:${CAHIER_FIGURE_ROW.desktopViewportPx}px;pointer-events:none`
   const sheet = document.createElement('style')
-  const scope = layout.document ? `.${CAHIER_EXPORT_SURFACE.hostClass}[data-native-document]`
-    : `.${CAHIER_EXPORT_SURFACE.hostClass}:not([data-native-document])`
+  const scope = exportSurfaceScope(layout.document)
   if (layout.document) host.dataset.nativeDocument = ''
-  const neutral = CAHIER_EXPORT_SURFACE.neutralised
-    .map((selector) => `${scope} ${selector} { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }`)
-    .join('\n')
   // The mount hides exactly the roles in the one owned prose list, and the
   // reflow pass removes exactly that same list — never two diverging selectors.
-  const hidden = cahierExportHiddenSelectors(layout.document)
-    .map((selector) => `${scope} ${selector} { display:none!important }`)
-    .join('\n')
-  sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }
-${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}px; margin-inline:auto }
-${neutral}
-${hidden}`
+  sheet.textContent = buildExportSurfaceStylesheet(scope, width, scale, layout.document)
   const target = document.createElement('div')
   host.append(sheet, target)
   // The mounted sections resolve exploration links by named routes. They are
