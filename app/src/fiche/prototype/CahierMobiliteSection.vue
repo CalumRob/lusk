@@ -175,7 +175,7 @@ function ratioAriaLabel(
           />
         </div>
       </CahierExportScope>
-      <div class="mobilite-section-spread">
+      <div class="mobilite-section-spread" data-cahier-export-layout="spread">
         <div class="mobilite-section-copy">
           <CahierProse class="argument-copy" :blocks="networks.prose" />
           <div v-if="networks.sources.length" class="mobilite-section-sources">
@@ -266,7 +266,7 @@ function ratioAriaLabel(
       </section>
     </div>
 
-    <div v-else-if="share" class="mobilite-section-spread mobilite-section-spread--centred">
+    <div v-else-if="share" class="mobilite-section-spread mobilite-section-spread--centred" data-cahier-export-layout="spread">
       <div class="mobilite-section-copy">
         <CahierProse class="argument-copy" :blocks="share.prose" />
         <div v-if="share.sources.length" class="mobilite-section-sources">

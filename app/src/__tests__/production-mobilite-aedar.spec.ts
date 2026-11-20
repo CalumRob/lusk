@@ -763,6 +763,8 @@ describe('VarianteCahierLibre — AEDAR access', () => {
   })
 })
 
+// Full-suite worker contention (--maxWorkers=2) makes several heavy mounts
+// exceed Vitest's 5s default; assertions are unchanged.
 describe('ProductionMobiliteAedar', () => {
   it('keeps maps/editorial structure mounted while the aggregate request is pending', async () => {
     const content = baseContent()
@@ -1117,7 +1119,7 @@ describe('ProductionMobiliteAedar', () => {
     expect(recovered.findAll('.cahier-comparison-value__warning')).toHaveLength(0)
     expect(recovered.findAll('.cahier-rank')).toHaveLength(2)
     wrapper.unmount()
-  })
+  }, 20000)
 
   it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {
     const content = baseContent()
@@ -1358,7 +1360,7 @@ describe('ProductionMobiliteAedar', () => {
     expect(profileHorizon.get('button[aria-pressed="true"]').attributes('value')).toBe('20')
     expect(distributionHorizon.get('button[aria-label="20 minutes"]').attributes('aria-pressed')).toBe('true')
     expect(chartLabels()[1]).toContain('20 minutes')
-  })
+  }, 20000)
 
   it('merges the reference territory into per-mode comparison values when versions match', async () => {
     const content = baseContent()
@@ -1420,4 +1422,4 @@ describe('ProductionMobiliteAedar', () => {
     expect(section.evidence.ramps.every((ramp) => ramp.reference === null)).toBe(true)
     expect(section.evidence.ramps.every((ramp) => ramp.referenceLabel === null)).toBe(true)
   })
-})
+}, 20000)

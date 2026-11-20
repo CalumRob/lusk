@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import './cahierEvidenceSource.css'
 import { computed } from 'vue'
+import { formatTimeRampNumber } from './cahierFigureReadings'
 
 const props = defineProps<{
   title: string
@@ -13,8 +14,9 @@ const props = defineProps<{
   ariaLabel?: string
 }>()
 
-const tickFormatter = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
-const labels = computed(() => props.tickLabels ?? props.ticks?.map((tick) => tickFormatter.format(tick)) ?? [])
+// The shared formatter emits the normal space that survives DOM-to-PDF glyph
+// painting; no local Intl reimplementation.
+const labels = computed(() => props.tickLabels ?? props.ticks?.map(formatTimeRampNumber) ?? [])
 const accessibleLabel = computed(() => props.ariaLabel ?? [
   props.title.replace(/\*$/, ''),
   props.minimum === undefined || props.maximum === undefined
@@ -52,8 +54,10 @@ const accessibleLabel = computed(() => props.ariaLabel ?? [
 </template>
 
 <style scoped>
-.cahier-map-legend { display: grid; gap: 4px; width: 100%; margin: 0; }
-.cahier-map-legend__title { margin: 0; text-align: center; }
+/* One measured band: the wrap, ramp, ticks and note keep their own line boxes
+   instead of being pressed against the plate edge when the figure is narrow. */
+.cahier-map-legend { display: grid; gap: 6px; width: 100%; margin: 0; }
+.cahier-map-legend__title { margin: 0; text-align: center; line-height: 1.35; }
 .cahier-map-legend__ramp { display: flex; height: 8px; overflow: hidden; border-radius: 4px; }
 .cahier-map-legend__swatch { flex: 1 1 0; }
 .cahier-map-legend__swatch--first { border-radius: 4px 0 0 4px; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, ref, shallowRef, watch } from 'vue'
 import { CONTROLE_COMPARAISON_KEY } from '../comparisonContext'
 import { aedarComparisonIntent, fetchAedarComparison } from '../content/aedarComparisonClient'
 import type { AedarComparisonEvidence, AedarComparisonRequest } from '../content/aedarComparisonClient'
@@ -13,6 +13,7 @@ import type { AedarFetchResult, AedarSummaryFetchResult, AedarTerritoryType } fr
 import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
 import type { ChapitreDemandStatus } from '@/fiche/content/demandInventory'
 import type { CahierPagination } from '../prototype/cahierPagination'
+import type { CahierPdfGenerator } from '../prototype/cahierPdfExportController'
 
 const props = withDefaults(defineProps<{
   content: ThemeContent
@@ -38,6 +39,20 @@ const props = withDefaults(defineProps<{
   erreurPage?: boolean
 }>(), { aedarActive: true })
 const emit = defineEmits<{ 'chapitre-visible': [anchor: string]; 'chapitre-reessayer': [chapter: string] }>()
+
+/**
+ * #1025 — the one production junction between the shared controller and the
+ * real browser composer. The 84.5 kB composer chunk is fetched only on export
+ * INTENT: the installed generator is a thin wrapper that dynamically imports
+ * the composer on its first invocation, so ordinary fiche visitors never
+ * download it. The controller still owns capture, delivery, retry and cleanup;
+ * a failed import rejects as a generation error and the controller shows
+ * `Réessayer`, never a fabricated success. The composer itself lazy-imports
+ * jsPDF/svg2pdf, so no PDF runtime enters the initial bundle.
+ */
+const pdfGenerator = shallowRef<CahierPdfGenerator | null>((request, options) =>
+  import('../prototype/cahierPdfComposer').then(({ creerGenerateurCahierPdf }) =>
+    creerGenerateurCahierPdf()(request, options)))
 
 const control = inject(CONTROLE_COMPARAISON_KEY, computed(() => null))
 const comparisonRequest = computed<AedarComparisonRequest | null>(() => {
@@ -280,6 +295,7 @@ const transformed = computed(() => {
     :native-comparison-error="props.nativeComparisonError"
     :retry-native-comparison="props.retryNativeComparison"
     :aedar-reference-status="directReferenceStatus"
+    :pdf-generator="pdfGenerator"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

@@ -145,9 +145,20 @@ const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
   walk: 't',
 }
 
-/** The one numeric formatter of the AEDAR time-ramp family. */
+/**
+ * The one numeric formatter of the AEDAR time-ramp family.
+ *
+ * `Intl.NumberFormat('fr-FR')` groups thousands with U+202F, whose advance in
+ * the screen's variable face is ~1.4px but which has no glyph in the embedded
+ * static PDF face (jsPDF charges a wide fallback). The DOM painter places each
+ * glyph at its own Range x, so the following digit overprinted the invisible
+ * separator and long ticks read `6440` / `12881`. Emit a normal space: both the
+ * screen and the embedded face advance it by the same width, so the grouping
+ * stays visible and legible in the exported figure text.
+ */
 export function formatTimeRampNumber(value: number): string {
-  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
+    .format(value).replace(/\u202f|\u00a0/gu, ' ')
 }
 
 export interface CahierTimeRampReading extends CahierTooltipRow {

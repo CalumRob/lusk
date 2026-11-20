@@ -17,6 +17,7 @@ import { CAHIER_EXPORT_MAX_MODES } from './cahierExportCapture'
 import CahierActionButton from './CahierActionButton.vue'
 import CahierDialog from './CahierDialog.vue'
 import { CahierPdfExportController, cleIdentite } from './cahierPdfExportController'
+import { messageActivationPdf } from './cahierPdfExport'
 import type { CahierPdfGenerator, CahierPdfScopeIdentity } from './cahierPdfExportController'
 
 const props = withDefaults(defineProps<{
@@ -76,15 +77,20 @@ const ariaLabel = computed(() => {
 })
 
 const disabled = computed(() => etat.value === 'preparing')
-const blocked = computed(() => etat.value !== 'preparing'
+// Before the first post-mount readiness read the DOM must already advertise a
+// pending action with an honest reason; never show an enabled export on the
+// first paint and withdraw it after hydration settles.
+const amorce = ref(false)
+const blocked = computed(() => !amorce.value || (etat.value !== 'preparing'
   && etat.value !== 'error'
-  && !peutActiver.value)
+  && !peutActiver.value))
 const identityKey = computed(() => cleIdentite(props.identite))
 
 watch(identityKey, () => controller.changerIdentite())
 watch(() => props.generator, (next) => controller.definirGenerateur(next ?? null))
 
 const blockedReason = computed(() => {
+  if (!amorce.value) return messageActivationPdf(props.generator ? 'capture-unavailable' : 'generator-unavailable')
   if (etat.value === 'preparing' || etat.value === 'error') return ''
   if (peutActiver.value) return ''
   return disponibilite.value.ready ? '' : disponibilite.value.message
@@ -94,7 +100,10 @@ onMounted(() => {
   // Section owners register their public observations while the child body
   // mounts, after this sibling's first render. Re-read once the whole heading
   // is mounted so the action's reactive availability tracks their thunks.
-  void nextTick(() => controller.rafraichir())
+  void nextTick(() => {
+    controller.rafraichir()
+    void nextTick(() => { amorce.value = true })
+  })
 })
 onBeforeUnmount(() => {
   unmounted = true

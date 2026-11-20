@@ -123,8 +123,8 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
       <CahierProse :blocks="[props.evidence.mapFigureTitle]" />
     </figcaption>
 
-    <div class="aedar-diversity-loss__layout">
-      <div class="aedar-diversity-loss__comparisons">
+    <div class="aedar-diversity-loss__layout" data-cahier-export-layout="spread">
+      <div class="aedar-diversity-loss__comparisons" data-cahier-native-figure>
         <section
           v-for="group in comparisonGroups"
           :key="group.key"
@@ -210,7 +210,10 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 .aedar-diversity-loss > .cahier-figure-title { width: 72%; margin: 0; text-align: center; }
 .aedar-diversity-loss__layout { --aedar-loss-columns: repeat(2, minmax(0, 1fr)) minmax(12rem, .8fr); display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-5), 4vw, var(--space-8)) clamp(var(--space-3), 2vw, var(--space-6)); }
 .aedar-diversity-loss__comparisons { display: grid; grid-column: 1 / -1; gap: clamp(var(--space-5), 4vw, var(--space-8)); }
-.aedar-diversity-loss__comparison-row { display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-3), 2vw, var(--space-6)); align-items: center; }
+/* auto-fit collapses the trailing prose track when the export shell hides
+   that child, so the map-plate grid stays centred without any export attribute
+   on this internal figure grid. */
+.aedar-diversity-loss__comparison-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: clamp(var(--space-3), 2vw, var(--space-6)); align-items: center; }
 .aedar-diversity-loss-map { width: min(100%, 360px); justify-self: center; }
 .aedar-diversity-loss-map-label { justify-content: center; margin: 0 0 6px; }
 .aedar-diversity-loss-map__unavailable { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--muted); font: var(--text-caption); font-weight: 600; text-align: center; }

@@ -241,7 +241,11 @@ function markInspectionUnavailable(): void {
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
 .blank-map-slots__grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: center; }
-.blank-map-slots__legend-grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); margin-top: 8px; }
+/* The continuous legend is its own measured band below the circular plate:
+   at the narrower export figure width its two-line title otherwise sits on the
+   ring. Reserve a real gap that scales with the reading width, never a fixed
+   8 px that disappears once the figure is projected to A4. */
+.blank-map-slots__legend-grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); margin-top: clamp(18px, 2.4vw, 28px); }
 .blank-map-slots__legend-grid > :first-child { grid-column: 1; width: min(100%, 360px); justify-self: center; }
 .blank-map-slot { width: min(100%, 360px); justify-self: center; }
 .map-panel-label { justify-content: center; margin: 0 0 6px; }

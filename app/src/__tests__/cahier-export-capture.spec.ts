@@ -284,6 +284,21 @@ describe('Cahier export capture — comparison identity and effective presentati
     expect(profile.comparison.referenceStatus).toBeNull()
   })
 
+  it('keeps an explicit null reference status for a reference family (comparison is the shown source)', () => {
+    const { content } = cahierExportFixture()
+    // Production passes null when a comparison group — not a direct reference —
+    // is the displayed source. `??` would silently turn that into `unobserved`,
+    // permanently blocking the section. Only an absent input means unobserved.
+    const compared = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {
+      referenceStatus: null,
+      comparisonStatus: 'ready',
+    }))
+    expect(compared.comparison.referenceStatus).toBeNull()
+
+    const missing = captureCahierSection(inputFor(sectionOf(content, 'aedar-access')))
+    expect(missing.comparison.referenceStatus).toBe('unobserved')
+  })
+
   it('separates available acquired references from the effective hidden subset', () => {
     const { content } = cahierExportFixture()
     const capture = captureCahierSection(inputFor(sectionOf(content, 'aedar-access'), {

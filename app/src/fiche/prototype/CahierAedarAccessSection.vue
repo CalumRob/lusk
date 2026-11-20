@@ -52,7 +52,7 @@ function toggleMode(key: string): void {
 </script>
 
 <template>
-  <div class="evidence-side evidence-figure aedar-access-evidence">
+  <div class="evidence-side evidence-figure aedar-access-evidence" data-cahier-export-layout="spread">
     <aside class="aedar-reading">
       <CahierProse class="argument-copy" :blocks="evidence.sectionProse" />
       <CahierEvidenceSource v-if="evidence.source" :source="evidence.source" />

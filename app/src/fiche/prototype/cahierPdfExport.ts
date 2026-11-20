@@ -215,9 +215,41 @@ function comparisonBlockReason(
     }
   }
 
+  // A comparison can already be DISPLAYED (its group label comes from the
+  // settled direct reference) while the aggregate read the very same overview
+  // scalars consume is still loading. In that window the ranks are not yet
+  // published: exporting then captures half-loaded comparison facts, prints
+  // `—` and paints the loading affordance. Wait for completeness (#1023 C).
+  // `error` is a settled observation and keeps its existing honest handling;
+  // only an in-flight read blocks here.
+  if (comparisonRelevant(comparison) && comparison.status === 'loading') {
+    return 'comparison-loading'
+  }
+
   // The direct-reference status is the owner's separate observation. An
   // `unobserved` direct reference must never be read as `no-served-reference`.
   return referenceBlockReason(comparison)
+}
+
+/**
+ * A served comparison can settle its status before the ranks it carries reach
+ * the scalar model. Blocks only that in-flight window: a selection-mean
+ * reference (the comparison group's own served mean) without any rank data is
+ * a half-loaded comparison. A territory-mean reference is the owner's fallback
+ * when the comparison is stale/rejected — it legitimately has no ranks and is
+ * settled, so it must never strand the action.
+ */
+function overviewRanksPending(
+  capture: CahierExportCapture,
+  comparison: CahierCaptureComparison,
+): boolean {
+  if (!comparisonRelevant(comparison)) return false
+  return capture.figures.some((figure) => figure.family === 'aedar-car-overview'
+    && figure.model.scalars.some((scalar) => {
+      const reference = scalar.reference
+      if (!reference || !('kind' in reference) || reference.kind !== 'selection-mean') return false
+      return scalar.rank == null && scalar.rankSize == null && !scalar.rankUnavailableLabel
+    }))
 }
 
 interface FigureResourceFailures {
@@ -294,6 +326,7 @@ export function evaluerDisponibiliteExportPdf(capture: CahierExportCapture): Cah
 
   const comparisonReason = comparisonBlockReason(capture.comparison)
   if (comparisonReason) return bloque(comparisonReason)
+  if (overviewRanksPending(capture, capture.comparison)) return bloque('comparison-loading')
 
   const figureReason = figureBlockReason(capture, capture.comparison)
   if (figureReason) return bloque(figureReason)

@@ -286,15 +286,60 @@ is started. The only mount is the inert, offscreen export host created inside
 
 **Export surface contract.** `cahierExportSurface.ts` is the single app-owned
 list of screen chrome hidden in that host: section footer, tooltips, the screen
-rank chip, explanatory prose (`.argument-copy`, `.page-subtitle`), screen-only
-interactive CTAs/controls (`.cahier-action-button`, retries, carousels) and, in
-the document route, standalone evidence sources. Figure titles, captions, axis and
-legend labels, scalar labels and figure-attached reading notes keep their own
-roles and are not hidden. A drift test fails if a listed producer selector
-disappears. The screen router owns the shared route identities
+rank chip, screen-only interactive CTAs/controls (`.cahier-action-button`,
+retries, carousels). Prose is hidden by the **same single owned list**
+(`CAHIER_EXPORT_SURFACE.proseSelector`) that the reflow pass uses to remove it;
+`cahierExportHiddenSelectors()` is the mount's only hide list. That list is
+`.argument-copy, .page-subtitle, .cahier-evidence-source:not(.cahier-map-legend__note)`
+— it deliberately excludes `.cahier-prose` (an implementation class carried by
+figure titles too) and preserves the map-legend note. Figure titles, captions,
+axis and legend labels, scalar labels and figure-attached reading notes keep
+their own roles and are not hidden. A drift test fails if a listed producer
+selector disappears. The screen router owns the shared route identities
 (`CAHIER_EXPORT_ROUTES` is exported from `src/router/index.ts`), and the
 standard figure width and desktop viewport constants come from their figure
 owners.
+
+**Export layout contract (#1025).** The section *layout* container — the one
+that holds prose beside its figure(s) — declares
+`data-cahier-export-layout="spread"`. It is declared by the owning component,
+never on an internal figure grid (a waffle's tile grid, a plot's own grid, or
+the diversity-loss comparison row). The export shell's single reflow pass
+visits only containers carrying that attribute and acts only when a visible
+prose child is actually removed — with no prose to drop the container is left
+completely untouched. It identifies prose by the same shared prose-role
+selector used to hide it in the mount, removes it regardless of any remaining
+source stamp, then collapses the authored tracks to the figure children while
+pinning every figure's pre-pass width, height and mutual gap. Only the block's
+position changes; no figure is stretched or shrunk. No layout class name
+participates and there is one mechanism only. That pin applies **only to
+containers the pass actually visits**. For a container it does not visit, the
+owning component's CSS may legitimately re-lay-out its tracks when the export
+CSS removes prose: the diversity-loss comparison row is the accepted case,
+where `repeat(auto-fit, minmax(0, 1fr))` changes the four plates from
+171.64 pt / 16.82 pt gap to **185.09 pt / 80.02 pt gap**. This is an explicit
+owner decision dated **2026-11-20** — accepted geometry, not drift to be
+"corrected" back. `cahier-diversity-geometry.spec.ts` pins those numbers in
+both territories so a future change returns to the owner instead of shipping.
+
+The same pass also centres the figure's *bands* — the title/caption, any
+subtitle or unit line, and the legend/scale band — on the body axis. The sole
+guard is the reflow plan: a container where prose was actually removed. Bands
+are recognised generically as the non-figure, text-bearing children of the
+figure block and the layout; each is moved by a pure horizontal translation,
+clamped to the body so it cannot overrun the page. Authored alignment and
+wrapping are never rewritten — no `text-align` is imposed by the shell — and a
+band already on the axis, or wider than the body, is left untouched. A
+container that was not reflowed is never visited, so unreflowed sections keep
+their exact rendering.
+
+Declarations: the five AEDAR section bodies and the Mobilité
+`mobilite-section-spread` wrappers; the diversity-loss layout and the access
+evidence grid declare it on their inner container. Legitimate non-declarations:
+the stacked `mobilite-section-stack` (curve) has no side-by-side prose column;
+the stationnement `mobilite-paired` row has two figures and no prose; the
+diversity-loss comparison row and every figure's internal grid are figure
+layouts, not prose-plus-figure layouts.
 
 **Public strings come from the owner, not the runtime host.** `cahierExportUrls.ts`
 owns the canonical public site (`CAHIER_EXPORT_PUBLIC_URL`); the footer invitation

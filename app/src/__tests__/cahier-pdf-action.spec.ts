@@ -200,6 +200,9 @@ describe('shared PDF section action (#1023)', () => {
 
     await wrapper.setProps({ generator: generate })
     await nextTick()
+    // Readiness is evaluated on the first post-mount tick; the action stays
+    // honestly pending until that evaluation settles.
+    await flushPromises()
     expect(wrapper.get('.cahier-pdf-action__button').attributes('aria-disabled')).toBeUndefined()
 
     await wrapper.get('.cahier-pdf-action__button').trigger('click')

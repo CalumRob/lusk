@@ -224,7 +224,7 @@ function buildExportCapture(
     territory: props.content.territory,
     readiness: captureReadiness(record.section, record.unitKey),
     referenceStatus: cahierCaptureConsumesReference(family)
-      ? (props.aedarReferenceStatus ?? 'unobserved') : null,
+      ? (props.aedarReferenceStatus === undefined ? 'unobserved' : props.aedarReferenceStatus) : null,
     comparisonEligible: comparisonEligible.value,
     comparisonStatus: aedarEvidence
       ? (props.comparisonStatus ?? 'idle')
@@ -592,6 +592,7 @@ onBeforeUnmount(() => {
                 :class="[rendererFor(section).classes, { 'figure-spread--flip': rendererFor(section).flip && (nativeRender?.sectionIndex ?? sectionIndex) % 2 === 1 }]"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
+                :data-cahier-export-layout="rendererFor(section).exportLayout"
               >
                 <div
                   v-if="rendererFor(section).argument && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"

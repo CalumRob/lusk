@@ -9,7 +9,7 @@ import { chargerPolicePdf } from './cahierPdfFonts'
 import { LARGEUR_CORPS_PT, LARGEUR_FIGURE_STANDARD_PT, PAGE_APPROUVEE, ptDepuisCssPx } from './cahierPdfGrammaire'
 import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 import { CAHIER_EXPORT_ROUTES } from './cahierExportRoutes'
-import { CAHIER_EXPORT_SURFACE } from './cahierExportSurface'
+import { CAHIER_EXPORT_SURFACE, cahierExportHiddenSelectors, reflowVisibleFigureTracks } from './cahierExportSurface'
 import type { OptionsCompositionCahierPdf } from './cahierPdfComposer'
 
 export class CahierNativePdfError extends Error {
@@ -151,26 +151,15 @@ async function avecCorpsNatif<T>(request: CahierExportRequest, options: NativePd
   const neutral = CAHIER_EXPORT_SURFACE.neutralised
     .map((selector) => `${scope} ${selector} { padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;position:static!important }`)
     .join('\n')
-  const hidden = CAHIER_EXPORT_SURFACE.hidden
+  // The mount hides exactly the roles in the one owned prose list, and the
+  // reflow pass removes exactly that same list — never two diverging selectors.
+  const hidden = cahierExportHiddenSelectors(layout.document)
     .map((selector) => `${scope} ${selector} { display:none!important }`)
     .join('\n')
   sheet.textContent = `${scope} .concept-group { max-width:${width / scale}px; margin-inline:auto;${layout.document ? 'background:transparent!important' : ''} }
 ${scope} .cahier-figure-frame { max-width:${LARGEUR_FIGURE_STANDARD_PT / scale}px; margin-inline:auto }
-/* Prose is hidden on the export surface (argument-copy). Reflow the now
-   empty argument column generically: single-figure spreads become one centred
-   column; paired spreads stay two columns, centred as a pair. No per-section
-   rule and no transplanted physical offset. */
-${scope} .figure-spread:not(.figure-spread--paired) { grid-template-columns:minmax(0,1fr)!important; column-gap:0!important; justify-items:center!important }
-${scope} .figure-spread:not(.figure-spread--paired) > .argument-side { display:none!important }
-${scope} .figure-spread--paired { justify-content:center!important }
-/* The Mobilité delegate owns the same copy/figure split under another shared
-   class. Collapse it by the same rule so the remaining figure is centred in
-   the body, never parked in the right-hand grid slot of hidden prose. */
-${scope} .mobilite-section-spread { grid-template-columns:minmax(0,1fr)!important; justify-items:center!important }
-${scope} .mobilite-section-spread > .mobilite-section-copy { display:none!important }
 ${neutral}
-${hidden}
-${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { display:none!important }` : ''}`
+${hidden}`
   const target = document.createElement('div')
   host.append(sheet, target)
   // The mounted sections resolve exploration links by named routes. They are
@@ -285,6 +274,11 @@ ${layout.document ? `${scope} ${CAHIER_EXPORT_SURFACE.documentOnlyHidden} { disp
     catch (cause) { signal.throwIfAborted(); throw new CahierNativePdfError('asset', cause) }
     if (document.fonts) await document.fonts.ready
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    // The one layout mechanism: attribute-scoped reflow of owner-declared
+    // prose-plus-figure containers, before any geometry is measured.
+    reflowVisibleFigureTracks(root)
+    void root.offsetWidth
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     const rect = root.getBoundingClientRect()
     signal.throwIfAborted()
     if (rect.width * scale > width + .1 || rect.height <= 0 || rect.width <= 0) throw new CahierNativePdfError('native-width')

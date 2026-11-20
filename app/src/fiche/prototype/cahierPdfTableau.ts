@@ -67,6 +67,12 @@ export const ESPACE_TABLEAU = {
   ligneInsetMm: 1,
   /** Measured header advance over the embedded face's 1.2 em line box. */
   interligneEntete: 1.16,
+  /**
+   * Extra measured clearance below the last painted header line. The face's
+   * box alone put the band's bottom rule through the glyphs of a one-line
+   * `Rang`/`Groupe¹` header on real data; the rule must sit below the text.
+   */
+  supplementBandeEnteteMm: 4.0,
   /** Measured row-text advance over the same box. */
   interligneLigne: 1.12,
   /** Row box bottom padding measured on the approved table rows. */
@@ -149,11 +155,25 @@ export interface OptionsTableauPdf {
   readonly ownerDisplayed?: boolean
 }
 
+/**
+ * The one presentation-role fact: a flat table's Mode/raw COLUMN owns the
+ * row-label role; every other column's cells use the value role. Measurement,
+ * row height and painting all read this column fact, so they cannot diverge.
+ */
+export function estCelluleBrute(column: CahierTableColumn): boolean {
+  return column.kind === 'raw'
+}
+
+export function roleCelluleTableau(column: CahierTableColumn) {
+  return estCelluleBrute(column) ? ROLE_PDF.libelleTableau : ROLE_PDF.valeurTableau
+}
+
 function largeurCellule(
   cell: CahierTableCell,
   mesure: MesureTexte,
+  role: { readonly police: string; readonly taille: number } = ROLE_PDF.valeurTableau,
 ): number {
-  return mesure.largeur(cell.display, ROLE_PDF.valeurTableau.police, ROLE_PDF.valeurTableau.taille)
+  return mesure.largeur(cell.display, role.police, role.taille)
 }
 
 function estNumerique(cell: CahierTableCell): boolean {
@@ -265,6 +285,8 @@ interface ColonneAffichage {
   natural: number
   /** Width of the widest served number in this column (0 if none). */
   readonly numerique: number
+  /** Advance reserved for the in-cell `¹` link appended after the header wrap. */
+  readonly marque: number
 }
 
 /**
@@ -284,6 +306,10 @@ export function construireTableauxPdf(
   const groupable = table.columns.some((column) => (
     column.groupLabel != null || column.seriesKey !== null
   ))
+  // Only the two-level header needs the extra clearance: its bottom rule is
+  // painted by the composer independently of the mode-group band. The flat
+  // table's 16.24 pt approved gap is left untouched.
+  const supplementBande = grouped ? ESPACE_TABLEAU.supplementBandeEnteteMm : 0
   if (table.columns.length === 0) {
     return [{
       key: table.key,
@@ -360,7 +386,7 @@ export function construireTableauxPdf(
       0,
       ...cellules
         .filter((cell): cell is CahierTableCell => Boolean(cell) && estNumerique(cell!))
-        .map((cell) => largeurCellule(cell, mesure)),
+        .map((cell) => largeurCellule(cell, mesure, roleCelluleTableau(column))),
     )
     // Natural width is the honest one-line advance of the whole header label
     // and of every cell display, read from the embedded face. Keeping the full
@@ -374,7 +400,8 @@ export function construireTableauxPdf(
       : mesure.largeur(column.label, roleEntete.police, roleEntete.taille)
     const texte = Math.max(
       0,
-      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell)).map((cell) => largeurCellule(cell, mesure)),
+      ...cellules.filter((cell): cell is CahierTableCell => Boolean(cell))
+        .map((cell) => largeurCellule(cell, mesure, roleCelluleTableau(column))),
     )
     // A served comparison header carries the `¹` link; reserve its advance so
     // the mark never spills into the neighbouring `Rang` column.
@@ -383,7 +410,7 @@ export function construireTableauxPdf(
       : 0
     const natural = Math.max(9, numerique, enteteMin, Math.min(texte, 24)) + 2.6 + marqueComparaison
     const groupe = groupeParCle.get(column.key) ?? column.key
-    affichage.push({ column, role: 'valeur', groupe, natural, numerique })
+    affichage.push({ column, role: 'valeur', groupe, natural, numerique, marque: marqueComparaison })
     if (column.kind === 'comparison') {
       const libelleRang = colonneRang(column)
       const rangMax = Math.max(
@@ -407,6 +434,7 @@ export function construireTableauxPdf(
         groupe,
         natural: Math.max(7, enteteRang, rangMax) + 2.6,
         numerique: rangMax,
+        marque: 0,
       })
     }
   }
@@ -534,10 +562,14 @@ export function construireTableauxPdf(
           headerHeight: mesure.hauteurLigne(
             roleEntete.police,
             roleEntete.taille,
-          ) * ESPACE_TABLEAU.interligneEntete + ESPACE_TABLEAU.remplissageEnteteMm,
+          ) * ESPACE_TABLEAU.interligneEntete + ESPACE_TABLEAU.remplissageEnteteMm
+            + supplementBande,
         }
       }
-      const headerLines = mesurerEntete(item.column, width, mesure, nomTerritoire, roleEntete)
+      // Wrap the header to the cell minus the `¹` the painter appends after the
+      // last line: otherwise the marker is emitted past the column and runs
+      // into the neighbouring `Rang` cell at dense three-group tables.
+      const headerLines = mesurerEntete(item.column, width - item.marque, mesure, nomTerritoire, roleEntete)
       return {
         key: item.column.key,
         column: item.column,
@@ -548,7 +580,7 @@ export function construireTableauxPdf(
         headerLines,
         headerHeight: headerLines.length * (
           mesure.hauteurLigne(roleEntete.police, roleEntete.taille) * ESPACE_TABLEAU.interligneEntete
-        ) + ESPACE_TABLEAU.remplissageEnteteMm,
+        ) + ESPACE_TABLEAU.remplissageEnteteMm + supplementBande,
       }
     })
     let abrege = false
@@ -588,9 +620,16 @@ export function construireTableauxPdf(
       }).map((ligne) => ligne.texte)
       const hauteurCellule = cells.reduce((max, cellule) => {
         if (cellule.role === 'rang') return Math.max(max, 1)
+        // Same role the composer uses to paint this cell: a raw/Mode label is
+        // set larger, so measuring it at the value role would reserve too few
+        // lines and let a wrapped `Transports en commun` cross the row rule.
+        const sourceColumn = colonnes.find((candidate) => candidate.column.key === cellule.cell.columnKey)?.column
+        const roleCellule = sourceColumn
+          ? roleCelluleTableau(sourceColumn)
+          : ROLE_PDF.valeurTableau
         const lignes = plierTexte(cellule.display, mesure, {
-          police: ROLE_PDF.valeurTableau.police,
-          taillePt: ROLE_PDF.valeurTableau.taille,
+          police: roleCellule.police,
+          taillePt: roleCellule.taille,
           largeurMax: colonneLargeur(colonnes, cellule.cell.columnKey) - 2,
           casserMotsLongs: cellule.cell.value === null,
         }).length

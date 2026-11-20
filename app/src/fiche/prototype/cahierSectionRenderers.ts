@@ -22,6 +22,8 @@ interface SectionRenderer {
   classes: readonly string[]
   flip: boolean
   argument: boolean
+  /** #1025: this section body is a prose-plus-figure layout container. */
+  exportLayout?: 'spread'
   body: ((props: CahierSectionRendererProps) => VNode | null) | null
 }
 
@@ -35,26 +37,31 @@ const mobilite: SectionRenderer = {
 export const CAHIER_SECTION_RENDERERS = {
   'aedar-car-overview': {
     classes: ['figure-spread', 'figure-spread--paired'], flip: false, argument: false,
+    exportLayout: 'spread',
     body: ({ section }) => section.evidence?.kind === 'aedar-car-overview'
       ? h(CahierAedarOverviewSection, { evidence: section.evidence }) : null,
   },
   'aedar-diversity-loss': {
     classes: ['figure-spread', 'figure-spread--stack', 'figure-spread--aedar-diversity-loss'], flip: false, argument: false,
+    exportLayout: 'spread',
     body: ({ section }) => section.evidence?.kind === 'aedar-diversity-loss'
       ? h(CahierAedarDiversityLossSection, { evidence: section.evidence }) : null,
   },
   'aedar-access': {
     classes: ['figure-spread'], flip: true, argument: true,
+    exportLayout: 'spread',
     body: ({ section }) => section.evidence?.kind === 'aedar-access'
       ? h(CahierAedarAccessSection, { evidence: section.evidence }) : null,
   },
   'aedar-equipment-profile': {
     classes: ['figure-spread', 'figure-spread--stack', 'figure-spread--aedar-equipment-profile'], flip: true, argument: false,
+    exportLayout: 'spread',
     body: ({ section }) => section.evidence?.kind === 'aedar-equipment-profile'
       ? h(CahierAedarProfileSection, { evidence: section.evidence, title: section.label }) : null,
   },
   'aedar-equipment-explorer': {
     classes: ['figure-spread', 'figure-spread--stack', 'figure-spread--aedar-equipment-explorer'], flip: true, argument: false,
+    exportLayout: 'spread',
     body: ({ section }) => section.evidence?.kind === 'aedar-equipment-explorer'
       ? h(CahierAedarExplorerSection, { evidence: section.evidence }) : null,
   },

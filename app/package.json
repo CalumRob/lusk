@@ -18,6 +18,7 @@
     "verify:rank-circles": "node scripts/verify-rank-circles.mjs",
     "preview": "vite preview",
     "test": "vitest run",
+    "verify:cahier-pdf-production": "node scripts/verify-cahier-pdf-production.mjs",
     "verify:detector": "npx --yes impeccable@4.9.2 detect src"
   },
   "dependencies": {
