@@ -246,7 +246,7 @@ def test_declared_coordinates_resolve_to_internal_selectors(monkeypatch):
 
 
 def test_batch_items_share_the_declared_address_resolution(monkeypatch):
-    """A batch of declared Cellules yields the same read as a single read."""
+    """Each declared Cellule in a batch reaches its snapshot with one resolved measure."""
     from contextlib import contextmanager
 
     from api.resource_execution import execute_batch

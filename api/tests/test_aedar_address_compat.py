@@ -130,7 +130,6 @@ def test_selected_comparison_without_measure_is_422_over_http(monkeypatch):
         @contextmanager
         def connection(self):
             raise AssertionError("admission must reject before any connection")
-            yield
 
     monkeypatch.setattr(main, "pool", lambda: NoConnectionPool())
     response = TestClient(main.app).post("/api/resources/read", json={

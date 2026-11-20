@@ -36,8 +36,9 @@ class SemanticResourceReader:
         backed by the same ``aedar_resolve`` admission uses; preflight and read
         both call it, hence single and batch reads share it. The resolved
         ``measure`` lives only on this in-memory copy; a measure-key string is
-        not a declared address. The family is inferred once, here, and consumed
-        by the comparison dispatch.
+        not a declared address. The family returned here is what the comparison
+        dispatch consumes; the lower-level AEDAR snapshots still derive their
+        own family as before.
         """
         from api.aedar_models import AEDARAddressError, aedar_resolve
         if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
