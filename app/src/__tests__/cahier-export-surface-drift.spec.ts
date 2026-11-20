@@ -106,20 +106,24 @@ const PRODUCERS: Readonly<Record<string, readonly string[]>> = {
  * real emission; only the blunt textual net below needs them listed.
  */
 const MENTION_ONLY: Readonly<Record<string, readonly string[]>> = {
+  '.cahier-rank': ['CahierFigureTooltip.vue'], // `cahier-rank-ink` substring
   '.cahier-evidence-source': ['cahierPdfGrammaire.ts'],
   '.concept-group': [
     'cahierNativePdf.ts', 'cahierPdfComposer.ts', 'cahierPdfGrammaire.ts',
     'cahierPdfPalette.ts', 'useCahierBaselineGrid.ts',
   ],
-  '.cahier-page': ['useCahierBaselineGrid.ts'],
+  '.cahier-page': ['CahierAedarOverviewSection.vue', 'useCahierBaselineGrid.ts'], // `cahier-pages`
   '.page-heading': [
+    'BoutonComparaison.vue', 'TerritoireView.vue', 'comparisonContext.ts',
     'cahierPdfComposer.ts', 'cahierPdfGrammaire.ts', 'cahierPdfPalette.ts',
     'useCahierBaselineGrid.ts',
   ],
 }
 
 function rawNeedle(selector: string): string {
-  return selector.startsWith('[') ? selector.slice(1, -1) : selector
+  // A bare class token matches BOTH markup/CSS (`.argument-copy`) and script
+  // string literals (`'argument-copy'`), which is the point of this net.
+  return selector.startsWith('[') ? selector.slice(1, -1) : selector.replace(/^\./u, '')
 }
 
 function contractSelectors(): string[] {
