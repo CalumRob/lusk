@@ -167,19 +167,7 @@ def _axis_values(metadata, indicator_id, page, shapes, parent_indicator=None):
 # by their own producer contracts and are out of scope for this declaration.
 _CELLULE_SHAPES = frozenset({"scalar", "declared_profile", "ordered_series"})
 
-# The two duration resources publish their observations under t-coded axis
-# keys (``t0090``) — the published descriptor, the app and ``detail_labels``
-# all use that space — while this catalogue's legacy ``axis_values`` still
-# carries the minute input grid (``90``). A Cellule must name coordinates in
-# the published identity space; declaring one from the minute grid would make
-# an unaddressable Cellule look addressable. Neither source is silently
-# reconciled here: this is reported as an open question for #1075.
-_CELLULE_COORDINATE_SPACE_PENDING = frozenset({
-    "raccordement_courbe", "raccordement_reference",
-})
-
-
-def _cellule_value_labels(metadata, indicator_id, page):
+def _cellule_labels(metadata, indicator_id, comparison):
     """Producer-owned readable labels for coordinate values.
 
     ``comparison.labels`` is the page's own declaration; ``detail_labels`` is
@@ -187,24 +175,32 @@ def _cellule_value_labels(metadata, indicator_id, page):
     against. A value with no declared label (a year, a DPE class, the F/M keys)
     is its own readable label — never a key parsed or invented here.
     """
-    labels = dict((page.get("comparison") or {}).get("labels") or {})
+    labels = dict(comparison.get("labels") or {})
     labels.update((metadata.get("detail_labels") or {}).get(indicator_id, {}))
     return {str(key): str(value) for key, value in labels.items()}
 
 
-def _cellule_values(page, axis, declared_values, scalar_unit, labels, detail_units):
-    comparison = page.get("comparison") or {}
-    values = tuple(str(value) for value in declared_values)
-    if not values:
-        # A dynamic series axis has no static producer value list; its declared
-        # comparison points are the only producer-owned value declaration.
-        points = tuple(comparison.get("dimensions") or comparison.get("details") or ())
-        if comparison.get("detail") is not None:
-            points += (comparison["detail"],)
-        values = tuple(dict.fromkeys(str(value) for value in points))
+def _cellule_detail_units(metadata, indicator_id):
+    contract = (metadata.get("profile_contracts") or {}).get(indicator_id) or {}
+    return dict(contract.get("detail_units") or {})
+
+
+def _cellule_series_axis_values(metadata, indicator_id, page):
+    """The producer-declared series axis, never a comparison facet.
+
+    The publisher writes this route's ``axis_values`` into the series
+    descriptor. A producer that declares no series axis leaves its coordinates
+    to the descriptor; a comparison facet is not a coordinate declaration.
+    """
+    route = (metadata.get("owned_series_routes") or {}).get(indicator_id) or {}
+    return tuple(str(value) for value in (route.get("axis_values")
+                                          or page.get("axis_values") or ()))
+
+
+def _cellule_values(axis, declared_values, comparison, scalar_unit, labels, detail_units):
     default_unit = comparison.get("unit") or scalar_unit or None
     result = []
-    for value in values:
+    for value in declared_values:
         # A profile's categories never inherit the indicator's scalar unit:
         # the producer's per-detail unit wins where one is declared.
         unit = detail_units.get(value) if axis == "detail" else None
@@ -218,8 +214,7 @@ def _cellule_values(page, axis, declared_values, scalar_unit, labels, detail_uni
     return result
 
 
-def _cellule_default_point(page, axes):
-    comparison = page.get("comparison") or {}
+def _cellule_default_point(comparison, axes):
     point = {}
     detail = comparison.get("detail")
     if detail is not None:
@@ -259,23 +254,34 @@ def _cellule_declaration(metadata, indicator_id, page, axes, axis_values, unit, 
     """Project producer metadata into the public Cellule addressing declaration."""
     if not _CELLULE_SHAPES.intersection(shapes):
         return None
-    if indicator_id in _CELLULE_COORDINATE_SPACE_PENDING:
+    producer_cellule = page.get("cellule") or {}
+    if producer_cellule.get("defer_coordinate_declaration"):
+        # The producer, not the API, owns the decision to defer a coordinate
+        # space to the published descriptor (#1096 tracks the open cases).
         return None
-    labels = _cellule_value_labels(metadata, indicator_id, page)
-    detail_units = ((metadata.get("profile_contracts") or {}).get(indicator_id, {})
-                    .get("detail_units") or {})
-    declared_values = dict(axis_values)
+    comparison = page.get("comparison") or {}
+    labels = _cellule_labels(metadata, indicator_id, comparison)
+    detail_units = _cellule_detail_units(metadata, indicator_id)
+    declared_values = {axis: tuple(str(value) for value in values)
+                       for axis, values in axis_values}
+    if "ordered_series" in shapes:
+        series_values = _cellule_series_axis_values(metadata, indicator_id, page)
+        if not series_values or not axes:
+            # No producer-declared series axis: declare nothing and defer to
+            # the descriptor. A comparison facet is never a coordinate axis.
+            return None
+        declared_values[axes[0]] = series_values
     coordinates = [
         {"name": axis,
-         "values": _cellule_values(page, axis, declared_values.get(axis, ()),
-                                   unit, labels, detail_units)}
+         "values": _cellule_values(axis, declared_values.get(axis, ()),
+                                   comparison, unit, labels, detail_units)}
         for axis in axes
     ]
-    declared_subset = (page.get("cellule") or {}).get("valid_combinations")
     return {
         "coordinates": coordinates,
-        "valid_combinations": _cellule_combinations(coordinates, declared_subset),
-        "default_point": _cellule_default_point(page, tuple(axes)),
+        "valid_combinations": _cellule_combinations(
+            coordinates, producer_cellule.get("valid_combinations")),
+        "default_point": _cellule_default_point(comparison, tuple(axes)),
     }
 
 
@@ -457,14 +463,15 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         # #1075: a declared Cellule combination set is authoritative across
         # axes. Validating each axis independently would let a request name a
         # combination that does not exist and receive an empty cohort instead
-        # of a named error. An absent declaration keeps the existing
-        # axis-by-axis contract unchanged. An axis with no static producer
-        # value list (a dynamic series axis) still defers membership to the
-        # published descriptor, as before.
-        static_axes = {axis for axis, values in resource.axis_values if values}
-        if (resource.cellule is not None and item.coordinates
-                and set(item.coordinates) <= static_axes):
-            combinations = resource.cellule.get("valid_combinations") or []
+        # of a named error. Enforce it whenever the declaration covers the
+        # requested axes — not only when they appear in the legacy static axis
+        # list. Resources whose producer defers the declaration keep the
+        # existing axis-by-axis contract and the descriptor's own membership.
+        declared_combinations = (resource.cellule or {}).get("valid_combinations") or []
+        if (declared_combinations and item.coordinates
+                and all(set(item.coordinates) <= set(combination)
+                        for combination in declared_combinations)):
+            combinations = declared_combinations
             requested_axes = sorted(item.coordinates)
             allowed = {
                 tuple(combination.get(axis) for axis in requested_axes)
