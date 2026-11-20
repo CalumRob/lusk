@@ -7,6 +7,7 @@ indicator IDs or physical table names.
 
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
+import itertools
 import json
 import os
 from pathlib import Path
@@ -453,6 +454,25 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])
                for axis, values in item.coordinates.items()):
             raise ValueError("coordinate value is not declared for this resource")
+        # #1075: a declared Cellule combination set is authoritative across
+        # axes. Validating each axis independently would let a request name a
+        # combination that does not exist and receive an empty cohort instead
+        # of a named error. An absent declaration keeps the existing
+        # axis-by-axis contract unchanged. An axis with no static producer
+        # value list (a dynamic series axis) still defers membership to the
+        # published descriptor, as before.
+        static_axes = {axis for axis, values in resource.axis_values if values}
+        if (resource.cellule is not None and item.coordinates
+                and set(item.coordinates) <= static_axes):
+            combinations = resource.cellule.get("valid_combinations") or []
+            requested_axes = sorted(item.coordinates)
+            allowed = {
+                tuple(combination.get(axis) for axis in requested_axes)
+                for combination in combinations
+            }
+            for point in itertools.product(*(item.coordinates[axis] for axis in requested_axes)):
+                if point not in allowed:
+                    raise ValueError("coordinate combination is not declared for this resource")
         if resource.resource_kind == "aedar_source_grain" and "context" in item.coordinates:
             raise ValueError("AEDAR comparison context belongs in fixed_comparison intent")
     if (resource.resource_kind == "aedar_source_grain" and
