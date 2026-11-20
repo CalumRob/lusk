@@ -193,8 +193,8 @@ if (!bridge_db_proof_configured()) {
                      info = "failed publication must restore the exact seeded state")
 
     # A wrong descriptor confirmation token must refuse with zero writes.
-    wrong_env_values <- c(env_values,
-      setNames("wrong-token", BRIDGE_CONFIRM_DESCRIPTOR_ENV))
+    wrong_env_values <- env_values
+    wrong_env_values[[BRIDGE_CONFIRM_DESCRIPTOR_ENV]] <- "wrong-token"
     withr::with_envvar(as.list(wrong_env_values), {
       capture.output(expect_error(run_offre_tc_bridge(
         "publish", env = bridge_fake_env(wrong_env_values), con = connection,
