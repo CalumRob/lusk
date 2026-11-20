@@ -8,6 +8,7 @@ producer metadata independently, so they can disagree with the catalogue.
 
 import json
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -144,8 +145,10 @@ def test_every_canonical_cellule_declares_labels_units_combinations_and_defaults
                     assert key in KEY_IS_LABEL, (
                         f"{resource_id}/{axis}/{key}: no producer label and no key-as-label exemption")
                     assert value["label"] == key, f"{resource_id}/{axis}/{key}: key-as-label changed"
-                expected_unit = detail_units.get(key) if axis == "detail" else None
-                if expected_unit is None:
+                if axis == "detail":
+                    # AC4: never fall back to the indicator's scalar unit.
+                    expected_unit = detail_units.get(key) or comparison.get("unit") or None
+                else:
                     expected_unit = comparison.get("unit") or scalar_unit or None
                 assert value["unit"] == expected_unit, (
                     f"{resource_id}/{axis}/{key}: unit disagrees with the producer declaration")
@@ -289,8 +292,6 @@ def test_undeclared_coordinate_combination_is_rejected_by_name(tmp_path):
 
 def test_combination_enforcement_follows_the_declaration_not_the_static_axis_list():
     """A declared combination space is enforced even without static axis values."""
-    from dataclasses import replace
-
     base = default_resource_catalogue.__wrapped__()
     resource = replace(base.resources_by_id["structure_age"],
                        axis_values=(),
@@ -306,8 +307,6 @@ def test_combination_enforcement_follows_the_declaration_not_the_static_axis_lis
 
 def test_partial_combination_declaration_cannot_bypass_the_admission_gate():
     """A declared point that omits an axis must not silently disable the 422."""
-    from dataclasses import replace
-
     base = default_resource_catalogue.__wrapped__()
     resource = replace(base.resources_by_id["structure_age"],
                        cellule={"coordinates": [], "valid_combinations": [
@@ -436,8 +435,10 @@ def _pool_for_default():
 def test_no_coordinate_profile_read_exposes_the_descriptors_comparison_point():
     """A no-coordinate read surfaces the descriptor's published comparison point.
 
-    That the descriptor agrees with the producer declaration is the publisher's
-    contract; a DB-free test cannot prove it and does not assert it here.
+    The local fixture is seeded from the producer declaration and checks that
+    agreement on construction, then verifies the read wires that point through
+    to the response. Whether the real published descriptor agrees with the
+    producer declaration is the publisher's contract, not provable DB-free.
     """
     with _app_overrides({main.get_resource_catalogue: lambda: default_resource_catalogue.__wrapped__(),
                main.get_repository: lambda: SimpleNamespace(connections=_pool_for_default()),
