@@ -378,5 +378,1985 @@
       "fields": ["value", "status", "n_typequ", "n_addresses", "n_observed", "coverage_status", "statistic", "source_id", "vintage_id", "source_url", "licence", "attribution", "reference_date", "publication_date"],
       "intents": ["facts"]
     }
-  ]
+  ],
+  "cellule_declarations": {
+      "aedar_territorial_aggregate": {
+        "family": "aedar_per_cell",
+        "coordinates": [
+          {
+            "name": "horizon",
+            "values": [
+              {
+                "value": "5",
+                "label": "5 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "10",
+                "label": "10 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "15",
+                "label": "15 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "20",
+                "label": "20 min",
+                "unit": "minutes"
+              }
+            ]
+          },
+          {
+            "name": "mode",
+            "values": [
+              {
+                "value": "walk",
+                "label": "À pied",
+                "unit": null
+              },
+              {
+                "value": "transit",
+                "label": "Transports en commun",
+                "unit": null
+              },
+              {
+                "value": "transit_gain",
+                "label": "Gain des transports en commun",
+                "unit": null
+              },
+              {
+                "value": "bike_lts2",
+                "label": "Vélo LTS2",
+                "unit": null
+              },
+              {
+                "value": "bike_lts4",
+                "label": "Vélo LTS4",
+                "unit": null
+              },
+              {
+                "value": "car",
+                "label": "Voiture",
+                "unit": null
+              }
+            ]
+          },
+          {
+            "name": "statistic",
+            "values": [
+              {
+                "value": "share",
+                "label": "Part",
+                "unit": null
+              },
+              {
+                "value": "min",
+                "label": "Minimum",
+                "unit": null
+              },
+              {
+                "value": "max",
+                "label": "Maximum",
+                "unit": null
+              },
+              {
+                "value": "decile1",
+                "label": "1er décile",
+                "unit": null
+              },
+              {
+                "value": "decile2",
+                "label": "2e décile",
+                "unit": null
+              },
+              {
+                "value": "decile3",
+                "label": "3e décile",
+                "unit": null
+              },
+              {
+                "value": "decile4",
+                "label": "4e décile",
+                "unit": null
+              },
+              {
+                "value": "decile5",
+                "label": "5e décile",
+                "unit": null
+              },
+              {
+                "value": "decile6",
+                "label": "6e décile",
+                "unit": null
+              },
+              {
+                "value": "decile7",
+                "label": "7e décile",
+                "unit": null
+              },
+              {
+                "value": "decile8",
+                "label": "8e décile",
+                "unit": null
+              },
+              {
+                "value": "decile9",
+                "label": "9e décile",
+                "unit": null
+              },
+              {
+                "value": "mean",
+                "label": "Moyenne",
+                "unit": null
+              }
+            ]
+          }
+        ],
+        "typequ_universe": "aedar-typequ-universe.json",
+        "valid_combinations": [
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit_gain",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "share"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "min"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "max"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit_gain",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "share"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "min"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "max"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit_gain",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "share"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "min"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "max"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit_gain",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "statistic": "mean"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "share"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "min"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "max"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile1"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile2"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile3"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile4"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile5"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile6"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile7"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile8"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "decile9"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "statistic": "mean"
+          }
+        ]
+      },
+      "aedar_territory_summary": {
+        "family": "aedar_summary",
+        "coordinates": [
+          {
+            "name": "horizon",
+            "values": [
+              {
+                "value": "5",
+                "label": "5 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "10",
+                "label": "10 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "15",
+                "label": "15 min",
+                "unit": "minutes"
+              },
+              {
+                "value": "20",
+                "label": "20 min",
+                "unit": "minutes"
+              }
+            ]
+          },
+          {
+            "name": "mode",
+            "values": [
+              {
+                "value": "walk",
+                "label": "À pied",
+                "unit": null
+              },
+              {
+                "value": "transit",
+                "label": "Transports en commun",
+                "unit": null
+              },
+              {
+                "value": "bike_lts2",
+                "label": "Vélo LTS2",
+                "unit": null
+              },
+              {
+                "value": "bike_lts4",
+                "label": "Vélo LTS4",
+                "unit": null
+              },
+              {
+                "value": "car",
+                "label": "Voiture",
+                "unit": null
+              }
+            ]
+          },
+          {
+            "name": "kind",
+            "values": [
+              {
+                "value": "diversity",
+                "label": "Diversité",
+                "unit": null
+              },
+              {
+                "value": "volume",
+                "label": "Volume",
+                "unit": null
+              }
+            ]
+          }
+        ],
+        "no_summary_modes": [
+          "transit_gain"
+        ],
+        "valid_combinations": [
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "5",
+            "mode": "walk",
+            "kind": "volume"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "5",
+            "mode": "transit",
+            "kind": "volume"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts2",
+            "kind": "volume"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "5",
+            "mode": "bike_lts4",
+            "kind": "volume"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "5",
+            "mode": "car",
+            "kind": "volume"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "10",
+            "mode": "walk",
+            "kind": "volume"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "10",
+            "mode": "transit",
+            "kind": "volume"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts2",
+            "kind": "volume"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "10",
+            "mode": "bike_lts4",
+            "kind": "volume"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "10",
+            "mode": "car",
+            "kind": "volume"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "15",
+            "mode": "walk",
+            "kind": "volume"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "15",
+            "mode": "transit",
+            "kind": "volume"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts2",
+            "kind": "volume"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "15",
+            "mode": "bike_lts4",
+            "kind": "volume"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "15",
+            "mode": "car",
+            "kind": "volume"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "20",
+            "mode": "walk",
+            "kind": "volume"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "20",
+            "mode": "transit",
+            "kind": "volume"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts2",
+            "kind": "volume"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "20",
+            "mode": "bike_lts4",
+            "kind": "volume"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "kind": "diversity"
+          },
+          {
+            "horizon": "20",
+            "mode": "car",
+            "kind": "volume"
+          }
+        ]
+      }
+    }
 }
