@@ -292,22 +292,30 @@ def _cellule_declaration(metadata, indicator_id, page, axes, axis_values, unit, 
 
 
 # #1076: the two AEDAR families declare their Cellule address spaces here.
-# The axis value *sets* come from the registered measure vocabulary in
-# aedar_models, never from a second list in the app or the browser.
-_AEDAR_CELLULE_AXES = {
-    "aedar_source_grain": ("horizon", "mode", "statistic"),
-    "aedar_territory_summary": ("horizon", "mode", "kind"),
-}
+# The vocabulary and axis names are owned by aedar_models (one declaration),
+# never repeated as app literals. `typequ` is a real coordinate of the aggregate
+# Cellule; the valid-combination space is the measure space (horizon × mode ×
+# statistic or kind), orthogonal to the equipment axis.
+from api.aedar_models import (AEDAR_CELLULE_AXES, AEDAR_PER_CELL_FAMILY,
+                              AEDAR_SUMMARY_FAMILY, AEDAR_MEASURE_HORIZONS,
+                              AEDAR_MEASURE_MODES, AEDAR_MEASURE_STATISTICS,
+                              AEDAR_SUMMARY_KINDS, AEDAR_AGGREGATE_MODES,
+                              aedar_axes_match_registered_measures)
+
 _AEDAR_CELLULE_FAMILY = {
-    "aedar_source_grain": "aedar_per_cell",
-    "aedar_territory_summary": "aedar_summary",
+    "aedar_source_grain": AEDAR_PER_CELL_FAMILY,
+    "aedar_territory_summary": AEDAR_SUMMARY_FAMILY,
+}
+# Axes whose product is enumerated in valid_combinations. `typequ` is declared
+# as a coordinate with its full 235-value universe but is orthogonal, so the
+# full address is any typequ × any declared measure point.
+_AEDAR_COMBINATION_AXES = {
+    AEDAR_PER_CELL_FAMILY: ("horizon", "mode", "statistic"),
+    AEDAR_SUMMARY_FAMILY: ("horizon", "mode", "kind"),
 }
 
 
 def _aedar_cellule_axis_values():
-    from api.aedar_models import (AEDAR_MEASURE_HORIZONS, AEDAR_MEASURE_MODES,
-                                  AEDAR_MEASURE_STATISTICS, AEDAR_SUMMARY_KINDS,
-                                  AEDAR_AGGREGATE_MODES, aedar_axes_match_registered_measures)
     if not aedar_axes_match_registered_measures():
         raise ValueError("AEDAR declared axes do not reconstruct the registered measures")
     return {
@@ -320,15 +328,18 @@ def _aedar_cellule_axis_values():
 
 
 def _aedar_typequ_universe(contract_dir, filename):
-    """Fail-closed validation of the 235 structured producer Typequ values."""
+    """Fail-closed validation of the producer Typequ universe (count is declared)."""
     if not filename:
         raise ValueError("typequ universe: declaration is missing")
     payload = json.loads((contract_dir / filename).read_text(encoding="utf-8"))
     if payload.get("contract") != "aedar-typequ-universe-v1":
         raise ValueError("typequ universe: unknown producer contract")
+    count = payload.get("registry_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+        raise ValueError("typequ universe: registry count is missing")
     values = payload.get("values")
-    if not isinstance(values, list) or len(values) != 235:
-        raise ValueError(f"typequ universe: expected 235 values, found "
+    if not isinstance(values, list) or len(values) != count:
+        raise ValueError(f"typequ universe: expected {count} values, found "
                          f"{len(values) if isinstance(values, list) else 0}")
     codes = set()
     orders = []
@@ -352,26 +363,31 @@ def _aedar_typequ_universe(contract_dir, filename):
         if (not isinstance(gamme, dict) or set(gamme) != {"status", "label"}
                 or gamme["status"] not in {"classified", "hors_gamme", "absent"}):
             raise ValueError(f"typequ universe: value {code} gamme is not declared")
+        if gamme["status"] == "absent":
+            if gamme["label"] is not None:
+                raise ValueError(f"typequ universe: value {code} absent gamme carries a label")
+        elif not isinstance(gamme["label"], str) or not gamme["label"]:
+            raise ValueError(f"typequ universe: value {code} gamme label is missing")
         order = value.get("source_order")
-        if not isinstance(order, int) or isinstance(order, bool) or not 1 <= order <= 235:
+        if not isinstance(order, int) or isinstance(order, bool) or not 1 <= order <= count:
             raise ValueError(f"typequ universe: value {code} source order is missing")
         orders.append(order)
-    if sorted(orders) != list(range(1, 236)):
-        raise ValueError("typequ universe: source order is not a complete 1..235 axis")
-    return tuple(values)
+    if sorted(orders) != list(range(1, count + 1)):
+        raise ValueError(f"typequ universe: source order is not a complete 1..{count} axis")
+    return payload, tuple(values)
 
 
 def _aedar_cellule_declaration(resource_id, kind, declarations, contract_path):
     """Project and validate the producer's AEDAR Cellule declaration."""
     family = _AEDAR_CELLULE_FAMILY[kind]
-    axes = _AEDAR_CELLULE_AXES[kind]
+    combination_axes = _AEDAR_COMBINATION_AXES[family]
     expected = _aedar_cellule_axis_values()
     declaration = declarations.get(resource_id)
     if not isinstance(declaration, dict) or declaration.get("family") != family:
         raise ValueError(f"{family}: declaration is missing for {resource_id}")
     declared_coordinates = declaration.get("coordinates")
     if not isinstance(declared_coordinates, list) or [
-            coordinate.get("name") for coordinate in declared_coordinates] != list(axes):
+            coordinate.get("name") for coordinate in declared_coordinates] != list(combination_axes):
         raise ValueError(f"{family}: coordinate axes are missing or reordered")
     coordinate_values = {}
     coordinates = []
@@ -380,7 +396,7 @@ def _aedar_cellule_declaration(resource_id, kind, declarations, contract_path):
         axis_values = coordinate.get("values")
         if not isinstance(axis_values, list) or not axis_values:
             raise ValueError(f"{family}: coordinate {axis} values are missing")
-        expected_values = (expected["summary_mode"] if axis == "mode" and family == "aedar_summary"
+        expected_values = (expected["summary_mode"] if axis == "mode" and family == AEDAR_SUMMARY_FAMILY
                            else expected[axis])
         keys = []
         for value in axis_values:
@@ -395,23 +411,48 @@ def _aedar_cellule_declaration(resource_id, kind, declarations, contract_path):
             {"value": str(value["value"]), "label": value["label"],
              "unit": value.get("unit")} for value in axis_values]})
     combinations = declaration.get("valid_combinations")
-    full_product = [dict(zip(axes, point)) for point in itertools.product(
-        *(coordinate_values[axis] for axis in axes))]
+    full_product = [dict(zip(combination_axes, point)) for point in itertools.product(
+        *(coordinate_values[axis] for axis in combination_axes))]
     if (not isinstance(combinations, list) or len(combinations) != len(full_product)
             or {frozenset(point.items()) for point in combinations} !=
             {frozenset(point.items()) for point in full_product}):
         raise ValueError(f"{family}: valid combination set is incomplete")
-    projection = {"family": family, "coordinates": coordinates,
-                  "valid_combinations": combinations}
-    if family == "aedar_per_cell":
-        universe = _aedar_typequ_universe(Path(contract_path).parent,
-                                          declaration.get("typequ_universe"))
-        projection["typequ_universe"] = list(universe)
+    if family == AEDAR_PER_CELL_FAMILY:
+        payload, universe = _aedar_typequ_universe(
+            Path(contract_path).parent, declaration.get("typequ_universe"))
+        # The Typequ universe is a declared coordinate of the Cellule, not a
+        # side list: the aggregate is addressable as equipment × horizon ×
+        # mode × statistic. Its structured fields carry label, domain,
+        # subdomain, gamme and source order verbatim.
+        coordinates.insert(0, {"name": "typequ", "values": [
+            {"value": value["value"], "label": value["label"],
+             "domain": value["domain"], "subdomain": value["subdomain"],
+             "gamme": value["gamme"], "source_order": value["source_order"]}
+            for value in universe]})
+        projection = {"family": family, "coordinates": coordinates,
+                      "valid_combinations": combinations,
+                      "registry_count": payload["registry_count"],
+                      "sources": payload["sources"]}
     else:
         if declaration.get("no_summary_modes") != ["transit_gain"]:
             raise ValueError(f"{family}: undeclared summary modes are missing")
-        projection["no_summary_modes"] = list(declaration["no_summary_modes"])
+        projection = {"family": family, "coordinates": coordinates,
+                      "valid_combinations": combinations,
+                      "no_summary_modes": list(declaration["no_summary_modes"])}
     return projection
+
+
+def _aedar_families_disjoint(declarations):
+    """Fail if a producer declaration lets one AEDAR family answer the other's address."""
+    per_cell, summary = set(), set()
+    for declaration in declarations.values():
+        axes = {coordinate["name"] for coordinate in declaration.get("coordinates", ())}
+        if declaration.get("family") == AEDAR_PER_CELL_FAMILY:
+            per_cell |= axes
+        elif declaration.get("family") == AEDAR_SUMMARY_FAMILY:
+            summary |= axes
+    if per_cell & {"kind"} or summary & {"statistic", "typequ"}:
+        raise ValueError("AEDAR families overlap: a family declares the other's distinguishing axis")
 
 
 _FIELDS_BY_SHAPE = {
@@ -515,6 +556,48 @@ def _producer_capabilities(metadata, theme_id, indicator_ids):
     return map_layers, scalar_contracts
 
 
+def _validate_cellule_combination(resource, coordinates):
+    """#1075: a declared combination set is authoritative across its axes.
+
+    A partial declaration names only some axes; a request naming an axis the
+    declaration omits has no covering point and is rejected by name.
+    """
+    combinations = (resource.cellule or {}).get("valid_combinations") or []
+    if not combinations or not coordinates:
+        return
+    requested_axes = sorted(coordinates)
+    covering = [point for point in combinations if set(requested_axes) <= set(point)]
+    if not covering:
+        raise ValueError("coordinate combination is not declared for this resource")
+    allowed = {tuple(point.get(axis) for axis in requested_axes) for point in covering}
+    for point in itertools.product(*(coordinates[axis] for axis in requested_axes)):
+        if point not in allowed:
+            raise ValueError("coordinate combination is not declared for this resource")
+
+
+def _validate_aedar_address(resource, coordinates):
+    """Validate a declared AEDAR Cellule address and enforce family separation."""
+    from api.aedar_models import AEDARAddressError, resolve_aedar_address
+    try:
+        resolve_aedar_address(resource.resource_kind, coordinates)
+    except AEDARAddressError as exc:
+        raise ValueError(str(exc)) from exc
+    cellule = resource.cellule or {}
+    combination_axes = set().union(*(set(point) for point in cellule.get("valid_combinations", ())))
+    declared_values = {coordinate["name"]: {value["value"] for value in coordinate["values"]}
+                       for coordinate in cellule.get("coordinates", ())}
+    # `typequ` (and the legacy `context` facet) are orthogonal to the measure
+    # combination space: their values are checked against the declared universe
+    # and the combination gate runs on the measure axes only.
+    constrained = {}
+    for axis, values in coordinates.items():
+        if axis in declared_values and not set(values) <= declared_values[axis]:
+            raise ValueError("coordinate value is not declared for this resource")
+        if axis in combination_axes:
+            constrained[axis] = values
+    _validate_cellule_combination(resource, constrained)
+
+
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
     resources = {resource.resource_id: resource for resource in catalogue.resources}
@@ -537,6 +620,9 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         elif (resource.resource_kind == "aedar_territory_summary"
               and item.intent.kind == "facts"):
             supported = set(resource.fields)
+        elif (resource.resource_kind == "aedar_territory_summary"
+              and item.intent.kind in {"fixed_comparison", "selected_comparison"}):
+            supported = set(resource.fields) | set(_AEDAR_COMPARISON_RANK_FIELDS) | {"group_value", "value"}
         elif (resource.resource_kind == "aedar_source_grain"
                 and item.intent.kind == "selected_comparison"):
             supported = set(resource.fields) | set(_AEDAR_SELECTED_COMPARISON_FIELDS)
@@ -580,45 +666,29 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         axes = dict(resource.axis_values)
         # `resource.axes` are the producer-declared public coordinate axis names.
         # Storage axis keys in `axis_values` may differ (e.g. anchored
-        # membership exposes `membership` over the `detail` storage key) and
-        # dynamic domains (AEDAR `typequ`/`measure`) have no static values, so
+        # membership exposes `membership` over the `detail` storage key);
         # declaration, not storage shape, decides which axes exist.
         allowed_axes = set(resource.axes) | set(axes)
+        if resource.resource_kind in AEDAR_CELLULE_AXES and "measure" in item.coordinates:
+            raise ValueError("measure is not an AEDAR Cellule address; declare horizon, mode and "
+                             "statistic (per-cell) or horizon, mode and kind (summary)")
+        if resource.resource_kind == "aedar_source_grain" and "kind" in item.coordinates:
+            raise ValueError("summary Cellule coordinates are not declared for the AEDAR per-cell family")
+        if (resource.resource_kind == "aedar_territory_summary"
+                and {"typequ", "statistic"} & set(item.coordinates)):
+            raise ValueError("per-cell Cellule coordinates are not declared for the AEDAR summary family")
         if set(item.coordinates) - allowed_axes:
             raise ValueError("coordinate axis is not declared for this resource")
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])
                for axis, values in item.coordinates.items()):
             raise ValueError("coordinate value is not declared for this resource")
-        # #1075: a declared Cellule combination set is authoritative across
-        # axes. Validating each axis independently would let a request name a
-        # combination that does not exist and receive an empty cohort instead
-        # of a named error. Resources whose producer defers the declaration keep
-        # the existing axis-by-axis contract and the descriptor's membership.
-        declared_combinations = (resource.cellule or {}).get("valid_combinations") or []
-        # #1076: a legacy-only AEDAR address (`measure`/`typequ`/`context`) keeps
-        # its axis-by-axis / descriptor contract, so an existing summary reading
-        # requested through its legacy facet is still admitted. Any request that
-        # names a declared Cellule coordinate (or any other axis) is gated.
-        legacy_aedar_axes = {"measure", "typequ", "context"}
-        legacy_only = (resource.resource_kind in _AEDAR_CELLULE_AXES
-                       and set(item.coordinates or ()) <= legacy_aedar_axes)
-        if declared_combinations and item.coordinates and not legacy_only:
-            requested_axes = sorted(item.coordinates)
-            # A partial producer declaration must not bypass the gate: if no
-            # declared point names all the requested axes, the request is not
-            # addressable and fails with the same named error.
-            covering = [combination for combination in declared_combinations
-                        if set(requested_axes) <= set(combination)]
-            if not covering:
-                raise ValueError("coordinate combination is not declared for this resource")
-            allowed = {tuple(combination.get(axis) for axis in requested_axes)
-                       for combination in covering}
-            for point in itertools.product(*(item.coordinates[axis] for axis in requested_axes)):
-                if point not in allowed:
-                    raise ValueError("coordinate combination is not declared for this resource")
+        if resource.resource_kind in AEDAR_CELLULE_AXES:
+            _validate_aedar_address(resource, item.coordinates)
+        else:
+            _validate_cellule_combination(resource, item.coordinates)
         if resource.resource_kind == "aedar_source_grain" and "context" in item.coordinates:
             raise ValueError("AEDAR comparison context belongs in fixed_comparison intent")
-    if (resource.resource_kind == "aedar_source_grain" and
+    if (resource.resource_kind in AEDAR_CELLULE_AXES and
             item.intent.kind == "fixed_comparison" and
             item.intent.context not in resource.context_values):
         raise ValueError("comparison context is not declared for this resource")
@@ -821,6 +891,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
         if contract.get("contract") != "producer-semantic-resources-v1":
             raise ValueError("Invalid producer semantic resource contract")
         cellule_declarations = contract.get("cellule_declarations") or {}
+        _aedar_families_disjoint(cellule_declarations)
         semantic_declarations = list(contract.get("resources", []))
         metadata_by_theme = {}
         for path in metadata_files:
@@ -873,13 +944,28 @@ def discover_indicator_resources(metadata_directory: str | Path,
                     raise ValueError("AEDAR summary facets must match producer-declared aggregate readings")
                 measure_facets = {measure: aggregate.measure_facets[measure]
                                   for measure in AEDAR_AGGREGATE_READINGS}
+            aedar_cellule = (_aedar_cellule_declaration(resource_id, kind, cellule_declarations,
+                                                         contract_path)
+                             if kind in AEDAR_CELLULE_AXES else None)
+            if aedar_cellule is not None:
+                # Discovery exposes the declared Cellule coordinates as the
+                # resource's axes. A client addresses AEDAR by these, never by
+                # a measure key. Comparison `context` stays an admitted legacy
+                # axis (an intent facet, not a Cellule coordinate).
+                public_axes = tuple(coordinate["name"] for coordinate in aedar_cellule["coordinates"])
+                public_axis_values = (
+                    (("context", tuple(declaration.get("axes", {}).get("context", ()))),)
+                    if kind == "aedar_source_grain" else ())
+            else:
+                public_axes = axes
+                public_axis_values = (("groupe", groups),) if kind == "typed_reading" else ()
             resources.append(IndicatorResource(
                 resource_id=resource_id, theme_id=theme_id, indicator_id=resource_id,
                 label=declaration.get("label", theme_metadata.get("label", resource_id)),
                 unit="", direction="none",
                 allowed_levels=tuple(declaration.get("allowed_levels", ("commune", "epci", "departement", "region"))),
                 sources=sources, shapes=(kind,),
-                axes=axes, axis_values=(("groupe", groups),) if kind == "typed_reading" else (),
+                axes=public_axes, axis_values=public_axis_values,
                 target_kinds=("territory", "territory_cohort") if kind == "typed_reading" else ("territory",),
                 target_ids=(),
                 dynamic_axes=tuple(declaration.get("dynamic_axes", ())), fields=tuple(dict.fromkeys([
@@ -892,9 +978,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 publication_table=declaration.get("publication_table"),
                 side_relations=tuple(declaration.get("side_relations", ())),
                 measure_facets=measure_facets,
-                cellule=(_aedar_cellule_declaration(resource_id, kind, cellule_declarations,
-                                                    contract_path)
-                         if kind in _AEDAR_CELLULE_AXES else None)))
+                cellule=aedar_cellule))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY)

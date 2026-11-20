@@ -55,21 +55,102 @@ def aedar_axes_match_registered_measures():
     return rebuilt == AEDAR_MEASURE_KEYS
 
 
-def aedar_measure_family(measures):
-    """Name the one declared family a measure selector belongs to, or None.
+# One family vocabulary, shared by discovery declarations, admission and the
+# reader. The old ``measure`` union let one selector span both families; a
+# declared Cellule resolves to exactly one of these before any read.
+AEDAR_PER_CELL_FAMILY = "aedar_per_cell"
+AEDAR_SUMMARY_FAMILY = "aedar_summary"
 
-    The old ``AEDAR_COMPARISON_MEASURE_KEYS`` union let one selector vocabulary
-    span both families. A request now resolves to exactly one family; a mixed
-    or unknown set belongs to neither and is rejected before any read.
+# Declared Cellule axes per resource kind. `typequ` is a real coordinate of the
+# aggregate Cellule — equipment × horizon × mode × statistic — not a side list.
+AEDAR_CELLULE_AXES = {
+    "aedar_source_grain": ("typequ", "horizon", "mode", "statistic"),
+    "aedar_territory_summary": ("horizon", "mode", "kind"),
+}
+
+class AEDARAddressError(ValueError):
+    """A declared AEDAR address is not well formed or crosses family lines."""
+
+
+def aedar_measure_family(measures):
+    """Name the one declared family a *legacy* measure selector belongs to.
+
+    Retained only for the deprecated alias below and for internal diagnostics.
+    No API address uses ``measure`` any more: :func:`resolve_aedar_address`
+    is the single translation from declared coordinates to a family.
     """
     requested = set(measures)
     if not requested:
         return None
     if requested <= AEDAR_MEASURE_KEYS:
-        return "per_cell"
+        return AEDAR_PER_CELL_FAMILY
     if requested <= set(AEDAR_AGGREGATE_READINGS):
-        return "summary"
+        return AEDAR_SUMMARY_FAMILY
     return None
+
+
+# Deprecated: published symbol kept as an alias for callers that still build a
+# measure vocabulary. Its replacement is the declared Cellule coordinates
+# (``resolve_aedar_address``), never a union selector crossing the families.
+AEDAR_COMPARISON_MEASURE_KEYS = frozenset(AEDAR_MEASURE_KEYS) | frozenset(AEDAR_AGGREGATE_READINGS)
+
+
+def resolve_aedar_address(resource_kind, coordinates):
+    """Translate declared Cellule coordinates to the internal read selectors.
+
+    Returns ``(typequ, measures, family)``. ``typequ`` and ``measures`` are the
+    selectors the existing snapshot readers consume; ``measures`` is ``None``
+    for a legacy, measure-free ``typequ``-scoped facts read, which addresses no
+    Cellule and keeps returning every published measure of that equipment type.
+
+    A ``measure`` coordinate is never an address: it is rejected by name so a
+    measure-key string cannot cross the API boundary and so a summary facet
+    sent to the aggregate (or the reverse) fails instead of resolving.
+    """
+    coords = coordinates or {}
+    if "measure" in coords:
+        raise AEDARAddressError(
+            "measure is not an AEDAR Cellule address; declare horizon, mode and "
+            "statistic (per-cell) or horizon, mode and kind (summary)")
+    axes = AEDAR_CELLULE_AXES[resource_kind]
+    legacy_axes = {"context"} if resource_kind == "aedar_source_grain" else set()
+    unknown = set(coords) - set(axes) - legacy_axes
+    if unknown:
+        raise AEDARAddressError(f"coordinate axis is not declared for AEDAR: {sorted(unknown)}")
+
+    def one(axis):
+        values = coords.get(axis)
+        if not isinstance(values, (list, tuple)) or len(values) != 1 or not values[0]:
+            raise AEDARAddressError(f"an AEDAR Cellule names exactly one {axis}")
+        return str(values[0])
+
+    if resource_kind == "aedar_source_grain":
+        if {"horizon", "mode", "statistic"} & set(coords):
+            missing = {"horizon", "mode", "statistic"} - set(coords)
+            if missing:
+                raise AEDARAddressError(
+                    f"per-cell Cellule is missing {sorted(missing)} coordinate(s)")
+            measure = f"count_{one('horizon')}_{one('mode')}_{one('statistic')}"
+            if measure not in AEDAR_MEASURE_KEYS:
+                raise AEDARAddressError("coordinate combination does not name a declared per-cell measure")
+            return coords.get("typequ"), [measure], AEDAR_PER_CELL_FAMILY
+        # Legacy, measure-free read of every measure for one or more typequ.
+        return coords.get("typequ"), None, AEDAR_PER_CELL_FAMILY
+
+    if {"horizon", "mode", "kind"} & set(coords):
+        missing = {"horizon", "mode", "kind"} - set(coords)
+        if missing:
+            raise AEDARAddressError(
+                f"summary Cellule is missing {sorted(missing)} coordinate(s)")
+        mode, horizon, kind = one("mode"), one("horizon"), one("kind")
+        if (mode not in AEDAR_AGGREGATE_MODES or horizon not in AEDAR_MEASURE_HORIZONS
+                or kind not in AEDAR_SUMMARY_KINDS):
+            raise AEDARAddressError("coordinate combination does not name a declared AEDAR summary")
+        reading = _aedar_aggregate_key(mode, int(horizon), kind)
+        if reading not in AEDAR_AGGREGATE_READINGS:
+            raise AEDARAddressError("coordinate combination does not name a declared AEDAR summary")
+        return None, [reading], AEDAR_SUMMARY_FAMILY
+    return None, None, AEDAR_SUMMARY_FAMILY
 
 
 class ThemeTerritorySelection(BaseModel):

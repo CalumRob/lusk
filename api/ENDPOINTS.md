@@ -97,30 +97,34 @@ not here.
 The two AEDAR resources carry the same `cellule` block, declared in the
 producer semantic-resource contract rather than a theme page:
 
-- `aedar_territorial_aggregate` declares three measure coordinates — `horizon`
-  (5/10/15/20 minutes), `mode` (the six source modes including `transit_gain`)
-  and `statistic` (share, min, max, déciles 1–9, mean). Its 312 valid
-  combinations are the full cross product; none is inferred from a key string.
-  Its `typequ_universe` is the 235 structured producer values (code, readable
-  label, domain, subdomain, gamme status, source order) projected from the
-  pinned INSEE registry and hierarchy — an app never infers a domain from a
-  code's first letter or keeps its own equipment table.
+- `aedar_territorial_aggregate` declares four coordinates — `typequ` (the 235
+  structured producer values: code, readable label, domain, subdomain, gamme
+  status and readable gamme label, source order), `horizon` (5/10/15/20
+  minutes), `mode` (the six source modes including `transit_gain`) and
+  `statistic` (share, min, max, déciles 1–9, mean). A Cellule is equipment ×
+  horizon × mode × statistic. The 312 valid combinations are the full
+  4 × 6 × 13 measure space, orthogonal to the equipment axis; no key is parsed.
 - `aedar_territory_summary` declares its own family and address with `horizon`,
   the five display `mode`s and `kind` (diversité / volume). Its 40 combinations
   are that product; `transit_gain` is declared in `no_summary_modes` as having
   no summary. The car × 15 point is addressed as `car`/`15`/diversity or volume
   even though its legacy comparison-facet keys are `meanDiversity`/`meanVolume`;
   those legacy keys remain comparison facets and are never Cellule addresses.
-- The families are disjoint: a measure selector resolves to exactly one of them,
-  and a mixed or unknown selector is rejected before any connection is opened.
-  Legacy `measure` addressing keeps working for existing readers; the declared
-  coordinates are the addressing vocabulary a new client reads from discovery.
+- The families are disjoint. A client addresses AEDAR by these declared
+  coordinates: `{typequ, horizon, mode, statistic}` for a per-cell Cellule,
+  `{horizon, mode, kind}` for a summary. The reader alone translates them to
+  the internal measure key. A `measure` coordinate is rejected by name at
+  admission, before any connection; no measure-key string crosses the API
+  boundary as an address. The legacy, measure-free `{typequ}` facts read still
+  returns every published measure of that equipment type; it never names a
+  measure. The retired `AEDAR_COMPARISON_MEASURE_KEYS` union is kept only as a
+  deprecated alias — its replacement is `resolve_aedar_address`.
 
-Only the *membership* of a TYPEQU in a gamme is declared. The readable gamme
-labels are not: the only tracked copy of the official INSEE gamme sheet is an
-ASCII-degraded test fixture ("Proximit?"), and the authoritative labels live in
-the raw INSEE download, which this declaration does not regenerate. No label
-was guessed to fill the gap.
+The Typequ universe pins the source sha256 of the INSEE registry, hierarchy and
+gamme sheet, so a stale committed projection fails discovery loudly. The gamme
+entry carries both its `status` (`classified`/`hors_gamme`/`absent`) and its
+readable label; `absent` has a null label, which is the pipeline's declared
+case for self-regrouping types, not a missing label.
 
 Where a producer page sets `cellule.declare: false`, discovery emits no
 `cellule` and the published descriptor owns the coordinate space. The complete

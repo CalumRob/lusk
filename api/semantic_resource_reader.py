@@ -29,6 +29,38 @@ class SemanticResourceReader:
         self._cohort_scopes = {}
 
     @staticmethod
+    def _resolve_aedar_item(item, resource):
+        """Translate declared Cellule coordinates to the reader's internal selectors.
+
+        This is the single seam where a declared address becomes a measure key.
+        It runs in both preflight and read, so single and batch reads share it.
+        The resolved ``measure`` never crosses the API boundary — it lives only
+        on this in-memory copy handed to the snapshot readers.
+        """
+        from api.aedar_models import AEDARAddressError, resolve_aedar_address
+        if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
+            return item
+        try:
+            typequ, measures, _family = resolve_aedar_address(
+                resource.resource_kind, item.coordinates)
+        except AEDARAddressError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        coordinates = dict(item.coordinates or {})
+        for axis in ("typequ", "horizon", "mode", "statistic", "kind", "measure"):
+            coordinates.pop(axis, None)
+        if typequ is not None:
+            coordinates["typequ"] = typequ
+        if measures is not None:
+            coordinates["measure"] = measures
+        update = {"coordinates": coordinates or None}
+        # A named Cellule with no explicit field projection projects just its
+        # one measure, keeping the existing typed facts envelope unchanged.
+        if (measures and item.fields is None and item.intent.kind == "facts"
+                and resource.resource_kind == "aedar_source_grain"):
+            update["fields"] = ["measures." + measures[0]]
+        return item.model_copy(update=update)
+
+    @staticmethod
     def _has_dual_scalar_series(resource):
         return (resource.resource_kind == "indicator"
                 and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
@@ -267,6 +299,7 @@ class SemanticResourceReader:
                    *, work_budget: int = 200_000, snapshot_state=None) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        item = self._resolve_aedar_item(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f != "axis_comparisons"]
@@ -292,9 +325,24 @@ class SemanticResourceReader:
                 return estimate
             return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
         if resource.resource_kind == "aedar_territory_summary":
-            from api.aedar_reads import _aedar_territory_summary_resource_snapshot
+            from api.aedar_reads import (_aedar_comparison_snapshot,
+                                        _aedar_selected_comparison_snapshot,
+                                        _aedar_territory_summary_resource_snapshot)
             from api.aedar_models import AEDAR_AGGREGATE_READINGS
             measures = (item.coordinates or {}).get("measure")
+            if item.intent.kind == "fixed_comparison":
+                _aedar_comparison_snapshot(
+                    conn, item.target.type, item.target.id, item.intent.context,
+                    None, measures[0], item.fields, resource.measure_facets,
+                    preflight_only=True)
+                return 1
+            if item.intent.kind == "selected_comparison":
+                _aedar_selected_comparison_snapshot(
+                    conn, item.target.type, item.target.id,
+                    [(member.type, member.id) for member in item.intent.members],
+                    None, measures, item.fields, resource.measure_facets,
+                    preflight_only=True)
+                return len({member.id for member in item.intent.members} | {item.target.id}) * len(measures) + len(measures)
             _aedar_territory_summary_resource_snapshot(
                 conn, item.target.type, item.target.id, measures, item.fields,
                 resource.fields, preflight_only=True)
@@ -321,15 +369,15 @@ class SemanticResourceReader:
             # (a) Request-shape validation runs first: a malformed request must
             # fail with 422 rather than be misreported as a publication problem.
             from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS,
-                                          aedar_measure_family)
+                                          aedar_measure_family, AEDAR_SUMMARY_FAMILY)
             family = aedar_measure_family(measures) if measures else None
             if measures and family is None:
                 if set(measures) <= set(AEDAR_MEASURE_KEYS) | set(AEDAR_AGGREGATE_READINGS):
                     raise HTTPException(422, "Coordinate measure mixes aggregate readings with per-cell measures")
                 raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
-            if item.intent.kind == "facts" and family == "summary":
+            if item.intent.kind == "facts" and family == AEDAR_SUMMARY_FAMILY:
                 raise HTTPException(422, "Aggregate readings are comparison facets, not facts")
-            aggregate = family == "summary"
+            aggregate = family == AEDAR_SUMMARY_FAMILY
             if item.intent.kind == "fixed_comparison":
                 if not measures or len(measures) != 1:
                     raise HTTPException(422, "AEDAR comparison requires one measure coordinate")
@@ -575,6 +623,7 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        item = self._resolve_aedar_item(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import read_axis_comparisons
             # Preserve an explicitly requested scalar facet and its scalar
@@ -601,12 +650,26 @@ class SemanticResourceReader:
         if resource.resource_kind == "typed_reading":
             return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind == "aedar_territory_summary":
-            from api.aedar_reads import _aedar_territory_summary_resource_snapshot
-            return {"resource": item.resource, "target": item.target.model_dump(),
-                    **_aedar_territory_summary_resource_snapshot(
-                        conn, item.target.type, item.target.id,
-                        (item.coordinates or {}).get("measure"), item.fields,
-                        resource.fields)}
+            from api.aedar_reads import (_aedar_comparison_snapshot,
+                                        _aedar_selected_comparison_snapshot,
+                                        _aedar_territory_summary_resource_snapshot)
+            measures = (item.coordinates or {}).get("measure")
+            if item.intent.kind == "fixed_comparison":
+                data = _aedar_comparison_snapshot(
+                    conn, item.target.type, item.target.id, item.intent.context,
+                    None, measures[0], item.fields, resource.measure_facets,
+                    snapshot_state=snapshot_state)
+            elif item.intent.kind == "selected_comparison":
+                data = _aedar_selected_comparison_snapshot(
+                    conn, item.target.type, item.target.id,
+                    [(member.type, member.id) for member in item.intent.members],
+                    None, measures, item.fields, resource.measure_facets,
+                    snapshot_state=snapshot_state)
+            else:
+                data = _aedar_territory_summary_resource_snapshot(
+                    conn, item.target.type, item.target.id, measures, item.fields,
+                    resource.fields)
+            return {"resource": item.resource, "target": item.target.model_dump(), **data}
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
                 _aedar_selected_comparison_snapshot,

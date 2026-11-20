@@ -19,13 +19,15 @@ def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
     resource = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territorial_aggregate"]
     summary = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territory_summary"]
     assert resource.resource_kind == "aedar_source_grain"
-    assert resource.axes == ("typequ", "measure", "context")
+    assert resource.axes == ("typequ", "horizon", "mode", "statistic")
     assert resource.intents == ("facts", "fixed_comparison", "selected_comparison")
     assert resource.allowed_levels == ("commune", "epci", "departement", "region")
     assert resource.context_values == (
         "density_class", "littoral", "epci", "bretagne", "same_level")
     assert summary.resource_kind == "aedar_territory_summary"
-    assert summary.intents == ("facts",) and summary.dynamic_axes == ("measure",)
+    assert summary.axes == ("horizon", "mode", "kind")
+    assert summary.intents == ("facts", "fixed_comparison", "selected_comparison")
+    assert summary.dynamic_axes == ("measure",)
     assert summary.measure_facets == {measure: resource.measure_facets[measure]
                                       for measure in AEDAR_AGGREGATE_READINGS}
     dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
@@ -47,7 +49,7 @@ def test_aedar_summary_resource_has_an_independent_focal_contract_and_keeps_type
     summary = ResourceReadItem.model_validate({
         "resource": "aedar_territory_summary",
         "target": {"kind": "territory", "type": "epci", "id": "E1"},
-        "coordinates": {"measure": ["meanVolume", "meanDiversity"]},
+        "coordinates": {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]},
         "fields": ["value", "status", "n_addresses", "n_observed", "source_id"],
         "intent": {"kind": "facts"},
     })
@@ -73,7 +75,8 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     assert validate_resource_item(facts, catalogue) == resource
     comparison = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
-        "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+        "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"],
+                        "statistic": ["mean"]},
         "fields": ["group_value", "value"], "intent": {"kind": "fixed_comparison", "context": "epci"},
     })
     assert validate_resource_item(comparison, catalogue) == resource
@@ -595,7 +598,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
         return {
             "resource": "aedar_territorial_aggregate",
             "target": {"kind": "territory", "type": "commune", "id": "22001"},
-            "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+            "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"],
+                            "statistic": ["mean"]},
             "intent": {"kind": "fixed_comparison", "context": state["context"]},
             **extra,
         }
@@ -778,30 +782,39 @@ def test_aedar_comparison_grants_rank_fields_per_intent():
     catalogue = default_resource_catalogue.__wrapped__()
     target = {"kind": "territory", "type": "commune", "id": "22001"}
     members = [{"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"}]
-    per_cell = {"typequ": ["A104"], "measure": ["count_5_walk_mean"]}
-    aggregate = {"measure": ["meanDiversity", "meanVolume"]}
+    per_cell = {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"],
+                "statistic": ["mean"]}
+    summary = {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]}
     rank_fields = ["group_value", "value", "rank", "rank_size", "rank_ties"]
-    # The selected intent keeps #904's grant: rank fields for per-cell
-    # measures and for the aggregate readings alike.
-    for coordinates in (per_cell, aggregate):
+    # Each family is addressed on its own resource; neither can answer the
+    # other's Cellule.
+    for resource_id, coordinates in (("aedar_territorial_aggregate", per_cell),
+                                     ("aedar_territory_summary", summary)):
         selected = ResourceReadItem.model_validate({
-            "resource": "aedar_territorial_aggregate", "target": target,
+            "resource": resource_id, "target": target,
             "coordinates": coordinates, "fields": rank_fields,
             "intent": {"kind": "selected_comparison", "members": members},
         })
-        assert validate_resource_item(selected, catalogue).resource_id == "aedar_territorial_aggregate"
-    # ADR-0039's 2026-11-10 amendment (#951) supersedes #904's reference-only
-    # boundary for the fixed intent: request-time ranks are granted on every
-    # declared facet, per-cell measures and registry-wide aggregate readings
-    # alike.
+        assert validate_resource_item(selected, catalogue).resource_id == resource_id
     for context in ("epci", "density_class", "same_level", "bretagne"):
-        for coordinates in (per_cell, aggregate):
+        for resource_id, coordinates in (("aedar_territorial_aggregate", per_cell),
+                                         ("aedar_territory_summary", summary)):
             fixed = ResourceReadItem.model_validate({
-                "resource": "aedar_territorial_aggregate", "target": target,
+                "resource": resource_id, "target": target,
                 "coordinates": coordinates, "fields": rank_fields,
                 "intent": {"kind": "fixed_comparison", "context": context},
             })
-            assert validate_resource_item(fixed, catalogue).resource_id == "aedar_territorial_aggregate"
+            assert validate_resource_item(fixed, catalogue).resource_id == resource_id
+    # A summary facet cannot be resolved by naming the aggregate's measure key
+    # (and the reverse), even on the resource that used to accept the union.
+    for resource_id, coordinates in (("aedar_territorial_aggregate", summary),
+                                     ("aedar_territory_summary", per_cell)):
+        wrong = ResourceReadItem.model_validate({
+            "resource": resource_id, "target": target, "coordinates": coordinates,
+            "intent": {"kind": "facts"},
+        })
+        with pytest.raises(ValueError, match="not declared for the AEDAR"):
+            validate_resource_item(wrong, catalogue)
     # Facts stay reference-only: ranks are comparison evidence, not facts.
     facts = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
@@ -1772,7 +1785,7 @@ def test_aedar_fixed_per_cell_rank_fields_are_admitted_and_served_over_http(monk
         "id": "cell-rank",
         "resource": "aedar_territorial_aggregate",
         "target": {"kind": "territory", "type": "commune", "id": "22001"},
-        "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+        "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"], "statistic": ["mean"]},
         "fields": ["group_value", "value", "rank", "rank_size", "rank_ties"],
         "intent": {"kind": "fixed_comparison", "context": "epci"},
     }]})
@@ -1791,7 +1804,7 @@ def test_aedar_fixed_per_cell_rank_preflight_bounds_one_peer_read_per_item():
         return ResourceReadItem.model_validate({
             "resource": "aedar_territorial_aggregate",
             "target": {"kind": "territory", "type": "commune", "id": "22001"},
-            "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+            "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"], "statistic": ["mean"]},
             "fields": fields,
             "intent": {"kind": "fixed_comparison", "context": "epci"},
         })

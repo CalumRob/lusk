@@ -1,9 +1,9 @@
-"""Discovery declarations for the two AEDAR Cellule families (#1076).
+"""Declared AEDAR Cellule addressing (#1076).
 
-The aggregate's 312 measure keys and the 40 registry-wide summary readings are
-declared as *addresses made of coordinates*, never as keys a client has to parse.
-The Typequ universe is declared as structured values so a reader never needs an
-app table, a registry file or a first-letter inference to name or group a type.
+The 312 per-cell keys and the 40 summary readings are addresses made of
+declared coordinates, never measure-key strings. The Typequ universe is a real
+coordinate of the aggregate Cellule, so equipment × horizon × mode × statistic
+is addressable without an app table, a registry file or a first-letter guess.
 
 These assertions read the public discovery payload and the pinned producer
 sources independently, so a fact duplicated in the catalogue cannot pass.
@@ -11,17 +11,21 @@ sources independently, so a fact duplicated in the catalogue cannot pass.
 
 import csv
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from api.resource_catalogue import default_resource_catalogue, discover_indicator_resources
+from api.resource_catalogue import (default_resource_catalogue, discover_indicator_resources,
+                                    validate_resource_item)
+from api.resource_requests import ResourceBatchItem, ResourceReadItem
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "pipeline/inst/extdata/semantic-resource-contracts.json"
 UNIVERSE = ROOT / "pipeline/inst/extdata/aedar-typequ-universe.json"
 REGISTRY = ROOT / "pipeline/inst/extdata/aedar-typequ-2025.csv"
 HIERARCHY = ROOT / "pipeline/tests/testthat/fixtures/aedar-typequ-hierarchy-2025.csv"
+R_SOURCE = ROOT / "pipeline/R/aedar_aggregates.R"
 
 AGGREGATE = "aedar_territorial_aggregate"
 SUMMARY = "aedar_territory_summary"
@@ -40,9 +44,13 @@ STATISTICS = ("share", "min", "max", *(f"decile{i}" for i in range(1, 10)), "mea
 KINDS = ("diversity", "volume")
 
 
+def _resource(resource_id):
+    return next(resource for resource in default_resource_catalogue.__wrapped__().resources
+                if resource.resource_id == resource_id)
+
+
 def _public(resource_id):
-    payload = default_resource_catalogue.__wrapped__().discovery_payload()
-    return next(resource for resource in payload["resources"]
+    return next(resource for resource in default_resource_catalogue.__wrapped__().discovery_payload()["resources"]
                 if resource["resource_id"] == resource_id)
 
 
@@ -86,12 +94,13 @@ def _aedar_declaration(contract, resource_id):
     return contract["cellule_declarations"][resource_id]
 
 
-def test_aggregate_declares_three_measure_coordinates_with_producer_labels():
-    """The 312 keys decompose into three declared axes with readable labels."""
+def test_aggregate_declares_four_addressable_coordinates_with_producer_labels():
+    """Equipment × horizon × mode × statistic; every value is addressable."""
     cellule = _cellule(AGGREGATE)
     assert cellule["family"] == "aedar_per_cell"
     assert [coordinate["name"] for coordinate in cellule["coordinates"]] == [
-        "horizon", "mode", "statistic"]
+        "typequ", "horizon", "mode", "statistic"]
+    assert _resource(AGGREGATE).axes == ("typequ", "horizon", "mode", "statistic")
 
     horizon = _coordinate(AGGREGATE, "horizon")
     assert [value["value"] for value in horizon["values"]] == list(HORIZONS)
@@ -120,6 +129,7 @@ def test_summary_declares_its_own_family_address_and_excludes_transit_gain():
     assert cellule["family"] == "aedar_summary"
     assert [coordinate["name"] for coordinate in cellule["coordinates"]] == [
         "horizon", "mode", "kind"]
+    assert _resource(SUMMARY).axes == ("horizon", "mode", "kind")
     assert list(_values(SUMMARY, "mode")) == list(DISPLAY_MODES)
     assert "transit_gain" not in _values(SUMMARY, "mode")
     assert cellule["no_summary_modes"] == ["transit_gain"]
@@ -131,7 +141,6 @@ def test_summary_declares_its_own_family_address_and_excludes_transit_gain():
     assert all(point == {"horizon", "mode", "kind"} for point in points)
     assert {"horizon": "15", "mode": "car", "kind": "diversity"} in cellule["valid_combinations"]
     assert {"horizon": "15", "mode": "car", "kind": "volume"} in cellule["valid_combinations"]
-    # Legacy keys are comparison facets, never declared Cellule addresses.
     addresses = {value["value"] for coordinate in cellule["coordinates"]
                  for value in coordinate["values"]}
     assert not {"meanDiversity", "meanVolume"} & addresses
@@ -150,11 +159,9 @@ def test_valid_combinations_cover_exactly_the_two_spaces():
 
 
 def test_the_two_families_cannot_satisfy_each_other():
-    aggregate = _cellule(AGGREGATE)
-    summary = _cellule(SUMMARY)
-    aggregate_axes = {coordinate["name"] for coordinate in aggregate["coordinates"]}
-    summary_axes = {coordinate["name"] for coordinate in summary["coordinates"]}
-    assert aggregate_axes == {"horizon", "mode", "statistic"}
+    aggregate_axes = {coordinate["name"] for coordinate in _cellule(AGGREGATE)["coordinates"]}
+    summary_axes = {coordinate["name"] for coordinate in _cellule(SUMMARY)["coordinates"]}
+    assert aggregate_axes == {"typequ", "horizon", "mode", "statistic"}
     assert summary_axes == {"horizon", "mode", "kind"}
     assert not aggregate_axes & {"kind"}
     assert not summary_axes & {"statistic", "typequ"}
@@ -162,40 +169,157 @@ def test_the_two_families_cannot_satisfy_each_other():
     from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
     assert not set(AEDAR_AGGREGATE_READINGS) & set(AEDAR_MEASURE_KEYS)
 
-    # Each resource's own resource id remains its address; the other family's
-    # axis is not admitted on it.
-    from api.resource_catalogue import validate_resource_item
-    from api.resource_requests import ResourceReadItem
     catalogue = default_resource_catalogue.__wrapped__()
     target = {"kind": "territory", "type": "commune", "id": "22001"}
-    summary_on_aggregate = ResourceReadItem.model_validate({
-        "resource": AGGREGATE, "target": target, "coordinates": {"kind": ["diversity"]},
+    for resource_id, coordinates in ((AGGREGATE, {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]}),
+                                     (SUMMARY, {"typequ": ["A104"], "horizon": ["5"],
+                                                "mode": ["walk"], "statistic": ["mean"]})):
+        wrong = ResourceReadItem.model_validate({
+            "resource": resource_id, "target": target, "coordinates": coordinates,
+            "intent": {"kind": "facts"}})
+        with pytest.raises(ValueError, match="not declared for the AEDAR"):
+            validate_resource_item(wrong, catalogue)
+
+
+def test_measure_string_is_not_an_address():
+    """A measure key never crosses the API boundary as an address."""
+    from api.aedar_models import AEDARAddressError, resolve_aedar_address
+    from api.semantic_resource_reader import SemanticResourceReader
+    catalogue = default_resource_catalogue.__wrapped__()
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    for resource_id, measure in ((AGGREGATE, "count_5_walk_mean"), (SUMMARY, "meanVolume")):
+        item = ResourceReadItem.model_validate({
+            "resource": resource_id, "target": target,
+            "coordinates": {"measure": [measure]}, "intent": {"kind": "facts"}})
+        with pytest.raises(ValueError, match="measure is not an AEDAR Cellule address"):
+            validate_resource_item(item, catalogue)
+        with pytest.raises(AEDARAddressError, match="measure is not an AEDAR Cellule address"):
+            resolve_aedar_address(_resource(resource_id).resource_kind, item.coordinates)
+        reader = SemanticResourceReader(
+            indicator_facts_snapshot=lambda *a, **k: {}, indicator_comparison_preflight=lambda *a, **k: {},
+            indicator_comparison_snapshot=lambda *a, **k: {}, owned_series_route=lambda *a, **k: None,
+            owned_named_reference_snapshot=lambda *a, **k: {}, comparison_field_selection=lambda f: f,
+            max_owned_series_provenance_per_point=8)
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as error:
+            reader.preflight(None, item, catalogue)
+        assert error.value.status_code == 422
+        assert "measure is not an AEDAR Cellule address" in error.value.detail
+
+
+def test_declared_coordinates_resolve_to_internal_selectors(monkeypatch):
+    """The reader alone turns a declared address into the internal measure key."""
+    from api.aedar_models import resolve_aedar_address
+    from api.semantic_resource_reader import SemanticResourceReader
+
+    assert resolve_aedar_address("aedar_source_grain", {
+        "typequ": ["A104"], "horizon": ["5"], "mode": ["walk"], "statistic": ["mean"]}) == (
+        ["A104"], ["count_5_walk_mean"], "aedar_per_cell")
+    # The car × 15 summary resolves to its legacy key without ever addressing by it.
+    assert resolve_aedar_address("aedar_territory_summary", {
+        "horizon": ["15"], "mode": ["car"], "kind": ["diversity"]}) == (
+        None, ["meanDiversity"], "aedar_summary")
+    # A measure-free typequ read addresses no Cellule and keeps all measures.
+    assert resolve_aedar_address("aedar_source_grain", {"typequ": ["A104"]}) == (
+        ["A104"], None, "aedar_per_cell")
+    # transit_gain has no summary.
+    from api.aedar_models import AEDARAddressError
+    with pytest.raises(AEDARAddressError, match="does not name a declared AEDAR summary"):
+        resolve_aedar_address("aedar_territory_summary", {
+            "horizon": ["15"], "mode": ["transit_gain"], "kind": ["diversity"]})
+
+    captured = {}
+
+    def fake_facts(conn, territory_type, territory_id, typequ, fields, limit, offset,
+                   *, preflight_only=False):
+        captured.update(typequ=typequ, fields=fields)
+        return {"facts": []}
+
+    monkeypatch.setattr("api.aedar_reads._aedar_territorial_aggregate_snapshot", fake_facts)
+    reader = SemanticResourceReader(
+        indicator_facts_snapshot=lambda *a, **k: {}, indicator_comparison_preflight=lambda *a, **k: {},
+        indicator_comparison_snapshot=lambda *a, **k: {}, owned_series_route=lambda *a, **k: None,
+        owned_named_reference_snapshot=lambda *a, **k: {}, comparison_field_selection=lambda f: f,
+        max_owned_series_provenance_per_point=8)
+    catalogue = default_resource_catalogue.__wrapped__()
+    item = ResourceReadItem.model_validate({
+        "resource": AGGREGATE,
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"],
+                        "statistic": ["mean"]},
         "intent": {"kind": "facts"}})
-    with pytest.raises(ValueError, match="coordinate axis is not declared"):
-        validate_resource_item(summary_on_aggregate, catalogue)
-    aggregate_on_summary = ResourceReadItem.model_validate({
-        "resource": SUMMARY, "target": target, "coordinates": {"statistic": ["mean"]},
-        "intent": {"kind": "facts"}})
-    with pytest.raises(ValueError, match="coordinate axis is not declared"):
-        validate_resource_item(aggregate_on_summary, catalogue)
+    reader.read(None, item, catalogue)
+    assert captured == {"typequ": ["A104"], "fields": ["measures.count_5_walk_mean"]}
 
 
-def test_measure_selectors_resolve_to_exactly_one_family():
-    from api.aedar_models import aedar_measure_family
+def test_batch_items_share_the_declared_address_resolution(monkeypatch):
+    """Single and batch reads use the same reader seam, so both resolve addresses."""
+    from api.resource_execution import execute_batch
+    from api.semantic_resource_reader import SemanticResourceReader
 
-    assert aedar_measure_family(["count_5_walk_mean"]) == "per_cell"
-    assert aedar_measure_family(["meanDiversity"]) == "summary"
-    assert aedar_measure_family(["meanVolume", "count_15_car_mean"]) is None
-    assert aedar_measure_family(["bogus"]) is None
-    assert aedar_measure_family([]) is None
+    seen = []
+    reader = SemanticResourceReader(
+        indicator_facts_snapshot=lambda *a, **k: {}, indicator_comparison_preflight=lambda *a, **k: {},
+        indicator_comparison_snapshot=lambda *a, **k: {}, owned_series_route=lambda *a, **k: None,
+        owned_named_reference_snapshot=lambda *a, **k: {}, comparison_field_selection=lambda f: f,
+        max_owned_series_provenance_per_point=8)
+
+    def preflight(conn, item, budget):
+        resource = reader._catalogue_for_test.resources_by_id[item.resource]
+        resolved = reader._resolve_aedar_item(item, resource)
+        seen.append(("preflight", resolved.coordinates["measure"]))
+        return 1
+
+    def read(conn, item):
+        resource = reader._catalogue_for_test.resources_by_id[item.resource]
+        resolved = reader._resolve_aedar_item(item, resource)
+        seen.append(("read", resolved.coordinates["measure"]))
+        return {"ok": True}
+
+    reader._catalogue_for_test = default_resource_catalogue.__wrapped__()
+    pool = type("Pool", (), {"connection": lambda self: _no_conn()})()
+    request = type("Request", (), {"items": [
+        ResourceBatchItem.model_validate({
+            "id": "a", "resource": AGGREGATE,
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "coordinates": {"typequ": ["A104"], "horizon": ["5"], "mode": ["walk"],
+                            "statistic": ["mean"]},
+            "intent": {"kind": "facts"}}),
+        ResourceBatchItem.model_validate({
+            "id": "b", "resource": SUMMARY,
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "coordinates": {"horizon": ["15"], "mode": ["car"], "kind": ["volume"]},
+            "intent": {"kind": "facts"}}),
+    ], "contract": None})()
+    execute_batch(pool, request, reader._catalogue_for_test, preflight, read)
+    assert [entry[1][0] for entry in seen] == ["count_5_walk_mean", "meanVolume",
+                                              "count_5_walk_mean", "meanVolume"]
 
 
-def test_typequ_universe_is_complete_and_structured():
+class _NoConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def transaction(self):
+        return self
+
+    def execute(self, *_args, **_kwargs):
+        return None
+
+
+def _no_conn():
+    return _NoConnection()
+
+
+def test_typequ_universe_is_a_complete_structured_coordinate():
     """No code may rely on a display string, an app table or its first letter."""
-    values = _cellule(AGGREGATE)["typequ_universe"]
+    values = [value for value in _coordinate(AGGREGATE, "typequ")["values"]]
     registry = _registry()
     hierarchy = _hierarchy()
-    assert len(values) == 235 == len(registry) == len(hierarchy)
+    assert len(values) == len(registry) == len(hierarchy) == 235
     assert {value["value"] for value in values} == set(registry)
 
     by_code = {value["value"]: value for value in values}
@@ -215,9 +339,62 @@ def test_typequ_universe_is_complete_and_structured():
             f"{code}: subdomain code disagrees with the producer hierarchy")
         assert value["subdomain"]["label"] == " ".join(row["subdomain_label"].split()), (
             f"{code}: subdomain label disagrees with the producer hierarchy")
-        assert set(value["gamme"]) == {"status", "label"}
+        assert set(value["gamme"]) == {"status", "label"}, f"{code}: gamme is not structured"
         assert value["gamme"]["status"] in {"classified", "hors_gamme", "absent"}, (
             f"{code}: gamme status is not declared")
+        if value["gamme"]["status"] == "absent":
+            assert value["gamme"]["label"] is None, f"{code}: absent gamme carries a label"
+        else:
+            assert value["gamme"]["label"], f"{code}: gamme label is missing"
+
+    assert by_code["A104"]["gamme"]["label"] == "Gamme intermédiaire"
+    assert by_code["A105"]["gamme"] == {"status": "hors_gamme", "label": "Hors Gamme"}
+    assert by_code["F105"]["gamme"] == {"status": "absent", "label": None}
+
+
+def test_source_pins_and_python_vocabulary_match_the_producer_file():
+    """Drift between the declaration and the R producer fails by name."""
+    payload = json.loads(UNIVERSE.read_text(encoding="utf-8"))
+    source = R_SOURCE.read_text(encoding="utf-8")
+    registry_sha = re.search(r'AEDAR_TYPEQU_REGISTRY_SHA256\s*<-\s*"([0-9a-f]{64})"', source).group(1)
+    pinned = re.findall(r'"([0-9a-f]{64})"', re.search(
+        r'AEDAR_TYPEQU_METADATA_RESOURCES\s*<-\s*data\.frame\((.*?)stringsAsFactors',
+        source, re.S).group(1))
+    assert payload["sources"]["registry"]["sha256"] == registry_sha
+    assert payload["sources"]["hierarchy"]["sha256"] == pinned[0]
+    assert payload["sources"]["gamme"]["sha256"] == pinned[1]
+
+    # The Python vocabulary and the producer contract file cannot drift apart.
+    from api.aedar_models import (AEDAR_MEASURE_HORIZONS, AEDAR_MEASURE_MODES,
+                                  AEDAR_MEASURE_STATISTICS, AEDAR_SUMMARY_KINDS)
+    declarations = json.loads(CONTRACT.read_text(encoding="utf-8"))["cellule_declarations"]
+    aggregate = {coordinate["name"]: [value["value"] for value in coordinate["values"]]
+                 for coordinate in declarations[AGGREGATE]["coordinates"]}
+    summary = {coordinate["name"]: [value["value"] for value in coordinate["values"]]
+               for coordinate in declarations[SUMMARY]["coordinates"]}
+    assert tuple(aggregate["horizon"]) == AEDAR_MEASURE_HORIZONS
+    assert tuple(aggregate["mode"]) == AEDAR_MEASURE_MODES
+    assert tuple(aggregate["statistic"]) == AEDAR_MEASURE_STATISTICS
+    assert tuple(summary["mode"]) == tuple(mode for mode in AEDAR_MEASURE_MODES
+                                           if mode != "transit_gain")
+    assert tuple(summary["kind"]) == AEDAR_SUMMARY_KINDS
+
+
+def test_measure_selectors_keep_the_one_family_vocabulary():
+    from api.aedar_models import aedar_measure_family
+
+    assert aedar_measure_family(["count_5_walk_mean"]) == "aedar_per_cell"
+    assert aedar_measure_family(["meanDiversity"]) == "aedar_summary"
+    assert aedar_measure_family(["meanVolume", "count_15_car_mean"]) is None
+    assert aedar_measure_family(["bogus"]) is None
+    assert aedar_measure_family([]) is None
+
+
+def test_deprecated_union_alias_is_published():
+    from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_COMPARISON_MEASURE_KEYS,
+                                  AEDAR_MEASURE_KEYS)
+    assert AEDAR_COMPARISON_MEASURE_KEYS == frozenset(AEDAR_MEASURE_KEYS) | frozenset(
+        AEDAR_AGGREGATE_READINGS)
 
 
 def test_declaration_fails_closed_when_a_coordinate_or_label_is_missing(tmp_path):
@@ -254,3 +431,13 @@ def test_declaration_fails_closed_when_combinations_do_not_match_the_axes(tmp_pa
 
     with pytest.raises(ValueError, match="aedar_summary.*combination"):
         _discover(tmp_path, drop_combination)
+
+
+def test_declaration_fails_closed_when_the_families_overlap(tmp_path):
+    def leak_summary_axis(contract, _universe):
+        declaration = _aedar_declaration(contract, AGGREGATE)
+        declaration["coordinates"].append({"name": "kind", "values": [
+            {"value": "diversity", "label": "Diversité"}]})
+
+    with pytest.raises(ValueError, match="AEDAR families overlap"):
+        _discover(tmp_path, leak_summary_axis)
