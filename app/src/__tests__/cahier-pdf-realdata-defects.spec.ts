@@ -45,17 +45,20 @@ describe('real-data PDF defect regressions (#1025)', () => {
     expect(formatTimeRampNumber(6440)).not.toMatch(/[\u202f\u00a0]/u)
   })
 
-  it('derives the presentation role from the column kind, not the measurement flag', () => {
+  it('derives the presentation role from the column kind, not the raw measurement copy', () => {
     const mode = { kind: 'raw' } as CahierTableColumn
     const focal = { kind: 'focal' } as CahierTableColumn
+    const comparison = { kind: 'comparison' } as CahierTableColumn
     expect(estCelluleBrute(mode)).toBe(true)
     expect(estCelluleBrute(focal)).toBe(false)
     expect(roleCelluleTableau(mode)).toEqual(ROLE_PDF.libelleTableau)
     expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
-    // cahierExportAdapters copies `reading.raw` onto focal and comparison
-    // cells too (lines 1142/1150): per-cell raw is a measurement flag, not a
-    // presentation fact. The column kind is the correct presentation owner.
-    expect(roleCelluleTableau(focal)).toEqual(ROLE_PDF.valeurTableau)
+    expect(roleCelluleTableau(comparison)).toEqual(ROLE_PDF.valeurTableau)
+    // cahierExportAdapters copies `reading.raw` onto BOTH the focal and the
+    // comparison cell (lines 1142/1150) and uses it to append ` (valeur brute)`
+    // to the row label (rowLabelFor). That is a measurement flag, not the
+    // presentation owner: glyph family/size come from the column `kind` via
+    // roleCelluleTableau, so even a raw-tagged comparison cell reads as a value.
   })
 
   it('reserves one consistent role height for a raw column and a value column', () => {

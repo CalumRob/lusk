@@ -44,15 +44,31 @@ export const CAHIER_EXPORT_SURFACE = {
   ],
 } as const
 
+/** Split a selector LIST on top-level commas only — never inside `:not(...)`/brackets. */
+export function selectorList(value: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '(' || char === '[') depth += 1
+    else if (char === ')' || char === ']') depth -= 1
+    else if (char === ',' && depth === 0) {
+      parts.push(value.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+  parts.push(value.slice(start).trim())
+  return parts.filter(Boolean)
+}
+
 /** The mount's hide list, built from the one owned prose list — never a second
  *  copy. The evidence-stamp role is applied only in the document route; the
  *  figure route keeps in-figure sources as before. */
 export function cahierExportHiddenSelectors(document = true): string[] {
-  const prose = document ? CAHIER_EXPORT_SURFACE.proseSelector
-    : CAHIER_EXPORT_SURFACE.proseSelector
-      .split(',').map((part) => part.trim())
-      .filter((part) => part !== CAHIER_EXPORT_SURFACE.documentOnlyProse)
-      .join(', ')
+  const prose = selectorList(CAHIER_EXPORT_SURFACE.proseSelector)
+    .filter((part) => document || part !== CAHIER_EXPORT_SURFACE.documentOnlyProse)
+    .join(', ')
   return [...CAHIER_EXPORT_SURFACE.hidden, prose]
 }
 
