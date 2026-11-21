@@ -308,6 +308,63 @@ test_that("deux builds depuis les octets verrouillés sont byte-identiques à de
   )
 })
 
+test_that("un sidecar n'est pas cru quand le fichier du cache a changé", {
+  cache <- tempfile("cache-invalidation-")
+  dir.create(cache, recursive = TRUE)
+  cible <- file.path(cache, "flux.bin")
+  writeBin(octets_fixture("anciens octets\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2026-01-01T12:00:00", tz = "UTC"))
+  r1 <- resoudre_source(
+    id = "invalidation", url = "https://example.invalid/flux",
+    fichier = "flux.bin", cache = cache, lock = lock_fixture(),
+    horloge = as.Date("2026-01-01"), vintage_basis = "telechargement",
+    reference_declaree = "2026-01-01",
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+  expect_identical(lire_digest_cache("invalidation", cache, "flux.bin")$sha256,
+                   r1$sha256)
+
+  # Le fichier est remplacé (contenu ET mtime différents) sans passer par le
+  # résolveur : son ancien digest ne doit plus être cru.
+  writeBin(octets_fixture("nouveaux octets完全不同\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2027-02-03T12:00:00", tz = "UTC"))
+  expect_null(lire_digest_cache("invalidation", cache, "flux.bin"))
+
+  r2 <- resoudre_source(
+    id = "invalidation", url = "https://example.invalid/flux",
+    fichier = "flux.bin", cache = cache, lock = lock_fixture(),
+    horloge = as.Date("2027-02-03"), vintage_basis = "telechargement",
+    reference_declaree = "2027-02-03",
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+  expect_false(identical(r2$sha256, r1$sha256))
+  expect_identical(r2$acquired_at, "2027-02-03")
+  expect_identical(lire_digest_cache("invalidation", cache, "flux.bin")$sha256,
+                   r2$sha256)
+})
+
+test_that("vintages_depuis_manifest ignore un sidecar devenu périmé", {
+  cache <- tempfile("cache-vintage-invalidation-")
+  dir.create(cache, recursive = TRUE)
+  cible <- file.path(cache, "flux.bin")
+  writeBin(octets_fixture("v1\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2026-01-01T12:00:00", tz = "UTC"))
+  resoudre_source(
+    id = "korrigo", url = "https://example.invalid/korrigo",
+    fichier = "flux.bin", cache = cache, lock = lock_fixture(),
+    horloge = as.Date("2026-01-01"), vintage_basis = "telechargement",
+    reference_declaree = "2026-01-01",
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+  writeBin(octets_fixture("v2 beaucoup plus long\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2027-02-03T12:00:00", tz = "UTC"))
+  m <- MANIFEST_MOBILITE_KORRIGO
+  m$fichier <- "flux.bin"
+  v <- vintages_depuis_manifest(m, cache = cache, lock = tempfile("lock-vide-"))
+  # Pas de digest fiable : le vintage déclaré reste publié (jamais un faux).
+  expect_equal(v$version, m$vintage)
+})
+
 test_that("relock_sources réécrit les enregistrements depuis un run, atomiquement", {
   run_dir <- tempfile("run-relock-")
   dir.create(run_dir)

@@ -75,13 +75,24 @@ chemin_digest_cache <- function(id, cache = "data/raw") {
   file.path(cache, ".digests", paste0(id, ".json"))
 }
 
-lire_digest_cache <- function(id, cache = "data/raw") {
+lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
   p <- chemin_digest_cache(id, cache)
   if (!file.exists(p)) return(NULL)
   d <- tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) NULL)
-  if (!is.null(d)) {
-    for (champ in c("sha256", "acquired_at", "vintage_basis", "vintage", "date_reference")) {
-      if (is.null(d[[champ]])) d[[champ]] <- NA_character_
+  if (is.null(d)) return(NULL)
+  for (champ in c("sha256", "acquired_at", "vintage_basis", "vintage", "date_reference")) {
+    if (is.null(d[[champ]])) d[[champ]] <- NA_character_
+  }
+  # Issue #1103 (revue) : un sidecar n'est valable QUE pour les octets qu'il a
+  # hachés. Nom de fichier, taille et mtime doivent concorder, sinon le digest
+  # est périmé et le résolveur doit re-hacher.
+  if (!is.null(fichier)) {
+    cible <- file.path(cache, fichier)
+    if (!file.exists(cible) ||
+        !identical(as.character(d$fichier %||% ""), as.character(fichier)) ||
+        !isTRUE(all.equal(as.numeric(d$bytes), as.numeric(file.size(cible)))) ||
+        !isTRUE(all.equal(as.numeric(d$mtime), as.numeric(file.mtime(cible))))) {
+      return(NULL)
     }
   }
   d
@@ -371,6 +382,10 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     url = url,
     sha256 = h,
     bytes = as.numeric(file.size(cible)),
+    # Empreinte de fraîcheur du sidecar (issue #1103, revue) : nom, taille et
+    # mtime du fichier réellement haché — tout changement invalide le digest.
+    fichier = fichier,
+    mtime = as.numeric(file.mtime(cible)),
     acquired_at = acquired_at,
     vintage_basis = base,
     vintage = vintage,

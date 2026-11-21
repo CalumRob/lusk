@@ -32,7 +32,7 @@ vintages_depuis_manifest <- function(manifest,
     base <- manifest$vintage_basis[i]
     if (!(base %in% BASIS_VINTAGE_DERIVES)) next
     id <- manifest$id[i]
-    digest <- lire_digest_cache(id, cache)
+    digest <- lire_digest_cache(id, cache, fichier = manifest$fichier[i])
     verrouille <- registre[[id]]
     lock_utilisable <- !is.null(verrouille) &&
       (is.null(digest) ||
