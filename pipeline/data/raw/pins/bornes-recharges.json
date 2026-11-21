@@ -1,0 +1,11 @@
+{
+  "source_id": "bornes-recharges",
+  "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B",
+  "sha256": null,
+  "bytes": null,
+  "downloaded_at": null,
+  "vintage": null,
+  "vintage_basis": "contenu_date_maj",
+  "date_reference": null,
+  "etat": "en_attente"
+}

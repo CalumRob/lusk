@@ -108,9 +108,12 @@ test_that("en mode full, les 20 fichiers se téléchargent sans collision de cac
   statuts <- download_sources(MANIFEST_HABITAT_DVF, cache = cache)
 
   expect_true(all(statuts$status == "frais"))
-  expect_length(list.files(cache), 20)
+  # Depuis #1099, le resolver dépose AUSSI data/raw/pins/ (le registre des
+  # empreintes) : on ne compte que les fichiers de données, pas ce répertoire.
+  fichiers <- setdiff(list.files(cache), "pins")
+  expect_length(fichiers, 20)
   # chaque fichier est distinct (le cache plat exige des noms uniques)
-  expect_equal(length(unique(list.files(cache))), 20)
+  expect_equal(length(unique(fichiers)), 20)
 })
 
 test_that("le manifeste alimente la table des vintages partagée", {

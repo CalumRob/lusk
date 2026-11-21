@@ -1,5 +1,14 @@
 # Données téléchargées et produites — jamais versionnées.
-data/
+# Exception (issue #1099) : le registre des pins est VERSIONNÉ — c'est la
+# promesse d'empreinte qui rend un rebuild reproductible. Les octets épinglés
+# (data/raw/<fichier>) restent ignorés ; seuls les descripteurs JSON sont
+# suivis.
+data/*
+!data/raw/
+data/raw/*
+!data/raw/pins/
+data/raw/pins/*
+!data/raw/pins/*.json
 
 # Le store du graphe targets (#329, #340) — le cache intermédiaire qui
 # remplace data/processed/*.rds. Jamais versionné : la régénération est le

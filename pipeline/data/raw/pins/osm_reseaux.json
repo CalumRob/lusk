@@ -1,0 +1,11 @@
+{
+  "source_id": "osm_reseaux",
+  "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf",
+  "sha256": null,
+  "bytes": null,
+  "downloaded_at": null,
+  "vintage": null,
+  "vintage_basis": "contenu_timestamp",
+  "date_reference": null,
+  "etat": "en_attente"
+}
