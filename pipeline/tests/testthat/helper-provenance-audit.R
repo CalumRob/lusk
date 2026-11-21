@@ -89,3 +89,79 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
   }
   invisible(sites)
 }
+
+# Lectures réseau (issue #1103, revue) ------------------------------------------
+# Toute lecture réseau est soit COUVERTE par un enregistrement de digest (avec
+# une base déclarée), soit explicitement AUTORISÉE avec une raison. Un nouveau
+# appel non listé fait échouer la suite.
+AUTORISATIONS_RESEAU <- list(
+  list(fichier = "^R/download\\.R$", motif = "utils::download\\.file\\(",
+       raison = "resoudre_source() hache et enregistre un digest par source de manifeste",
+       couvert = TRUE),
+  list(fichier = "^R/manifest_habitat_dpe\\.R$", motif = "httr2::(request|req_perform)\\(",
+       raison = "pull api DPE : tirer_api() -> resoudre_source() enregistre le digest .rds",
+       couvert = TRUE),
+  list(fichier = "^R/geometrie\\.R$", motif = "httr2::(request|req_perform)\\(",
+       raison = "publier_geometrie() enregistre un digest par couche WFS (base telechargement)",
+       couvert = TRUE),
+  list(fichier = "^R/aedar_aggregates\\.R$", motif = "utils::download\\.file\\(",
+       raison = "acquisition AEDAR (artefact data/processed/aedar, commande --check de l'operateur) — hors run des sept themes",
+       couvert = FALSE)
+)
+
+MOTIF_RESEAU <- paste0(
+  "download\\.file\\(", "|req_perform\\(", "|httr::GET\\(", "|httr2::request\\(",
+  "|curl_fetch|url\\(\"https?://|st_read\\([^)]*https?://",
+  "|read_csv\\([^)]*https?://|fromJSON\\([^)]*https?://"
+)
+
+auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) {
+  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  trousses <- list()
+  for (f in fichiers) {
+    rel <- relatif_sous(f, racine)
+    lignes <- readLines(f, warn = FALSE)
+    for (i in seq_along(lignes)) {
+      brut <- lignes[[i]]
+      # On ignore les commentaires et les paramètres par défaut (download = ...).
+      l <- sub("#.*$", "", brut)
+      if (!grepl(MOTIF_RESEAU, l)) next
+      if (grepl("(download|fetch|download_file)\\s*=", l)) next
+      couvert <- FALSE; raison <- NA_character_
+      for (a in autorisations) {
+        if (grepl(a$fichier, rel) && grepl(a$motif, l)) {
+          couvert <- isTRUE(a$couvert)
+          raison <- a$raison
+          break
+        }
+      }
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = rel, ligne = i, couvert = couvert,
+        autorise = !is.na(raison),
+        raison = if (is.na(raison)) "" else raison,
+        source = trimws(l), stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(trousses)) {
+    return(data.frame(fichier = character(), ligne = integer(), couvert = logical(),
+                      autorise = logical(), raison = character(), source = character()))
+  }
+  do.call(rbind, trousses)
+}
+
+verifier_structure_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) {
+  sites <- auditer_appels_reseau(racine, autorisations = autorisations)
+  fautes <- sites[!sites$autorise, , drop = FALSE]
+  if (nrow(fautes)) {
+    stop(
+      "Structural network-read audit — ", nrow(fautes),
+      " undeclared network read(s):\n",
+      paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", fautes$source,
+             collapse = "\n"),
+      call. = FALSE
+    )
+  }
+  invisible(sites)
+}

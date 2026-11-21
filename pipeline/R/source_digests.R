@@ -62,6 +62,27 @@ ecrire_digests_cache_aggregate <- function(digests, cache = "data/raw") {
   invisible(fusion)
 }
 
+# Lectures réseau hors manifeste (issue #1103, revue) ---------------------------
+# Les couches WFS du fond de carte sont lues à chaque run mais ne sont dans
+# aucun MANIFEST_* : elles portent une base `telechargement` déclarée ici et
+# entrent dans la couverture comme dans le gel.
+LECTURES_RESEAU <- stats::setNames(
+  lapply(c("geometrie_communes", "geometrie_epcis", "geometrie_departements"),
+         function(id) list(source_id = id, vintage_basis = "telechargement")),
+  c("geometrie_communes", "geometrie_epcis", "geometrie_departements")
+)
+
+verifier_digests_couvrent_lectures_reseau <- function(digests) {
+  manquants <- setdiff(names(LECTURES_RESEAU), names(digests))
+  if (length(manquants)) {
+    stop(
+      "Contrat lectures réseau : couche lue sans empreinte — ",
+      paste(manquants, collapse = ", "), ".", call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 # verifier_digests_couvrent -----------------------------------------------------
 # A source read by the run but absent from the digests fails the contract.
 # "Read" = a positive statut (frais / à traiter à la main); a failed download

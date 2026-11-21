@@ -398,12 +398,29 @@ verifier_collection_geometrie <- function(collection, niveau, url,
 # Upsert : écrire écrase (ADR-0004) — relancer ne duplique jamais.
 # Le fichier cible porte le nom du niveau (communes.geojson, epcis.geojson,
 # departements.geojson — ADR-0008) ; l'app le lit sous /data/<niveau>.geojson.
-publier_geometrie <- function(cible = "public/data",
+publier_geometrie <- function(cible = "public/data", horloge = NULL,
                               fetch = telecharger_geometrie_wfs) {
   niveaux <- names(NIVEAUX_GEOMETRIE)
+  jour <- if (is.null(horloge)) Sys.Date() else as.Date(horloge)
+  digests_lectures <- list()
 
   prets <- lapply(niveaux, function(niveau) {
     brut <- fetch(niveau)
+    # Issue #1103 : chaque couche WFS est une lecture réseau déclarée, de base
+    # `telechargement` — son empreinte entre dans source-digests.json (couverture
+    # du run et gel de release).
+    canonique <- jsonlite::toJSON(brut, auto_unbox = TRUE, digits = NA)
+    id <- paste0("geometrie_", niveau)
+    digests_lectures[[id]] <<- list(
+      source_id = id,
+      url = url_geometrie_wfs(niveau),
+      sha256 = paste(openssl::sha256(charToRaw(canonique))),
+      bytes = as.numeric(nchar(canonique, type = "bytes")),
+      acquired_at = as.character(jour),
+      vintage_basis = "telechargement",
+      vintage = format(jour, "%Y-%m"),
+      date_reference = as.character(jour)
+    )
     filtre <- filtrer_geometrie(brut, niveau)
     verifier_collection_geometrie(
       filtre, niveau,
@@ -424,6 +441,13 @@ publier_geometrie <- function(cible = "public/data",
       pretty = FALSE
     )
   }
+
+  # Upsert dans les empreintes du run : la géométrie est lue à chaque run, elle
+  # doit être couverte et passée au gel comme toute autre source.
+  chemin_digests <- file.path(cible, NOM_DIGESTS)
+  deja <- lire_digests_source(chemin_digests)
+  ecrire_digests_source(c(deja, digests_lectures), chemin_digests)
+  verifier_digests_couvrent_lectures_reseau(lire_digests_source(chemin_digests))
 
   invisible(niveau)
 }

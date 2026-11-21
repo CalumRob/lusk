@@ -1482,7 +1482,9 @@ digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
     as.call(c(
       list(as.name("{")), deps,
       list(bquote(ecrire_digests_source(
-        lire_digests_source(.(chemin_cache)), .(chemin_sortie)
+        c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
+          lire_digests_source(.(chemin_cache))),   # sources de manifeste
+        .(chemin_sortie)
       )))
     )),
     cue = tar_cue(mode = "always")
