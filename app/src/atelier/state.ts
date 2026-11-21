@@ -101,14 +101,27 @@ export function cellKey(ref: CellRef): string {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+/**
+ * A restored link is a closed contract: any unknown key — at the state, block,
+ * figure or any nested level — is a different (or hostile) page and empties it.
+ * Map-shaped coordinates and Formule operands are checked separately: their
+ * keys are producer-declared axes and reader-chosen letters, not fixed fields.
+ */
+const hasOnlyKeys = (value: Record<string, unknown>, allowed: readonly string[]): boolean => {
+  const permitted = new Set(allowed)
+  return Object.keys(value).every((key) => permitted.has(key))
+}
+
 const FIGURE_TYPES: readonly FigureType[] = ['nuage', 'distribution', 'table', 'classement']
 const LEVELS: readonly AtelierLevel[] = ['commune', 'epci', 'departement']
 const OVERLAY_LEVELS: readonly OverlayLevel[] = ['epci', 'departement', 'region']
 const ATTRIBUTES: readonly Attribute[] = ['densite', 'littoral', 'departement', 'epci']
 
 function isCellRef(value: unknown): value is CellRef {
-  if (!isRecord(value) || typeof value.resource !== 'string' || !value.resource) return false
+  if (!isRecord(value) || !hasOnlyKeys(value, ['resource', 'coordinates'])) return false
+  if (typeof value.resource !== 'string' || !value.resource) return false
   if (!isRecord(value.coordinates)) return false
+  // Coordinate names are producer-declared: arbitrary keys, string values only.
   return Object.values(value.coordinates).every((entry) => typeof entry === 'string')
 }
 
@@ -117,15 +130,18 @@ function isBinding(value: unknown): value is Binding {
   const hasCell = 'cell' in value
   const hasFormula = 'formula' in value
   if (hasCell === hasFormula) return false // exactly one variant
-  if (hasCell) return isCellRef(value.cell)
-  if (!isRecord(value.formula)) return false
+  if (hasCell) return hasOnlyKeys(value, ['cell']) && isCellRef(value.cell)
+  if (!hasOnlyKeys(value, ['formula']) || !isRecord(value.formula)) return false
+  if (!hasOnlyKeys(value.formula, ['expression', 'operands'])) return false
   if (typeof value.formula.expression !== 'string' || !isRecord(value.formula.operands)) return false
+  // Operand letters are local to the Formule: arbitrary keys, CellRef values only.
   return Object.values(value.formula.operands).every(isCellRef)
 }
 
 function isColour(value: unknown): boolean {
   if (isBinding(value)) return true
-  return isRecord(value) && typeof value.attribute === 'string' && ATTRIBUTES.includes(value.attribute as Attribute)
+  return isRecord(value) && hasOnlyKeys(value, ['attribute']) &&
+    typeof value.attribute === 'string' && ATTRIBUTES.includes(value.attribute as Attribute)
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -137,38 +153,44 @@ function isLittoralArray(value: unknown): value is Littoral[] {
 }
 
 function isFigureSpec(value: unknown): value is FigureSpec {
-  if (!isRecord(value)) return false
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    'type', 'level', 'population', 'variables', 'title', 'axisTitles', 'overlays', 'diagonal',
+  ])) return false
   if (typeof value.type !== 'string' || !FIGURE_TYPES.includes(value.type as FigureType)) return false
   if (typeof value.level !== 'string' || !LEVELS.includes(value.level as AtelierLevel)) return false
   const population = value.population
-  if (!isRecord(population) || (population.excluded !== 'hide' && population.excluded !== 'grey')) return false
+  if (!isRecord(population) || !hasOnlyKeys(population, [
+    'departement', 'epci', 'densite', 'littoral', 'values', 'excluded',
+  ]) || (population.excluded !== 'hide' && population.excluded !== 'grey')) return false
   if (population.departement !== undefined && !isStringArray(population.departement)) return false
   if (population.epci !== undefined && !isStringArray(population.epci)) return false
   if (population.densite !== undefined && !isStringArray(population.densite)) return false
   if (population.littoral !== undefined && !isLittoralArray(population.littoral)) return false
   if (population.values !== undefined) {
     if (!Array.isArray(population.values) || !population.values.every((threshold) => {
-      if (!isRecord(threshold) || !isBinding(threshold.variable)) return false
+      if (!isRecord(threshold) || !hasOnlyKeys(threshold, ['variable', 'min', 'max'])) return false
+      if (!isBinding(threshold.variable)) return false
       if (threshold.min !== undefined && typeof threshold.min !== 'number') return false
       if (threshold.max !== undefined && typeof threshold.max !== 'number') return false
       return true
     })) return false
   }
   const variables = value.variables
-  if (!isRecord(variables)) return false
+  if (!isRecord(variables) || !hasOnlyKeys(variables, ['x', 'y', 'taille', 'couleur'])) return false
   if (variables.x !== undefined && !isBinding(variables.x)) return false
   if (variables.y !== undefined && !isBinding(variables.y)) return false
   if (variables.taille !== undefined && !isBinding(variables.taille)) return false
   if (variables.couleur !== undefined && !isColour(variables.couleur)) return false
   if (value.title !== undefined && typeof value.title !== 'string') return false
   if (value.axisTitles !== undefined) {
-    if (!isRecord(value.axisTitles)) return false
+    if (!isRecord(value.axisTitles) || !hasOnlyKeys(value.axisTitles, ['x', 'y'])) return false
     if (value.axisTitles.x !== undefined && typeof value.axisTitles.x !== 'string') return false
     if (value.axisTitles.y !== undefined && typeof value.axisTitles.y !== 'string') return false
   }
   if (value.overlays !== undefined) {
     if (!Array.isArray(value.overlays) || !value.overlays.every((overlay) =>
-      isRecord(overlay) && typeof overlay.type === 'string' && OVERLAY_LEVELS.includes(overlay.type as OverlayLevel) &&
+      isRecord(overlay) && hasOnlyKeys(overlay, ['type', 'id']) &&
+      typeof overlay.type === 'string' && OVERLAY_LEVELS.includes(overlay.type as OverlayLevel) &&
       typeof overlay.id === 'string')) return false
   }
   if (value.diagonal !== undefined && typeof value.diagonal !== 'boolean') return false
@@ -177,14 +199,14 @@ function isFigureSpec(value: unknown): value is FigureSpec {
 
 function isBlock(value: unknown): value is AtelierBlock {
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id) return false
-  if (value.kind === 'prose') return typeof value.markdown === 'string'
-  if (value.kind === 'figure') return isFigureSpec(value.figure)
+  if (value.kind === 'prose') return hasOnlyKeys(value, ['kind', 'id', 'markdown']) && typeof value.markdown === 'string'
+  if (value.kind === 'figure') return hasOnlyKeys(value, ['kind', 'id', 'figure']) && isFigureSpec(value.figure)
   return false
 }
 
-/** Structural gate for a restored link. Never throws; rejects anything not a v1 page. */
+/** Strict structural gate for a restored link. Never throws; rejects anything not a v1 page. */
 export function isValidAtelierState(value: unknown): value is AtelierState {
-  return isRecord(value) &&
+  return isRecord(value) && hasOnlyKeys(value, ['v', 'title', 'blocks']) &&
     value.v === STATE_VERSION &&
     typeof value.title === 'string' &&
     Array.isArray(value.blocks) &&

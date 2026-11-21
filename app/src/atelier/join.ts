@@ -10,6 +10,7 @@
 
 import type { Territoire } from '@/payload/types'
 
+import { ATTRIBUTE_LABELS } from './content/atelierContent'
 import { cellKey, type AtelierLevel, type AtelierState, type AttributeBinding, type Binding, type CellRef, type FigureSpec } from './state'
 import type { AdmittedCohort, CohortSource, DiscoveryResource } from './types'
 
@@ -66,13 +67,6 @@ export interface JoinOptions {
 
 type Role = 'x' | 'y' | 'taille' | 'couleur'
 type Resolution = { value?: number | string; reason?: string }
-
-const ATTRIBUTE_LABELS: Record<AttributeBinding['attribute'], string> = {
-  densite: 'Classe de densité',
-  littoral: 'Classification littorale',
-  departement: 'Département',
-  epci: 'EPCI',
-}
 
 const isBinding = (value: unknown): value is Binding =>
   typeof value === 'object' && value !== null && ('cell' in value || 'formula' in value)

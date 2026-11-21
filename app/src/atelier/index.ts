@@ -18,7 +18,7 @@ export type {
 export { LINK_PARAM, decodeAtelierLink, defaultCodec, encodeAtelierLink } from './linkCodec'
 export type { Codec, DecodedAtelierLink } from './linkCodec'
 
-export { acquireCellules, planCelluleDemand } from './acquisition'
+export { acquireCellules } from './acquisition'
 export type { AcquisitionOptions } from './acquisition'
 
 export { joinFigures } from './join'
