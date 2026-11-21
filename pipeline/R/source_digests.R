@@ -22,7 +22,17 @@ lire_digests_source <- function(chemin = file.path("public", "data", NOM_DIGESTS
   )
 }
 
+# Une seule empreinte par source_id — la plus récente gagne (issue #1103,
+# revue). `lire_digests_source` nomme déjà les enregistrements par source_id.
+deduper_digests <- function(digests) {
+  if (!length(digests)) return(list())
+  ids <- vapply(digests, function(d) as.character(d$source_id %||% ""), character(1))
+  garder <- rev(!duplicated(rev(ids)))
+  stats::setNames(digests[garder], ids[garder])
+}
+
 ecrire_digests_source <- function(digests, chemin = file.path("public", "data", NOM_DIGESTS)) {
+  digests <- deduper_digests(digests)
   dossier <- dirname(chemin)
   dir.create(dossier, recursive = TRUE, showWarnings = FALSE)
   ecrire_atomique(
@@ -47,8 +57,9 @@ lire_digests_cache_aggregate <- function(cache = "data/raw") {
 
 ecrire_digests_cache_aggregate <- function(digests, cache = "data/raw") {
   deja <- lire_digests_cache_aggregate(cache)
-  ecrire_digests_source(c(deja, digests), chemin_digests_cache(cache))
-  invisible(digests)
+  fusion <- deduper_digests(c(deja, digests))
+  ecrire_digests_source(fusion, chemin_digests_cache(cache))
+  invisible(fusion)
 }
 
 # verifier_digests_couvrent -----------------------------------------------------
