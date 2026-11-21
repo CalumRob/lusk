@@ -51,20 +51,29 @@ test_that("sans source-digests.json, le garde refuse avec une raison nommée", {
   expect_match(conditionMessage(erreur), "absent", fixed = TRUE)
 })
 
-test_that("un source-digests.json plus ancien que le lockfile est refusé", {
-  sortie <- tempfile("sortie-digests-perimes-")
+test_that("le flux opérateur build -> relock -> commit -> publish est accepté", {
+  # L'empreinte est écrite PAR LE RUN, puis le lockfile est reconstruit DEPUIS
+  # ces empreintes et commité : le lockfile est donc nécessairement PLUS RÉCENT
+  # que le source-digests.json du run publié. Ce n'est PAS une péremption.
+  sortie <- tempfile("sortie-flux-operateur-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
-  ecrire_digests_source(digests_conformes(), file.path(sortie, NOM_DIGESTS))
-  lock <- tempfile("lock-neuf-")
-  ecrire_lock(lire_lock(), lock)
-  # Le lockfile est écrit APRÈS les empreintes : le run ne les a pas vues.
-  Sys.setFileTime(file.path(sortie, NOM_DIGESTS),
-                  as.POSIXct("2020-01-01T00:00:00", tz = "UTC"))
-  Sys.setFileTime(lock, as.POSIXct("2027-01-01T00:00:00", tz = "UTC"))
-  erreur <- tryCatch(verifier_gel_release(sortie, lock = lock), error = function(e) e)
-  expect_s3_class(erreur, "erreur_gel_release")
-  expect_identical(erreur$raison, "digests_perimes")
+  digests <- digests_conformes()
+  ecrire_digests_source(digests, file.path(sortie, NOM_DIGESTS))
+
+  run_dir <- tempfile("run-operateur-")
+  dir.create(run_dir)
+  on.exit(unlink(run_dir, recursive = TRUE), add = TRUE)
+  ecrire_digests_source(digests, file.path(run_dir, NOM_DIGESTS))
+  lock <- tempfile("lock-relock-operateur-")
+  relock_sources(run_dir, lock = lock)
+
+  # Le lockfile vient d'être écrit (mtime plus récent) : le garde doit passer.
+  expect_true(file.mtime(lock) > file.mtime(file.path(sortie, NOM_DIGESTS)))
+  expect_true(verifier_gel_release(sortie, lock = lock))
+  # Un checkout/merge peut aussi toucher le mtime du lockfile — sans effet.
+  Sys.setFileTime(lock, as.POSIXct("2030-01-01T00:00:00", tz = "UTC"))
+  expect_true(verifier_gel_release(sortie, lock = lock))
 })
 
 test_that("le target de publication dépend de digests_run (empreintes du run)", {

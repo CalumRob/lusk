@@ -34,16 +34,11 @@ verifier_gel_release <- function(sortie = Sys.getenv("LUSK_SORTIE",
              " vide — publication refusée, zéro écriture. Relock requis.")
     ))
   }
-  chemin_lock <- chemin_lock(lock)
-  if (file.exists(chemin_lock) && file.exists(chemin_digests) &&
-      file.mtime(chemin_digests) < file.mtime(chemin_lock)) {
-    stop(erreur_gel_release(
-      "digests_perimes",
-      paste0("Gel de release : ", chemin_digests,
-             " est plus ancien que ", chemin_lock,
-             " — publication refusée, zéro écriture. Relock requis.")
-    ))
-  }
+  # Pas de règle de mtime : le flux opérateur est build -> relock depuis CE run
+  # -> commit du lockfile -> publication de CE run. Le lockfile est donc
+  # normalement PLUS RÉCENT que les empreintes, et un checkout/merge peut en
+  # réinitialiser le mtime. La fraîcheur est garantie par l'égalité de contenu
+  # et par la dépendance des targets de publication à `digests_run`.
   registre <- lire_lock(lock)
   ids_digest <- vapply(digests, function(d) as.character(d$source_id %||% ""), character(1))
   for (i in seq_along(digests)) {
