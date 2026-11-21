@@ -1,6 +1,6 @@
-# ADR-0047: Content-addressed source pins and derived vintage
+# ADR-0047: Opt-in content-addressed source pins and derived vintage
 
-- **Status:** accepted — implementation for issue #1099 (parent #1040); the three live-source pins are materialised from real files
+- **Status:** accepted — decision 2026-11-21: pinning is **opt-in**, source by source; implementation for issue #1099 (parent #1040)
 - **Related:** ADR-0001, ADR-0004, ADR-0005, ADR-0024; issue #1040; CONTEXT.md « Version de table publiée »
 
 ## Context
@@ -17,69 +17,77 @@ HTTP dates are not a remedy: the `bornes-recharges` ODS export sends neither `La
 `ETag`, and the Korrigo alternative export is regenerated daily. A rebuild under an unchanged version
 label was therefore changing published facts silently.
 
+The first implementation pinned every source on first acquisition. That was rejected: it would make
+every volatile URL hard-fail on an upstream byte change, changing the operational contract for
+sources this issue never intended to touch. Pinning is therefore **opt-in**.
+
 ## Decision
 
-1. **One resolver, `resoudre_source()`, for every manifest fetch.** `download_sources()` no longer
-   downloads directly: it resolves each source through this single seam. A pin at
-   `data/raw/pins/<source_id>.json` records `{url, sha256, bytes, downloaded_at, vintage,
-   vintage_basis, date_reference, etat}`.
+1. **Pinning is opt-in.** Only sources named in `SOURCES_EPINGLEES` have a pin registry file and
+   pin semantics. For every other source, `resoudre_source()` reproduces the pre-#1099 behaviour
+   exactly: a present, structurally valid file is reused as « frais »; otherwise the URL is fetched
+   (two attempts) and verified only against the manifest's own `sha256` column if it has one. No pin
+   is read, no pin is written, no extra hash is enforced, and the vintage remains the one the
+   manifest declares today. An upstream content change never raises `erreur_pin` for an unlisted
+   source.
+2. **The three pinned sources are those that produced dishonest vintages:** `osm_reseaux`,
+   `bornes-recharges`, `korrigo`. A listed source without a pin, or with an unmaterialised pin
+   (`etat = "en_attente"`), fails closed with a named refusal.
+3. **One resolver, `resoudre_source()`, for every manifest fetch.** `download_sources()` delegates
+   to it; the difference between listed and unlisted lives in this one seam. For listed sources:
    - pin present and cached bytes hash to it → use the bytes, no network;
    - cached bytes missing → download once and verify against the pin;
-   - no pin yet → download, hash, derive the vintage, write the pin;
    - pin present but bytes differ → **hard error** naming the source, both hashes and the deliberate
      repin command. Never silent drift.
    Writes are atomic: bytes and pins are written to a temporary file in the same directory and then
-   renamed, so a failed write never destroys the previous good copy.
-2. **Mandatory pins for migrated sources.** `osm_reseaux`, `korrigo` and `bornes-recharges` are in
-   `SOURCES_EPINGLEES`. A migrated source without a pin, or with an unmaterialised pin
-   (`etat = "en_attente"`), fails closed. **Every other source is also pinned on first acquisition**
-   by the same resolver — the code makes no distinction here. Consequently a non-migrated source
-   pointing at a volatile URL hard-fails when its bytes change unless it is deliberately repinned.
-   That is a known, unresolved policy question (see Follow-up), not a promise that the old flow is
-   preserved.
-3. **One deliberate repin entry point.** `Rscript pipeline/scripts/repin-source.R <source_id>`
-   rebuilds the pin from the already-present file — recording that file's mtime as the acquisition
-   date, never "now" — or downloads it when absent, then replaces the pin in one atomic write. An old
-   pin stays intact if the rebuild fails. Every pin error names this command. No automatic retry or
-   cron path may repin a mandatory source.
-4. **Vintage is derived, never hardcoded.** The closed `vintage_basis` vocabulary is
-   `fichier_date` (declared from an immutable dated filename/URL — the historical dated sources),
+   renamed, so a failed write never destroys the previous good copy. `erreur_pin` is a named
+   condition carrying `source_id`, `raison`, both hashes and accrued statuts; `run_pipeline()` writes
+   a `refus pin — <raison>` report row before re-signalling, as it does for `erreur_telechargement`.
+   Unlisted sources can never raise this condition.
+4. **One deliberate repin entry point.** `Rscript pipeline/scripts/repin-source.R <source_id>`
+   only accepts a listed source. It rebuilds the pin from the already-present file — recording that
+   file's mtime as the acquisition date, never "now" — or downloads it when absent, then replaces the
+   pin in one atomic write. An old pin stays intact if the rebuild fails.
+5. **Vintage is derived, never hardcoded, for pinned sources.** The closed `vintage_basis`
+   vocabulary is `fichier_date` (unlisted/dated sources: declared from an immutable filename or URL),
    `contenu_date_maj`, `contenu_timestamp` and `telechargement`. Derived bases read the actual file:
-   the maximum `date_maj` of the bornes export, the OSM PBF HeaderBlock replication timestamp (field
-   32, after inflating the zlib blob), else the recorded download date (Korrigo's daily regeneration).
-   A source may only declare `contenu_timestamp` if the reader can actually deliver it: a contract
-   test asserts that each mandatory source's derived basis equals its declared basis on fixture
-   content. `vintages_depuis_manifest()` overrides the published
-   `version`/`date_reference`/`date_publication` from the pin for derived sources; dated sources keep
-   their declared vintage. The manifest literals remain as contract fixtures and are what the
-   existing fragment contracts validate — the published table is what the file actually is.
-5. **Every manifest source declares a `vintage_basis`.** `avec_vintage_basis()` supplies
-   `fichier_date` to manifests written before this ADR, so an unpinned/unclassified source fails the
-   contract suite instead of drifting into an assumed date.
-6. **Pin refusals are named and reported.** `erreur_pin` is a condition carrying `source_id`,
-   `raison`, both hashes and the acquisitions statuts so far. `run_pipeline()` catches it like
-   `erreur_telechargement` and writes a `run-report.json` with a `refus pin — <raison>` row before
-   re-signalling, so the operator sees the named source instead of a bare crash.
+   the maximum `date_maj` of the bornes export (2026-11-11), the OSM PBF HeaderBlock replication
+   timestamp (field 32, after inflating the zlib blob; 2026-11-16), else the recorded download date
+   (Korrigo's daily regeneration, 2026-11-18). A contract test asserts each listed source actually
+   delivers the basis it declares. `vintages_depuis_manifest()` overrides the published
+   `version`/`date_reference`/`date_publication` from the pin for derived sources; unlisted/dated
+   sources keep their declared vintage.
+6. **Every manifest source declares a `vintage_basis`.** `avec_vintage_basis()` supplies
+   `fichier_date` to manifests written before this ADR; this is metadata only and does not opt a
+   source into pinning.
 
 ## Consequences
 
-- A changed pinned file, a missing mandatory pin and an unmaterialised pin all fail the run loudly.
-  The bytes of a published vintage are reproducible: two resolutions of the same pinned content
-  yield the same derived vintage, independent of the download clock.
-- The three migrated sources' pins are materialised from the real files in the operator's cache.
-  Two consecutive cold builds (`_targets` cleared) must still be re-proven byte-identical on
-  `scalar-serving` artifacts; that real-data proof is explicitly out of scope for the isolated
-  worktree.
+- **No cron change is required.** Unlisted sources run exactly as they did before this PR — the
+  download targets, retry policy, idempotence and vintages are unchanged. The three listed sources
+  have real, committed pins and their published vintage now matches the bytes actually used.
+- A changed pinned file, a missing listed pin and an unmaterialised pin all fail the run loudly and
+  are reported. Two resolutions of the same pinned content yield the same derived vintage,
+  independent of the download clock.
 - No HTTP metadata is used as a vintage. Dated sources (INSEE, static.data.gouv, per-year OSM,
-  OCS-GE, Geovelo snapshots) are unaffected: their vintage continues to come from the contract.
+  OCS-GE, Geovelo snapshots) are unaffected.
 - Pin files are versioned (`pipeline/.gitignore` exception); the bytes they pin remain ignored.
 
-## Follow-up
+## Follow-up: remaining unpinned sources and their risks
 
-The remaining live/unpinned sources — DILA `all_latest.tar.bz2`, the SNCF national GTFS zip, the
-other data.bretagne `exports/csv` sources (programmes' territoires d'industrie and SIRENE), the Grist
-download, the data-fair DPE API and `geo-dvf/latest/...` — are not migrated here: they have no
-declared derived basis and are not in `SOURCES_EPINGLEES`. Because the resolver pins every source on
-first acquisition, they are nonetheless pinned and will hard-fail on any byte change. The policy for
-those volatile URLs (exempt them, or promote them to mandatory pins with a deliberate repin cadence)
-is being decided separately; they are enumerated here for that later ticket.
+They are deliberately NOT in `SOURCES_EPINGLEES`; each keeps the pre-#1099 risk that a live URL can
+change under an unchanged vintage, and should be promoted with a deliberate repin cadence when the
+owner decides:
+
+- `sncf_voyageurs` — the SNCF national GTFS zip is a rolling export; `feed_version` and the declared
+  vintage can drift on any rebuild.
+- `dila_bdl` — DILA `all_latest.tar.bz2` is a ~348 MB archive rebuilt almost daily.
+- `korrigo`'s sibling data.bretagne exports: territoires d'industrie (`manifest_programmes`) and
+  SIRENE (`manifest_economie_sirene`) — live ODS exports with no stable publication date.
+- `manifest_programmes` Grist download — a hosted live document export.
+- `manifest_habitat_dpe` data-fair API — a rolling DPE base whose declared publication date is NA.
+- `manifest_habitat_dvf` `geo-dvf/latest/...` — a moving `latest` alias for a yearly dataset.
+- the `all_latest`/other live URLs in `manifest_mobilite` not named above.
+
+Two consecutive byte-identical cold builds (`_targets` cleared, `scalar-serving`) remain to be
+re-proven by the orchestrator on real data; the isolated worktree cannot perform that run.
