@@ -90,6 +90,48 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
   invisible(sites)
 }
 
+# Appels au garde (issue #1103, revue 2) ----------------------------------------
+# `sortie` est requis : un appel `verifier_gel_release()` sans argument est une
+# faute structurelle — il laisserait le garde lire un dossier implicite.
+auditer_appels_garde <- function(racine) {
+  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  trousses <- list()
+  for (f in fichiers) {
+    rel <- relatif_sous(f, racine)
+    lignes <- readLines(f, warn = FALSE)
+    for (i in seq_along(lignes)) {
+      l <- sub("#.*$", "", lignes[[i]])
+      if (!grepl("verifier_gel_release\\s*\\(", l)) next
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = rel, ligne = i,
+        sans_argument = grepl("verifier_gel_release\\s*\\(\\s*\\)", l),
+        source = trimws(l), stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(trousses)) {
+    return(data.frame(fichier = character(), ligne = integer(),
+                      sans_argument = logical(), source = character()))
+  }
+  do.call(rbind, trousses)
+}
+
+verifier_structure_garde <- function(racine) {
+  sites <- auditer_appels_garde(racine)
+  fautes <- sites[sites$sans_argument, , drop = FALSE]
+  if (nrow(fautes)) {
+    stop(
+      "Guard-call audit — ", nrow(fautes),
+      " verifier_gel_release() call(s) without an explicit sortie:\n",
+      paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", fautes$source,
+             collapse = "\n"),
+      call. = FALSE
+    )
+  }
+  invisible(sites)
+}
+
 # Lectures réseau (issue #1103, revue) ------------------------------------------
 # Toute lecture réseau est soit COUVERTE par un enregistrement de digest (avec
 # une base déclarée), soit explicitement AUTORISÉE avec une raison. Un nouveau

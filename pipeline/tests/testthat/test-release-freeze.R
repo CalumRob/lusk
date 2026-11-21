@@ -12,14 +12,23 @@ digests_conformes <- function() {
   }), names(l))
 }
 
+test_that("le garde exige le répertoire réellement publié", {
+  # `sortie` est REQUIS : aucun défaut LUSK_SORTIE / ../public/data implicite —
+  # un script doit nommer exactement le dossier qu'il lit et publie.
+  expect_error(
+    verifier_gel_release(digests = digests_conformes()),
+    "sortie"
+  )
+})
+
 test_that("le garde accepte des empreintes exactement conformes au lock", {
-  expect_true(verifier_gel_release(digests = digests_conformes()))
+  expect_true(verifier_gel_release(tempdir(), digests = digests_conformes()))
 })
 
 test_that("une empreinte modifiée refuse avec zéro écriture", {
   d <- digests_conformes()
   d[[1]]$sha256 <- paste(rep("f", 64), collapse = "")
-  erreur <- tryCatch(verifier_gel_release(digests = d), error = function(e) e)
+  erreur <- tryCatch(verifier_gel_release(tempdir(), digests = d), error = function(e) e)
   expect_s3_class(erreur, "error")
   expect_match(conditionMessage(erreur), "publication refusée, zéro écriture", fixed = TRUE)
   expect_match(conditionMessage(erreur), "dérive de", fixed = TRUE)
@@ -28,7 +37,7 @@ test_that("une empreinte modifiée refuse avec zéro écriture", {
 
 test_that("une source sans référence refuse avec zéro écriture", {
   d <- c(digests_conformes(), list(list(source_id = "inconnu", sha256 = paste(rep("a", 64), collapse = ""))))
-  erreur <- tryCatch(verifier_gel_release(digests = d), error = function(e) e)
+  erreur <- tryCatch(verifier_gel_release(tempdir(), digests = d), error = function(e) e)
   expect_s3_class(erreur, "error")
   expect_match(conditionMessage(erreur), "aucune référence pour 'inconnu'", fixed = TRUE)
 })
@@ -36,7 +45,7 @@ test_that("une source sans référence refuse avec zéro écriture", {
 test_that("une source verrouillée absente du run refuse aussi", {
   d <- digests_conformes()
   d <- d[-1]
-  erreur <- tryCatch(verifier_gel_release(digests = d), error = function(e) e)
+  erreur <- tryCatch(verifier_gel_release(tempdir(), digests = d), error = function(e) e)
   expect_s3_class(erreur, "error")
   expect_match(conditionMessage(erreur), "empreinte absente", fixed = TRUE)
 })
@@ -126,6 +135,35 @@ test_that("chaque ouverture de connexion de service est gardée (audit structure
   # Le chemin LUSK_SCALAR_SCOPE est couvert par le garde à l'ouverture.
   scope <- sites[grepl("publish_postgres_configuration", sites$fichier), ]
   expect_true(any(scope$garde))
+})
+
+test_that("aucun appel au garde n'omet le répertoire à contrôler", {
+  racine <- normalizePath(testthat::test_path("..", ".."))
+  sites <- auditer_appels_garde(racine)
+  expect_true(nrow(sites) > 0L)
+  expect_equal(nrow(sites[sites$sans_argument, , drop = FALSE]), 0L)
+})
+
+test_that("l'audit des appels au garde échoue sur un appel sans argument (preuve)", {
+  d <- tempfile("audit-garde-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  writeLines(c("foo <- function() {", "  verifier_gel_release()", "}"),
+             file.path(d, "R", "unguarded.R"))
+  expect_error(verifier_structure_garde(d), "without an explicit sortie")
+})
+
+test_that("publish-serving-tables lit et garde le même répertoire", {
+  racine <- normalizePath(testthat::test_path("..", ".."))
+  script <- paste(readLines(
+    file.path(racine, "scripts", "publish-serving-tables.R"), warn = FALSE
+  ), collapse = "\n")
+  # Un seul `sortie` est calculé et servi au lecteur ET au garde — y compris
+  # pour --series-publish, qui lisait auparavant un chemin codé en dur.
+  expect_true(grepl("sortie <- Sys.getenv\\(\"LUSK_SORTIE\"", script))
+  expect_true(grepl("read_conso_enaf_series_projection\\(sortie\\)", script))
+  expect_false(grepl("read_conso_enaf_series_projection\\(file.path\\(\"\\.\\.\"", script))
+  expect_true(all(grepl("verifier_gel_release\\(sortie\\)",
+                        unlist(regmatches(script, gregexpr("verifier_gel_release\\([^)]*\\)", script))))))
 })
 
 test_that("l'audit structurel échoue sur une connexion non gardée (preuve)", {

@@ -633,8 +633,8 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
     })
 }
 
-publier_structure_age_profile_postgres <- function(payload, metadata) {
-  verifier_gel_release()  # issue #1103 : gel de release, zéro écriture
+publier_structure_age_profile_postgres <- function(payload, metadata, sortie) {
+  verifier_gel_release(sortie)  # issue #1103 : gel de release, zéro écriture
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
   tryCatch({

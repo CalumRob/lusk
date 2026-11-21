@@ -13,9 +13,7 @@ erreur_gel_release <- function(raison, message) {
   )
 }
 
-verifier_gel_release <- function(sortie = Sys.getenv("LUSK_SORTIE",
-                                                     unset = file.path("..", "public", "data")),
-                                 lock = NULL, digests = NULL) {
+verifier_gel_release <- function(sortie, lock = NULL, digests = NULL) {
   chemin_digests <- file.path(sortie, NOM_DIGESTS)
   if (is.null(digests)) {
     if (!file.exists(chemin_digests)) {
