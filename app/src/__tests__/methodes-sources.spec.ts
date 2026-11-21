@@ -132,6 +132,18 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(Object.keys(SOURCES_METHODES).length).toBe(60)
   })
 
+  it('épingle l’URL WFS des limites communales — bbox lon,lat du contrat géométrie (#1100)', () => {
+    // La MÊME URL que le manifeste pipeline (MANIFEST_MOBILITE_COMMUNES_LIMITES,
+    // dérivée de WFS_GEOMETRIE_BBOX) : un bbox lat,lon renvoie une
+    // FeatureCollection valide mais vide. Ce test casse si un côté diverge.
+    const url = SOURCES_METHODES.communes_limites.url
+    expect(url).toBe(
+      'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST%3Acommune&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326',
+    )
+    expect(url.endsWith('&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326')).toBe(true)
+    expect(url).not.toContain('bbox=47.0,-5.5,49.0,-0.5')
+  })
+
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {
     // la figure « L'offre cyclable » cite le jeu Geovelo « Aménagements
     // cyclables France Métropolitaine » — la source du numérateur du ratio
