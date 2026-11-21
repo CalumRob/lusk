@@ -1126,10 +1126,12 @@ def preflight_aedar_cohort(conn, item, resource, cohort, fields, work_budget, sn
             (cohort.territory_type, cohort.territory_ids, measure), remaining,
             "Cohort AEDAR summary facts exceed the bounded work limit")
     else:
+        # Charge exactly the rows the read scans: every published row of this
+        # typequ in the cohort. Rows with no value for the Cellule are absent
+        # from the response, but they are still scanned and still charged.
         facts = _bounded_count(conn, """SELECT 1 FROM aedar_territorial_aggregate
-            WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND typequ=%s
-              AND (measures->>%s) IS NOT NULL""",
-            (cohort.territory_type, cohort.territory_ids, typequ, measure), remaining,
+            WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND typequ=%s""",
+            (cohort.territory_type, cohort.territory_ids, typequ), remaining,
             "Cohort AEDAR per-cell facts exceed the bounded work limit")
     return max(1, len(cohort.members) + facts + 1)
 

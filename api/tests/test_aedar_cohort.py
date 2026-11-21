@@ -30,6 +30,7 @@ SUMMARY_MEASURE = "meanDiversity"  # car × 15 × diversity resolves to the mean
 MEMBERS = [("22001", "commune", "Allineuc"),
            ("22002", "commune", "Rennes"),
            ("22003", "commune", "Redon")]
+REGION_MEMBERS = [("53-BRE", "region", "Bretagne")]
 SUMMARY_PROVENANCE = ("aedar_bretagne", "2026-v1", "https://example.test",
                       "ODbL", "AEDAR", None, "2026-09-30")
 PERCELL_COLUMNS = ("territory_id", "value", "n_addresses", "n_observed", "coverage_status",
@@ -85,6 +86,7 @@ class _Conn:
         self.fact_counts = fact_counts or {}
         self.called = called if called is not None else []
         self.queries = []
+        self.bounded_limits = []
 
     def execute(self, sql, params=None):
         self.queries.append(sql)
@@ -96,8 +98,9 @@ class _Conn:
         if "SELECT content_version,row_count FROM table_publication" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version, self.ref_count)])
         if "SELECT territory_id,territory_type,name FROM territory_reference" in s:
-            limit = params[-1]
-            return _Rows([], list(self.members[:limit]))
+            territory_type, limit = params[0], params[-1]
+            rows = [member for member in self.members if member[1] == territory_type]
+            return _Rows([], rows[:limit])
         if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in s:
             return _Rows([], [(self.ref_version,)])
         if "s.table_name='aedar_territory_summary'" in s:
@@ -111,11 +114,18 @@ class _Conn:
                 return _Rows([], [])
             return _Rows([], [("aed-v1", 235, self.ref_version, self.ref_version)])
         if "bounded_rows" in s and "count(*)" in s:
+            # Honour the parameterized LIMIT (last binding) like a real bounded
+            # count does, so an oversized fact set cannot pass just because the
+            # stub ignored the bound.
+            limit = params[-1] if params else None
+            self.bounded_limits.append(limit)
             if "aedar_territory_summary" in s:
-                return _Rows([], [(self.fact_counts.get("summary", len(self.summary_rows)),)])
-            if "aedar_territorial_aggregate" in s:
-                return _Rows([], [(self.fact_counts.get("percell", len(self.percell_rows)),)])
-            return _Rows([], [(0,)])
+                count = self.fact_counts.get("summary", len(self.summary_rows))
+            elif "aedar_territorial_aggregate" in s:
+                count = self.fact_counts.get("percell", len(self.percell_rows))
+            else:
+                count = 0
+            return _Rows([], [(min(count, limit) if limit is not None else count,)])
         if "FROM aedar_territory_summary WHERE" in s:
             self.called.append(("summary", tuple(params)))
             return _Rows([], list(self.summary_rows))
@@ -200,6 +210,19 @@ def test_comparison_intents_still_require_a_territory_target():
 
 # --- Reading: both families project one Cellule over the whole level. ---
 
+def test_region_cohort_resolves_to_its_single_member():
+    """The inherited widening serves every producer-declared level, region included."""
+    conn = _Conn(members=REGION_MEMBERS, ref_count=1,
+                 summary_rows=[_summary_row("53-BRE", 0.5)])
+    data = _read(conn, item(SUMMARY, SUMMARY_COORDS,
+                            target={"kind": "territory_cohort", "type": "region"}))
+    assert data["cohort"]["territory_type"] == "region"
+    assert data["cohort"]["member_count"] == 1
+    assert data["values"][0]["territory"] == {
+        "id": "53-BRE", "type": "region", "name": "Bretagne"}
+    assert data["values"][0]["value"] == 0.5
+
+
 def test_summary_cohort_reads_each_territory_and_absent_is_not_zero():
     conn = _Conn(summary_rows=[_summary_row("22001", 0.42), _summary_row("22002", 0.75)])
     data = _read(conn, item(SUMMARY, SUMMARY_COORDS))
@@ -210,6 +233,20 @@ def test_summary_cohort_reads_each_territory_and_absent_is_not_zero():
     assert values == {"22001": 0.42, "22002": 0.75}
     assert "22003" not in values  # missing territory is absent, never 0
     assert all(entry["value"] > 0 for entry in data["values"])
+
+
+def test_per_cell_null_measure_rows_are_charged_and_absent():
+    """Scan equals charge: a typequ row with a null Cellule value is still scanned."""
+    rows = [_percell_row("22001", 0.11), _percell_row("22002", None), _percell_row("22003", 0.29)]
+    conn = _Conn(percell_rows=rows)
+    work = _preflight(conn, item(AGGREGATE, PER_CELL_COORDS))
+    assert work == len(MEMBERS) + len(rows) + 1
+    data = _read(conn, item(AGGREGATE, PER_CELL_COORDS))
+    values = {entry["territory"]["id"]: entry["value"] for entry in data["values"]}
+    assert values == {"22001": 0.11, "22003": 0.29}  # null measure: absent, never zero
+    bounded = [query for query in conn.queries
+               if "bounded_rows" in query and "aedar_territorial_aggregate" in query]
+    assert bounded and all("measures->>" not in query for query in bounded)
 
 
 def test_per_cell_cohort_reads_each_territory():
@@ -255,8 +292,10 @@ def test_oversized_fact_set_fails_whole_before_any_read():
     conn = _Conn(summary_rows=[_summary_row("22001")], fact_counts={"summary": 999})
     with pytest.raises(HTTPException) as error:
         _preflight(conn, item(SUMMARY, SUMMARY_COORDS), work_budget=10)
-    # Bounded count LIMIT is remaining+1 (8 here); 999 > remaining fails whole.
+    # The count query is bounded to remaining+1 (8 here); the stub honours it,
+    # so the 999-row fact set trips the 413 before any data read.
     assert error.value.status_code == 413
+    assert 8 in conn.bounded_limits  # remaining 7 + 1, applied by the stub
     assert not any("FROM aedar_territory_summary WHERE" in query for query in conn.queries)
 
 
@@ -283,7 +322,6 @@ def test_two_aedar_cohorts_in_one_batch_share_one_pin():
     """A second AEDAR cohort with a different publication version fails whole."""
     state = {}
     _preflight(_Conn(), item(SUMMARY, SUMMARY_COORDS), snapshot_state=state)
-    assert "aedar_cohort_pin" in state
     conn = _Conn()
     conn.ref_version = "ref-v1"
     conn.summary_marker = "present"
@@ -300,12 +338,24 @@ def test_two_aedar_cohorts_in_one_batch_share_one_pin():
     assert error.value.status_code == 503
 
 
-def test_both_families_pin_independently_in_one_batch():
-    """The summary and aggregate own distinct content clocks; neither fails the other."""
-    state = {}
-    _preflight(_Conn(), item(SUMMARY, SUMMARY_COORDS), snapshot_state=state)
-    _preflight(_Conn(), item(AGGREGATE, PER_CELL_COORDS), snapshot_state=state)
-    assert set(state["aedar_cohort_pin"]) == {AEDAR_SUMMARY_FAMILY, AEDAR_PER_CELL_FAMILY}
+def test_both_families_share_one_batch_without_a_false_pin_conflict(monkeypatch):
+    """Distinct content clocks must not make one family fail the other's cohort."""
+    from api import main
+    conn = _Conn(summary_rows=[_summary_row(territory_id) for territory_id, _, _ in MEMBERS],
+                 percell_rows=[_percell_row(territory_id) for territory_id, _, _ in MEMBERS])
+    monkeypatch.setattr(main, "pool", lambda: _Pool(conn))
+    response = TestClient(main.app).post("/api/resources/read-batch", json={
+        "contract": "semantic-read-batch-v2",
+        "items": [
+            {"id": "summary", **item(SUMMARY, SUMMARY_COORDS).model_dump()},
+            {"id": "percell", **item(AGGREGATE, PER_CELL_COORDS).model_dump()},
+        ]})
+    assert response.status_code == 200, response.text
+    results = {entry["id"]: entry for entry in response.json()["results"]}
+    assert results["summary"]["status"] == "available"
+    assert results["summary"]["data"]["shape"] == "aedar_summary_cohort"
+    assert results["percell"]["status"] == "available"
+    assert results["percell"]["data"]["shape"] == "aedar_per_cell_cohort"
 
 
 def test_suppressed_summary_reading_is_absent_not_zero():
@@ -357,30 +407,10 @@ def test_v2_batch_returns_the_cohort_payload(monkeypatch):
 
 
 def test_cohort_response_byte_ceiling_fails_whole(monkeypatch):
-    """The shared response-byte ceiling applies to a whole-level cohort read."""
+    """The real batch executor enforces the ceiling on a real AEDAR cohort payload."""
     from api import main, resource_execution
     monkeypatch.setattr(resource_execution, "MAX_RESPONSE_BYTES", 200)
-
-    class BigCohortReader:
-        def admit(self, *a, **k):
-            return 1
-
-        def preflight(self, *a, **k):
-            return 1
-
-        def read(self, *a, **k):
-            return {"shape": "aedar_summary_cohort",
-                    "values": [{"value": "x" * 500}]}
-
-    previous = main.app.dependency_overrides.get(main.get_semantic_resource_reader)
-    monkeypatch.setattr(main, "pool", lambda: _Pool(_Conn()))
-    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: BigCohortReader()
-    try:
-        response = TestClient(main.app).post("/api/resources/read-batch", json={
-            "items": [{"id": "cohort-1", **item(SUMMARY, SUMMARY_COORDS).model_dump()}]})
-    finally:
-        if previous is None:
-            main.app.dependency_overrides.pop(main.get_semantic_resource_reader, None)
-        else:
-            main.app.dependency_overrides[main.get_semantic_resource_reader] = previous
+    conn = _Conn(summary_rows=[_summary_row(territory_id) for territory_id, _, _ in MEMBERS])
+    response = _http_batch(monkeypatch, conn, item(SUMMARY, SUMMARY_COORDS))
     assert response.status_code == 413
+    assert "results" not in response.json()
