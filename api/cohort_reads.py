@@ -1067,58 +1067,28 @@ _AEDAR_SUMMARY_ROW_COLUMNS = (
 
 def _aedar_cohort_address(item, resource):
     """Resolve the one declared Cellule a cohort reads, with family separation."""
-    from api.aedar_models import AEDARAddressError, aedar_resolve
+    from api.aedar_models import AEDARAddressError, aedar_cohort_cellule
     try:
-        typequ, measures, family, is_alias = aedar_resolve(
-            resource.resource_kind, item.coordinates, "facts")
+        return aedar_cohort_cellule(resource.resource_kind, item.coordinates, "facts")
     except AEDARAddressError as exc:
         raise HTTPException(422, str(exc)) from exc
-    if is_alias or not measures or len(measures) != 1:
-        raise HTTPException(422, "AEDAR cohort requires one declared Cellule address")
-    return typequ, measures[0], family
-
-
-def _aedar_absent_publication(conn, own_table):
-    """Classify an absent AEDAR publication; global/reference faults stay hard."""
-    reference = conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-    ).fetchone()
-    if not reference or not reference[0]:
-        raise HTTPException(503, "AEDAR publication is unavailable or stale")
-    own = conn.execute("SELECT content_version,row_count FROM table_publication WHERE table_name=%s",
-                       (own_table,)).fetchone()
-    if not own or not own[0] or own[1] < 1:
-        publication_unavailable("aedar", "AEDAR publication is unavailable or stale")
-    raise HTTPException(503, "AEDAR publication is unavailable or stale")
 
 
 def _aedar_cohort_marker(conn, family, cohort):
-    """Read the one AEDAR publication on this snapshot and pin it to the cohort reference."""
+    """Read the one AEDAR publication on this snapshot and pin it to the cohort reference.
+
+    The publication clock predicate and typed-absence classification are the
+    same guards the focal AEDAR reads use; only the cohort-reference check is
+    added here.
+    """
     from api.aedar_models import AEDAR_SUMMARY_FAMILY
+    from api.aedar_reads import (_aedar_aggregate_publication_marker,
+                                 _aedar_summary_publication_marker)
     if family == AEDAR_SUMMARY_FAMILY:
-        marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
-                s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
-            FROM table_publication s
-            JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
-            JOIN table_publication r ON r.table_name='territory_reference'
-            WHERE s.table_name='aedar_territory_summary'""").fetchone()
-        if not marker:
-            _aedar_absent_publication(conn, "aedar_territory_summary")
-        if not marker[0] or marker[1] < 1 or not marker[3]:
-            publication_unavailable("aedar", "AEDAR territory summary publication is unavailable or stale")
-        if (marker[2] != marker[6] or marker[4] != marker[3] or marker[5] != marker[6]):
-            raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
+        marker = _aedar_summary_publication_marker(conn)
         version, reference_version, aedar_version = marker[0], marker[2], marker[3]
     else:
-        marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
-            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-            WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
-        if not marker:
-            _aedar_absent_publication(conn, "aedar_territorial_aggregate")
-        if not marker[0] or marker[1] < 1:
-            publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
-        if marker[2] != marker[3]:
-            raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+        marker = _aedar_aggregate_publication_marker(conn)
         version, reference_version, aedar_version = marker[0], marker[2], marker[0]
     if reference_version != cohort.reference_content_version:
         raise HTTPException(503, "AEDAR publication is inconsistent with the cohort reference")
@@ -1171,22 +1141,15 @@ def _aedar_summary_cohort_values(conn, cohort, measure):
         FROM aedar_territory_summary WHERE territory_type=%s AND territory_id=ANY(%s::text[])
           AND measure=ANY(%s::text[]) ORDER BY territory_id""",
         (cohort.territory_type, cohort.territory_ids, [measure]))
+    from api.aedar_reads import _aedar_summary_reading_valid
     values = []
     provenance = set()
     for raw in cursor.fetchall():
         row = dict(zip(_AEDAR_SUMMARY_ROW_COLUMNS, raw))
-        status = row["status"]
-        value, n_typequ = row["value"], row["n_typequ"]
-        n_addresses, n_observed = row["n_addresses"], row["n_observed"]
-        coverage = row["coverage_status"]
-        if status not in ("available", "unavailable") or (status == "available" and (
-                value is None or not isfinite(value) or n_typequ != 235 or n_addresses is None
-                or n_addresses <= 0 or n_observed is None or n_observed < 0
-                or n_observed > 235 * n_addresses or coverage != "covered")) or (
-                status == "unavailable" and (value is not None or n_typequ is not None
-                or (n_addresses is not None and n_addresses < 0)
-                or (n_observed is not None and n_observed < 0))):
+        if not _aedar_summary_reading_valid(row["value"], row["status"], row["n_typequ"],
+                row["n_addresses"], row["n_observed"], row["coverage_status"]):
             raise HTTPException(503, "AEDAR territory cohort contains an invalid reading")
+        status = row["status"]
         provenance.add(tuple(row[key] for key in ("source_id", "vintage_id", "source_url",
             "licence", "attribution", "reference_date", "publication_date")))
         if status != "available":

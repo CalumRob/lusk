@@ -40,20 +40,18 @@ class SemanticResourceReader:
         dispatch consumes; the lower-level AEDAR snapshots still derive their
         own family as before.
         """
-        from api.aedar_models import AEDARAddressError, aedar_resolve
+        from api.aedar_models import AEDARAddressError, aedar_cohort_cellule, aedar_resolve
         if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
             return item, None
         if item.target.kind == "territory_cohort":
             # #1078: cohorts speak declared Cellule coordinates only. Validate
-            # the address with the same resolver, but never rewrite it into the
+            # with the one shared guard, but never rewrite the address into the
             # internal measure alias or inject a per-territory field projection.
             try:
-                _typequ, _measures, family, is_alias = aedar_resolve(
+                _typequ, _measure, family = aedar_cohort_cellule(
                     resource.resource_kind, item.coordinates, item.intent.kind)
             except AEDARAddressError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            if is_alias or not _measures or len(_measures) != 1:
-                raise HTTPException(422, "AEDAR cohort requires one declared Cellule address")
             return item, family
         try:
             typequ, measures, family, is_alias = aedar_resolve(

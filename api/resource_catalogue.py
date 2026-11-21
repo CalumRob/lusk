@@ -674,20 +674,12 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         # the deprecated measure alias), family separation and intent shape —
         # including the 422 for a comparison that omits its coordinates.
         if item.target.kind == "territory_cohort":
-            # #1078: a whole-level cohort addresses exactly one declared
-            # Cellule. The deprecated measure alias keeps its frozen
-            # per-territory semantics only — it never becomes a cohort address,
-            # and a measure-free typequ read is not a Cellule.
-            from api.aedar_models import AEDARAddressError, aedar_resolve
+            # #1078: one shared cohort-address guard; no rule duplicated here.
+            from api.aedar_models import AEDARAddressError, aedar_cohort_cellule
             try:
-                _typequ, measures, _family, is_alias = aedar_resolve(
-                    resource.resource_kind, item.coordinates, item.intent.kind)
+                aedar_cohort_cellule(resource.resource_kind, item.coordinates, item.intent.kind)
             except AEDARAddressError as exc:
                 raise ValueError(str(exc)) from exc
-            if is_alias:
-                raise ValueError("measure is not an AEDAR Cellule address")
-            if not measures or len(measures) != 1:
-                raise ValueError("an AEDAR cohort requires one declared Cellule")
         _validate_aedar_address(resource, item.coordinates, item.intent.kind)
     elif item.coordinates is not None:
         axes = dict(resource.axis_values)

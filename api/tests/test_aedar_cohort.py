@@ -177,6 +177,19 @@ def test_cohort_requires_one_complete_cellule_not_a_typequ_only_read():
         validate_resource_item(item(AGGREGATE, {"typequ": ["A104"]}), catalogue())
 
 
+def test_single_cellule_guard_has_one_definition():
+    """The cohort-address rule is defined once, never copied into three callers."""
+    import inspect
+    from api import aedar_models, cohort_reads, resource_catalogue, semantic_resource_reader
+
+    needle = "an AEDAR cohort requires one declared Cellule"
+    sources = [inspect.getsource(module) for module in (
+        aedar_models, cohort_reads, resource_catalogue, semantic_resource_reader)]
+    assert sum(source.count(needle) for source in sources) == 1
+    for source in sources[1:]:
+        assert "aedar_cohort_cellule" in source
+
+
 def test_comparison_intents_still_require_a_territory_target():
     request_item = ResourceReadItem.model_validate({
         "resource": SUMMARY, "target": {"kind": "territory_cohort", "type": "commune"},

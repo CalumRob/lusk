@@ -297,7 +297,10 @@ def test_aedar_summary_publication_is_bound_to_source_and_reference_clocks():
     schema = (root / "api/schema.sql").read_text(encoding="utf-8")
     migration = (root / "api/migrations/041_aedar_territory_summaries.sql").read_text(encoding="utf-8")
     publisher = (root / "pipeline/R/aedar_aggregates.R").read_text(encoding="utf-8")
-    reader = inspect.getsource(aedar_reads._aedar_territory_summary_snapshot)
+    # The marker clocks are validated once in a shared helper used by both the
+    # focal and the cohort summary reads.
+    reader = (inspect.getsource(aedar_reads._aedar_territory_summary_snapshot)
+              + inspect.getsource(aedar_reads._aedar_summary_publication_marker))
     for source in (schema, migration, publisher, reader):
         assert "aedar_source_content_version" in source
     assert "summary_existing$aedar_source_content_version" in publisher
