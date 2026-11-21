@@ -25,6 +25,42 @@ cache_fixture <- function() {
   cache
 }
 
+# protobuf minimal — les fixtures PBF portent un VRAI HeaderBlock compressé,
+# comme le fichier Geofabrik réel (issue #1099, le parser doit décompresser).
+pb_varint <- function(x) {
+  r <- as.numeric(x)
+  out <- raw(0)
+  while (r >= 128) {
+    out <- c(out, as.raw(r %% 128 + 128))
+    r <- floor(r / 128)
+  }
+  c(out, as.raw(r))
+}
+
+pb_entier <- function(champ, valeur) c(pb_varint(champ * 8), pb_varint(valeur))
+
+pb_octets <- function(champ, valeur) {
+  c(pb_varint(champ * 8 + 2), pb_varint(length(valeur)), valeur)
+}
+
+pb_be32 <- function(x) {
+  as.raw(c(
+    (x %/% 2^24) %% 256, (x %/% 2^16) %% 256,
+    (x %/% 2^8) %% 256, x %% 256
+  ))
+}
+
+pbf_fixture <- function(timestamp = 1794864156, compresse = TRUE) {
+  header <- pb_entier(32L, timestamp)  # osmosis_replication_timestamp
+  contenu_blob <- if (compresse) memCompress(header, type = "gzip") else header
+  blob <- c(
+    pb_entier(2L, length(header)),
+    if (compresse) pb_octets(3L, contenu_blob) else pb_octets(1L, contenu_blob)
+  )
+  blob_header <- c(pb_octets(1L, charToRaw("OSMHeader")), pb_entier(3L, length(blob)))
+  c(pb_be32(length(blob_header)), blob_header, blob)
+}
+
 ecrire_pin_fixture <- function(cache, id, contenu, vintage_basis = "telechargement",
                                jour = "2026-11-18", etat = "materialise",
                                vintage = "2026-11", date_reference = "2026-11-18") {
@@ -208,19 +244,11 @@ test_that("le vintage korrigo est la date de téléchargement enregistrée", {
   expect_identical(r$vintage, "2026-11")
 })
 
-test_that("le vintage OSM vient du timestamp du header PBF quand il est lisible", {
+test_that("le vintage OSM vient du HeaderBlock PBF compressé (champ 32)", {
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
-  # Header protobuf minimal : champ 32 (osmosis_replication_timestamp), varint
-  # du 2026-11-16T00:00:00Z (1763251200 s depuis l'époque).
-  timestamp <- as.numeric(as.POSIXct("2026-11-16T00:00:00Z", tz = "UTC"))
-  octets <- as.raw(c(0x80, 0x02))  # tag : champ 32, wire type 0 (32*8 = 256)
-  reste <- timestamp
-  while (reste >= 128) {
-    octets <- c(octets, as.raw(bitwAnd(reste, 0x7f) + 0x80))
-    reste <- reste %/% 128
-  }
-  octets <- c(octets, as.raw(reste))
+  # Timestamp réel observé sur bretagne-latest.osm.pbf : 1794864156 = 2026-11-16.
+  octets <- pbf_fixture(1794864156, compresse = TRUE)
 
   r <- resoudre_source(
     id = "osm_derive", url = "https://example.invalid/osm",
@@ -231,6 +259,19 @@ test_that("le vintage OSM vient du timestamp du header PBF quand il est lisible"
   expect_identical(r$vintage_basis, "contenu_timestamp")
   expect_identical(r$date_reference, "2026-11-16")
   expect_identical(r$vintage, "2026-11")
+})
+
+test_that("le HeaderBlock PBF non compressé (champ raw) est aussi lu", {
+  cache <- cache_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  octets <- pbf_fixture(1794864156, compresse = FALSE)
+  r <- resoudre_source(
+    id = "osm_brut", url = "https://example.invalid/osm",
+    fichier = "extrait.pbf", cache = cache, horloge = as.Date("2026-11-18"),
+    vintage_basis = "contenu_timestamp",
+    tirer = function(url, cible) writeBin(octets, cible)
+  )
+  expect_identical(r$date_reference, "2026-11-16")
 })
 
 test_that("un OSM sans timestamp lisible retombe sur la date de téléchargement", {
@@ -244,6 +285,58 @@ test_that("un OSM sans timestamp lisible retombe sur la date de téléchargement
   )
   expect_identical(r$vintage_basis, "telechargement")
   expect_identical(r$date_reference, "2026-11-18")
+})
+
+test_that("chaque source à pin obligatoire livre réellement le basis qu'elle déclare", {
+  for (id in names(SOURCES_EPINGLEES)) {
+    base <- SOURCES_EPINGLEES[[id]]$vintage_basis
+    contenu <- switch(
+      base,
+      contenu_date_maj = charToRaw("date_maj\n2026-11-11\n"),
+      contenu_timestamp = pbf_fixture(1794864156, compresse = TRUE),
+      telechargement = charToRaw("export régénéré chaque jour")
+    )
+    cache <- cache_fixture()
+    r <- resoudre_source(
+      id = id, url = "https://example.invalid/source",
+      fichier = paste0(id, ".bin"), cache = cache,
+      horloge = as.Date("2026-11-18"), vintage_basis = base, repin = TRUE,
+      tirer = function(url, cible) writeBin(contenu, cible)
+    )
+    expect_identical(r$vintage_basis, base, info = paste("basis déclaré pour", id))
+  }
+})
+
+test_that("un pin créé à partir d'un fichier présent utilise sa date de modification", {
+  cache <- cache_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  cible <- file.path(cache, "deja-telecharge.txt")
+  writeBin(charToRaw("fichier acquis le 18 novembre\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+
+  r <- resoudre_source(
+    id = "date_mtime", url = "https://example.invalid/source",
+    fichier = "deja-telecharge.txt", cache = cache,
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+
+  expect_identical(r$downloaded_at, "2026-11-18")
+  expect_identical(lire_pin("date_mtime", cache)$downloaded_at, "2026-11-18")
+})
+
+test_that("repin d'un fichier déjà présent conserve sa date de modification", {
+  cache <- cache_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  cible <- file.path(cache, "bornes-recharges.csv")
+  writeBin(charToRaw("date_maj\n2026-11-11\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+
+  r <- repin_source(
+    "bornes-recharges", manifest = MANIFEST_MOBILITE_BORNES, cache = cache,
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+  expect_identical(r$downloaded_at, "2026-11-18")
+  expect_identical(r$date_reference, "2026-11-11")
 })
 
 test_that("repin_source matérialise un pin en attente et dérive le vintage du contenu", {
@@ -268,6 +361,62 @@ test_that("repin_source matérialise un pin en attente et dérive le vintage du 
   expect_equal(pin$vintage_basis, "contenu_date_maj")
   expect_equal(pin$date_reference, "2026-11-16")
   expect_equal(r$vintage, "2026-11")
+})
+
+test_that("une écriture atomique qui échoue laisse la copie précédente intacte", {
+  dossier <- tempfile("atomique-")
+  dir.create(dossier)
+  on.exit(unlink(dossier, recursive = TRUE))
+
+  for (nom in c("pin.json", "source.bin")) {
+    cible <- file.path(dossier, nom)
+    writeBin(charToRaw("copie valide"), cible)
+    erreur <- tryCatch(
+      ecrire_atomique(function(temporaire) stop("panne pendant l'écriture"), cible),
+      error = function(e) e
+    )
+    expect_s3_class(erreur, "error")
+    expect_identical(readBin(cible, "raw", n = file.size(cible)), charToRaw("copie valide"))
+  }
+  # aucun temporaire laissé derrière soi
+  expect_length(list.files(dossier, all.files = TRUE, no.. = TRUE), 2L)
+})
+
+test_that("un repin qui échoue conserve le pin précédent", {
+  cache <- cache_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  ecrire_pin_fixture(cache, "bornes-recharges", charToRaw("v1"), vintage = "2026-11")
+  avant <- lire_pin("bornes-recharges", cache)
+
+  erreur <- tryCatch(
+    repin_source(
+      "bornes-recharges", manifest = MANIFEST_MOBILITE_BORNES, cache = cache,
+      tirer = function(url, cible) stop("panne réseau")
+    ),
+    error = function(e) e
+  )
+  expect_s3_class(erreur, "erreur_telechargement")
+  expect_equal(lire_pin("bornes-recharges", cache)$sha256, avant$sha256)
+})
+
+test_that("run_pipeline rapporte un refus de pin nommé au lieu d'un crash nu", {
+  sortie <- tempfile("sortie-refus-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+  refus <- erreur_pin(
+    "bornes-recharges", "pin non matérialisé — repin requis",
+    statuts = tibble::tibble(id = "source_ok", mode = "cron", status = "frais")
+  )
+  local_mocked_bindings(download_sources = function(...) stop(refus), .package = "lusk")
+
+  erreur <- tryCatch(run_pipeline(cache = tempfile(), sortie = sortie), error = function(e) e)
+
+  expect_s3_class(erreur, "erreur_pin")
+  route <- file.path(sortie, "run-report.json")
+  expect_true(file.exists(route))
+  rapport <- jsonlite::fromJSON(route)
+  expect_true(any(rapport$statuts$id == "bornes-recharges"))
+  expect_true(any(grepl("refus pin", rapport$statuts$status)))
 })
 
 test_that("download_sources résout chaque source par le resolver (un pin par source)", {

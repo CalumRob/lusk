@@ -18,6 +18,28 @@
 # — le résolveur unique. Le téléchargement lui-même reste mockable ici via
 # telecharger_fichier/tirer_source, exactement comme avant.
 
+# ecrire_atomique -------------------------------------------------------------
+# Écrire un fichier complet dans un TEMPORAIRE du MÊME dossier, puis le renommer
+# vers sa destination (issue #1099, revue) : un téléchargement partiel ou un pin
+# à moitié écrit ne peut jamais remplacer une bonne copie. Le seam `ecrire` est
+# injectable pour tester l'échec en cours d'écriture. Sur Windows, file.rename
+# ne remplace pas une cible existante : on ne la retire qu'après un premier
+# échec, la nouvelle copie étant déjà complète.
+ecrire_atomique <- function(ecrire, cible) {
+  dossier <- dirname(cible)
+  dir.create(dossier, recursive = TRUE, showWarnings = FALSE)
+  temporaire <- tempfile(pattern = ".ecriture-", tmpdir = dossier)
+  on.exit(if (file.exists(temporaire)) unlink(temporaire), add = TRUE)
+  ecrire(temporaire)
+  ok <- file.rename(temporaire, cible)
+  if (!ok && file.exists(cible)) {
+    unlink(cible)
+    ok <- file.rename(temporaire, cible)
+  }
+  if (!ok) stop("Écriture atomique impossible : ", cible, call. = FALSE)
+  invisible(cible)
+}
+
 # verifier_fichier ------------------------------------------------------------
 # L'intégrité d'un fichier du cache : il existe, il n'est pas vide, et s'il
 # s'agit d'un zip il s'ouvre (ou d'un .rds il se relit — le format de cache
@@ -96,7 +118,10 @@ telecharger_fichier <- function(url, cible) {
   ancien_timeout <- getOption("timeout")
   on.exit(options(timeout = ancien_timeout), add = TRUE)
   options(timeout = TELECHARGEMENT_TIMEOUT)
-  utils::download.file(url, cible, mode = "wb", quiet = TRUE)
+  ecrire_atomique(
+    function(temporaire) utils::download.file(url, temporaire, mode = "wb", quiet = TRUE),
+    cible
+  )
 }
 
 # tirer_api -------------------------------------------------------------------

@@ -54,10 +54,13 @@ lire_pin <- function(id, cache = "data/raw") {
 }
 
 ecrire_pin <- function(pin, cache = "data/raw") {
-  dir.create(file.path(cache, "pins"), recursive = TRUE, showWarnings = FALSE)
-  jsonlite::write_json(
-    pin, chemin_pin(pin$source_id, cache),
-    auto_unbox = TRUE, pretty = TRUE, na = "null"
+  ecrire_atomique(
+    function(temporaire) {
+      jsonlite::write_json(
+        pin, temporaire, auto_unbox = TRUE, pretty = TRUE, na = "null"
+      )
+    },
+    chemin_pin(pin$source_id, cache)
   )
   invisible(pin)
 }
@@ -69,7 +72,8 @@ commande_repin <- function(id) {
   sprintf("Rscript pipeline/scripts/repin-source.R %s", id)
 }
 
-erreur_pin <- function(id, raison, sha256_attendu = NULL, sha256_observe = NULL) {
+erreur_pin <- function(id, raison, sha256_attendu = NULL, sha256_observe = NULL,
+                       statuts = NULL) {
   cmd <- commande_repin(id)
   msg <- sprintf(
     "Pin source '%s' — %s. empreinte attendue : %s ; observée : %s. Pour réépingler délibérément : %s.",
@@ -78,9 +82,9 @@ erreur_pin <- function(id, raison, sha256_attendu = NULL, sha256_observe = NULL)
   )
   structure(
     list(
-      message = msg, call = NULL, source_id = id,
+      message = msg, call = NULL, source_id = id, raison = raison,
       sha256_attendu = sha256_attendu, sha256_observe = sha256_observe,
-      commande_repin = cmd
+      commande_repin = cmd, statuts = statuts
     ),
     class = c("erreur_pin", "error", "condition")
   )
@@ -129,55 +133,114 @@ deriver_date_maj <- function(chemin) {
 # its "data up to" timestamp there; it is the honest reference date. A best
 # effort reader: when the header is compressed/absent the caller falls back to
 # the recorded download date, and records that basis instead.
-deriver_timestamp_pbf <- function(chemin) {
-  raw <- tryCatch(
-    readBin(chemin, "raw", n = min(file.size(chemin), 65536)),
-    error = function(e) raw(0)
-  )
-  if (!length(raw)) return(NULL)
+#
+# The real Geofabrik extract stores a zlib-compressed HeaderBlock (Blob field 3;
+# field 1 is the raw alternative). Read the 4-byte big-endian BlobHeader length,
+# locate the OSMHeader blob, inflate it with memDecompress(type="gzip") — R's
+# zlib decoder accepts both gzip and zlib streams — then find field 32
+# (osmosis_replication_timestamp). Verified on bretagne-latest.osm.pbf: field 32
+# = 1794864156, i.e. 2026-11-16.
 
-  lire_varint <- function(r, pos) {
-    valeur <- 0
-    multiplicateur <- 1
-    i <- pos
-    while (i <= length(r) && i < pos + 10L) {
-      octet <- as.integer(r[i])
-      valeur <- valeur + (octet %% 128) * multiplicateur
-      if (octet < 128) return(list(valeur = valeur, pos = i + 1L))
-      multiplicateur <- multiplicateur * 128
-      i <- i + 1L
-    }
-    NULL
+lire_varint_protobuf <- function(octets, pos) {
+  valeur <- 0
+  multiplicateur <- 1
+  i <- pos
+  while (i <= length(octets) && i < pos + 10L) {
+    octet <- as.integer(octets[i])
+    valeur <- valeur + (octet %% 128) * multiplicateur
+    if (octet < 128) return(list(valeur = valeur, pos = i + 1L))
+    multiplicateur <- multiplicateur * 128
+    i <- i + 1L
   }
+  NULL
+}
 
+lire_champs_protobuf <- function(octets) {
+  champs <- list()
   i <- 1L
-  while (i <= length(raw) - 1L) {
-    cle <- lire_varint(raw, i)
+  while (i <= length(octets)) {
+    cle <- lire_varint_protobuf(octets, i)
     if (is.null(cle)) break
     champ <- cle$valeur %/% 8
     type <- cle$valeur %% 8
     if (type == 0L) {
-      valeur <- lire_varint(raw, cle$pos)
+      valeur <- lire_varint_protobuf(octets, cle$pos)
       if (is.null(valeur)) break
-      # Plausibility window: 2000-01-01 .. 2100-01-01, in seconds.
-      if (champ == 32L &&
-          valeur$valeur >= 946684800 && valeur$valeur <= 4102444800) {
-        return(as.Date(as.POSIXct(valeur$valeur, origin = "1970-01-01", tz = "UTC")))
-      }
+      champs[[length(champs) + 1L]] <- list(champ = champ, type = type, valeur = valeur$valeur)
       i <- valeur$pos
     } else if (type == 2L) {
-      longueur <- lire_varint(raw, cle$pos)
+      longueur <- lire_varint_protobuf(octets, cle$pos)
       if (is.null(longueur)) break
-      i <- longueur$pos + longueur$valeur
+      fin <- longueur$pos + longueur$valeur - 1
+      if (fin > length(octets)) break
+      champs[[length(champs) + 1L]] <- list(
+        champ = champ, type = type, valeur = octets[longueur$pos:fin]
+      )
+      i <- fin + 1L
     } else if (type == 5L) {
+      if (cle$pos + 3L > length(octets)) break
+      champs[[length(champs) + 1L]] <- list(
+        champ = champ, type = type, valeur = octets[cle$pos:(cle$pos + 3L)]
+      )
       i <- cle$pos + 4L
     } else if (type == 1L) {
+      if (cle$pos + 7L > length(octets)) break
+      champs[[length(champs) + 1L]] <- list(
+        champ = champ, type = type, valeur = octets[cle$pos:(cle$pos + 7L)]
+      )
       i <- cle$pos + 8L
     } else {
       break
     }
   }
+  champs
+}
+
+champ_protobuf <- function(champs, numero, type) {
+  for (c in champs) {
+    if (c$champ == numero && c$type == type) return(c$valeur)
+  }
   NULL
+}
+
+deriver_timestamp_pbf <- function(chemin) {
+  con <- tryCatch(file(chemin, "rb"), error = function(e) NULL)
+  if (is.null(con)) return(NULL)
+  on.exit(close(con), add = TRUE)
+
+  taille <- readBin(con, "raw", n = 4L)
+  if (length(taille) < 4L) return(NULL)
+  n <- as.integer(taille[1]) * 2^24 + as.integer(taille[2]) * 2^16 +
+       as.integer(taille[3]) * 2^8 + as.integer(taille[4])
+  if (!is.finite(n) || n < 1 || n > 1e6) return(NULL)
+  blob_header <- readBin(con, "raw", n = n)
+  if (length(blob_header) < n) return(NULL)
+  champs_header <- lire_champs_protobuf(blob_header)
+  type <- champ_protobuf(champs_header, 1L, 2L)
+  if (is.null(type) || !identical(rawToChar(type), "OSMHeader")) return(NULL)
+  taille_blob <- champ_protobuf(champs_header, 3L, 0L)
+  if (is.null(taille_blob) || taille_blob < 1 || taille_blob > 1e8) return(NULL)
+
+  blob <- readBin(con, "raw", n = taille_blob)
+  if (length(blob) < taille_blob) return(NULL)
+  champs_blob <- lire_champs_protobuf(blob)
+  brut <- champ_protobuf(champs_blob, 1L, 2L)
+  compresse <- champ_protobuf(champs_blob, 3L, 2L)
+  header_block <- if (!is.null(brut)) {
+    brut
+  } else if (!is.null(compresse)) {
+    tryCatch(memDecompress(compresse, type = "gzip"), error = function(e) NULL)
+  } else {
+    NULL
+  }
+  if (is.null(header_block)) return(NULL)
+
+  timestamp <- champ_protobuf(lire_champs_protobuf(header_block), 32L, 0L)
+  # Plausibility window: 2000-01-01 .. 2100-01-01, in seconds.
+  if (is.null(timestamp) || timestamp < 946684800 || timestamp > 4102444800) {
+    return(NULL)
+  }
+  as.Date(as.POSIXct(timestamp, origin = "1970-01-01", tz = "UTC"))
 }
 
 # deriver_vintage ---------------------------------------------------------------
@@ -237,8 +300,20 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   }
   dir.create(file.path(cache, "pins"), recursive = TRUE, showWarnings = FALSE)
   cible <- file.path(cache, fichier)
-  jour <- if (is.null(horloge)) Sys.Date() else as.Date(horloge)
   pin <- lire_pin(id, cache)
+  # Issue #1099 (revue) : le repin reconstruit le pin à partir du fichier déjà
+  # présent ; on ignore donc l'ancien pin, sans jamais le supprimer avant la
+  # nouvelle écriture atomique.
+  if (isTRUE(repin)) pin <- NULL
+  # Un fichier déjà téléchargé porte sa propre date d'acquisition (mtime) :
+  # épingler un fichier du 18 novembre ne doit pas enregistrer « aujourd'hui ».
+  jour <- if (!is.null(horloge)) {
+    as.Date(horloge)
+  } else if (file.exists(cible)) {
+    as.Date(file.mtime(cible))
+  } else {
+    Sys.Date()
+  }
   requis <- id %in% names(SOURCES_EPINGLEES)
   etiquette <- if (identical(type, "api")) paste0("api:", id) else url
 
@@ -277,7 +352,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   if (!is.null(pin)) {
     if (!identical(pin$etat, "materialise") ||
         is.null(pin$sha256) || !nzchar(pin$sha256)) {
-      stop(erreur_pin(id, "pin non matérialisé — repin requis"))
+      stop(erreur_pin(id, "pin non matérialisé — repin requis", statuts = etat$statuts))
     }
     if (!file.exists(cible) || !verifier_fichier(cible)) {
       ok <- FALSE
@@ -296,7 +371,8 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     }
     h <- empreinte()
     if (!identical(h, pin$sha256)) {
-      stop(erreur_pin(id, "contenu modifié sans repin", pin$sha256, h))
+      stop(erreur_pin(id, "contenu modifié sans repin", pin$sha256, h,
+                      statuts = etat$statuts))
     }
     return(list(
       chemin = cible, sha256 = h, bytes = file.size(cible),
@@ -309,7 +385,8 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   # Aucun pin : une source épinglée échoue ; les autres suivent le flux
   # historique (sha256 du manifeste, 2 essais) puis sont épinglées.
   if (requis && !repin) {
-    stop(erreur_pin(id, "source à pin obligatoire sans pin — repin requis"))
+    stop(erreur_pin(id, "source à pin obligatoire sans pin — repin requis",
+                    statuts = etat$statuts))
   }
 
   if (!file.exists(cible) || !verifier_fichier(cible) ||
@@ -375,11 +452,9 @@ repin_source <- function(id, manifest = NULL, cache = "data/raw",
   ligne <- manifest[manifest$id == id, , drop = FALSE]
   if (nrow(ligne) != 1L) stop("Source inconnue : ", id, call. = FALSE)
 
-  cible <- file.path(cache, ligne$fichier)
-  if (file.exists(cible)) unlink(cible)
-  p <- chemin_pin(id, cache)
-  if (file.exists(p)) unlink(p)
-
+  # Ni le fichier ni l'ancien pin ne sont supprimés : le nouveau pin est
+  # construit puis ÉCRIT ATOMIQUEMENT par le resolver. Si la dérivation ou
+  # l'écriture échoue, l'ancien pin reste intact (issue #1099, revue D).
   resoudre_source(
     id = id, url = ligne$url, fichier = ligne$fichier, cache = cache,
     type = if ("type" %in% names(ligne)) ligne$type else "fichier",
