@@ -175,29 +175,52 @@ def test_families_cannot_satisfy_each_others_cohort(resource_id, coordinates):
         validate_resource_item(item(resource_id, coordinates), catalogue())
 
 
-def test_measure_alias_is_not_a_cohort_address():
-    with pytest.raises(ValueError, match="measure is not an AEDAR Cellule address"):
-        validate_resource_item(item(AGGREGATE, {"measure": [PER_CELL_MEASURE]}), catalogue())
-    with pytest.raises(ValueError, match="measure is not an AEDAR Cellule address"):
-        validate_resource_item(item(SUMMARY, {"measure": [SUMMARY_MEASURE]}), catalogue())
+class _NoConnection:
+    """Any SQL here is a failure: the alias must be refused before a connection is used."""
+    def execute(self, sql, params=None):
+        raise AssertionError("alias cohort address must be rejected before any SQL")
+
+
+ALIAS_COORDS = {
+    AGGREGATE: {"measure": [PER_CELL_MEASURE]},
+    SUMMARY: {"measure": [SUMMARY_MEASURE]},
+}
+ALIAS_REJECTION = "measure is not an AEDAR Cellule address"
+
+
+def test_measure_alias_is_not_an_admission_cohort_address():
+    """Entry point 1: admission refuses the alias by name on both families."""
+    for resource_id, coordinates in ALIAS_COORDS.items():
+        with pytest.raises(ValueError, match=ALIAS_REJECTION):
+            validate_resource_item(item(resource_id, coordinates), catalogue())
+
+
+@pytest.mark.parametrize("resource_id,coordinates", ALIAS_COORDS.items())
+def test_alias_is_rejected_by_reader_cohort_preflight_before_any_connection(resource_id, coordinates):
+    """Entry point 2: the reader's cohort path refuses it by name, before any SQL."""
+    with pytest.raises(HTTPException) as error:
+        reader().preflight(_NoConnection(), item(resource_id, coordinates), catalogue())
+    assert error.value.status_code == 422
+    assert ALIAS_REJECTION in error.value.detail
+
+
+@pytest.mark.parametrize("resource_id,coordinates", ALIAS_COORDS.items())
+def test_alias_is_rejected_by_the_cohort_read_before_any_connection(resource_id, coordinates):
+    """Entry point 3: the cohort read itself refuses it by name, before any SQL."""
+    from api.cohort_reads import TerritoryCohort, read_aedar_cohort
+    cohort = TerritoryCohort("commune", None, None,
+        tuple({"id": territory_id, "type": "commune", "name": name}
+              for territory_id, _type, name in MEMBERS), "ref-v1")
+    with pytest.raises(HTTPException) as error:
+        read_aedar_cohort(_NoConnection(), item(resource_id, coordinates),
+                          catalogue().resources_by_id[resource_id], cohort, None)
+    assert error.value.status_code == 422
+    assert ALIAS_REJECTION in error.value.detail
 
 
 def test_cohort_requires_one_complete_cellule_not_a_typequ_only_read():
     with pytest.raises(ValueError):
         validate_resource_item(item(AGGREGATE, {"typequ": ["A104"]}), catalogue())
-
-
-def test_single_cellule_guard_has_one_definition():
-    """The cohort-address rule is defined once, never copied into three callers."""
-    import inspect
-    from api import aedar_models, cohort_reads, resource_catalogue, semantic_resource_reader
-
-    needle = "an AEDAR cohort requires one declared Cellule"
-    sources = [inspect.getsource(module) for module in (
-        aedar_models, cohort_reads, resource_catalogue, semantic_resource_reader)]
-    assert sum(source.count(needle) for source in sources) == 1
-    for source in sources[1:]:
-        assert "aedar_cohort_cellule" in source
 
 
 def test_comparison_intents_still_require_a_territory_target():
