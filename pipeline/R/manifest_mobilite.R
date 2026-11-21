@@ -223,6 +223,13 @@ MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES <- tibble::tribble(
 # MANIFEST_MOBILITE_COMMUNES_LIMITES -------------------------------------------
 # Le fragment LIMITES (issue #139) : les limites communales Admin Express COG
 # (WFS data.geopf.fr) — l'attribution des lignes OSM et la surface des densités.
+#
+# L'URL est DÉRIVÉE du contrat géométrie (issue #1100) : même endpoint, même
+# bbox, un seul commentaire d'ordre d'axes — jamais un second littéral qui
+# pourrait se mettre à diverge. La couche diffère du fond de carte (COG
+# complète au lieu de CARTO-PE), seul `type_names` change.
+URL_COMMUNES_LIMITES_WFS <- url_geopf_wfs("ADMINEXPRESS-COG.LATEST:commune")
+
 MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
@@ -236,7 +243,7 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
   # filtre breton se fait au chargement (le code département ∈ 22/29/35/56).
   "communes_limites",
   "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
-  "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,EPSG:4326",
+  URL_COMMUNES_LIMITES_WFS,
   "communes_limites.geojson", "2025", "2025-01-01", NA_character_, "lov2",
   paste0(
     "Le référentiel géométrique des réseaux t/b/c : les limites communales ",

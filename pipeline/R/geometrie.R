@@ -35,17 +35,47 @@ NIVEAUX_GEOMETRIE <- c(
 # pipeline (filtrer_geometrie) — la bbox ne sert qu'à éviter de télécharger la
 # France entière.
 #
-# Le CRS s'écrit `EPSG:4326`, PAS `urn:ogc:def:crs:EPSG::4326` (issue #1070) :
-# GeoPF a cessé d'accepter la forme URN dans le filtre bbox — elle répond
-# HTTP 400 `NoSuchAuthorityCodeException: Authority "URN" is unknown`, alors
-# que la même requête avec `EPSG:4326` répond HTTP 200. Coordonnées et ordre
-# d'axes (lat,min / lon,min / lat,max / lon,max) restent inchangés.
-WFS_GEOMETRIE_BBOX <- "47.0,-5.5,49.0,-0.5,EPSG:4326"
+# Ordre des axes (#1100) : data.geopf.fr interprète le bbox WFS 2.0.0 dans
+# l'ordre des axes du CRS — pour `EPSG:4326`, lon,min / lat,min / lon,max /
+# lat,max (minX/minY/maxX/maxY). L'ancienne valeur `47.0,-5.5,49.0,-0.5` était
+# en lat,lon : GeoPF la lisait comme une boîte vide au large de l'Irlande et
+# renvoyait une FeatureCollection VALIDE mais SANS feature — publier_geometrie
+# écrivait alors des GeoJSON de 147 octets (cartes blanches) sans erreur.
+#
+# Vérifié en direct le 2026-11-21 sur la requête de production (count=3000) :
+#   - `47.0,-5.5,49.0,-0.5,EPSG:4326` (lat,lon) : 0 feature ; pour `commune`,
+#     une réponse `text/plain` de métriques à la place du GeoJSON ;
+#   - `-5.5,47.0,-0.5,49.0,EPSG:4326` (lon,lat) : communes 1969 → 1202 après
+#     le filtre Bretagne, epcis 107 → 61, departements 12 → 4.
+# 1202 correspond exactement à l'univers canonique de référence.
+#
+# Le CRS s'écrit `EPSG:4326`, PAS `urn:ogc:def:crs:EPSG::4326` : GeoPF rejette
+# la forme URN dans le filtre bbox (HTTP 400, `NoSuchAuthorityCodeException:
+# Authority "URN" is unknown`) alors que `EPSG:4326` répond HTTP 200. C'est la
+# FORME du CRS qui est en cause ici, pas l'ordre des axes corrigé ci-dessus.
+WFS_GEOMETRIE_BBOX <- "-5.5,47.0,-0.5,49.0,EPSG:4326"
 
 # WFS_GEOMETRIE_BASE -----------------------------------------------------------
 # L'endpoint WFS de data.geopf.fr (IGN) — l'accès aux données Admin Express
 # sans clé (vérifié en direct le 2026-08-04).
 WFS_GEOMETRIE_BASE <- "https://data.geopf.fr/wfs/ows"
+
+# url_geopf_wfs ---------------------------------------------------------------
+# Le constructeur partagé d'une GetFeature sur le WFS GeoPF : le fond de carte
+# (geometrie.R) ET le référentiel des limites communales (manifest_mobilite.R)
+# passent par ici. Un seul bbox (`WFS_GEOMETRIE_BBOX`), un seul commentaire
+# d'ordre d'axes — jamais une deuxième copie du littéral (#1100). `type_names`
+# est la couche demandée, propre à chaque site.
+url_geopf_wfs <- function(type_names, base = WFS_GEOMETRIE_BASE,
+                          bbox = WFS_GEOMETRIE_BBOX) {
+  paste0(
+    base,
+    "?service=WFS&version=2.0.0&request=GetFeature",
+    "&typeNames=", utils::URLencode(type_names, reserved = TRUE),
+    "&count=3000&outputFormat=application/json",
+    "&bbox=", bbox
+  )
+}
 
 # url_geometrie_wfs ------------------------------------------------------------
 # La construction de la requête GetFeature, isolée du réseau : le contrat de
@@ -53,13 +83,7 @@ WFS_GEOMETRIE_BASE <- "https://data.geopf.fr/wfs/ows"
 # parler à GeoPF. Le filtre bbox porte le CRS accepté (voir WFS_GEOMETRIE_BBOX).
 url_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
                               bbox = WFS_GEOMETRIE_BBOX) {
-  paste0(
-    base,
-    "?service=WFS&version=2.0.0&request=GetFeature",
-    "&typeNames=", utils::URLencode(NIVEAUX_GEOMETRIE[[niveau]], reserved = TRUE),
-    "&count=3000&outputFormat=application/json",
-    "&bbox=", bbox
-  )
+  url_geopf_wfs(NIVEAUX_GEOMETRIE[[niveau]], base = base, bbox = bbox)
 }
 
 # telecharger_geometrie_wfs ----------------------------------------------------
@@ -276,22 +300,124 @@ mapper_vers_contrat <- function(collection, niveau) {
   collection
 }
 
+# verifier_couverture_bretagne ------------------------------------------------
+# Le contrat de plausibilité PARTAGÉ des collections de communes bretonnes
+# (#1100) : non vides, et — quand la source porte un contrat de couverture —
+# couvrant les 4 départements de DEPT_BRETAGNE. Le fond de carte
+# (verifier_collection_geometrie) et le référentiel des limites communales
+# (lire_communes_limites) appellent la MÊME règle — pas deux copies.
+# `departements_attendus = NULL` désactive la couverture pour la source dont
+# le seam de lecture sert aussi des fixtures ciblés sur un seul département
+# (test-territoire-ocsge.R) : la NON-VACUITÉ reste exigée dans tous les cas.
+# Les erreurs nomment la source, l'URL du WFS et les comptes (reçus / retenus).
+verifier_couverture_bretagne <- function(departements, source, url, brut_n,
+                                         departements_attendus = DEPT_BRETAGNE) {
+  deps <- unique(as.character(departements))
+  n_filtre <- length(departements)
+  if (n_filtre == 0L) {
+    stop(
+      "Collection de géométrie VIDE pour '", source,
+      "' : 0 commune retenue après filtrage sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Collection rejetée.",
+      call. = FALSE
+    )
+  }
+  manquants <- if (is.null(departements_attendus)) {
+    character(0)
+  } else {
+    setdiff(departements_attendus, deps)
+  }
+  if (length(manquants) > 0L) {
+    stop(
+      "Collection de géométrie IMPLAUSIBLE pour '", source,
+      "' : département(s) breton(s) absent(s) ", paste(manquants, collapse = ", "),
+      " (présents : ", paste(sort(intersect(departements_attendus, deps)), collapse = ", "),
+      ") — ", n_filtre, " commune(s) retenue(s) sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Collection rejetée.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+# verifier_collection_geometrie ---------------------------------------------
+# Garde de plausibilité post-filtre (#1100). Le bbox lat,lon renvoyait une
+# FeatureCollection PARFAITEMENT VALIDE mais SANS feature : publier_geometrie
+# écrivait alors des GeoJSON de 147 octets — des cartes blanches — sans lever
+# la moindre erreur. Une validation purement structurelle ne suffit pas.
+#
+# La règle vient du CONTRAT DE SOURCE, pas d'un seuil inventé :
+#   - chaque niveau du référentiel canonique est NON VIDE (l'univers breton
+#     porte 1202 communes, 61 EPCI et 4 départements — jamais zéro) ;
+#   - les communes couvrent les 4 départements de DEPT_BRETAGNE (22·29·35·56),
+#     la définition même de la Bretagne (CONTEXT.md, filter.R) — règle portée
+#     par verifier_couverture_bretagne, partagée avec communes_limites.
+# On écarte donc un nombre magique du type « ≥ 1000 communes » : les comptes
+# dérivent avec les millésimes COG, alors que la couverture départementale et
+# la non-vacuité sont des faits stables du référentiel. Les départements
+# attendus sont injectables (`departements_attendus`) pour éprouver la garde.
+# L'erreur nomme TOUJOURS le niveau, l'URL et les comptes (reçus / retenus).
+verifier_collection_geometrie <- function(collection, niveau, url,
+                                          brut_n,
+                                          departements_attendus = DEPT_BRETAGNE) {
+  if (!is.list(collection) || !is.list(collection$features)) {
+    stop(
+      "Collection de géométrie invalide pour le niveau '", niveau,
+      "' (FeatureCollection/features attendues) — URL : ", url,
+      ". Aucun masque écrit.", call. = FALSE
+    )
+  }
+  n_filtre <- length(collection$features)
+  if (n_filtre == 0L) {
+    stop(
+      "Collection de géométrie VIDE pour le niveau '", niveau,
+      "' : 0 feature retenue après filtrage sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Aucun masque écrit.",
+      call. = FALSE
+    )
+  }
+  if (identical(niveau, "communes")) {
+    verifier_couverture_bretagne(
+      vapply(
+        collection$features,
+        function(f) f$properties$code_insee_du_departement,
+        character(1)
+      ),
+      source = niveau, url = url, brut_n = brut_n,
+      departements_attendus = departements_attendus
+    )
+  }
+  invisible(TRUE)
+}
+
 # publier_geometrie ------------------------------------------------------------
 # L'orchestrateur : télécharge les trois couches (ou utilise le fetch injecté),
-# filtre à la Bretagne, mappe au contrat et écrit les trois fichiers sous la
-# cible. Upsert : écrire écrase (ADR-0004) — relancer ne duplique jamais.
+# filtre à la Bretagne, VALIDE chaque collection après filtrage (#1100), mappe
+# au contrat et écrit les trois fichiers sous la cible. Tout est validé avant
+# la première écriture : ni couche vide, ni publication à moitié écrite.
+# Upsert : écrire écrase (ADR-0004) — relancer ne duplique jamais.
 # Le fichier cible porte le nom du niveau (communes.geojson, epcis.geojson,
 # departements.geojson — ADR-0008) ; l'app le lit sous /data/<niveau>.geojson.
 publier_geometrie <- function(cible = "public/data",
                               fetch = telecharger_geometrie_wfs) {
-  if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+  niveaux <- names(NIVEAUX_GEOMETRIE)
 
-  for (niveau in names(NIVEAUX_GEOMETRIE)) {
+  prets <- lapply(niveaux, function(niveau) {
     brut <- fetch(niveau)
     filtre <- filtrer_geometrie(brut, niveau)
-    mappe <- mapper_vers_contrat(filtre, niveau)
+    verifier_collection_geometrie(
+      filtre, niveau,
+      url = url_geometrie_wfs(niveau),
+      brut_n = length(brut$features)
+    )
+    mapper_vers_contrat(filtre, niveau)
+  })
+  names(prets) <- niveaux
+
+  if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+  for (niveau in niveaux) {
     jsonlite::write_json(
-      mappe,
+      prets[[niveau]],
       file.path(cible, paste0(niveau, ".geojson")),
       auto_unbox = TRUE,
       digits = NA,

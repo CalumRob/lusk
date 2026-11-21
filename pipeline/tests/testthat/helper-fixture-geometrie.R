@@ -92,11 +92,54 @@ fixture_departements_wfs <- function() {
   ))
 }
 
+# Une commune par département de la Bretagne canonique (22·29·35·56) plus une
+# commune ligérienne écartée par le filtre. Le jeu SAIN de la garde de
+# plausibilité (#1100) : l'univers de référence couvre les 4 départements, pas
+# une seule commune. `departements` permet de fabriquer un jeu volontairement
+# incomplet pour prouver que la garde refuse une couverture partielle.
+fixture_communes_wfs_departements <- function(departements = c("22", "29", "35", "56")) {
+  collection_wfs(c(
+    lapply(departements, function(d) {
+      feature_geometrie(list(
+        cleabs = paste0("COMMUNE_00000000000", d, "001"),
+        nom_officiel = paste0("Commune ", d),
+        code_insee = paste0(d, "001"),
+        code_insee_du_departement = d,
+        code_insee_de_la_region = "53",
+        codes_siren_des_epci = "200000001"
+      ))
+    }),
+    list(feature_geometrie(list(
+      cleabs = "COMMUNE_0000000000044001",
+      nom_officiel = "Commune ligérienne",
+      code_insee = "44001",
+      code_insee_du_departement = "44",
+      code_insee_de_la_region = "52",
+      codes_siren_des_epci = "244400000"
+    )))
+  ))
+}
+
+# Collection vide au sens WFS : une FeatureCollection parfaitement valide,
+# syntaxiquement correcte, mais SANS feature — exactement ce que GeoPF renvoie
+# avec le bbox lat,lon (le cas silencieux de #1100).
+fixture_collection_vide <- function() collection_wfs(list())
+
 # Le contrat d'entrée de publier_geometrie : les trois niveaux, indexés comme
 # le WFS les renvoie (le nom des fichiers cibles de l'ADR-0008).
 fixture_geometrie_wfs <- function() {
   list(
     communes = fixture_communes_wfs(),
+    epcis = fixture_epcis_wfs(),
+    departements = fixture_departements_wfs()
+  )
+}
+
+# Le jeu SAIN : les communes couvrent les 4 départements bretons, donc la
+# garde de plausibilité (#1100) passe et les trois masques sont écrits.
+fixture_geometrie_wfs_saine <- function() {
+  list(
+    communes = fixture_communes_wfs_departements(),
     epcis = fixture_epcis_wfs(),
     departements = fixture_departements_wfs()
   )
