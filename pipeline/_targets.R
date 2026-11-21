@@ -1427,7 +1427,10 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
   }
   publication_dependencies <- c(
     lapply(paste0("publie_", scalar_owners), as.name),
-    list(as.name("fusion_vintages"), as.name("scalar_serving_artifacts"),
+    # Issue #1103 (revue) : le garde doit lire les empreintes de CE run —
+    # dépendance explicite à la cible qui les publie (jamais un fichier périmé).
+    list(as.name("digests_run"), as.name("fusion_vintages"),
+      as.name("scalar_serving_artifacts"),
       as.name("typed_reading_serving_artifacts")))
   publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
     list(as.call(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
@@ -1452,7 +1455,9 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
       publie_habitat
       publie_mobilite
       publie_backend_retained
+      digests_run
       profile_serving_artifacts
+      verifier_gel_release(SORTIE_RUN)  # garde au point d'ouverture de la publication
       publier_declared_profiles_postgres(SORTIE_RUN,
         unique(c(profile_serving_owners(metadata_demographie),
                  profile_serving_owners(metadata_habitat),

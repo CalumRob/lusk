@@ -71,6 +71,9 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
     # scope, the normal full-backend publication is unchanged.
     scope_ids <- retained_backend_scope_ids(scalar_scope)
     if (length(scope_ids)) {
+      # Chemin LUSK_SCALAR_SCOPE : le garde a déjà été appelé à l'ouverture
+      # ci-dessus ; garde explicite ici avant tout verrou/écriture du périmètre.
+      verifier_gel_release(sortie)
       if (!nzchar(baseline_sortie))
         stop("A scoped retained publication requires LUSK_SCALAR_BASELINE_SORTIE ",
              "pointing to the counterpart generation (prior baseline when ",

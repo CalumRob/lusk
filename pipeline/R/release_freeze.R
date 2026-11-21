@@ -6,18 +6,43 @@
 # writes when the run's source-digests.json differs from sources.lock.json.
 # Cron and static builds never call it — they adopt new bytes and record them.
 
+erreur_gel_release <- function(raison, message) {
+  structure(
+    list(message = message, call = NULL, raison = raison),
+    class = c("erreur_gel_release", "error", "condition")
+  )
+}
+
 verifier_gel_release <- function(sortie = Sys.getenv("LUSK_SORTIE",
                                                      unset = file.path("..", "public", "data")),
                                  lock = NULL, digests = NULL) {
+  chemin_digests <- file.path(sortie, NOM_DIGESTS)
   if (is.null(digests)) {
-    digests <- lire_digests_source(file.path(sortie, NOM_DIGESTS))
+    if (!file.exists(chemin_digests)) {
+      stop(erreur_gel_release(
+        "digests_absents",
+        paste0("Gel de release : ", chemin_digests,
+               " absent — publication refusée, zéro écriture. Relock requis.")
+      ))
+    }
+    digests <- lire_digests_source(chemin_digests)
   }
   if (!length(digests)) {
-    stop(
-      "Gel de release : ", file.path(sortie, NOM_DIGESTS),
-      " absent — publication refusée, zéro écriture. Relock requis.",
-      call. = FALSE
-    )
+    stop(erreur_gel_release(
+      "digests_absents",
+      paste0("Gel de release : ", chemin_digests,
+             " vide — publication refusée, zéro écriture. Relock requis.")
+    ))
+  }
+  chemin_lock <- chemin_lock(lock)
+  if (file.exists(chemin_lock) && file.exists(chemin_digests) &&
+      file.mtime(chemin_digests) < file.mtime(chemin_lock)) {
+    stop(erreur_gel_release(
+      "digests_perimes",
+      paste0("Gel de release : ", chemin_digests,
+             " est plus ancien que ", chemin_lock,
+             " — publication refusée, zéro écriture. Relock requis.")
+    ))
   }
   registre <- lire_lock(lock)
   ids_digest <- vapply(digests, function(d) as.character(d$source_id %||% ""), character(1))
@@ -25,33 +50,33 @@ verifier_gel_release <- function(sortie = Sys.getenv("LUSK_SORTIE",
     id <- ids_digest[[i]]
     verrou <- registre[[id]]
     if (is.null(verrou)) {
-      stop(
-        "Gel de release : aucune référence pour '", id,
-        "' dans sources.lock.json — publication refusée, zéro écriture. Relock requis.",
-        call. = FALSE
-      )
+      stop(erreur_gel_release(
+        "sans_reference",
+        paste0("Gel de release : aucune référence pour '", id,
+               "' dans sources.lock.json — publication refusée, zéro écriture. Relock requis.")
+      ))
     }
     attendu <- as.character(verrou$sha256)
     observe <- as.character(digests[[i]]$sha256)
     if (!identical(attendu, observe)) {
-      stop(
-        "Gel de release : dérive de '", id, "' depuis ",
-        as.character(verrou$acquired_at),
-        " — publication refusée, zéro écriture. Relock requis (attendu ",
-        attendu, ", observé ", observe, ").",
-        call. = FALSE
-      )
+      stop(erreur_gel_release(
+        "derive",
+        paste0("Gel de release : dérive de '", id, "' depuis ",
+               as.character(verrou$acquired_at),
+               " — publication refusée, zéro écriture. Relock requis (attendu ",
+               attendu, ", observé ", observe, ").")
+      ))
     }
   }
   # A locked source the run did not read cannot be attested either.
   manquants <- setdiff(names(registre), ids_digest)
   if (length(manquants)) {
-    stop(
-      "Gel de release : empreinte absente pour ",
-      paste(manquants, collapse = ", "),
-      " — publication refusée, zéro écriture. Relock requis.",
-      call. = FALSE
-    )
+    stop(erreur_gel_release(
+      "empreinte_absente",
+      paste0("Gel de release : empreinte absente pour ",
+             paste(manquants, collapse = ", "),
+             " — publication refusée, zéro écriture. Relock requis.")
+    ))
   }
   invisible(TRUE)
 }

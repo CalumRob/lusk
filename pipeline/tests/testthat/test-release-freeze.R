@@ -41,13 +41,48 @@ test_that("une source verrouillée absente du run refuse aussi", {
   expect_match(conditionMessage(erreur), "empreinte absente", fixed = TRUE)
 })
 
-test_that("sans source-digests.json, le garde refuse avec zéro écriture", {
+test_that("sans source-digests.json, le garde refuse avec une raison nommée", {
   sortie <- tempfile("sortie-sans-digests-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
   erreur <- tryCatch(verifier_gel_release(sortie), error = function(e) e)
-  expect_s3_class(erreur, "error")
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "digests_absents")
   expect_match(conditionMessage(erreur), "absent", fixed = TRUE)
+})
+
+test_that("un source-digests.json plus ancien que le lockfile est refusé", {
+  sortie <- tempfile("sortie-digests-perimes-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+  ecrire_digests_source(digests_conformes(), file.path(sortie, NOM_DIGESTS))
+  lock <- tempfile("lock-neuf-")
+  ecrire_lock(lire_lock(), lock)
+  # Le lockfile est écrit APRÈS les empreintes : le run ne les a pas vues.
+  Sys.setFileTime(file.path(sortie, NOM_DIGESTS),
+                  as.POSIXct("2020-01-01T00:00:00", tz = "UTC"))
+  Sys.setFileTime(lock, as.POSIXct("2027-01-01T00:00:00", tz = "UTC"))
+  erreur <- tryCatch(verifier_gel_release(sortie, lock = lock), error = function(e) e)
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "digests_perimes")
+})
+
+test_that("le target de publication dépend de digests_run (empreintes du run)", {
+  racine <- pkgload::pkg_path()
+  withr::local_dir(racine)
+  withr::local_envvar(
+    LUSK_THEMES = "", LUSK_PUBLISH_DB = "1", LUSK_PUBLISH_PROFILE = "1",
+    LUSK_MODE = "full",
+    LUSK_SORTIE = tempfile("sortie-graphe-"),
+    LUSK_CACHE = tempfile("cache-graphe-")
+  )
+  manifeste <- targets::tar_manifest()
+  expect_true("digests_run" %in% manifeste$name)
+  edges <- targets::tar_network()$edges
+  expect_true("digests_run" %in%
+                edges$from[edges$to == "publie_backend_retained"])
+  expect_true("digests_run" %in%
+                edges$from[edges$to == "publie_profiles_declares"])
 })
 
 test_that("le point d'entrée retained refuse avant toute connexion DB", {

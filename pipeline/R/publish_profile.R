@@ -650,9 +650,9 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
 # database write. The DPE facet is still cross-checked against the live
 # scalar_observation marker inside publish_registered_profile().
 publier_declared_profiles_postgres <- function(artifact_directory, owners, con = NULL) {
-  # Issue #1103 : gel de release avant toute connexion. Un `con` injecté est
-  # un seam de test (base jetable), pas une publication de release.
-  if (is.null(con)) verifier_gel_release(artifact_directory)
+  # Issue #1103 : le garde est placé LA où la connexion de service est OUVERTE.
+  # Quand `con` est fourni, c'est l'appelant (déjà gardé à son ouverture) qui en
+  # est propriétaire — cette fonction ne décide pas selon le contexte de test.
   if (!is.character(owners) || !length(owners) || anyNA(owners) || anyDuplicated(owners))
     stop("Declared profile owners are required", call.=FALSE)
   if (!"structure_age" %in% owners)
@@ -660,7 +660,10 @@ publier_declared_profiles_postgres <- function(artifact_directory, owners, con =
   scalar_binding <- profile_scalar_binding(artifact_directory)
   profiles <- read_profile_serving_profiles(artifact_directory, owners, scalar_binding = scalar_binding)
   owned <- is.null(con)
-  if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
+  if (owned) {
+    verifier_gel_release(artifact_directory)  # avant l'ouverture de la connexion
+    con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
+  }
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
   # The artifacts are already projected and validated; the identity publisher
   # exists only to reuse the shared marker and comparison publication
