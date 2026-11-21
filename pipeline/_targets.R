@@ -724,11 +724,19 @@ typed_reading_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_
 # NB : sur un échec du TÉLÉCHARGEMENT lui-même, les statuts sont portés par
 # l'erreur (issue #8) — le rapport d'échec est une responsabilité de l'étape
 # de câblage cron (étape 5 du port), pas du DAG.
-rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
+rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN, verifs = character(0),
                           precedent = NULL) {
   nom <- theme$theme
   brut <- as.name(paste0("brut_", nom))
   sources <- as.name(paste0("sources_", nom))
+  # Issue #1103 (revue) : le rapport dépend DES verrous du même run ; chaque
+  # verrou retourne son attribution (ou list()), agrégée dans le rapport.
+  deps_verif <- lapply(verifs, as.name)
+  expr_attributions <- if (length(verifs)) {
+    as.call(c(list(as.name("c")), deps_verif))
+  } else {
+    quote(list())
+  }
   corps <- list(
     bquote(brut_ <- .(brut)),
     bquote(couverture <- if ("couverture" %in% names(brut_)) {
@@ -737,12 +745,14 @@ rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
       NULL
     }),
     bquote(ecrire_rapport_run(.(sources), .(mode), .(sortie),
-                              couverture = couverture)),
+                              couverture = couverture,
+                              attributions = .(expr_attributions))),
     bquote(file.path(.(sortie), "run-report.json"))
   )
   if (!is.null(precedent)) {
     corps <- c(list(bquote(.(precedent))), corps)
   }
+  corps <- c(deps_verif, corps)
   tar_target_raw(
     paste0("rapport_", nom),
     as.call(c(list(as.name("{")), corps)),
@@ -1240,15 +1250,22 @@ for (t in THEMES_RUN) {
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
-  rapports <- c(rapports, list(rapport_theme(t, precedent = precedent)))
+  spec <- VERIFICATIONS_RUN[[t$theme]]
+  slugs <- if (is.null(spec)) character(0) else vapply(spec, function(v) v$slug, character(1))
+  rapports <- c(rapports, list(rapport_theme(
+    t, precedent = precedent, verifs = paste0("verif_", slugs)
+  )))
   precedent <- as.name(paste0("rapport_", t$theme))
 }
 # Le run COMPLET (le cron, #343) : le rapport de run du thème Programmes,
 # chaîné DERNIER — le rapport final porte les statuts du thème Programmes,
 # exactement comme six run_pipeline séquentiels (le dernier thème gagne).
 if (selection_complete) {
-  rapports <- c(rapports, list(rapport_theme(theme_programmes(),
-                                             precedent = precedent)))
+  rapports <- c(rapports, list(rapport_theme(
+    theme_programmes(), precedent = precedent,
+    verifs = paste0("verif_", vapply(VERIFICATIONS_PROGRAMMES,
+                                     function(v) v$slug, character(1)))
+  )))
 }
 
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le

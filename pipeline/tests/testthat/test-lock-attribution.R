@@ -108,11 +108,45 @@ test_that("un verrou qui passe n'écrit aucune attribution", {
   sortie <- tempfile("sortie-ok-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
-  expect_true(isTRUE(verifier_avec_attribution(
+  expect_identical(verifier_avec_attribution(
     verifier = function() TRUE, args = list(),
     ids_sources = "osm_reseaux", sortie = sortie
-  )))
+  ), list())
   expect_length(lire_attributions(sortie), 0L)
+})
+
+test_that("le wrapper retourne l'attribution comme valeur de cible", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  digests$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
+  a <- verifier_avec_attribution(
+    verifier = function() stop("verrou cassé"), args = list(),
+    ids_sources = "osm_reseaux", sortie = tempfile("sortie-retour-"),
+    digests = digests
+  )
+  expect_type(a, "list")
+  expect_equal(a$type, "drift")
+  expect_match(a$message, "dérive de osm_reseaux", fixed = TRUE)
+  expect_identical(
+    verifier_avec_attribution(
+      verifier = function() TRUE, args = list(),
+      ids_sources = "osm_reseaux", sortie = tempfile("sortie-retour-ok-")
+    ),
+    list()
+  )
+})
+
+test_that("les rapports du graphe dépendent des verrous du même run", {
+  withr::local_dir(pkgload::pkg_path())
+  withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
+                      LUSK_SORTIE = tempfile("sortie-rapport-"),
+                      LUSK_CACHE = tempfile("cache-rapport-"))
+  edges <- targets::tar_network()$edges
+  for (theme in c("economie", "milieux", "mobilite")) {
+    verifs <- edges$from[grepl("^verif_", edges$from) &
+                           edges$to == paste0("rapport_", theme)]
+    expect_true(length(verifs) > 0L, info = theme)
+  }
 })
 
 test_that("les ids d'entrée de la REGISTRE sont extraits correctement", {

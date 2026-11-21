@@ -285,6 +285,10 @@ test_that("deux builds depuis les octets verrouillés sont byte-identiques à de
     dir.create(sortie)
     p <- compute_payload_test(load_fixture(), vintages = v)
     publish(p, sortie)
+    # Issue #1103 (revue) : l'artefact scalar-serving réel (celui du graphe)
+    # doit être octet-pour-octet identique aux deux horloges.
+    materialize_theme_scalar_artifact(
+      p, lire_theme_metadata("demographie"), v, "demographie", sortie)
     sortie
   }
 
@@ -292,10 +296,16 @@ test_that("deux builds depuis les octets verrouillés sont byte-identiques à de
   b <- construire("2027-04-02")
   fichiers <- intersect(list.files(a), list.files(b))
   expect_true(length(fichiers) > 0L)
-  md5 <- function(dossier) {
-    vapply(file.path(dossier, fichiers), function(f) unname(tools::md5sum(f)), character(1))
+  servis_a <- list.files(file.path(a, "scalar-serving", "demographie"), recursive = TRUE)
+  expect_true(length(servis_a) > 0L)
+  md5 <- function(dossier, rels) {
+    vapply(file.path(dossier, rels), function(f) unname(tools::md5sum(f)), character(1))
   }
-  expect_identical(unname(md5(a)), unname(md5(b)))
+  expect_identical(unname(md5(a, fichiers)), unname(md5(b, fichiers)))
+  expect_identical(
+    unname(md5(a, file.path("scalar-serving", "demographie", servis_a))),
+    unname(md5(b, file.path("scalar-serving", "demographie", servis_a)))
+  )
 })
 
 test_that("relock_sources réécrit les enregistrements depuis un run, atomiquement", {

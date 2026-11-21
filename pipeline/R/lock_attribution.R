@@ -109,7 +109,7 @@ verifier_avec_attribution <- function(verifier, args = list(),
     do.call(verifier, args)
     NULL
   }, error = function(e) e)
-  if (is.null(echec)) return(invisible(TRUE))
+  if (is.null(echec)) return(list())
   if (is.null(digests)) digests <- lire_digests_source(chemin_digests_cache(cache))
   attribution <- attribuer_echec_lock(ids_sources, digests, lock)
   if (identical(attribution$type, "regression")) {
@@ -118,6 +118,9 @@ verifier_avec_attribution <- function(verifier, args = list(),
       call. = FALSE
     )
   }
+  attribution$verrou <- conditionMessage(echec)
   enregistrer_attribution_derive(attribution, sortie)
-  invisible(FALSE)
+  # La valeur de la cible EST l'attribution : le rapport du run en dépend
+  # directement (pas seulement d'un fichier latéral, #1103 revue).
+  attribution
 }
