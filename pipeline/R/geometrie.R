@@ -289,22 +289,91 @@ mapper_vers_contrat <- function(collection, niveau) {
   collection
 }
 
+# verifier_collection_geometrie ---------------------------------------------
+# Garde de plausibilité post-filtre (#1100). Le bbox lat,lon renvoyait une
+# FeatureCollection PARFAITEMENT VALIDE mais SANS feature : publier_geometrie
+# écrivait alors des GeoJSON de 147 octets — des cartes blanches — sans lever
+# la moindre erreur. Une validation purement structurelle ne suffit pas.
+#
+# La règle vient du CONTRAT DE SOURCE, pas d'un seuil inventé :
+#   - chaque niveau du référentiel canonique est NON VIDE (l'univers breton
+#     porte 1202 communes, 61 EPCI et 4 départements — jamais zéro) ;
+#   - les communes couvrent les 4 départements de DEPT_BRETAGNE (22·29·35·56),
+#     la définition même de la Bretagne (CONTEXT.md, filter.R).
+# On écarte donc un nombre magique du type « ≥ 1000 communes » : les comptes
+# dérivent avec les millésimes COG, alors que la couverture départementale et
+# la non-vacuité sont des faits stables du référentiel. Les départements
+# attendus sont injectables (`departements_attendus`) pour éprouver la garde.
+# L'erreur nomme TOUJOURS le niveau, l'URL et les comptes (reçus / retenus).
+verifier_collection_geometrie <- function(collection, niveau, url,
+                                          brut_n,
+                                          departements_attendus = DEPT_BRETAGNE) {
+  if (!is.list(collection) || !is.list(collection$features)) {
+    stop(
+      "Collection de géométrie invalide pour le niveau '", niveau,
+      "' (FeatureCollection/features attendues) — URL : ", url,
+      ". Aucun masque écrit.", call. = FALSE
+    )
+  }
+  n_filtre <- length(collection$features)
+  if (n_filtre == 0L) {
+    stop(
+      "Collection de géométrie VIDE pour le niveau '", niveau,
+      "' : 0 feature retenue après filtrage sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Aucun masque écrit.",
+      call. = FALSE
+    )
+  }
+  if (identical(niveau, "communes")) {
+    deps <- unique(vapply(
+      collection$features,
+      function(f) as.character(f$properties$code_insee_du_departement),
+      character(1)
+    ))
+    manquants <- setdiff(departements_attendus, deps)
+    if (length(manquants) > 0L) {
+      stop(
+        "Collection de géométrie IMPLAUSIBLE pour le niveau '", niveau,
+        "' : département(s) breton(s) absent(s) ",
+        paste(manquants, collapse = ", "), " (présents : ",
+        paste(sort(intersect(departements_attendus, deps)), collapse = ", "),
+        ") — ", n_filtre, " commune(s) retenue(s) sur ", brut_n,
+        " reçue(s) du WFS — URL : ", url, ". Aucun masque écrit.",
+        call. = FALSE
+      )
+    }
+  }
+  invisible(TRUE)
+}
+
 # publier_geometrie ------------------------------------------------------------
 # L'orchestrateur : télécharge les trois couches (ou utilise le fetch injecté),
-# filtre à la Bretagne, mappe au contrat et écrit les trois fichiers sous la
-# cible. Upsert : écrire écrase (ADR-0004) — relancer ne duplique jamais.
+# filtre à la Bretagne, VALIDE chaque collection après filtrage (#1100), mappe
+# au contrat et écrit les trois fichiers sous la cible. Tout est validé avant
+# la première écriture : ni couche vide, ni publication à moitié écrite.
+# Upsert : écrire écrase (ADR-0004) — relancer ne duplique jamais.
 # Le fichier cible porte le nom du niveau (communes.geojson, epcis.geojson,
 # departements.geojson — ADR-0008) ; l'app le lit sous /data/<niveau>.geojson.
 publier_geometrie <- function(cible = "public/data",
                               fetch = telecharger_geometrie_wfs) {
-  if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+  niveaux <- names(NIVEAUX_GEOMETRIE)
 
-  for (niveau in names(NIVEAUX_GEOMETRIE)) {
+  prets <- lapply(niveaux, function(niveau) {
     brut <- fetch(niveau)
     filtre <- filtrer_geometrie(brut, niveau)
-    mappe <- mapper_vers_contrat(filtre, niveau)
+    verifier_collection_geometrie(
+      filtre, niveau,
+      url = url_geometrie_wfs(niveau),
+      brut_n = length(brut$features)
+    )
+    mapper_vers_contrat(filtre, niveau)
+  })
+  names(prets) <- niveaux
+
+  if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+  for (niveau in niveaux) {
     jsonlite::write_json(
-      mappe,
+      prets[[niveau]],
       file.path(cible, paste0(niveau, ".geojson")),
       auto_unbox = TRUE,
       digits = NA,

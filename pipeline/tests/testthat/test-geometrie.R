@@ -11,8 +11,9 @@
 # il est vérifié une fois à la main et mocké dans les tests) :
 #   1. filtrer_geometrie        — la garde Bretagne par niveau ;
 #   2. mapper_vers_contrat      — le mapping des propriétés au contrat ;
-#   3. publier_geometrie        — l'orchestrateur : écrit les trois fichiers,
-#      lus en retour comme des FeatureCollections valides du contrat.
+#   3. publier_geometrie        — l'orchestrateur : valide la collection après
+#      filtrage (#1100, jamais une couche vide écrite), puis écrit les trois
+#      fichiers, lus en retour comme des FeatureCollections du contrat.
 
 # filtrer_geometrie ------------------------------------------------------
 
@@ -83,7 +84,7 @@ test_that("publier_geometrie écrit les trois fichiers GeoJSON du contrat", {
   on.exit(unlink(cible, recursive = TRUE))
 
   # le seam de fetch injecté — le réseau n'entre pas dans la boucle de test
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
 
   for (niveau in c("communes", "epcis", "departements")) {
@@ -104,12 +105,15 @@ test_that("publier_geometrie n'écrit que les territoires bretons", {
   cible <- tempfile("geom-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
 
   communes <- jsonlite::fromJSON(file.path(cible, "communes.geojson"), simplifyVector = FALSE)
-  expect_equal(length(communes$features), 1)
-  expect_identical(communes$features[[1]]$properties$territoire, "22001")
+  expect_equal(length(communes$features), 4)
+  expect_setequal(
+    vapply(communes$features, function(f) f$properties$territoire, character(1)),
+    c("22001", "29001", "35001", "56001")
+  )
 
   epcis <- jsonlite::fromJSON(file.path(cible, "epcis.geojson"), simplifyVector = FALSE)
   sirens <- vapply(epcis$features, function(f) f$properties$territoire, character(1))
@@ -120,12 +124,12 @@ test_that("publier_geometrie est un upsert : relancer écrase sans dupliquer", {
   cible <- tempfile("geom-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
   publier_geometrie(cible, fetch = fetch_injecte)
 
   communes <- jsonlite::fromJSON(file.path(cible, "communes.geojson"), simplifyVector = FALSE)
-  expect_equal(length(communes$features), 1)
+  expect_equal(length(communes$features), 4)
 })
 
 test_that("publier_geometrie s'arrête bruyamment sur un fetch invalide", {
@@ -134,6 +138,83 @@ test_that("publier_geometrie s'arrête bruyamment sur un fetch invalide", {
 
   fetch_ko <- function(niveau) stop("réseau en panne")
   expect_error(publier_geometrie(cible, fetch = fetch_ko), "réseau en panne")
+})
+
+# garde de plausibilité post-filtre (#1100) --------------------------------
+# Le bug #1100 renvoyait une FeatureCollection VALIDE mais vide, écrite sans
+# erreur. Ces tests injectent une collection vide / incomplète et exigent un
+# abort NOMMÉ (niveau + URL + comptes) avant toute écriture de fichier.
+
+test_that("une collection vide aborte en nommant le niveau, l'URL et les comptes", {
+  cible <- tempfile("geom-vide-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  err <- tryCatch(
+    publier_geometrie(cible, fetch = function(niveau) fixture_collection_vide()),
+    error = identity
+  )
+  expect_s3_class(err, "error")
+  msg <- conditionMessage(err)
+  expect_true(grepl("communes", msg, fixed = TRUE))
+  expect_true(grepl("data.geopf.fr/wfs/ows", msg, fixed = TRUE))
+  expect_true(grepl("bbox=-5.5,47.0,-0.5,49.0,EPSG:4326", msg, fixed = TRUE))
+  expect_true(grepl("0", msg, fixed = TRUE))
+  # aucun masque n'est écrit quand la garde saute
+  expect_false(file.exists(file.path(cible, "communes.geojson")))
+})
+
+test_that("une couverture communale partielle est refusée comme implausible", {
+  cible <- tempfile("geom-implausible-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  # une seule commune bretonne (22) : 29/35/56, présents dans l'univers
+  # canonique de référence, sont absents — ce n'est pas une Bretagne valide.
+  sain <- fixture_geometrie_wfs_saine()
+  fetch_partiel <- function(niveau) {
+    if (niveau == "communes") fixture_communes_wfs() else sain[[niveau]]
+  }
+  err <- tryCatch(publier_geometrie(cible, fetch = fetch_partiel), error = identity)
+  expect_s3_class(err, "error")
+  msg <- conditionMessage(err)
+  expect_true(grepl("communes", msg, fixed = TRUE))
+  expect_true(grepl("29, 35, 56", msg, fixed = TRUE))
+  expect_true(grepl("data.geopf.fr/wfs/ows", msg, fixed = TRUE))
+  expect_false(file.exists(file.path(cible, "communes.geojson")))
+})
+
+test_that("une collection saine couvrant les 4 départements passe la garde", {
+  cible <- tempfile("geom-saine-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  expect_silent(publier_geometrie(
+    cible, fetch = function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
+  ))
+  communes <- jsonlite::fromJSON(file.path(cible, "communes.geojson"), simplifyVector = FALSE)
+  expect_setequal(
+    vapply(communes$features, function(f) f$properties$territoire, character(1)),
+    c("22001", "29001", "35001", "56001")
+  )
+  for (niveau in c("epcis", "departements")) {
+    expect_true(file.exists(file.path(cible, paste0(niveau, ".geojson"))))
+  }
+})
+
+test_that("verifier_collection_geometrie lie la couverture au contrat Bretagne", {
+  url <- url_geometrie_wfs("communes")
+
+  expect_true(verifier_collection_geometrie(
+    filtrer_geometrie(fixture_communes_wfs_departements(), "communes"),
+    "communes", url, brut_n = 5L
+  ))
+  err <- tryCatch(
+    verifier_collection_geometrie(
+      filtrer_geometrie(fixture_communes_wfs(), "communes"),
+      "communes", url, brut_n = 2L
+    ),
+    error = identity
+  )
+  expect_s3_class(err, "error")
+  expect_true(grepl("29, 35, 56", conditionMessage(err), fixed = TRUE))
 })
 
 # le contrat d'entrée : les niveaux attendus par publier_geometrie
