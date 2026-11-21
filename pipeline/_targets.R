@@ -1499,8 +1499,11 @@ digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
     as.call(c(
       list(as.name("{")), deps,
       list(bquote(ecrire_digests_source(
-        c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
-          lire_digests_source(.(chemin_cache))),   # sources de manifeste
+        filtrer_digests_ids(
+          c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
+            lire_digests_source(.(chemin_cache))),   # sources de manifeste
+          ids_digests_publication(THEMES_RUN)        # ids encore déclarés
+        ),
         .(chemin_sortie)
       )))
     )),

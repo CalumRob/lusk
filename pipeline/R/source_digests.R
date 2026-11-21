@@ -83,6 +83,22 @@ verifier_digests_couvrent_lectures_reseau <- function(digests) {
   invisible(TRUE)
 }
 
+# ids_digests_publication / filtrer_digests_ids ---------------------------------
+# Le cache agrégé survit aux runs : on ne projette que les sources encore
+# déclarées par les manifestes du run ET les lectures réseau enregistrées
+# (géométrie). Une source retirée ne doit pas rester dans source-digests.json —
+# le garde la refuserait ensuite avec `sans_reference` (issue #1103, revue 2).
+ids_digests_publication <- function(themes) {
+  ids <- unlist(lapply(themes, function(t) {
+    if (!is.null(t$manifest)) as.character(t$manifest$id) else character(0)
+  }), use.names = FALSE)
+  unique(c(ids, names(LECTURES_RESEAU)))
+}
+
+filtrer_digests_ids <- function(digests, ids) {
+  digests[names(digests) %in% ids]
+}
+
 # verifier_digests_couvrent -----------------------------------------------------
 # A source read by the run but absent from the digests fails the contract.
 # "Read" = a positive statut (frais / à traiter à la main); a failed download
