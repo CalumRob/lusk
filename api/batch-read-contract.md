@@ -163,8 +163,12 @@ observations and profile cells keep their actual support, denominator, suppressi
 and provenance. Ordered series preserve declared axes and producer missing-record
 semantics. Period/detail collections and anchored memberships remain sparse; no
 synthetic zero, membership, or rank is added. Typed-reading side evidence is fetched
-set-wise for the same cohort. AEDAR source-grain resources and named references do not
-accept cohort targets; comparisons remain territory-targeted.
+set-wise for the same cohort. Both AEDAR Cellule resources — per-cell on
+`{typequ, horizon, mode, statistic}` and summary on `{horizon, mode, kind}` — accept
+declared-coordinate cohort targets at every producer-declared level, region included,
+and return their native `values` payload; the deprecated `measure` alias is not a
+cohort address. Named references do not accept cohort targets; comparisons remain
+territory-targeted.
 
 Before any data read, preflight bounds the actual selected members, axes, facts, and
 evidence/lineage work within the shared 200,000-unit limit. A single read and every

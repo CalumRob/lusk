@@ -1,6 +1,7 @@
 """Bounded semantic facts over a producer-declared territory population."""
 
 from dataclasses import dataclass
+from math import isfinite
 
 from fastapi import HTTPException
 
@@ -1051,7 +1052,170 @@ def read_typed_reading_cohort(conn, item, resource, cohort):
         "territories": territories}
 
 
-def preflight_cohort(conn, item, resource, cohort, fields, work_budget):
+# --- AEDAR Cellule cohorts (#1078) ----------------------------------------
+#
+# One declared Cellule projected over every published territory of a level in
+# one bounded read. Both families use the same address resolver as admission,
+# preflight and the per-territory reads; neither family can answer the other's
+# cohort. The deprecated ``measure`` alias is not a cohort address.
+
+_AEDAR_SUMMARY_ROW_COLUMNS = (
+    "territory_id", "measure", "value", "status", "n_typequ", "n_addresses",
+    "n_observed", "coverage_status", "source_id", "vintage_id", "source_url",
+    "licence", "attribution", "reference_date", "publication_date")
+
+
+def _aedar_cohort_address(item, resource):
+    """Resolve the one declared Cellule a cohort reads, with family separation."""
+    from api.aedar_models import AEDARAddressError, aedar_cohort_cellule
+    try:
+        return aedar_cohort_cellule(resource.resource_kind, item.coordinates, "facts")
+    except AEDARAddressError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _aedar_cohort_marker(conn, family, cohort):
+    """Read the one AEDAR publication on this snapshot and pin it to the cohort reference.
+
+    The publication clock predicate and typed-absence classification are the
+    same guards the focal AEDAR reads use; only the cohort-reference check is
+    added here.
+    """
+    from api.aedar_models import AEDAR_SUMMARY_FAMILY
+    from api.aedar_reads import (_aedar_aggregate_publication_marker,
+                                 _aedar_summary_publication_marker)
+    if family == AEDAR_SUMMARY_FAMILY:
+        marker = _aedar_summary_publication_marker(conn)
+        version, reference_version, aedar_version = marker[0], marker[2], marker[3]
+    else:
+        marker = _aedar_aggregate_publication_marker(conn)
+        version, reference_version, aedar_version = marker[0], marker[2], marker[0]
+    if reference_version != cohort.reference_content_version:
+        raise HTTPException(503, "AEDAR publication is inconsistent with the cohort reference")
+    return {"content_version": version, "reference_content_version": reference_version,
+            "aedar_content_version": aedar_version}
+
+
+def _aedar_pin(marker, family, snapshot_state):
+    """One publication identity per AEDAR family per batch; a second, different
+    one fails whole. The two families own distinct content clocks, so they pin
+    independently — neither can be used to answer the other's cohort.
+    """
+    if not isinstance(snapshot_state, dict):
+        return
+    pins = snapshot_state.setdefault("aedar_cohort_pin", {})
+    pin = pins.get(family)
+    if pin is None:
+        pins[family] = marker
+        return
+    if any(pin[key] != marker[key] for key in (
+            "content_version", "reference_content_version", "aedar_content_version")):
+        raise HTTPException(503, "AEDAR publication changed within the batch snapshot")
+
+
+def preflight_aedar_cohort(conn, item, resource, cohort, fields, work_budget, snapshot_state=None):
+    """Validate the AEDAR publication and charge the whole-level Cellule read."""
+    from api.aedar_models import AEDAR_SUMMARY_FAMILY
+    typequ, measure, family = _aedar_cohort_address(item, resource)
+    marker = _aedar_cohort_marker(conn, family, cohort)
+    _aedar_pin(marker, family, snapshot_state)
+    remaining = work_budget - len(cohort.members)
+    if family == AEDAR_SUMMARY_FAMILY:
+        facts = _bounded_count(conn, """SELECT 1 FROM aedar_territory_summary
+            WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND measure=%s""",
+            (cohort.territory_type, cohort.territory_ids, measure), remaining,
+            "Cohort AEDAR summary facts exceed the bounded work limit")
+    else:
+        # Charge exactly the rows the read scans: every published row of this
+        # typequ in the cohort. Rows with no value for the Cellule are absent
+        # from the response, but they are still scanned and still charged.
+        facts = _bounded_count(conn, """SELECT 1 FROM aedar_territorial_aggregate
+            WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND typequ=%s""",
+            (cohort.territory_type, cohort.territory_ids, typequ), remaining,
+            "Cohort AEDAR per-cell facts exceed the bounded work limit")
+    return max(1, len(cohort.members) + facts + 1)
+
+
+def _aedar_summary_cohort_values(conn, cohort, measure):
+    """Set-wise summary read; missing or suppressed territories are absent, never zero."""
+    cursor = conn.execute("""SELECT territory_id,measure,value,status,n_typequ,n_addresses,n_observed,
+            coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date
+        FROM aedar_territory_summary WHERE territory_type=%s AND territory_id=ANY(%s::text[])
+          AND measure=ANY(%s::text[]) ORDER BY territory_id""",
+        (cohort.territory_type, cohort.territory_ids, [measure]))
+    from api.aedar_reads import _aedar_summary_reading_valid
+    values = []
+    provenance = set()
+    for raw in cursor.fetchall():
+        row = dict(zip(_AEDAR_SUMMARY_ROW_COLUMNS, raw))
+        if not _aedar_summary_reading_valid(row["value"], row["status"], row["n_typequ"],
+                row["n_addresses"], row["n_observed"], row["coverage_status"]):
+            raise HTTPException(503, "AEDAR territory cohort contains an invalid reading")
+        status = row["status"]
+        provenance.add(tuple(row[key] for key in ("source_id", "vintage_id", "source_url",
+            "licence", "attribution", "reference_date", "publication_date")))
+        if status != "available":
+            continue  # suppressed reading: absent, never zero
+        values.append(row)
+    if len(provenance) != 1:
+        raise HTTPException(503, "AEDAR territory cohort provenance is inconsistent")
+    return values
+
+
+def read_aedar_cohort(conn, item, resource, cohort, fields, snapshot_state=None):
+    """Read one declared AEDAR Cellule over every published member of the cohort."""
+    from api.aedar_models import AEDAR_SUMMARY_FAMILY
+    typequ, measure, family = _aedar_cohort_address(item, resource)
+    marker = _aedar_cohort_marker(conn, family, cohort)
+    _aedar_pin(marker, family, snapshot_state)
+    by_member = {member["id"]: member for member in cohort.members}
+    values = []
+    if family == AEDAR_SUMMARY_FAMILY:
+        for row in _aedar_summary_cohort_values(conn, cohort, measure):
+            values.append({"territory": dict(by_member[row["territory_id"]]),
+                "value": row["value"], "status": "available", "n_typequ": row["n_typequ"],
+                "n_addresses": row["n_addresses"], "n_observed": row["n_observed"],
+                "coverage_status": row["coverage_status"], "statistic": "direct",
+                "source_id": row["source_id"], "vintage_id": row["vintage_id"],
+                "source_url": row["source_url"], "licence": row["licence"],
+                "attribution": row["attribution"], "reference_date": row["reference_date"],
+                "publication_date": row["publication_date"]})
+        shape = "aedar_summary_cohort"
+    else:
+        cursor = conn.execute("""SELECT territory_id,(measures->>%s)::double precision AS value,
+                n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,
+                licence,attribution,reference_date,publication_date
+            FROM aedar_territorial_aggregate
+            WHERE territory_type=%s AND territory_id=ANY(%s::text[]) AND typequ=%s
+            ORDER BY territory_id""",
+            (measure, cohort.territory_type, cohort.territory_ids, typequ))
+        names = [column.name for column in cursor.description]
+        provenance = set()
+        for raw in cursor.fetchall():
+            row = dict(zip(names, raw))
+            value = row["value"]
+            if value is None or not isfinite(value):
+                continue  # uncovered or suppressed cell: absent, never zero
+            provenance.add(tuple(row[key] for key in ("source_id", "vintage_id", "source_url",
+                "licence", "attribution", "reference_date", "publication_date")))
+            values.append({"territory": dict(by_member[row["territory_id"]]), "value": value,
+                "n_addresses": row["n_addresses"], "n_observed": row["n_observed"],
+                "coverage_status": row["coverage_status"], "source_id": row["source_id"],
+                "vintage_id": row["vintage_id"], "source_url": row["source_url"],
+                "licence": row["licence"], "attribution": row["attribution"],
+                "reference_date": row["reference_date"],
+                "publication_date": row["publication_date"]})
+        if len(provenance) != 1:
+            raise HTTPException(503, "AEDAR per-cell cohort provenance is inconsistent")
+        shape = "aedar_per_cell_cohort"
+    return {"resource": item.resource, "target": item.target.model_dump(), "shape": shape,
+        "family": family, "cellule": {"measure": measure, **({"typequ": typequ} if typequ else {})},
+        "cohort": cohort.envelope(), "content_version": marker["content_version"],
+        "reference_content_version": marker["reference_content_version"],
+        "aedar_content_version": marker["aedar_content_version"], "values": values}
+
+
+def preflight_cohort(conn, item, resource, cohort, fields, work_budget, snapshot_state=None):
     """Validate the native publication and actual bounded work before any read."""
     if resource.resource_kind == "indicator":
         shape, route = _indicator_shape(conn, item, resource)
@@ -1070,10 +1234,13 @@ def preflight_cohort(conn, item, resource, cohort, fields, work_budget):
         raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")
     if resource.resource_kind == "typed_reading":
         return preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget)
+    if resource.resource_kind in {"aedar_source_grain", "aedar_territory_summary"}:
+        return preflight_aedar_cohort(conn, item, resource, cohort, fields, work_budget,
+                                      snapshot_state)
     raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")
 
 
-def read_cohort(conn, item, resource, cohort, fields):
+def read_cohort(conn, item, resource, cohort, fields, snapshot_state=None):
     if resource.resource_kind == "indicator":
         shape, route = _indicator_shape(conn, item, resource)
         if shape == "owned_series":
@@ -1090,4 +1257,6 @@ def read_cohort(conn, item, resource, cohort, fields):
             return read_membership_cohort(conn, item, resource, route, cohort, fields)
     if resource.resource_kind == "typed_reading":
         return read_typed_reading_cohort(conn, item, resource, cohort)
+    if resource.resource_kind in {"aedar_source_grain", "aedar_territory_summary"}:
+        return read_aedar_cohort(conn, item, resource, cohort, fields, snapshot_state)
     raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")

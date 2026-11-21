@@ -57,13 +57,13 @@ Boundary notes for reviewers:
 
 | Outcome | File | Function | Family | Guard detail |
 | --- | --- | --- | --- | --- |
+| `unavailable` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
+| `unavailable` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
 | `unavailable` | `aedar_reads.py` | `_aedar_comparison_marker` | `aedar` | AEDAR comparison publication is unavailable or stale |
 | `unavailable` | `aedar_reads.py` | `_aedar_density_class_summary_records` | `aedar` | AEDAR density-class summary is missing or incomplete |
 | `unavailable` | `aedar_reads.py` | `_aedar_littoral_summary_records` | `aedar` | AEDAR littoral summary is missing or incomplete |
-| `unavailable` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
-| `unavailable` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `aedar` | AEDAR territorial publication is unavailable or incompatible |
-| `unavailable` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `aedar` | AEDAR territory summary publication is unavailable or stale |
-| `unavailable` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `aedar` | AEDAR territory summary publication is unavailable or stale |
+| `unavailable` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `aedar` | AEDAR territory summary publication is unavailable or stale |
+| `unavailable` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `aedar` | AEDAR territory summary publication is unavailable or stale |
 | `unavailable` | `cohort_reads.py` | `_indicator_shape` | `?` | Indicator has ambiguous or unavailable published storage shapes |
 | `unavailable` | `cohort_reads.py` | `_legacy_series_context` | `ordered_series` | Series publication is unavailable or incompatible |
 | `unavailable` | `cohort_reads.py` | `_owned_series_context` | `ordered_series` | Owned-series cohort route is unavailable |
@@ -116,6 +116,9 @@ Boundary notes for reviewers:
 | `unavailable` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `scalar` | Scalar facet publication is stale or incompatible |
 | `unavailable` | `snapshot_reads.py` | `_series_comparison_snapshot` | `ordered_series` | Series publication is unavailable or incompatible |
 | `unavailable` | `typed_reading_snapshots.py` | `_milieux_reading_marker` | `typed_reading` | Milieux reading publication is unavailable |
+| `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
+| `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
+| `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
@@ -136,18 +139,19 @@ Boundary notes for reviewers:
 | `fatal` | `aedar_reads.py` | `_aedar_prepare_fixed_aggregate_batch` | `—` | AEDAR territory summary publication changed within the read snapshot |
 | `fatal` | `aedar_reads.py` | `_aedar_prepare_fixed_aggregate_batch` | `—` | Published AEDAR reference identity is unavailable |
 | `fatal` | `aedar_reads.py` | `_aedar_selected_comparison_snapshot` | `—` | AEDAR comparison facet declaration is incomplete for the requested measures |
+| `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
+| `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
+| `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
+| `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR TYPEQU metadata publication is incomplete |
 | `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR measure publication is incomplete for the requested projection |
-| `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR territorial publication is unavailable or incompatible |
-| `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR territorial publication is unavailable or incompatible |
-| `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR territorial publication is unavailable or incompatible |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary contains an invalid reading |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary is incomplete for the requested projection |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary provenance is inconsistent |
-| `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary publication is unavailable or stale |
-| `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary publication is unavailable or stale |
-| `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary publication is unavailable or stale |
-| `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary publication is unavailable or stale |
+| `fatal` | `cohort_reads.py` | `_aedar_cohort_marker` | `—` | AEDAR publication is inconsistent with the cohort reference |
+| `fatal` | `cohort_reads.py` | `_aedar_pin` | `—` | AEDAR publication changed within the batch snapshot |
+| `fatal` | `cohort_reads.py` | `_aedar_summary_cohort_values` | `—` | AEDAR territory cohort contains an invalid reading |
+| `fatal` | `cohort_reads.py` | `_aedar_summary_cohort_values` | `—` | AEDAR territory cohort provenance is inconsistent |
 | `fatal` | `cohort_reads.py` | `_collection_context` | `—` | Collection coordinate descriptor is unavailable |
 | `fatal` | `cohort_reads.py` | `_collection_context` | `—` | Observed collection publication is incompatible with the cohort |
 | `fatal` | `cohort_reads.py` | `_indicator_shape` | `—` | Indicator has ambiguous collection/storage declarations |
@@ -182,6 +186,7 @@ Boundary notes for reviewers:
 | `fatal` | `cohort_reads.py` | `preflight_owned_series_cohort` | `—` | Owned-series provenance is incomplete |
 | `fatal` | `cohort_reads.py` | `preflight_profile_cohort` | `—` | Declared profile population is incomplete |
 | `fatal` | `cohort_reads.py` | `preflight_profile_cohort` | `—` | Profile cell provenance is unavailable |
+| `fatal` | `cohort_reads.py` | `read_aedar_cohort` | `—` | AEDAR per-cell cohort provenance is inconsistent |
 | `fatal` | `cohort_reads.py` | `read_cohort` | `—` | Cohort facts are unavailable for this published resource shape |
 | `fatal` | `cohort_reads.py` | `read_legacy_series_cohort` | `—` | Series cohort is incomplete |
 | `fatal` | `cohort_reads.py` | `read_legacy_series_cohort` | `—` | Series contains duplicate axis facts |

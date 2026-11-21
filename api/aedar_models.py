@@ -1,6 +1,9 @@
 """Typed response contracts for source-grain AEDAR reads."""
 
 from datetime import date
+from functools import lru_cache
+import json
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -203,6 +206,39 @@ def aedar_resolve(resource_kind, coordinates, intent_kind):
         if intent_kind == "fixed_comparison" and len(measures) != 1:
             raise AEDARAddressError("AEDAR comparison requires one measure coordinate")
     return typequ, measures, family, is_alias
+
+
+def aedar_cohort_cellule(resource_kind, coordinates, intent_kind="facts"):
+    """The one guard for a declared Cellule used as a whole-level cohort address.
+
+    Returns ``(typequ, measure, family)``. The deprecated ``measure`` alias keeps
+    its frozen pre-#1076 meaning until #1098 and is never a cohort address; a
+    measure-free, ``typequ``-scoped read names no Cellule. Admission, preflight
+    and read all call this helper so those rules cannot drift apart.
+    """
+    typequ, measures, family, is_alias = aedar_resolve(
+        resource_kind, coordinates, intent_kind)
+    if is_alias:
+        raise AEDARAddressError("measure is not an AEDAR Cellule address")
+    if not measures or len(measures) != 1:
+        raise AEDARAddressError("an AEDAR cohort requires one declared Cellule")
+    return typequ, measures[0], family
+
+
+@lru_cache(maxsize=1)
+def aedar_typequ_registry_size() -> int:
+    """The producer-declared TYPEQU BPE registry count — one source of truth.
+
+    This is the ``registry_count`` of the producer's typequ universe declaration,
+    mirrored as the aggregate Cellule's ``registry_count`` in discovery. Readers
+    take the number from here rather than hardcoding a domain fact.
+    """
+    path = Path(__file__).resolve().parents[1] / "pipeline/inst/extdata/aedar-typequ-universe.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    count = payload.get("registry_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+        raise ValueError("typequ universe: registry count is missing")
+    return count
 
 
 class ThemeTerritorySelection(BaseModel):

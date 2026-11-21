@@ -10,6 +10,7 @@ from api.scripts.generate_endpoint_inventory import (
 
 
 ENDPOINTS = Path(__file__).parents[1] / "ENDPOINTS.md"
+BATCH_CONTRACT = Path(__file__).parents[1] / "batch-read-contract.md"
 
 
 def test_public_docs_and_openapi_are_database_free_and_api_prefixed():
@@ -52,6 +53,18 @@ def test_endpoint_reference_has_human_guidance_for_every_operation():
         for method in ("get", "put", "post", "delete", "options", "head", "patch", "trace"):
             if method in path_item:
                 assert f"`{method.upper()} {path}`" in reference
+
+
+def test_cohort_documentation_matches_aedar_cellule_support():
+    """The hand-maintained cohort prose must not contradict admitted targets (#1078)."""
+    endpoints = ENDPOINTS.read_text(encoding="utf-8")
+    batch = BATCH_CONTRACT.read_text(encoding="utf-8")
+    for text in (endpoints, batch):
+        assert "AEDAR Cellule" in text
+        assert "`values`" in text
+        assert "region included" in text
+    assert "source-grain resources, named references, and comparison intents do not" not in endpoints
+    assert "AEDAR source-grain resources and named references do not" not in batch
 
 
 def test_endpoint_request_inventory_is_deterministic():

@@ -296,15 +296,21 @@ def test_cohort_capabilities_follow_declared_native_shapes_not_a_scalar_allowlis
         })
         assert validate_resource_item(request, catalogue) == resource
 
-    aedar = catalogue.resources_by_id["aedar_territorial_aggregate"]
-    assert "territory_cohort" not in aedar.target_kinds
-    aedar_cohort = ResourceReadItem.model_validate({
-        "resource": "aedar_territorial_aggregate",
-        "target": {"kind": "territory_cohort", "type": "commune"},
-        "intent": {"kind": "facts"},
-    })
-    with pytest.raises(ValueError, match="target kind is not declared"):
-        validate_resource_item(aedar_cohort, catalogue)
+    # #1078: both AEDAR families declare the whole-level cohort target.
+    for aedar_id, coordinates in (
+        ("aedar_territorial_aggregate", {
+            "typequ": ["A104"], "horizon": ["15"], "mode": ["walk"], "statistic": ["share"]}),
+        ("aedar_territory_summary", {"horizon": ["15"], "mode": ["car"], "kind": ["diversity"]}),
+    ):
+        aedar = catalogue.resources_by_id[aedar_id]
+        assert "territory_cohort" in aedar.target_kinds
+        aedar_cohort = ResourceReadItem.model_validate({
+            "resource": aedar_id,
+            "target": {"kind": "territory_cohort", "type": "commune"},
+            "coordinates": coordinates,
+            "intent": {"kind": "facts"},
+        })
+        assert validate_resource_item(aedar_cohort, catalogue).resource_id == aedar_id
 
     reference = catalogue.resources_by_id["raccordement_reference"]
     assert "territory_cohort" not in reference.target_kinds

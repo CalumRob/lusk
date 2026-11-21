@@ -5,26 +5,18 @@ from typing import NamedTuple
 
 from fastapi import HTTPException
 
-from api.aedar_models import AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS
+from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS,
+                              aedar_typequ_registry_size)
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
 
 
-def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measures, *,
-                                      preflight_only=False):
-    """Read published registry-wide readings from one caller-owned RR snapshot.
+def _aedar_summary_publication_marker(conn):
+    """Read and validate the summary publication clocks once.
 
-    The summary has its own content clock (its canonical hash differs from the
-    source-grain hash); compatibility is established by explicit source and
-    reference clocks plus a complete, internally consistent publication marker.
+    Shared by the focal summary read and the whole-level cohort read so the
+    clock predicate and the typed-absence classification cannot drift.
     """
-    requested = tuple(dict.fromkeys(measures))
-    if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
-        raise HTTPException(422, "Unknown AEDAR summary measure")
-    ids = tuple(sorted(set(territory_ids)))
-    if not ids:
-        return {"content_version": None, "aedar_content_version": None,
-                "reference_content_version": None, "readings": {}}
     marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
             s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
         FROM table_publication s
@@ -43,8 +35,7 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
         summary = conn.execute("""SELECT content_version,row_count FROM table_publication
             WHERE table_name='aedar_territory_summary'""").fetchone()
         if not summary or not summary[0] or summary[1] < 1:
-            publication_unavailable("aedar",
-                "AEDAR territory summary publication is unavailable or stale")
+            publication_unavailable("aedar", "AEDAR territory summary publication is unavailable or stale")
         aedar = conn.execute(
             "SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'"
         ).fetchone()
@@ -56,6 +47,61 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
     if (marker[2] != marker[6] or marker[4] != marker[3]
             or marker[5] != marker[6]):
         raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
+    return marker
+
+
+def _aedar_aggregate_publication_marker(conn):
+    """Read and validate the aggregate publication clocks once, for focal and cohort reads."""
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+            WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
+    if not marker:
+        reference = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()
+        if not reference or not reference[0]:
+            raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+        own = conn.execute("""SELECT content_version,row_count FROM table_publication
+            WHERE table_name='aedar_territorial_aggregate'""").fetchone()
+        if not own or not own[0] or own[1] < 1:
+            publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
+        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+    if not marker[0] or marker[1] < 1:
+        publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
+    if marker[2] != marker[3]:
+        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+    return marker
+
+
+def _aedar_summary_reading_valid(value, status, n_typequ, n_addresses, n_observed, coverage):
+    """The producer's per-territory summary-reading law, shared by focal and cohort reads."""
+    registry_size = aedar_typequ_registry_size()
+    return not (status not in ("available", "unavailable") or (status == "available" and
+            (value is None or not isfinite(value) or n_typequ != registry_size
+             or n_addresses is None or n_addresses <= 0 or n_observed is None or n_observed < 0
+             or n_observed > registry_size * n_addresses or coverage != "covered")) or (
+            status == "unavailable" and
+            (value is not None or n_typequ is not None or
+             (n_addresses is not None and n_addresses < 0) or
+             (n_observed is not None and n_observed < 0))))
+
+
+def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measures, *,
+                                      preflight_only=False):
+    """Read published registry-wide readings from one caller-owned RR snapshot.
+
+    The summary has its own content clock (its canonical hash differs from the
+    source-grain hash); compatibility is established by explicit source and
+    reference clocks plus a complete, internally consistent publication marker.
+    """
+    requested = tuple(dict.fromkeys(measures))
+    if not requested or not set(requested) <= set(AEDAR_AGGREGATE_READINGS):
+        raise HTTPException(422, "Unknown AEDAR summary measure")
+    ids = tuple(sorted(set(territory_ids)))
+    if not ids:
+        return {"content_version": None, "aedar_content_version": None,
+                "reference_content_version": None, "readings": {}}
+    marker = _aedar_summary_publication_marker(conn)
     if preflight_only:
         return {"content_version": marker[0], "aedar_content_version": marker[3],
                 "reference_content_version": marker[2]}
@@ -73,13 +119,7 @@ def _aedar_territory_summary_snapshot(conn, territory_type, territory_ids, measu
     for (territory_id, measure), row in by_key.items():
         (value,status,n_typequ,n_addresses,n_observed,coverage,source,vintage,url,licence,
          attribution,reference_date,publication_date) = row
-        if status not in ("available", "unavailable") or (status == "available" and
-                (value is None or not isfinite(value) or n_typequ != 235 or n_addresses is None or n_addresses <= 0
-                 or n_observed is None or n_observed < 0 or n_observed > 235 * n_addresses
-                 or coverage != "covered")) or (status == "unavailable" and
-                 (value is not None or n_typequ is not None or
-                  (n_addresses is not None and n_addresses < 0) or
-                  (n_observed is not None and n_observed < 0))):
+        if not _aedar_summary_reading_valid(value, status, n_typequ, n_addresses, n_observed, coverage):
             raise HTTPException(503, "AEDAR territory summary contains an invalid reading")
         readings[(territory_id, measure)] = {"value": value, "available": status == "available",
             "n_typequ": n_typequ, "n_addresses": n_addresses, "n_observed": n_observed,
@@ -248,24 +288,7 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
     selected_fields = normalize_field_selection(fields, optional_fields)
     selected_measure_keys = ({field.removeprefix("measures.") for field in selected_fields
                               if field.startswith("measures.")} if selected_fields is not None else None)
-    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
-              FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-              WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
-    if not marker:
-        reference = conn.execute(
-            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-        ).fetchone()
-        if not reference or not reference[0]:
-            raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
-        own = conn.execute("""SELECT content_version,row_count FROM table_publication
-            WHERE table_name='aedar_territorial_aggregate'""").fetchone()
-        if not own or not own[0] or own[1] < 1:
-            publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
-        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
-    if not marker[0] or marker[1] < 1:
-        publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
-    if marker[2] != marker[3]:
-        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+    marker = _aedar_aggregate_publication_marker(conn)
     supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
                              (territory_type,territory_id)).fetchone()
     if not supported:
