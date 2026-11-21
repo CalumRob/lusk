@@ -1,11 +1,11 @@
 {
   "source_id": "korrigo",
   "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
-  "sha256": null,
-  "bytes": null,
-  "downloaded_at": null,
-  "vintage": null,
+  "sha256": "321ded4dba4292b64ca35f1b73f9d820938b189ebc6e07165f79ca58aace2be0",
+  "bytes": 59514077,
+  "downloaded_at": "2026-11-18",
+  "vintage": "2026-11",
   "vintage_basis": "telechargement",
-  "date_reference": null,
-  "etat": "en_attente"
+  "date_reference": "2026-11-18",
+  "etat": "materialise"
 }

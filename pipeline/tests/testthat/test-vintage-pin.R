@@ -46,15 +46,35 @@ test_that("les sources datées existantes gardent leur vintage déclaré", {
   expect_equal(v$date_publication, MANIFEST_DEMOGRAPHIE$date_publication)
   expect_equal(v$version[v$id == "serie_historique"], "2023")
 
-  # static.data.gouv (le snapshot Geovelo) et l'extrait OSM restent millésimés.
+  # static.data.gouv (le snapshot Geovelo) reste millésimé. OSM N'EST PAS une
+  # source datée : sa base est « contenu_timestamp » et son vintage publié vient
+  # du pin — elle est donc vérifiée dans son propre test ci-dessous.
   v <- vintages_depuis_manifest(MANIFEST_MOBILITE, cache = cache)
   cyclable <- v[v$id == "amenagements_cyclables", ]
   expect_equal(cyclable$version, "2026-08")
   expect_equal(cyclable$date_reference, "2026-08-07")
-  osm <- v[v$id == "osm_reseaux", ]
-  expect_equal(osm$version, "2026-08")
-  expect_equal(osm$date_reference, "2026-08-05")
-  expect_equal(osm$date_publication, "2026-08-06")
+  expect_false("osm_reseaux" %in%
+                 MANIFEST_MOBILITE$id[MANIFEST_MOBILITE$vintage_basis %in% "fichier_date"])
+})
+
+test_that("OSM est une source dérivée : son vintage publié vient du pin", {
+  cache <- cache_vintage_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  manifest <- MANIFEST_MOBILITE_OSM_RESEAUX
+  pin <- list(
+    source_id = "osm_reseaux", sha256 = "abc", bytes = 1,
+    downloaded_at = "2026-11-18", vintage = "2026-11",
+    vintage_basis = "contenu_timestamp", date_reference = "2026-11-16",
+    etat = "materialise"
+  )
+  jsonlite::write_json(pin, chemin_pin("osm_reseaux", cache), auto_unbox = TRUE)
+
+  v <- vintages_depuis_manifest(manifest, cache = cache)
+  expect_equal(v$version, "2026-11")
+  expect_equal(v$date_reference, "2026-11-16")
+  expect_equal(v$date_publication, "2026-11-18")
+  # La base déclarée est bien dérivée, pas « fichier_date ».
+  expect_false(manifest$vintage_basis %in% "fichier_date")
 })
 
 test_that("les trois sources migrées déclarent une base de vintage dérivée", {
