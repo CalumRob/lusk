@@ -118,9 +118,16 @@ test_that("vintages_mobilite : quinze sources publiques incluent la production n
   expect_equal(rp$date_reference, "2023-01-01")
   expect_equal(rp$licence, "lov2")
   osm <- v[v$id == "osm_reseaux", ]
-  expect_equal(osm$version, "2026-08")
-  expect_equal(osm$date_reference, "2026-08-05")
-  expect_equal(osm$date_publication, "2026-08-06")
+  # Issue #1099 : OSM est une source DÉRIVÉE — son vintage publié est celui du
+  # pin (timestamp du HeaderBlock PBF), jamais un mois écrit en dur ici.
+  pin_osm <- lire_pin("osm_reseaux")
+  if (!is.null(pin_osm) && !is.null(pin_osm$vintage)) {
+    expect_equal(osm$version, pin_osm$vintage)
+    expect_equal(osm$date_reference, pin_osm$date_reference)
+    expect_equal(osm$date_publication, pin_osm$downloaded_at)
+  } else {
+    expect_equal(osm$version, MANIFEST_MOBILITE_OSM_RESEAUX$vintage)
+  }
   lim <- v[v$id == "communes_limites", ]
   expect_equal(lim$date_reference, "2025-01-01")
   expect_true(is.na(lim$date_publication))

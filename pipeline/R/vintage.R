@@ -9,8 +9,10 @@
 # manifeste DU THÈME ; le module du thème expose son builder (vintages_<theme>)
 # qui passe son propre manifeste.
 
-vintages_depuis_manifest <- function(manifest) {
-  manifest %>%
+vintages_depuis_manifest <- function(manifest,
+                                     cache = Sys.getenv("LUSK_CACHE", unset = "data/raw")) {
+  manifest <- avec_vintage_basis(manifest)
+  vintages <- manifest %>%
     dplyr::transmute(
       id = id,
       source = source,
@@ -19,6 +21,21 @@ vintages_depuis_manifest <- function(manifest) {
       date_reference = date_reference,
       date_publication = date_publication
     )
+
+  # Issue #1099 : pour une source dont le vintage est DÉRIVÉ du fichier, la
+  # table publiée porte le vintage du pin — jamais le littéral du manifeste.
+  # Les sources datées (« fichier_date » : INSEE, static.data.gouv, OSM
+  # millésimé) gardent leur vintage déclaré, inchangé.
+  for (i in seq_len(nrow(manifest))) {
+    base <- manifest$vintage_basis[i]
+    if (!(base %in% BASIS_VINTAGE_DERIVES)) next
+    pin <- lire_pin(manifest$id[i], cache)
+    if (is.null(pin) || is.null(pin$vintage)) next
+    vintages$version[i] <- pin$vintage
+    vintages$date_reference[i] <- pin$date_reference %||% pin$downloaded_at
+    vintages$date_publication[i] <- pin$downloaded_at %||% vintages$date_publication[i]
+  }
+  vintages
 }
 
 # fusionner_vintages -----------------------------------------------------------

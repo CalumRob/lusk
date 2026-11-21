@@ -24,6 +24,9 @@ test_that("telecharger_fichier applique TELECHARGEMENT_TIMEOUT pendant le télé
   local_mocked_bindings(
     download.file = function(url, destfile, ...) {
       timeout_pendant <<- getOption("timeout")
+      # Issue #1099 : le téléchargement écrit d'abord un TEMPORAIRE, renommé
+      # ensuite — le mock doit donc créer ce fichier pour que le rename réussisse.
+      writeBin(charToRaw("x"), destfile)
       invisible(NULL)
     },
     .package = "utils"
@@ -41,7 +44,10 @@ test_that("telecharger_fichier restaure l'option timeout après l'appel", {
   on.exit(options(timeout = 60), add = TRUE)
 
   local_mocked_bindings(
-    download.file = function(url, destfile, ...) invisible(NULL),
+    download.file = function(url, destfile, ...) {
+      writeBin(charToRaw("x"), destfile)
+      invisible(NULL)
+    },
     .package = "utils"
   )
 

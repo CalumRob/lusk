@@ -13,6 +13,32 @@
 #     testé avec un faux, jamais contre le réseau.
 # Un manifeste sans colonne `type` est traité tout en « fichier » (manifestes
 # antérieurs à l'issue #13 — comportement historique).
+#
+# Issue #1099 : tout fetch passe désormais par resoudre_source() (pin_sources.R)
+# — le résolveur unique. Le téléchargement lui-même reste mockable ici via
+# telecharger_fichier/tirer_source, exactement comme avant.
+
+# ecrire_atomique -------------------------------------------------------------
+# Écrire un fichier complet dans un TEMPORAIRE du MÊME dossier, puis le renommer
+# vers sa destination (issue #1099, revue) : un téléchargement partiel ou un pin
+# à moitié écrit ne peut jamais remplacer une bonne copie. Le seam `ecrire` est
+# injectable pour tester l'échec en cours d'écriture. Sur Windows, file.rename
+# ne remplace pas une cible existante : on ne la retire qu'après un premier
+# échec, la nouvelle copie étant déjà complète.
+ecrire_atomique <- function(ecrire, cible) {
+  dossier <- dirname(cible)
+  dir.create(dossier, recursive = TRUE, showWarnings = FALSE)
+  temporaire <- tempfile(pattern = ".ecriture-", tmpdir = dossier)
+  on.exit(if (file.exists(temporaire)) unlink(temporaire), add = TRUE)
+  ecrire(temporaire)
+  ok <- file.rename(temporaire, cible)
+  if (!ok && file.exists(cible)) {
+    unlink(cible)
+    ok <- file.rename(temporaire, cible)
+  }
+  if (!ok) stop("Écriture atomique impossible : ", cible, call. = FALSE)
+  invisible(cible)
+}
 
 # verifier_fichier ------------------------------------------------------------
 # L'intégrité d'un fichier du cache : il existe, il n'est pas vide, et s'il
@@ -92,7 +118,10 @@ telecharger_fichier <- function(url, cible) {
   ancien_timeout <- getOption("timeout")
   on.exit(options(timeout = ancien_timeout), add = TRUE)
   options(timeout = TELECHARGEMENT_TIMEOUT)
-  utils::download.file(url, cible, mode = "wb", quiet = TRUE)
+  ecrire_atomique(
+    function(temporaire) utils::download.file(url, temporaire, mode = "wb", quiet = TRUE),
+    cible
+  )
 }
 
 # tirer_api -------------------------------------------------------------------
@@ -169,22 +198,23 @@ erreur_telechargement <- function(statuts, url) {
 #     téléchargées ; les sources « manuel » sont sautées sans échec et
 #     enregistrées « à traiter à la main ». Un échec cron après les retries est
 #     enregistré « échec » puis le run s'arrête bruyamment.
-# Idempotent MAIS pas naïf (point 3) : un fichier présent et intact est laissé ;
-# un fichier présent mais corrompu (partiel, zip invalide) est supprimé et
-# re-téléchargé ; un téléchargement qui échoue (réseau ou fichier invalide) est
-# retenté une fois, puis le pipeline s'arrête bruyamment.
-# Issue #13 : chaque source est récupérée selon son `type` (fichier | api) —
-# le dispatch vit dans tirer_source(). Un manifeste sans colonne `type` est
-# traité tout en « fichier » (comportement historique).
+# Idempotent MAIS pas naïf (point 3) et, depuis #1099, content-addressed : le
+# résolveur resoudre_source() décide, pour chaque source, d'utiliser le fichier
+# épinglé, de le télécharger (et de l'épingler) ou d'échouer fermé sur une dérive.
 # Retour : le tableau des statuts par source (id, mode, status) — une ligne par
 # source traitée, dans l'ordre du manifeste. En cas d'échec, le run s'arrête et
 # les statuts sont portés par l'erreur de classe « erreur_telechargement »
 # (champ $statuts). Un manifeste sans colonne `mode` est traité tout en « cron »
 # (comportement historique).
 download_sources <- function(manifest, cache = "data/raw",
-                             mode = c("full", "cron")) {
+                             mode = c("full", "cron"), horloge = NULL) {
   mode <- match.arg(mode)
   if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
+
+  # Issue #1099 : toute source déclare un `vintage_basis` (les manifestes
+  # historiques sont des sources datées — « fichier_date » par défaut) et
+  # TOUT fetch passe par resoudre_source(), le résolveur unique.
+  manifest <- avec_vintage_basis(manifest)
 
   # le mode de chaque source : la colonne `mode` du manifeste, ou « cron » par
   # défaut si le manifeste ne la porte pas (manifestes antérieurs à l'issue #8)
@@ -195,7 +225,7 @@ download_sources <- function(manifest, cache = "data/raw",
   }
 
   # le type de chaque source : la colonne `type` du manifeste, ou « fichier »
-  # par défaut si le manifeste ne la porte pas (issue #13)
+  # par défaut si le manifeste ne la porte pas (manifestes antérieurs à l'issue #13)
   type_source <- if ("type" %in% names(manifest)) {
     manifest$type
   } else {
@@ -206,8 +236,21 @@ download_sources <- function(manifest, cache = "data/raw",
   } else {
     rep(NA_character_, nrow(manifest))
   }
+  vintage_source <- if ("vintage" %in% names(manifest)) {
+    manifest$vintage
+  } else {
+    rep(NA_character_, nrow(manifest))
+  }
+  reference_source <- if ("date_reference" %in% names(manifest)) {
+    manifest$date_reference
+  } else {
+    rep(NA_character_, nrow(manifest))
+  }
 
-  statuts <- tibble::tibble(
+  # L'accumulateur de statuts est partagé avec le résolveur : un échec réseau
+  # porte les statuts déjà acquis dans l'erreur (le rapport de run les lit).
+  etat <- new.env(parent = emptyenv())
+  etat$statuts <- tibble::tibble(
     id = character(0), mode = character(0), status = character(0)
   )
 
@@ -216,13 +259,12 @@ download_sources <- function(manifest, cache = "data/raw",
     # de réseau, jamais d'échec — enregistrée « à traiter à la main ». (%in%
     # plutôt que == : une valeur NA est traitée comme « cron », pas en erreur)
     if (mode == "cron" && mode_source[i] %in% "manuel") {
-      statuts <- tibble::add_row(
-        statuts, id = manifest$id[i], mode = "manuel", status = "à traiter à la main"
+      etat$statuts <- tibble::add_row(
+        etat$statuts, id = manifest$id[i], mode = "manuel",
+        status = "à traiter à la main"
       )
       next
     }
-
-    cible <- file.path(cache, manifest$fichier[i])
 
     # une erreur de MANIFESTE n'est pas retentée : une source « api » sans
     # fonction de pull s'arrête immédiatement, avant la boucle de retry — elle
@@ -232,45 +274,20 @@ download_sources <- function(manifest, cache = "data/raw",
       stop(erreur_manifeste(manifest$id[i]))
     }
 
-    if (file.exists(cible) && verifier_source(cible, sha256_source[i])) {
-      statuts <- tibble::add_row(
-        statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
-      )
-      next
-    }
-    if (file.exists(cible)) unlink(cible)  # corrompu : on repart propre
-
-    ok <- FALSE
-    for (essai in 1:2) {
-      reussi <- tryCatch({
-        tirer_source(type_source[i], manifest, i, cible)
-        TRUE
-      }, error = function(e) FALSE)
-      if (reussi && verifier_source(cible, sha256_source[i])) {
-        ok <- TRUE
-        break
-      }
-      unlink(cible)  # partiel/corrompu/échec : supprimer et réessayer
-    }
-    if (!ok) {
-      statuts <- tibble::add_row(
-        statuts, id = manifest$id[i], mode = mode_source[i], status = "échec"
-      )
-      # l'étiquette de la source dans le message : l'URL pour un fichier, le
-      # nom de la source pour une api
-      etiquette <- if (type_source[i] %in% "api") {
-        paste0("api:", manifest$id[i])
-      } else {
-        manifest$url[i]
-      }
-      # la condition porte le message d'origine ET les statuts (le champ `call`
-      # est déjà NULL dans la condition — stop() ne reçoit qu'un argument)
-      stop(erreur_telechargement(statuts, etiquette))
-    }
-    statuts <- tibble::add_row(
-      statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
+    resoudre_source(
+      id = manifest$id[i], url = manifest$url[i], fichier = manifest$fichier[i],
+      cache = cache, type = type_source[i],
+      pull = if ("pull" %in% names(manifest)) manifest$pull[[i]] else NULL,
+      mode_source = mode_source[i], sha256_manifeste = sha256_source[i],
+      vintage_basis = manifest$vintage_basis[i],
+      vintage_declare = vintage_source[i],
+      reference_declaree = reference_source[i],
+      horloge = horloge, etat = etat
+    )
+    etat$statuts <- tibble::add_row(
+      etat$statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
     )
   }
 
-  statuts
+  etat$statuts
 }

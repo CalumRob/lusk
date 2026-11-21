@@ -128,14 +128,15 @@ VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
 # de vintage ne référence plus le snapshot retiré (le catalogue ne le cite
 # plus depuis le slice 2). Depuis l'issue #486, les DEUX faits construits du
 # raccordement voyagent à leurs côtés.
-vintages_mobilite <- function() {
+vintages_mobilite <- function(cache = "data/raw") {
   ids_techniques <- IDS_OCSGE_RESEAUX
   dplyr::bind_rows(
     vintages_depuis_manifest(
       MANIFEST_MOBILITE[
         !MANIFEST_MOBILITE$id %in% ids_techniques,
         , drop = FALSE
-      ]
+      ],
+      cache = cache
     ),
     VINTAGES_RACCORDEMENT,
     VINTAGES_MOBILITE_OCSGE_RESEAUX

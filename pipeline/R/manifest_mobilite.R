@@ -94,7 +94,7 @@ MANIFEST_MOBILITE_RP_LOGEMENT <- tibble::tribble(
 # t/b/c, le timestamp d'extraction comme référence (jamais « aujourd'hui »).
 MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
+  ~date_publication, ~licence, ~note, ~mode, ~type, ~vintage_basis,
   # ————————————————————————————————————————————————————————————————————————
   # osm_reseaux — les réseaux t/b/c (issue #139)
   # L'extrait Geofabrik Bretagne (bretagne-latest.osm.pbf, ~312 Mo, reconstruit
@@ -125,9 +125,12 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
     "2026-08-05T20:21:23Z (vérifié sur la page Geofabrik). ODbL 1.0 ",
     "(ADR-0001) : attribution « © OpenStreetMap contributors » + lien ODbL, ",
     "code d'extraction publié avec la Méthodes (ODbL §4.6). Mode « manuel » : ",
-    "l'extrait fait ~312 Mo — le portage suit l'horloge lente du flagship."
+    "l'extrait fait ~312 Mo — le portage suit l'horloge lente du flagship. ",
+    "ISSUE #1099 : le vintage est DÉRIVÉ du timestamp du header PBF de ",
+    "l'extrait épinglé (sinon de la date de téléchargement enregistrée), ",
+    "jamais du littéral 2026-08-05/2026-08-06 du manifeste."
   ),
-  "manuel", "fichier"
+  "manuel", "fichier", "contenu_timestamp"
 )
 
 # MANIFEST_MOBILITE_OCSGE_RESEAUX -----------------------------------------------
@@ -302,7 +305,7 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 #     l'indicateur et la Méthodes.
 MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
+  ~date_publication, ~licence, ~note, ~mode, ~type, ~vintage_basis,
   "korrigo",
   "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
   "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
@@ -333,9 +336,11 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
     "m à vol d'oiseau d'un arrêt GTFS (le spine AEDAR reprojeté EPSG:2154) ",
     "— la VRAIE part, jamais un proxy de superficie. ODbL ",
     "(ADR-0001) : attribution « © OpenStreetMap contributors » portée par ",
-    "l'indicateur."
+    "l'indicateur. ISSUE #1099 : l'export est régénéré chaque jour et ne ",
+    "porte pas de date de publication exploitable — le vintage publié est ",
+    "la date de téléchargement enregistrée dans le pin, pas un littéral."
   ),
-  "cron", "fichier"
+  "cron", "fichier", "telechargement"
 )
 
 # MANIFEST_MOBILITE_BORNES -----------------------------------------------------
@@ -354,7 +359,7 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
 # 2026-08-04, la référence du contrat reste le rafraîchissement déclaré).
 MANIFEST_MOBILITE_BORNES <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
-  ~date_publication, ~licence, ~note, ~mode, ~type,
+  ~date_publication, ~licence, ~note, ~mode, ~type, ~vintage_basis,
   "bornes-recharges",
   "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0",
   "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B",
@@ -374,9 +379,12 @@ MANIFEST_MOBILITE_BORNES <- tibble::tribble(
     "géolocalisées ») — ces stations n'entrent dans aucun comptage communal, la ",
     "limite est documentée dans la Méthodes. Licence Ouverte v2.0. Vintage ",
     "verrouillé du contrat : refreshed 2026-07-28 (référence) ; publication : le ",
-    "traitement ODS de l'export (2026-08-04)."
+    "traitement ODS de l'export (2026-08-04). ISSUE #1099 : l'export ODS est ",
+    "un flux Live sans Last-Modified/ETag — le vintage publié est la date ",
+    "maximale de `date_maj` dans le fichier épinglé (sinon sa date de ",
+    "téléchargement), jamais le littéral du contrat."
   ),
-  "cron", "fichier"
+  "cron", "fichier", "contenu_date_maj"
 )
 
 # MANIFEST_MOBILITE_STATIONNEMENT_VELO -----------------------------------------
