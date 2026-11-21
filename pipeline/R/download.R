@@ -294,7 +294,7 @@ download_sources <- function(manifest, cache = "data/raw",
   }
 
   verifier_digests_couvrent(etat$statuts, digests)
-  ecrire_digests_cache_aggregate(digests, cache)
+  if (length(digests)) ecrire_digests_cache_aggregate(digests, cache)
   attr(etat$statuts, "digests") <- digests
   etat$statuts
 }

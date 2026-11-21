@@ -59,8 +59,10 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   )
   # Issue #1103 : le run publie les empreintes de TOUTES les sources lues, à
   # côté du payload. Elles viennent du résolveur (un seul hachage par fichier).
-  ecrire_digests_source(attr(statuts, "digests") %||% list(),
-                        file.path(sortie, NOM_DIGESTS))
+  digests_run <- attr(statuts, "digests")
+  if (!is.null(digests_run) && length(digests_run)) {
+    ecrire_digests_source(digests_run, file.path(sortie, NOM_DIGESTS))
+  }
 
   chemin_classes_densite <- file.path(
     cache, MANIFEST_CLASSES_DENSITE$fichier[[1L]]

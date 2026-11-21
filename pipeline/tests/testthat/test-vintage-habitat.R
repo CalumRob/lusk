@@ -30,10 +30,11 @@ test_that("les vintages Habitat sont par source : RP annuel, DVF semestriel, DPE
     paste0("dvf_", max(ANNEE_DVF), "_dep22")
   )
 
-  # DPE : la base roulante — pas de date de référence unique ; sans pull,
-  # l'horloge de publication est celle du RUN (#408 : au moins une horloge)
+  # DPE : la base roulante — la date de référence est celle d'acquisition
+  # (issue #1103, base `telechargement`) ; sans pull, c'est l'horloge du RUN.
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
-  expect_true(all(is.na(dpe$date_reference)))
+  expect_true(all(!is.na(dpe$date_reference)))
+  expect_true(all(dpe$date_reference == dpe$version))
   expect_true(all(dpe$version == as.character(Sys.Date())))
   expect_true(all(dpe$date_publication == as.character(Sys.Date())))
 })
@@ -57,8 +58,9 @@ test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée"
   # version ET date_publication = la date du pull (le jour, pas l'heure)
   expect_true(all(dpe$version == "2026-07-01"))
   expect_true(all(dpe$date_publication == "2026-07-01"))
-  # la base roulante garde sa sémantique : pas de date de référence
-  expect_true(all(is.na(dpe$date_reference)))
+  # la base roulante garde sa sémantique : référence = date d'acquisition
+  expect_true(all(!is.na(dpe$date_reference)))
+  expect_true(all(dpe$date_reference == "2026-07-01"))
   # RP et DVF ne bougent pas : leurs dates restent celles du manifeste
   expect_equal(v$date_publication[v$id == "logements"], "2026-06-30")
   expect_equal(v$date_publication[v$id == "dvf_2025_dep22"], "2026-05-18")

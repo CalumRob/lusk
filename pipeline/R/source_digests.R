@@ -59,7 +59,11 @@ verifier_digests_couvrent <- function(statuts, digests) {
   if (is.null(statuts) || !is.data.frame(statuts) || !"id" %in% names(statuts)) {
     return(invisible(TRUE))
   }
-  lus <- as.character(statuts$id)
+  lus <- if ("status" %in% names(statuts)) {
+    as.character(statuts$id[statuts$status %in% "frais"])
+  } else {
+    as.character(statuts$id)
+  }
   manquants <- setdiff(lus, names(digests))
   if (length(manquants)) {
     stop(

@@ -81,7 +81,7 @@ test_that("MANIFEST_ECONOMIE_RP : le contrat déclare une seule source, mêmes c
   expect_equal(
     names(MANIFEST_ECONOMIE_RP),
     c("id", "source", "url", "fichier", "vintage", "date_reference",
-      "date_publication", "licence", "note", "mode", "type")
+      "date_publication", "licence", "note", "mode", "type", "vintage_basis")
   )
   # une seule source : l'emploi au lieu de résidence
   expect_equal(nrow(MANIFEST_ECONOMIE_RP), 1)

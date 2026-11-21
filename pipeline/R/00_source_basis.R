@@ -103,12 +103,25 @@ declarer_bases <- function(manifest) {
     stop("Manifeste sans colonne `id` — base de vintage indéterminable.", call. = FALSE)
   }
   ids <- as.character(manifest$id)
-  bases <- unname(VINTAGE_BASIS_PAR_ID[ids])
-  manquants <- unique(ids[is.na(bases)])
-  if (length(manquants)) {
+  registre <- VINTAGE_BASIS_PAR_ID[ids]
+  declarees <- if ("vintage_basis" %in% names(manifest)) {
+    as.character(manifest$vintage_basis)
+  } else {
+    rep(NA_character_, length(ids))
+  }
+  # Tolère l'ancien libellé contenu_date_maj, renommé par #1103.
+  declarees[declarees %in% "contenu_date_maj"] <- "contenu_date"
+  connues <- !is.na(registre)
+  bases <- declarees
+  # Le registre est AUTORITAIRE pour les sources de manifeste réelles. Les ids
+  # synthétiques de tests (absents du registre) doivent porter une déclaration
+  # explicite dans leur propre colonne — il n'y a toujours aucun défaut.
+  bases[connues] <- as.character(registre[connues])
+  manquantes <- ids[is.na(bases) | !nzchar(bases)]
+  if (length(manquantes)) {
     stop(
       "Aucune base de vintage déclarée (issue #1103) pour : ",
-      paste(manquants, collapse = ", "), ".",
+      paste(unique(manquantes), collapse = ", "), ".",
       call. = FALSE
     )
   }
@@ -117,18 +130,13 @@ declarer_bases <- function(manifest) {
     stop("Base de vintage inconnue : ", paste(invalides, collapse = ", "), ".",
          call. = FALSE)
   }
-  if ("vintage_basis" %in% names(manifest)) {
-    existantes <- as.character(manifest$vintage_basis)
-    # Tolère l'ancien libellé contenu_date_maj, renommé par #1103.
-    existantes[existantes %in% "contenu_date_maj"] <- "contenu_date"
-    divergeant <- ids[!is.na(existantes) & nzchar(existantes) & existantes != bases]
-    if (length(divergeant)) {
-      stop(
-        "Base de vintage déclarée en désaccord avec le registre pour : ",
-        paste(unique(divergeant), collapse = ", "), ".",
-        call. = FALSE
-      )
-    }
+  divergeantes <- ids[connues & !is.na(declarees) & declarees != bases]
+  if (length(divergeantes)) {
+    stop(
+      "Base de vintage déclarée en désaccord avec le registre pour : ",
+      paste(unique(divergeantes), collapse = ", "), ".",
+      call. = FALSE
+    )
   }
   manifest$vintage_basis <- bases
   manifest
