@@ -54,6 +54,26 @@ test_that("le rapport de run n'entre pas dans la décision commit/skip", {
   expect_false(detecter_changement(a, b))
 })
 
+test_that("source-digests.json n'entre pas dans la décision commit/skip", {
+  # Issue #1103 : comme run-report.json, les empreintes du run ne doivent pas
+  # déclencher un commit vide — seules les données publiées comptent.
+  a <- tempfile("pub-a-")
+  b <- tempfile("pub-b-")
+  dir.create(a)
+  dir.create(b)
+  on.exit({ unlink(a, recursive = TRUE); unlink(b, recursive = TRUE) })
+
+  ecrire_digests_source(
+    list(list(source_id = "osm_reseaux", sha256 = paste(rep("a", 64), collapse = ""))),
+    file.path(a, NOM_DIGESTS)
+  )
+  ecrire_digests_source(
+    list(list(source_id = "osm_reseaux", sha256 = paste(rep("b", 64), collapse = ""))),
+    file.path(b, NOM_DIGESTS)
+  )
+  expect_false(detecter_changement(a, b))
+})
+
 test_that("un fichier absent d'un seul côté est un changement", {
   payload <- compute_payload_test(load_fixture())
   a <- tempfile("pub-a-")

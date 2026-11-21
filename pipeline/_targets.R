@@ -980,11 +980,20 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
         appels[[param]] <- as.name(paste0("fichier_", theme$theme, "_", id))
       }
     }
+    # Issue #1103 : le verrou est enveloppé — une dérive de données est
+    # RAPPORTÉE (non fatale), une entrée identique avec sortie modifiée est une
+    # RÉGRESSION DE CODE (fatale). Les ids d'entrée viennent de la REGISTRE.
+    ids_sources <- sources_verification(v, theme$manifest)
+    commande <- as.call(list(
+      as.name("verifier_avec_attribution"),
+      fn_sym,
+      as.call(c(list(as.name("list")), appels)),
+      ids_sources,
+      cache,
+      sortie
+    ))
     cibles <- c(cibles, list(
-      tar_target_raw(
-        paste0("verif_", v$slug),
-        as.call(c(list(fn_sym), appels))
-      )
+      tar_target_raw(paste0("verif_", v$slug), commande)
     ))
   }
   cibles
@@ -996,7 +1005,8 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
 # par source (dédupliquées entre verrous), puis les verrous LEAF qui reçoivent
 # leurs chemins en arguments — la même mécanique que verifications_theme,
 # sans grappe.
-verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
+verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN,
+                                     sortie = SORTIE_RUN) {
   cibles <- list(
     tar_target_raw(
       "sources_programmes",
@@ -1024,11 +1034,17 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
         appels[[param]] <- as.name(paste0("fichier_programmes_", id))
       }
     }
+    ids_sources <- sources_verification(v, MANIFEST_PROGRAMMES_COMPLET)
+    commande <- as.call(list(
+      as.name("verifier_avec_attribution"),
+      fn_sym,
+      as.call(c(list(as.name("list")), appels)),
+      ids_sources,
+      cache,
+      sortie
+    ))
     cibles <- c(cibles, list(
-      tar_target_raw(
-        paste0("verif_", v$slug),
-        as.call(c(list(fn_sym), appels))
-      )
+      tar_target_raw(paste0("verif_", v$slug), commande)
     ))
   }
   cibles
@@ -1446,6 +1462,28 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
   ))
 }
 
+# Issue #1103 : publier les empreintes de TOUTES les sources lues à côté du
+# payload. Chaque download_sources écrit l'agrégat du cache ; cette cible le
+# projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
+digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
+                              sortie = SORTIE_RUN) {
+  noms <- paste0("sources_", themes)
+  if (identical(MODE_RUN, "full")) noms <- c(noms, "sources_programmes")
+  deps <- lapply(noms, as.name)
+  chemin_cache <- file.path(cache, NOM_DIGESTS)
+  chemin_sortie <- file.path(sortie, NOM_DIGESTS)
+  tar_target_raw(
+    "digests_run",
+    as.call(c(
+      list(as.name("{")), deps,
+      list(bquote(ecrire_digests_source(
+        lire_digests_source(.(chemin_cache)), .(chemin_sortie)
+      )))
+    )),
+    cue = tar_cue(mode = "always")
+  )
+}
+
 list(
   fichier_epci_geo_api_cible,
   sources_classes_densite_cible,
@@ -1464,6 +1502,7 @@ list(
   publication_retained_backend,
   publication_profile,
   rapports,
+  digests_run_cible(),
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
   verifications,
   publication_programmes,

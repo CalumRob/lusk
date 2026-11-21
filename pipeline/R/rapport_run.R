@@ -22,13 +22,18 @@
 rapport_run <- function(statuts, mode,
                         timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ",
                                            tz = "UTC"),
-                        couverture = NULL) {
+                        couverture = NULL, attributions = NULL) {
   rapport <- list(
     mode = mode,
     timestamp = timestamp,
     statuts = statuts
   )
   if (!is.null(couverture)) rapport$couverture <- couverture
+  # Issue #1103 : les dérives de données détectées par les verrous sont
+  # tracées dans le rapport (jamais une anomalie silencieuse).
+  if (!is.null(attributions) && length(attributions)) {
+    rapport$attributions <- attributions
+  }
   rapport
 }
 
@@ -40,9 +45,10 @@ rapport_run <- function(statuts, mode,
 ecrire_rapport_run <- function(statuts, mode, cible = "public/data",
                                timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ",
                                                   tz = "UTC"),
-                               couverture = NULL) {
+                               couverture = NULL, attributions = NULL) {
   if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
-  rapport <- rapport_run(statuts, mode, timestamp, couverture)
+  if (is.null(attributions)) attributions <- lire_attributions(cible)
+  rapport <- rapport_run(statuts, mode, timestamp, couverture, attributions)
   jsonlite::write_json(
     rapport,
     file.path(cible, "run-report.json"),
