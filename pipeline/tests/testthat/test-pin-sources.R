@@ -79,12 +79,21 @@ ecrire_pin_fixture <- function(cache, id, contenu, vintage_basis = "telechargeme
   pin
 }
 
+# Le pinning est OPT-IN : les tests génériques injectent leur propre registre
+# (aucune mutation globale, aucun mock qui fuite d'un test à l'autre).
+registre_test <- function(id) {
+  setNames(list(list(vintage_basis = "telechargement")), id)
+}
+
 test_that("une source sans pin est acquise, hachée, puis épinglée", {
+  registre <- registre_test("acquisition_test")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   contenu <- octets_fixture("contenu autoritaire\n")
 
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "acquisition_test", url = "https://example.invalid/source",
     fichier = "source.txt", cache = cache, horloge = as.Date("2026-11-18"),
     tirer = function(url, cible) writeBin(contenu, cible)
@@ -106,6 +115,7 @@ test_that("une source sans pin est acquise, hachée, puis épinglée", {
 })
 
 test_that("un pin conforme est utilisé sans nouveau téléchargement", {
+  registre <- registre_test("pin_conforme")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   contenu <- octets_fixture("contenu épinglé\n")
@@ -114,6 +124,7 @@ test_that("un pin conforme est utilisé sans nouveau téléchargement", {
 
   appele <- FALSE
   r <- resoudre_source(
+    registre = registre,
     id = "pin_conforme", url = "https://example.invalid/source",
     fichier = "source.txt", cache = cache, horloge = as.Date("2026-12-01"),
     tirer = function(url, cible) {
@@ -129,6 +140,7 @@ test_that("un pin conforme est utilisé sans nouveau téléchargement", {
 })
 
 test_that("un contenu modifié échoue fermé avec une erreur nommée", {
+  registre <- registre_test("source_modifiee")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   original <- octets_fixture("contenu épinglé\n")
@@ -138,6 +150,7 @@ test_that("un contenu modifié échoue fermé avec une erreur nommée", {
 
   erreur <- tryCatch(
     resoudre_source(
+      registre = registre,
       id = "source_modifiee", url = "https://example.invalid/source",
       fichier = "source.txt", cache = cache,
       tirer = function(url, cible) stop("aucun téléchargement attendu")
@@ -157,11 +170,13 @@ test_that("un contenu modifié échoue fermé avec une erreur nommée", {
 test_that("deux résolutions indépendantes du même contenu épinglé donnent le même vintage", {
   contenu <- octets_fixture("contenu partagé\n")
   resoudre <- function() {
+    registre <- registre_test("vintage_stable")
     cache <- cache_fixture()
     ecrire_pin_fixture(cache, "vintage_stable", contenu, jour = "2026-11-18")
     writeBin(contenu, file.path(cache, "source.txt"))
     on.exit(unlink(cache, recursive = TRUE))
     resoudre_source(
+      registre = registre,
       id = "vintage_stable", url = "https://example.invalid/source",
       fichier = "source.txt", cache = cache,
       tirer = function(url, cible) stop("aucun téléchargement attendu")
@@ -210,6 +225,7 @@ test_that("un pin non matérialisé échoue fermé en nommant la commande de rep
 })
 
 test_that("le vintage des bornes vient de la date maximale du contenu", {
+  registre <- registre_test("bornes_recharge_derive")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   csv <- charToRaw(paste0(
@@ -219,6 +235,8 @@ test_that("le vintage des bornes vient de la date maximale du contenu", {
     "STIF-3;2026-09-30\n"
   ))
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "bornes_recharge_derive", url = "https://example.invalid/bornes",
     fichier = "bornes.csv", cache = cache, horloge = as.Date("2026-11-18"),
     vintage_basis = "contenu_date_maj",
@@ -230,9 +248,12 @@ test_that("le vintage des bornes vient de la date maximale du contenu", {
 })
 
 test_that("le vintage korrigo est la date de téléchargement enregistrée", {
+  registre <- registre_test("korrigo_derive")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "korrigo_derive", url = "https://example.invalid/korrigo",
     fichier = "korrigo-cache.bin", cache = cache, horloge = as.Date("2026-11-18"),
     vintage_basis = "telechargement",
@@ -245,12 +266,15 @@ test_that("le vintage korrigo est la date de téléchargement enregistrée", {
 })
 
 test_that("le vintage OSM vient du HeaderBlock PBF compressé (champ 32)", {
+  registre <- registre_test("osm_derive")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   # Timestamp réel observé sur bretagne-latest.osm.pbf : 1794864156 = 2026-11-16.
   octets <- pbf_fixture(1794864156, compresse = TRUE)
 
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "osm_derive", url = "https://example.invalid/osm",
     fichier = "extrait.pbf", cache = cache, horloge = as.Date("2026-11-18"),
     vintage_basis = "contenu_timestamp",
@@ -262,10 +286,13 @@ test_that("le vintage OSM vient du HeaderBlock PBF compressé (champ 32)", {
 })
 
 test_that("le HeaderBlock PBF non compressé (champ raw) est aussi lu", {
+  registre <- registre_test("osm_brut")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   octets <- pbf_fixture(1794864156, compresse = FALSE)
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "osm_brut", url = "https://example.invalid/osm",
     fichier = "extrait.pbf", cache = cache, horloge = as.Date("2026-11-18"),
     vintage_basis = "contenu_timestamp",
@@ -275,9 +302,12 @@ test_that("le HeaderBlock PBF non compressé (champ raw) est aussi lu", {
 })
 
 test_that("un OSM sans timestamp lisible retombe sur la date de téléchargement", {
+  registre <- registre_test("osm_sans_timestamp")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "osm_sans_timestamp", url = "https://example.invalid/osm",
     fichier = "extrait.pbf", cache = cache, horloge = as.Date("2026-11-18"),
     vintage_basis = "contenu_timestamp",
@@ -308,6 +338,7 @@ test_that("chaque source à pin obligatoire livre réellement le basis qu'elle d
 })
 
 test_that("un pin créé à partir d'un fichier présent utilise sa date de modification", {
+  registre <- registre_test("date_mtime")
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
   cible <- file.path(cache, "deja-telecharge.txt")
@@ -315,6 +346,8 @@ test_that("un pin créé à partir d'un fichier présent utilise sa date de modi
   Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
 
   r <- resoudre_source(
+    registre = registre,
+    repin = TRUE,
     id = "date_mtime", url = "https://example.invalid/source",
     fichier = "deja-telecharge.txt", cache = cache,
     tirer = function(url, cible) stop("aucun téléchargement attendu")
@@ -419,9 +452,10 @@ test_that("run_pipeline rapporte un refus de pin nommé au lieu d'un crash nu", 
   expect_true(any(grepl("refus pin", rapport$statuts$status)))
 })
 
-test_that("download_sources résout chaque source par le resolver (un pin par source)", {
-  cache <- cache_fixture()
-  on.exit(unlink(cache, recursive = TRUE))
+test_that("une source non listée se télécharge normalement, sans pin ni vintage modifié", {
+  cache <- tempfile("cache-optin-")
+  dir.create(cache)
+
   manifeste <- tibble::tibble(
     id = c("source_a", "source_b"), source = c("a", "b"),
     url = c("https://example.invalid/a", "https://example.invalid/b"),
@@ -435,11 +469,67 @@ test_that("download_sources résout chaque source par le resolver (un pin par so
     telecharger_fichier = function(url, cible) writeBin(charToRaw(paste0("contenu ", basename(cible))), cible),
     .package = "lusk"
   )
+  resolu <- resoudre_source
+  appels <- character(0)
+  local_mocked_bindings(
+    resoudre_source = function(id, ...) {
+      appels <<- c(appels, id)
+      resolu(id, ...)
+    },
+    .package = "lusk"
+  )
 
   statuts <- download_sources(manifeste, cache, horloge = as.Date("2026-11-18"))
 
+  # comportement d'avant ce PR : téléchargement, statuts frais, aucun pin.
+  expect_equal(appels, c("source_a", "source_b"))
   expect_equal(statuts$status, c("frais", "frais"))
-  expect_true(file.exists(chemin_pin("source_a", cache)))
-  expect_true(file.exists(chemin_pin("source_b", cache)))
-  expect_equal(lire_pin("source_b", cache)$downloaded_at, "2026-11-18")
+  expect_true(file.exists(file.path(cache, "a.txt")))
+  expect_true(file.exists(file.path(cache, "b.txt")))
+  expect_false(dir.exists(file.path(cache, "pins")))
+  v <- vintages_depuis_manifest(manifeste, cache = cache)
+  expect_equal(v$version, manifeste$vintage)
+  expect_equal(v$date_reference, manifeste$date_reference)
+
+  # un contenu amont modifié ne fait pas échouer une source non listée.
+  writeBin(charToRaw("contenu amont modifie"), file.path(cache, "a.txt"))
+  expect_no_error(download_sources(manifeste, cache))
+})
+
+test_that("les trois pins matérialisés portent les empreintes vérifiées des fichiers réels", {
+  cache <- file.path(find.package("lusk"), "data", "raw")  # registre versionné
+  attendus <- list(
+    osm_reseaux = list(
+      sha256 = "fb8e00775d77f39f4c68ad5ac4b20d5589383734308ba5579d286c9f3e010704",
+      bytes = 330755575, date_reference = "2026-11-16",
+      vintage_basis = "contenu_timestamp", fichier = "bretagne-latest.osm.pbf"
+    ),
+    "bornes-recharges" = list(
+      sha256 = "733a0e8caadc28c29ddaab548d3d6b1d60d4a332d6de7530048a34e5b6629dc0",
+      bytes = 6262114, date_reference = "2026-11-11",
+      vintage_basis = "contenu_date_maj", fichier = "bornes-recharges.csv"
+    ),
+    korrigo = list(
+      sha256 = "321ded4dba4292b64ca35f1b73f9d820938b189ebc6e07165f79ca58aace2be0",
+      bytes = 59514077, date_reference = "2026-11-18",
+      vintage_basis = "telechargement", fichier = "korrigo-gtfs.zip"
+    )
+  )
+  for (id in names(attendus)) {
+    pin <- lire_pin(id, cache)
+    expect_equal(pin$etat, "materialise")
+    expect_equal(pin$sha256, attendus[[id]]$sha256)
+    expect_equal(pin$bytes, attendus[[id]]$bytes)
+    expect_equal(pin$date_reference, attendus[[id]]$date_reference)
+    expect_equal(pin$vintage_basis, attendus[[id]]$vintage_basis)
+    # Quand les octets sont présents (poste de l'opérateur), l'empreinte doit
+    # correspondre exactement au pin.
+    fichier <- file.path(cache, attendus[[id]]$fichier)
+    if (file.exists(fichier)) {
+      con <- file(fichier, "rb")
+      h <- paste(openssl::sha256(con))
+      close(con)
+      expect_equal(h, pin$sha256)
+    }
+  }
 })

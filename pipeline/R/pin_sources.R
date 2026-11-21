@@ -293,14 +293,18 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
                             sha256_manifeste = NULL, vintage_basis = NULL,
                             vintage_declare = NULL, reference_declaree = NULL,
                             tirer = NULL, horloge = NULL, repin = FALSE,
-                            etat = NULL) {
+                            etat = NULL, registre = SOURCES_EPINGLEES) {
   if (is.null(etat)) {
     etat <- new.env(parent = emptyenv())
     etat$statuts <- NULL
   }
-  dir.create(file.path(cache, "pins"), recursive = TRUE, showWarnings = FALSE)
+  requis <- id %in% names(registre)
+  if (requis) dir.create(file.path(cache, "pins"), recursive = TRUE, showWarnings = FALSE)
   cible <- file.path(cache, fichier)
-  pin <- lire_pin(id, cache)
+  # Décision #1099 : le pinning est OPT-IN. Une source non listée ne lit aucun
+  # pin, n'en écrit aucun, et suit exactement le flux d'avant ce PR (fichier
+  # présent et valide -> « frais », sinon téléchargement avec les 2 essais).
+  pin <- if (requis) lire_pin(id, cache) else NULL
   # Issue #1099 (revue) : le repin reconstruit le pin à partir du fichier déjà
   # présent ; on ignore donc l'ancien pin, sans jamais le supprimer avant la
   # nouvelle écriture atomique.
@@ -314,7 +318,6 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   } else {
     Sys.Date()
   }
-  requis <- id %in% names(SOURCES_EPINGLEES)
   etiquette <- if (identical(type, "api")) paste0("api:", id) else url
 
   tirer_maintenant <- function() {
@@ -382,8 +385,8 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     ))
   }
 
-  # Aucun pin : une source épinglée échoue ; les autres suivent le flux
-  # historique (sha256 du manifeste, 2 essais) puis sont épinglées.
+  # Aucun pin : une source LISTÉE échoue ; une source non listée suit le flux
+  # historique (sha256 du manifeste, 2 essais) SANS écrire de pin.
   if (requis && !repin) {
     stop(erreur_pin(id, "source à pin obligatoire sans pin — repin requis",
                     statuts = etat$statuts))
@@ -408,6 +411,19 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   }
 
   h <- empreinte()
+  if (!requis) {
+    # OPT-IN : aucune dérivation, aucun descripteur, aucun contrôle d'empreinte
+    # supplémentaire — exactement le comportement d'avant #1099.
+    return(list(
+      chemin = cible, sha256 = h, bytes = file.size(cible),
+      vintage = vintage_declare,
+      vintage_basis = vintage_basis %||% "fichier_date",
+      date_reference = reference_declaree,
+      downloaded_at = if (!is.null(horloge)) as.character(as.Date(horloge)) else NULL,
+      pin = NULL, statut = "frais"
+    ))
+  }
+
   d <- deriver_vintage(
     cible, jour, vintage_basis = vintage_basis,
     vintage_declare = vintage_declare, reference_declaree = reference_declaree
@@ -443,7 +459,13 @@ tous_manifestes <- function() {
 # source, recompute its hash and vintage, replace its pin. This is the ONLY way
 # a mandatory pin may move forward.
 repin_source <- function(id, manifest = NULL, cache = "data/raw",
-                         horloge = NULL, tirer = NULL) {
+                         horloge = NULL, tirer = NULL,
+                         registre = SOURCES_EPINGLEES) {
+  # OPT-IN : une source non listée ne doit jamais recevoir de pin, même via
+  # l'entry point manuel.
+  if (!(id %in% names(registre))) {
+    stop("Source non épinglable (absente de SOURCES_EPINGLEES) : ", id, call. = FALSE)
+  }
   if (is.null(manifest)) {
     candidats <- Filter(function(m) id %in% m$id, tous_manifestes())
     if (!length(candidats)) stop("Source inconnue : ", id, call. = FALSE)
@@ -462,6 +484,6 @@ repin_source <- function(id, manifest = NULL, cache = "data/raw",
     vintage_basis = if ("vintage_basis" %in% names(ligne)) ligne$vintage_basis else NULL,
     vintage_declare = if ("vintage" %in% names(ligne)) ligne$vintage else NULL,
     reference_declaree = if ("date_reference" %in% names(ligne)) ligne$date_reference else NULL,
-    horloge = horloge, tirer = tirer, repin = TRUE
+    horloge = horloge, tirer = tirer, repin = TRUE, registre = registre
   )
 }
