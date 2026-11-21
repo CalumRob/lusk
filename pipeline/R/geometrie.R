@@ -35,12 +35,25 @@ NIVEAUX_GEOMETRIE <- c(
 # pipeline (filtrer_geometrie) — la bbox ne sert qu'à éviter de télécharger la
 # France entière.
 #
-# Le CRS s'écrit `EPSG:4326`, PAS `urn:ogc:def:crs:EPSG::4326` (issue #1070) :
-# GeoPF a cessé d'accepter la forme URN dans le filtre bbox — elle répond
-# HTTP 400 `NoSuchAuthorityCodeException: Authority "URN" is unknown`, alors
-# que la même requête avec `EPSG:4326` répond HTTP 200. Coordonnées et ordre
-# d'axes (lat,min / lon,min / lat,max / lon,max) restent inchangés.
-WFS_GEOMETRIE_BBOX <- "47.0,-5.5,49.0,-0.5,EPSG:4326"
+# Ordre des axes (#1100) : data.geopf.fr interprète le bbox WFS 2.0.0 dans
+# l'ordre des axes du CRS — pour `EPSG:4326`, lon,min / lat,min / lon,max /
+# lat,max (minX/minY/maxX/maxY). L'ancienne valeur `47.0,-5.5,49.0,-0.5` était
+# en lat,lon : GeoPF la lisait comme une boîte vide au large de l'Irlande et
+# renvoyait une FeatureCollection VALIDE mais SANS feature — publier_geometrie
+# écrivait alors des GeoJSON de 147 octets (cartes blanches) sans erreur.
+#
+# Vérifié en direct le 2026-11-21 sur la requête de production (count=3000) :
+#   - `47.0,-5.5,49.0,-0.5,EPSG:4326` (lat,lon) : 0 feature ; pour `commune`,
+#     une réponse `text/plain` de métriques à la place du GeoJSON ;
+#   - `-5.5,47.0,-0.5,49.0,EPSG:4326` (lon,lat) : communes 1969 → 1202 après
+#     le filtre Bretagne, epcis 107 → 61, departements 12 → 4.
+# 1202 correspond exactement à l'univers canonique de référence.
+#
+# Le CRS s'écrit `EPSG:4326`, PAS `urn:ogc:def:crs:EPSG::4326` : GeoPF rejette
+# la forme URN dans le filtre bbox (HTTP 400, `NoSuchAuthorityCodeException:
+# Authority "URN" is unknown`) alors que `EPSG:4326` répond HTTP 200. C'est la
+# FORME du CRS qui est en cause ici, pas l'ordre des axes corrigé ci-dessus.
+WFS_GEOMETRIE_BBOX <- "-5.5,47.0,-0.5,49.0,EPSG:4326"
 
 # WFS_GEOMETRIE_BASE -----------------------------------------------------------
 # L'endpoint WFS de data.geopf.fr (IGN) — l'accès aux données Admin Express
