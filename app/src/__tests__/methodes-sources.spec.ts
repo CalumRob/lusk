@@ -140,8 +140,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(url).toBe(
       'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST%3Acommune&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326',
     )
-    expect(url.endsWith('&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326')).toBe(true)
-    expect(url).not.toContain('bbox=47.0,-5.5,49.0,-0.5')
+    expect(url?.endsWith('&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326')).toBe(true)
+    expect(url ?? '').not.toContain('bbox=47.0,-5.5,49.0,-0.5')
   })
 
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {
