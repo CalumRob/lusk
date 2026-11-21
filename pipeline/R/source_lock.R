@@ -403,6 +403,8 @@ relock_sources <- function(run_dir, ids = NULL, lock = NULL) {
     stop("Source absente des empreintes du run : ",
          paste(manquants, collapse = ", "), ".", call. = FALSE)
   }
+  # Toute source relockée doit avoir une base déclarée (échec bruyant sinon).
+  for (id in cibles) invisible(base_vintage(id))
   registre <- lire_lock(lock)
   for (id in cibles) {
     d <- digests[[id]]

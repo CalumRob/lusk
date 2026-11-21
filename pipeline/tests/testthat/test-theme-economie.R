@@ -31,10 +31,7 @@ test_that("MANIFEST_ECONOMIE : les quatre fragments concaténés, une ligne par 
   # la concaténation est EXACTEMENT les fragments, dans l'ordre du contrat
   attendu <- dplyr::bind_rows(MANIFEST_ECONOMIE_SIRENE, MANIFEST_ECONOMIE_FLORES,
                               MANIFEST_ECONOMIE_RP, MANIFEST_ECONOMIE_CHOMAGE)
-  # `vintage_basis` est ajouté au chargement (zz_source_bases.R) : l'ordre des
-  # colonnes du manifeste composite peut différer de celui des fragments déjà
-  # décorés — on compare la valeur, pas la position de la colonne.
-  expect_identical(m[, names(attendu)], attendu)
+  expect_identical(m, attendu)
 })
 
 test_that("theme_economie : le descripteur porte les membres requis du contrat", {

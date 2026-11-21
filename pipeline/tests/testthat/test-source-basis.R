@@ -3,17 +3,22 @@
 # le vocabulaire fermé. Aucun défaut implicite : une source nouvelle sans
 # déclaration fait échouer ce contrat (et le chargement du package).
 
-test_that("chaque source de chaque MANIFEST_* déclare une base valide", {
+test_that("chaque id de chaque MANIFEST_* résout vers une base valide", {
   manifestes <- tous_manifestes()
   expect_true(length(manifestes) >= 30L)
   for (nom in names(manifestes)) {
     m <- manifestes[[nom]]
-    expect_true("vintage_basis" %in% names(m), info = nom)
-    expect_false(anyNA(m$vintage_basis), info = nom)
-    expect_false(any(!as.character(m$vintage_basis) %in% BASIS_VINTAGE), info = nom)
-    # Exactement UNE valeur par source (pas de liste, pas de vecteur multiple).
-    expect_type(m$vintage_basis, "character")
+    # Pas de mutation au chargement : la base est résolue au point d'usage.
+    bases <- vapply(as.character(m$id), base_vintage, character(1))
+    expect_false(anyNA(bases), info = nom)
+    expect_true(all(bases %in% BASIS_VINTAGE), info = nom)
+    # Le manifeste déclaré au point d'usage est cohérent avec le registre.
+    expect_identical(declarer_bases(m)$vintage_basis, unname(bases), info = nom)
   }
+})
+
+test_that("base_vintage échoue bruyamment sur un id inconnu", {
+  expect_error(base_vintage("source_inexistante"), "Aucune base de vintage")
 })
 
 test_that("le registre couvre toutes les sources sans base implicite", {
@@ -28,13 +33,10 @@ test_that("le registre couvre toutes les sources sans base implicite", {
 })
 
 test_that("les sources partagées n'ont qu'une seule base", {
-  m <- tous_manifestes()
-  paires <- unique(unlist(lapply(m, function(x) {
-    data.frame(id = as.character(x$id), base = as.character(x$vintage_basis))
-  }), recursive = FALSE))
-  for (id in unique(paires$id)) {
-    expect_length(unique(paires$base[paires$id == id]), 1L, info = id)
-  }
+  ids <- unique(unlist(lapply(tous_manifestes(), function(x) as.character(x$id))))
+  bases <- vapply(ids, base_vintage, character(1))
+  expect_length(unique(names(bases)), length(ids))
+  expect_true(all(bases %in% BASIS_VINTAGE))
 })
 
 test_that("les publications millésimées gardent leur base declaree", {

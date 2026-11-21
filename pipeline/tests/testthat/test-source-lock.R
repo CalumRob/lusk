@@ -250,7 +250,7 @@ test_that("deux builds depuis les octets verrouillés sont byte-identiques à de
   for (i in seq_len(nrow(manifest))) {
     id <- manifest$id[[i]]
     writeBin(contenu, file.path(cache, manifest$fichier[[i]]))
-    base <- manifest$vintage_basis[[i]]
+    base <- declarer_bases(manifest)$vintage_basis[[i]]
     vintage <- if (identical(base, "declaree")) manifest$vintage[[i]] else "2026-11"
     reference <- if (identical(base, "declaree")) manifest$date_reference[[i]] else "2026-11-18"
     enregistrement <- list(
@@ -274,7 +274,7 @@ test_that("deux builds depuis les octets verrouillés sont byte-identiques à de
       resoudre_source(
         id = manifest$id[[i]], url = manifest$url[[i]],
         fichier = manifest$fichier[[i]], cache = cache, lock = lock,
-        horloge = as.Date(jour), vintage_basis = manifest$vintage_basis[[i]],
+        horloge = as.Date(jour), vintage_basis = declarer_bases(manifest)$vintage_basis[[i]],
         vintage_declare = manifest$vintage[[i]],
         reference_declaree = manifest$date_reference[[i]],
         tirer = function(url, cible) stop("aucun téléchargement attendu")

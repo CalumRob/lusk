@@ -14,7 +14,7 @@ test_that("le manifeste couvre 5 années x 4 départements, mêmes colonnes que 
   expect_equal(
     names(MANIFEST_HABITAT_DVF),
     c("id", "source", "url", "fichier", "vintage", "date_reference",
-      "date_publication", "licence", "note", "mode", "type", "vintage_basis")
+      "date_publication", "licence", "note", "mode", "type")
   )
   # 20 lignes : 5 années (2021-2025) x 4 départements bretons
   expect_equal(nrow(MANIFEST_HABITAT_DVF), 20)

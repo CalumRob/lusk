@@ -74,7 +74,7 @@ test_that("MANIFEST_ECONOMIE_CHOMAGE : une seule source, mêmes colonnes que les
   expect_equal(
     names(MANIFEST_ECONOMIE_CHOMAGE),
     c("id", "source", "url", "fichier", "vintage", "date_reference",
-      "date_publication", "licence", "note", "mode", "type", "vintage_basis")
+      "date_publication", "licence", "note", "mode", "type")
   )
   expect_equal(nrow(MANIFEST_ECONOMIE_CHOMAGE), 1)
   expect_equal(MANIFEST_ECONOMIE_CHOMAGE$id, "rp_chomage")

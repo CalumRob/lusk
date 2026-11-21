@@ -1,7 +1,9 @@
 # Source vintage bases (issue #1103) --------------------------------------------
 # One closed vocabulary, declared EXPLICITLY for every manifest source. There is
-# no implicit default: `declarer_bases()` fails loudly when a source id has no
-# declared basis, so a new source cannot silently inherit a vintage rule.
+# no implicit default and NO load-time mutation of the manifests: the registry
+# is resolved at the USE sites (download_sources, vintages_depuis_manifest,
+# relock_sources) through `base_vintage()` / `declarer_bases()`. An unknown id
+# fails loudly — no DESCRIPTION Collate order and no namespace rewriting.
 #
 #   declaree          dated release whose identity IS the vintage (INSEE RP/DVF/
 #                     BPE, OCS-GE millesimes, frozen static snapshots)
@@ -94,10 +96,22 @@ VINTAGE_BASIS_PAR_ID <- c(VINTAGE_BASIS_PAR_ID, c(
   acv = "declaree", pvd = "declaree", crte = "declaree"
 ))
 
+# base_vintage -------------------------------------------------------------------
+# The single resolver for a source id. Unknown ids are a hard error: a new
+# manifest source cannot inherit a basis silently.
+base_vintage <- function(id) {
+  base <- unname(VINTAGE_BASIS_PAR_ID[as.character(id)])
+  if (length(base) != 1L || is.na(base) || !nzchar(base) || !base %in% BASIS_VINTAGE) {
+    stop("Aucune base de vintage déclarée (issue #1103) pour : ",
+         as.character(id), ".", call. = FALSE)
+  }
+  base
+}
+
 # declarer_bases -----------------------------------------------------------------
-# Attach the declared `vintage_basis` column to a manifest. Unknown ids are a
-# hard error (no default). An existing column must agree with the registry, so
-# a stale inline literal cannot survive unnoticed.
+# Resolve the declared `vintage_basis` for every row of a manifest, at the use
+# site. Unknown ids are a hard error (no default). An existing inline column
+# must agree with the registry, so a stale literal cannot survive unnoticed.
 declarer_bases <- function(manifest) {
   if (!"id" %in% names(manifest)) {
     stop("Manifeste sans colonne `id` — base de vintage indéterminable.", call. = FALSE)
@@ -109,8 +123,6 @@ declarer_bases <- function(manifest) {
   } else {
     rep(NA_character_, length(ids))
   }
-  # Tolère l'ancien libellé contenu_date_maj, renommé par #1103.
-  declarees[declarees %in% "contenu_date_maj"] <- "contenu_date"
   connues <- !is.na(registre)
   bases <- declarees
   # Le registre est AUTORITAIRE pour les sources de manifeste réelles. Les ids
