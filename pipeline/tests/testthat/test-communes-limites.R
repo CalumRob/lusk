@@ -2,10 +2,10 @@
 # Le référentiel géométrique des réseaux (issue #139) — le MÊME WFS GeoPF que le
 # fond de carte, donc le MÊME contrat de bbox (#1100). Deux invariants :
 #   1. l'URL du manifeste est DÉRIVÉE du contrat géométrie, jamais recopiée ;
-#   2. le refus bruyant d'une collection vide / incomplète au seam de lecture —
-#      le WFS renvoie une FeatureCollection valide mais sans feature, et un
-#      téléchargement HTTP 200 réussi ne doit jamais produire un référentiel
-#      silencieusement vide.
+#   2. le refus bruyant d'une collection vide au seam de lecture — avant OU
+#      après le filtre Bretagne. Le WFS renvoie une FeatureCollection valide
+#      mais sans feature, et un téléchargement HTTP 200 réussi ne doit jamais
+#      produire un référentiel silencieusement vide.
 
 test_that("l'URL communes_limites dérive du bbox géométrie partagé (#1100)", {
   url <- MANIFEST_MOBILITE_COMMUNES_LIMITES$url[[1]]
@@ -36,16 +36,20 @@ test_that("lire_communes_limites refuse une collection vide en nommant la source
   expect_true(grepl("0", msg, fixed = TRUE))
 })
 
-test_that("lire_communes_limites refuse une couverture départementale partielle", {
+test_that("lire_communes_limites refuse une collection vide APRÈS le filtre Bretagne", {
   chemin <- tempfile(fileext = ".geojson")
   on.exit(unlink(chemin), add = TRUE)
-  sf::st_write(fixture_limites_ocsge(codes = "22001"), chemin, quiet = TRUE)
+  # Une commune ligérienne (44) : le fichier n'est pas vide, mais le filtre
+  # Bretagne ne retient rien — c'est le même écran de carte blanche, refusé.
+  limites <- fixture_limites_ocsge(codes = "22001")
+  limites$code_insee_du_departement <- "44"
+  sf::st_write(limites, chemin, quiet = TRUE)
 
   err <- tryCatch(lire_communes_limites(chemin), error = identity)
   expect_s3_class(err, "error")
   msg <- conditionMessage(err)
   expect_true(grepl("communes_limites", msg, fixed = TRUE))
-  expect_true(grepl("29, 35, 56", msg, fixed = TRUE))
+  expect_true(grepl("0 commune retenue après filtrage sur 1 reçue", msg, fixed = TRUE))
   expect_true(grepl("data.geopf.fr/wfs/ows", msg, fixed = TRUE))
 })
 

@@ -102,10 +102,12 @@ lire_voitures_communes <- function(chemin_zip) {
 # Garde #1100 : le WFS peut répondre HTTP 200 avec une FeatureCollection
 # PARFAITEMENT VALIDE mais SANS feature (bbox lat,lon) — un téléchargement
 # réussi ne prouve donc rien. On refuse ici, avant toute publication : une
-# collection vide (comptée AVANT le filtre) ou une couverture partielle des
-# 4 départements bretons. La règle est la MÊME que pour le fond de carte
-# (verifier_couverture_bretagne) ; l'erreur nomme la source, l'URL et les
-# comptes, exactement comme pour publier_geometrie.
+# collection vide (comptée AVANT le filtre) ou vide APRÈS le filtre Bretagne.
+# La règle est la MÊME que pour le fond de carte (verifier_couverture_bretagne)
+# ; l'erreur nomme la source, l'URL et les comptes, comme publier_geometrie.
+# La couverture des 4 départements n'est PAS exigée ici : ce lecteur sert aussi
+# les fixtures ciblés sur un seul département de test-territoire-ocsge.R, qui
+# sont des cas légitimes — seule la non-vacuité est un fait du contrat.
 lire_communes_limites <- function(chemin) {
   limites <- sf::st_read(chemin, quiet = TRUE)
   brut_n <- nrow(limites)
@@ -128,7 +130,8 @@ lire_communes_limites <- function(chemin) {
     dplyr::select(code_insee, code_insee_du_departement)
   verifier_couverture_bretagne(
     bretagne$code_insee_du_departement,
-    source = "communes_limites", url = url, brut_n = brut_n
+    source = "communes_limites", url = url, brut_n = brut_n,
+    departements_attendus = NULL
   )
   bretagne %>% sf::st_make_valid()
 }

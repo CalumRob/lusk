@@ -302,9 +302,13 @@ mapper_vers_contrat <- function(collection, niveau) {
 
 # verifier_couverture_bretagne ------------------------------------------------
 # Le contrat de plausibilité PARTAGÉ des collections de communes bretonnes
-# (#1100) : non vides et couvrant les 4 départements de DEPT_BRETAGNE. Le fond
-# de carte (verifier_collection_geometrie) et le référentiel des limites
-# communales (lire_communes_limites) appellent la MÊME règle — pas deux copies.
+# (#1100) : non vides, et — quand la source porte un contrat de couverture —
+# couvrant les 4 départements de DEPT_BRETAGNE. Le fond de carte
+# (verifier_collection_geometrie) et le référentiel des limites communales
+# (lire_communes_limites) appellent la MÊME règle — pas deux copies.
+# `departements_attendus = NULL` désactive la couverture pour la source dont
+# le seam de lecture sert aussi des fixtures ciblés sur un seul département
+# (test-territoire-ocsge.R) : la NON-VACUITÉ reste exigée dans tous les cas.
 # Les erreurs nomment la source, l'URL du WFS et les comptes (reçus / retenus).
 verifier_couverture_bretagne <- function(departements, source, url, brut_n,
                                          departements_attendus = DEPT_BRETAGNE) {
@@ -318,7 +322,11 @@ verifier_couverture_bretagne <- function(departements, source, url, brut_n,
       call. = FALSE
     )
   }
-  manquants <- setdiff(departements_attendus, deps)
+  manquants <- if (is.null(departements_attendus)) {
+    character(0)
+  } else {
+    setdiff(departements_attendus, deps)
+  }
   if (length(manquants) > 0L) {
     stop(
       "Collection de géométrie IMPLAUSIBLE pour '", source,
