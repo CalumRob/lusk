@@ -280,16 +280,20 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
     assert "territory_cohort" in resources["subventions_par_domaine"].target_kinds
     assert "territory_cohort" in resources["couverture_programmes"].target_kinds
     assert "territory_cohort" in resources["economie_selected_reading"].target_kinds
-    assert "territory_cohort" not in resources["aedar_territorial_aggregate"].target_kinds
+    # #1078: AEDAR Cellules read as bounded whole-level cohorts on their
+    # declared coordinates, beside every other cohort family.
+    assert "territory_cohort" in resources["aedar_territorial_aggregate"].target_kinds
+    assert "territory_cohort" in resources["aedar_territory_summary"].target_kinds
     assert resources["raccordement_reference"].target_kinds == ("named_reference",)
 
     aedar_cohort = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate",
         "target": {"kind": "territory_cohort", "type": "commune"},
+        "coordinates": {"typequ": ["A104"], "horizon": ["15"], "mode": ["walk"],
+                        "statistic": ["share"]},
         "intent": {"kind": "facts"},
     })
-    with pytest.raises(ValueError, match="target kind is not declared"):
-        validate_resource_item(aedar_cohort, catalogue)
+    assert validate_resource_item(aedar_cohort, catalogue).resource_id == "aedar_territorial_aggregate"
 
     named_reference_cohort = ResourceReadItem.model_validate({
         "resource": "raccordement_reference",

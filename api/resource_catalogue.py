@@ -673,6 +673,21 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         # The AEDAR resolver owns axis names (declared coordinates only, plus
         # the deprecated measure alias), family separation and intent shape —
         # including the 422 for a comparison that omits its coordinates.
+        if item.target.kind == "territory_cohort":
+            # #1078: a whole-level cohort addresses exactly one declared
+            # Cellule. The deprecated measure alias keeps its frozen
+            # per-territory semantics only — it never becomes a cohort address,
+            # and a measure-free typequ read is not a Cellule.
+            from api.aedar_models import AEDARAddressError, aedar_resolve
+            try:
+                _typequ, measures, _family, is_alias = aedar_resolve(
+                    resource.resource_kind, item.coordinates, item.intent.kind)
+            except AEDARAddressError as exc:
+                raise ValueError(str(exc)) from exc
+            if is_alias:
+                raise ValueError("measure is not an AEDAR Cellule address")
+            if not measures or len(measures) != 1:
+                raise ValueError("an AEDAR cohort requires one declared Cellule")
         _validate_aedar_address(resource, item.coordinates, item.intent.kind)
     elif item.coordinates is not None:
         axes = dict(resource.axis_values)
@@ -963,7 +978,9 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 allowed_levels=tuple(declaration.get("allowed_levels", ("commune", "epci", "departement", "region"))),
                 sources=sources, shapes=(kind,),
                 axes=public_axes, axis_values=public_axis_values,
-                target_kinds=("territory", "territory_cohort") if kind == "typed_reading" else ("territory",),
+                target_kinds=(("territory", "territory_cohort")
+                              if kind == "typed_reading" or kind in AEDAR_CELLULE_AXES
+                              else ("territory",)),
                 target_ids=(),
                 dynamic_axes=tuple(declaration.get("dynamic_axes", ())), fields=tuple(dict.fromkeys([
                     *declaration["fields"],
