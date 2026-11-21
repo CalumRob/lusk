@@ -32,6 +32,11 @@ function numericPaths(value: unknown, path = ''): Array<[string, number]> {
   return Object.entries(value).flatMap(([key, child]) => numericPaths(child, path ? `${path}.${key}` : key))
 }
 
+/** Shape of the numeric leaves, with point indexes collapsed to `[*]`. */
+function numericShapes(value: unknown): string[] {
+  return [...new Set(numericPaths(value).map(([path]) => path.replace(/\[\d+\]/g, '[*]')))].sort()
+}
+
 function figureState(x: { cell: typeof densiteCell } | { formula: { expression: string; operands: Record<string, typeof densiteCell> } }) {
   return {
     v: 1 as const, title: 'Atelier', blocks: [{
@@ -45,13 +50,19 @@ function figureState(x: { cell: typeof densiteCell } | { formula: { expression: 
 
 const source: CohortSource = { sourceId: 'insee-rp', name: 'INSEE — Recensement', vintageId: '2023' }
 
-function cohortAvecValeur(value: number): AdmittedCohort {
-  const territory = atelierReferenceFixture[0]!
+function cohortAvecValeurs(publiees: Array<[string, number]>): AdmittedCohort {
   return {
     key: `${cellKey(densiteCell)}|commune`, cell: densiteCell, level: 'commune',
     availability: { status: 'available' },
-    values: [{ territory: territory.territoire, type: territory.type, nom: territory.nom, value, sources: [source] }],
+    values: publiees.map(([territoire, value]) => {
+      const territory = atelierReferenceFixture.find((row) => row.territoire === territoire)!
+      return { territory: territoire, type: territory.type, nom: territory.nom, value, sources: [source] }
+    }),
   }
+}
+
+function cohortAvecValeur(value: number): AdmittedCohort {
+  return cohortAvecValeurs([[atelierReferenceFixture[0]!.territoire, value]])
 }
 
 describe('atelier — confinement de la valeur dérivée (ADR-0046)', () => {
@@ -77,6 +88,7 @@ describe('atelier — confinement de la valeur dérivée (ADR-0046)', () => {
       'axisTitles', 'excluded', 'id', 'level', 'nonTracees', 'points', 'sources', 'title', 'titleGenerated', 'type',
     ])
     expect(Object.keys(rendue.points[0]!).sort()).toEqual(['territory', 'values'])
+    expect(Object.keys(rendue.points[0]!.values).sort()).toEqual(['x', 'y'])
     expect(Object.keys(rendue.points[0]!.territory).sort()).toEqual(['id', 'nom', 'type'])
     expect(Object.keys(rendue.nonTracees).sort()).toEqual(['count', 'territories'])
     expect(Object.keys(rendue.nonTracees.territories[0]!).sort()).toEqual(['reasons', 'territory'])
@@ -95,6 +107,33 @@ describe('atelier — confinement de la valeur dérivée (ADR-0046)', () => {
     expect(rendue.sources[0]).toBe(cohort.values[0]!.sources[0]) // même objet, pas une copie recalculée
   })
 
+  it('un nuage tracé ne porte que les valeurs publiées et le compte des non tracées', () => {
+    const publiees: Array<[string, number]> = [
+      [atelierReferenceFixture[0]!.territoire, 0.30000000000000004],
+      [atelierReferenceFixture[1]!.territoire, 0],
+      [atelierReferenceFixture[2]!.territoire, 17],
+    ]
+    const rendue = joinFigures({
+      state: {
+        v: 1, title: 'Atelier', blocks: [{
+          kind: 'figure', id: 'f', figure: {
+            type: 'nuage', level: 'commune', population: { excluded: 'hide' },
+            variables: { x: { cell: densiteCell } },
+          },
+        }],
+      },
+      discovery: atelierDiscoveryFixture, reference: atelierReferenceFixture,
+      cohorts: [cohortAvecValeurs(publiees)],
+    })[0]!
+    expect(rendue.points.map((point) => point.territory.id)).toEqual(publiees.map(([id]) => id))
+    // Seuls des nombres publiés dans `points[*].values` et le compte explicitement exposé.
+    expect(numericShapes(rendue)).toEqual(['nonTracees.count', 'points[*].values.x'])
+    for (const [index, point] of rendue.points.entries()) {
+      expect(Object.keys(point.values).sort()).toEqual(['x'])
+      expect(point.values.x).toBe(publiees[index]![1])
+    }
+  })
+
   it('une variable de Formule rend ses territoires non tracés sans produire de nombre calculé', () => {
     const rendue = joinFigures({
       state: figureState({ formula: { expression: 'B - A', operands: { A: densiteCell, B: densiteCell } } }),
@@ -103,7 +142,7 @@ describe('atelier — confinement de la valeur dérivée (ADR-0046)', () => {
     expect(rendue.points).toEqual([])
     expect(rendue.nonTracees.count).toBe(atelierReferenceFixture.filter((t) => t.type === 'commune').length)
     expect(rendue.nonTracees.territories.every((t) => t.reasons.some((reason) => /Formule/.test(reason)))).toBe(true)
-    // Le seul nombre de la figure est le compte des non tracées : aucune valeur calculée.
-    expect(numericPaths(rendue)).toEqual([['nonTracees.count', rendue.nonTracees.count]])
+    // Le seul feuillet numérique de la figure est le compte des non tracées : aucune valeur calculée.
+    expect(numericPaths(rendue).map(([path]) => path)).toEqual(['nonTracees.count'])
   })
 })
