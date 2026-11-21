@@ -634,6 +634,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
 }
 
 publier_structure_age_profile_postgres <- function(payload, metadata) {
+  verifier_gel_release()  # issue #1103 : gel de release, zéro écriture
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
   tryCatch({
@@ -649,6 +650,9 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
 # database write. The DPE facet is still cross-checked against the live
 # scalar_observation marker inside publish_registered_profile().
 publier_declared_profiles_postgres <- function(artifact_directory, owners, con = NULL) {
+  # Issue #1103 : gel de release avant toute connexion. Un `con` injecté est
+  # un seam de test (base jetable), pas une publication de release.
+  if (is.null(con)) verifier_gel_release(artifact_directory)
   if (!is.character(owners) || !length(owners) || anyNA(owners) || anyDuplicated(owners))
     stop("Declared profile owners are required", call.=FALSE)
   if (!"structure_age" %in% owners)

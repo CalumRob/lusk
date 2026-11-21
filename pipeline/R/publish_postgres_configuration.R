@@ -28,6 +28,9 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
                                                    scalar_scope=Sys.getenv(
                                                      "LUSK_SCALAR_SCOPE",
                                                      unset="")) {
+  # Issue #1103 : gel de release — refuser avec ZÉRO écriture avant toute
+  # connexion si les empreintes du run ne sont pas exactement celles du lock.
+  verifier_gel_release(sortie)
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
   locked <- FALSE

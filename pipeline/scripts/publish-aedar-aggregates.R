@@ -60,6 +60,7 @@ if (args[[1]]=="--full-vintage") {
 if (args[[1]]=="--publish") {
   if (!identical(Sys.getenv("LUSK_PUBLISH_AEDAR"),"1") || identical(Sys.getenv("LUSK_MODE"),"cron"))
     stop("AEDAR Postgres publication requires explicit LUSK_PUBLISH_AEDAR=1 and is disabled for cron",call.=FALSE)
+  verifier_gel_release()  # issue #1103 : gel de release, zéro écriture
   con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   result <- tryCatch({
     facts_result <- publish_aedar_aggregates(projection,con)

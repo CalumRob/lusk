@@ -52,6 +52,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
   if (args[[1L]]=="--programme-publish") {
     if (!identical(Sys.getenv("LUSK_PUBLISH_PROGRAMMES"),"1") || identical(Sys.getenv("LUSK_MODE"),"cron"))
       stop("Programme publication requires explicit LUSK_PUBLISH_PROGRAMMES=1 and is disabled for cron",call.=FALSE)
+    verifier_gel_release()  # issue #1103 : gel de release, zéro écriture
     con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
     tryCatch({
       publish_owned_series_projection(annual,owned_series_postgres_adapter(con))
@@ -63,6 +64,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
 if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) {
   mode <- if (args[[1L]]=="--programme-series-check") "check" else "publish"
   projections <- read_programme_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+  if (mode == "publish") verifier_gel_release()  # issue #1103 : gel de release
   connect <- function() do.call(DBI::dbConnect,
     c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
    result <- dispatch_owned_series_cli(mode,projections,connect,require_scope=FALSE)
@@ -74,6 +76,7 @@ if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) 
 }
 if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   mode <- if (args[[1L]]=="--owned-series-check") "check" else "publish"
+  if (mode == "publish") verifier_gel_release()  # issue #1103 : gel de release
    projections <- read_owned_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")),indicator_id=indicator_id)
   connect <- function() {
     do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
@@ -103,6 +106,7 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
       "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id,
       "; excluded Région fiche rows", projection$excluded$region$row_count, "\n")
   if (args[[1L]] == "--series-publish") {
+    verifier_gel_release()  # issue #1103 : gel de release, zéro écriture
     config <- configuration_service_postgres()
     connection <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
     result <- tryCatch(publish_series_projection(projection, series_postgres_adapter(connection),

@@ -301,6 +301,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.
   if (!is.null(connexion_service)) {
+    verifier_gel_release(sortie)  # issue #1103 : gel de release, zéro écriture
     publish_retained_backend_snapshot(connexion_service, sortie)
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
