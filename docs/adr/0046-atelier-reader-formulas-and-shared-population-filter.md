@@ -36,6 +36,17 @@ arithmetically. The serving host (Raspberry Pi) is weak.
    (`prototype/atelier-cell-picker`) measured deflate-raw + base64url links at ~1,000 characters for a
    two-figure page and ~2,100 with 1,500 characters of reader prose — comfortable for a pasted link.
 
+**Amendment (owner-approved 2026-11-20, #1077): the filter is evaluated in the browser only.** Point 3's
+server-side half is withdrawn. No API or pipeline evaluates a Filtre de population. Every cohort caller
+today passes only `department_id` / `epci_id` (map, profile, scalar and series acquisition); the fiche's
+densité and littoral presets are served by the published comparison projections (ADR-0039); and the
+Atelier acquires whole-level cohorts and filters in the browser under point 2. The vocabulary needs no
+declaration either — classes de densité and the classification littorale are already in the published
+territory reference, validated all-or-nothing (#1041). Point 3's equivalence is still proved, but as a
+test rather than a second implementation: a published comparison projection carries complete membership
+(`member_count` plus one status row per territory), and the browser filter must select exactly those
+members for the corresponding preset. Value thresholds remain Atelier-only.
+
 ## Considered options
 
 - *No arithmetic, reference lines only* (y = x, medians) — rejected by the owner as leaving too many
@@ -51,6 +62,7 @@ arithmetically. The serving host (Raspberry Pi) is weak.
 
 - AGENTS.md carries an explicit, Atelier-only exception; everywhere else the « app never derives » rule
   stands unchanged.
-- The API needs a bounded AEDAR cohort read (one Cellule across a level) and a resolver generalised to
-  the Filtre de population; the browser territory reference must carry every Catégorie and Appartenance.
+- The API needs a bounded AEDAR cohort read (one Cellule across a level) and the discovery declarations
+  that make a Cellule addressable; the browser territory reference already carries every current
+  Catégorie and Appartenance (densité, littorale, département, EPCI).
 - The ≈200,000-unit read-batch budget allows roughly fifty commune-level scalar Cellules per batch.
