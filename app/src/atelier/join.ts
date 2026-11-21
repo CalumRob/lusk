@@ -112,8 +112,9 @@ function unitOf(cell: CellRef, discovery: readonly DiscoveryResource[]): string 
   return resource.unit || null
 }
 
-function bindingLabel(binding: Binding | undefined, discovery: readonly DiscoveryResource[]): string {
+function bindingLabel(binding: Binding | AttributeBinding | undefined, discovery: readonly DiscoveryResource[]): string {
   if (!binding) return '…'
+  if ('attribute' in binding) return ATTRIBUTE_LABELS[binding.attribute]
   if ('formula' in binding) return binding.formula.expression.trim() || '…'
   const resource = resourceFor(binding.cell, discovery)
   if (!resource) return '…'

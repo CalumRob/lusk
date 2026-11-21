@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { joinFigures } from '@/atelier/join'
 import { cellKey, type AtelierLevel, type AtelierState, type CellRef, type FigureSpec } from '@/atelier/state'
 import type { AdmittedCohort, CohortSource, CohortValue, DiscoveryResource } from '@/atelier/types'
-import type { Territoire } from '@/payload/types'
 import { atelierDiscoveryFixture, atelierReferenceFixture, aedarCell, densiteCell } from './helpers/atelierFixtures'
 
 const sourceA: CohortSource = { sourceId: 'insee-rp', name: 'INSEE — Recensement', vintageId: '2023' }

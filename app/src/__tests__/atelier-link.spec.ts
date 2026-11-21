@@ -112,7 +112,8 @@ describe('atelier — codec de lien (state → JSON → deflate-raw → base64ur
 
   it('ne restaure jamais à moitié : un bloc invalide vide toute la page', async () => {
     const page = deuxFigures()
-    page.blocks.push({ kind: 'figure', id: 'cassé', figure: { ...(page.blocks[1] as { figure: AtelierState['blocks'][number] }).figure, type: 'carte' as never } })
+    const figure = page.blocks.find((block) => block.kind === 'figure')
+    if (figure && figure.kind === 'figure') (figure.figure as unknown as { type: string }).type = 'carte'
     const lien = await encodeAtelierLink(page, codec)
     const resultat = await decodeAtelierLink(lien, codec)
     expect(resultat.state).toEqual(emptyAtelierState())
