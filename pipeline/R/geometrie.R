@@ -60,19 +60,30 @@ WFS_GEOMETRIE_BBOX <- "-5.5,47.0,-0.5,49.0,EPSG:4326"
 # sans clé (vérifié en direct le 2026-08-04).
 WFS_GEOMETRIE_BASE <- "https://data.geopf.fr/wfs/ows"
 
+# url_geopf_wfs ---------------------------------------------------------------
+# Le constructeur partagé d'une GetFeature sur le WFS GeoPF : le fond de carte
+# (geometrie.R) ET le référentiel des limites communales (manifest_mobilite.R)
+# passent par ici. Un seul bbox (`WFS_GEOMETRIE_BBOX`), un seul commentaire
+# d'ordre d'axes — jamais une deuxième copie du littéral (#1100). `type_names`
+# est la couche demandée, propre à chaque site.
+url_geopf_wfs <- function(type_names, base = WFS_GEOMETRIE_BASE,
+                          bbox = WFS_GEOMETRIE_BBOX) {
+  paste0(
+    base,
+    "?service=WFS&version=2.0.0&request=GetFeature",
+    "&typeNames=", utils::URLencode(type_names, reserved = TRUE),
+    "&count=3000&outputFormat=application/json",
+    "&bbox=", bbox
+  )
+}
+
 # url_geometrie_wfs ------------------------------------------------------------
 # La construction de la requête GetFeature, isolée du réseau : le contrat de
 # l'URL (service/version/typeNames/count/outputFormat/bbox) est testable sans
 # parler à GeoPF. Le filtre bbox porte le CRS accepté (voir WFS_GEOMETRIE_BBOX).
 url_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
                               bbox = WFS_GEOMETRIE_BBOX) {
-  paste0(
-    base,
-    "?service=WFS&version=2.0.0&request=GetFeature",
-    "&typeNames=", utils::URLencode(NIVEAUX_GEOMETRIE[[niveau]], reserved = TRUE),
-    "&count=3000&outputFormat=application/json",
-    "&bbox=", bbox
-  )
+  url_geopf_wfs(NIVEAUX_GEOMETRIE[[niveau]], base = base, bbox = bbox)
 }
 
 # telecharger_geometrie_wfs ----------------------------------------------------
@@ -289,6 +300,38 @@ mapper_vers_contrat <- function(collection, niveau) {
   collection
 }
 
+# verifier_couverture_bretagne ------------------------------------------------
+# Le contrat de plausibilité PARTAGÉ des collections de communes bretonnes
+# (#1100) : non vides et couvrant les 4 départements de DEPT_BRETAGNE. Le fond
+# de carte (verifier_collection_geometrie) et le référentiel des limites
+# communales (lire_communes_limites) appellent la MÊME règle — pas deux copies.
+# Les erreurs nomment la source, l'URL du WFS et les comptes (reçus / retenus).
+verifier_couverture_bretagne <- function(departements, source, url, brut_n,
+                                         departements_attendus = DEPT_BRETAGNE) {
+  deps <- unique(as.character(departements))
+  n_filtre <- length(departements)
+  if (n_filtre == 0L) {
+    stop(
+      "Collection de géométrie VIDE pour '", source,
+      "' : 0 commune retenue après filtrage sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Collection rejetée.",
+      call. = FALSE
+    )
+  }
+  manquants <- setdiff(departements_attendus, deps)
+  if (length(manquants) > 0L) {
+    stop(
+      "Collection de géométrie IMPLAUSIBLE pour '", source,
+      "' : département(s) breton(s) absent(s) ", paste(manquants, collapse = ", "),
+      " (présents : ", paste(sort(intersect(departements_attendus, deps)), collapse = ", "),
+      ") — ", n_filtre, " commune(s) retenue(s) sur ", brut_n,
+      " reçue(s) du WFS — URL : ", url, ". Collection rejetée.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 # verifier_collection_geometrie ---------------------------------------------
 # Garde de plausibilité post-filtre (#1100). Le bbox lat,lon renvoyait une
 # FeatureCollection PARFAITEMENT VALIDE mais SANS feature : publier_geometrie
@@ -299,7 +342,8 @@ mapper_vers_contrat <- function(collection, niveau) {
 #   - chaque niveau du référentiel canonique est NON VIDE (l'univers breton
 #     porte 1202 communes, 61 EPCI et 4 départements — jamais zéro) ;
 #   - les communes couvrent les 4 départements de DEPT_BRETAGNE (22·29·35·56),
-#     la définition même de la Bretagne (CONTEXT.md, filter.R).
+#     la définition même de la Bretagne (CONTEXT.md, filter.R) — règle portée
+#     par verifier_couverture_bretagne, partagée avec communes_limites.
 # On écarte donc un nombre magique du type « ≥ 1000 communes » : les comptes
 # dérivent avec les millésimes COG, alors que la couverture départementale et
 # la non-vacuité sont des faits stables du référentiel. Les départements
@@ -325,23 +369,15 @@ verifier_collection_geometrie <- function(collection, niveau, url,
     )
   }
   if (identical(niveau, "communes")) {
-    deps <- unique(vapply(
-      collection$features,
-      function(f) as.character(f$properties$code_insee_du_departement),
-      character(1)
-    ))
-    manquants <- setdiff(departements_attendus, deps)
-    if (length(manquants) > 0L) {
-      stop(
-        "Collection de géométrie IMPLAUSIBLE pour le niveau '", niveau,
-        "' : département(s) breton(s) absent(s) ",
-        paste(manquants, collapse = ", "), " (présents : ",
-        paste(sort(intersect(departements_attendus, deps)), collapse = ", "),
-        ") — ", n_filtre, " commune(s) retenue(s) sur ", brut_n,
-        " reçue(s) du WFS — URL : ", url, ". Aucun masque écrit.",
-        call. = FALSE
-      )
-    }
+    verifier_couverture_bretagne(
+      vapply(
+        collection$features,
+        function(f) f$properties$code_insee_du_departement,
+        character(1)
+      ),
+      source = niveau, url = url, brut_n = brut_n,
+      departements_attendus = departements_attendus
+    )
   }
   invisible(TRUE)
 }

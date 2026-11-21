@@ -247,6 +247,21 @@ test_that("la bbox WFS porte l'ordre d'axes lon,lat vérifié (#1100)", {
   expect_match(url, "&bbox=-5\\.5,47\\.0,-0\\.5,49\\.0,EPSG:4326$")
 })
 
+test_that("le bbox WFS est un contrat unique partagé avec communes_limites (#1100)", {
+  url_fond <- url_geometrie_wfs("communes")
+  url_limites <- MANIFEST_MOBILITE_COMMUNES_LIMITES$url[[1]]
+
+  expect_identical(WFS_GEOMETRIE_BBOX, "-5.5,47.0,-0.5,49.0,EPSG:4326")
+  # les deux sites dérivent le même suffixe de la MÊME constante : si un
+  # littéral de bbox réapparaît d'un côté, ce test casse immédiatement.
+  expect_identical(sub("^.*&bbox=", "", url_fond), WFS_GEOMETRIE_BBOX)
+  expect_identical(sub("^.*&bbox=", "", url_limites), WFS_GEOMETRIE_BBOX)
+  expect_identical(
+    sub("^.*&bbox=", "", url_fond),
+    sub("^.*&bbox=", "", url_limites)
+  )
+})
+
 test_that("url_geometrie_wfs construit une GetFeature complète (contrat WFS)", {
   url <- url_geometrie_wfs("epcis")
   expect_true(grepl("^https://data.geopf.fr/wfs/ows\\?", url))
