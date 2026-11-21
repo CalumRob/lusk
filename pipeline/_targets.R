@@ -1467,7 +1467,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
 # projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
 digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
                               sortie = SORTIE_RUN) {
-  noms <- paste0("sources_", themes)
+  noms <- paste0("sources_", names(themes))
   if (identical(MODE_RUN, "full")) noms <- c(noms, "sources_programmes")
   deps <- lapply(noms, as.name)
   chemin_cache <- file.path(cache, NOM_DIGESTS)

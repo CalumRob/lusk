@@ -1,14 +1,11 @@
 # Données téléchargées et produites — jamais versionnées.
-# Exception (issue #1099) : le registre des pins est VERSIONNÉ — c'est la
-# promesse d'empreinte qui rend un rebuild reproductible. Les octets épinglés
-# (data/raw/<fichier>) restent ignorés ; seuls les descripteurs JSON sont
-# suivis.
+# Issue #1103 : la promesse d'empreinte est le lockfile VERSIONNÉ
+# (`sources.lock.json`, à la racine de pipeline/). Les octets téléchargés et
+# les sidecars de run (data/raw/.digests/, data/raw/source-digests.json)
+# restent ignorés — ce sont des artefacts de run, pas des sources de vérité.
 data/*
 !data/raw/
 data/raw/*
-!data/raw/pins/
-data/raw/pins/*
-!data/raw/pins/*.json
 
 # Le store du graphe targets (#329, #340) — le cache intermédiaire qui
 # remplace data/processed/*.rds. Jamais versionné : la régénération est le

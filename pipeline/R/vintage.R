@@ -43,24 +43,18 @@ vintages_depuis_manifest <- function(manifest,
       vintages$date_reference[i] <- as.character(verrouille$date_reference)
       vintages$date_publication[i] <- as.character(verrouille$acquired_at)
     } else if (!is.null(digest)) {
+      # A real run: the derived value recorded by the resolver (never a stale
+      # literal for a `telechargement` source).
       vintages$version[i] <- as.character(digest$vintage)
       vintages$date_reference[i] <- as.character(digest$date_reference)
       vintages$date_publication[i] <- as.character(digest$acquired_at)
-    } else {
-      # No digest recorded yet (a theme builder called outside a full run):
-      # derive from the cache file so the published vintage is never a stale
-      # literal. The run's resolver normally writes the digest before here.
-      chemin <- file.path(cache, manifest$fichier[i])
-      jour <- if (file.exists(chemin)) as.Date(file.mtime(chemin)) else Sys.Date()
-      d <- deriver_vintage(
-        chemin, jour, vintage_basis = base,
-        vintage_declare = manifest$vintage[i],
-        reference_declaree = manifest$date_reference[i]
-      )
-      vintages$version[i] <- d$vintage
-      vintages$date_reference[i] <- d$date_reference
-      vintages$date_publication[i] <- as.character(jour)
     }
+    # Sans digest ni verrou, aucun run n'atteste d'acquisition : on garde le
+    # vintage déclaré (par exemple un builder de thème appelé hors d'un run).
+    # Une source qui déclare NA n'a pas de date de publication (ORT, DPE) :
+    # on ne lui en invente pas une à partir de l'acquisition.
+    if (!is.na(manifest$date_publication[i])) next
+    vintages$date_publication[i] <- NA_character_
   }
   vintages
 }

@@ -126,8 +126,8 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
     "(ADR-0001) : attribution « © OpenStreetMap contributors » + lien ODbL, ",
     "code d'extraction publié avec la Méthodes (ODbL §4.6). Mode « manuel » : ",
     "l'extrait fait ~312 Mo — le portage suit l'horloge lente du flagship. ",
-    "ISSUE #1099 : le vintage est DÉRIVÉ du timestamp du header PBF de ",
-    "l'extrait épinglé (sinon de la date de téléchargement enregistrée), ",
+    "ISSUE #1103 : le vintage est DÉRIVÉ du timestamp du header PBF de ",
+    "l'extrait verrouillé (sinon de la date d'acquisition enregistrée), ",
     "jamais du littéral 2026-08-05/2026-08-06 du manifeste."
   ),
   "manuel", "fichier", "contenu_timestamp"
@@ -336,9 +336,9 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
     "m à vol d'oiseau d'un arrêt GTFS (le spine AEDAR reprojeté EPSG:2154) ",
     "— la VRAIE part, jamais un proxy de superficie. ODbL ",
     "(ADR-0001) : attribution « © OpenStreetMap contributors » portée par ",
-    "l'indicateur. ISSUE #1099 : l'export est régénéré chaque jour et ne ",
+    "l'indicateur. ISSUE #1103 : l'export est régénéré chaque jour et ne ",
     "porte pas de date de publication exploitable — le vintage publié est ",
-    "la date de téléchargement enregistrée dans le pin, pas un littéral."
+    "la date d'acquisition du run (base `telechargement`), pas un littéral."
   ),
   "cron", "fichier", "telechargement"
 )
@@ -379,9 +379,9 @@ MANIFEST_MOBILITE_BORNES <- tibble::tribble(
     "géolocalisées ») — ces stations n'entrent dans aucun comptage communal, la ",
     "limite est documentée dans la Méthodes. Licence Ouverte v2.0. Vintage ",
     "verrouillé du contrat : refreshed 2026-07-28 (référence) ; publication : le ",
-    "traitement ODS de l'export (2026-08-04). ISSUE #1099 : l'export ODS est ",
+    "traitement ODS de l'export (2026-08-04). ISSUE #1103 : l'export ODS est ",
     "un flux Live sans Last-Modified/ETag — le vintage publié est la date ",
-    "maximale de `date_maj` dans le fichier épinglé (sinon sa date de ",
+    "maximale de `date_maj` dans le fichier verrouillé (sinon sa date de ",
     "téléchargement), jamais le littéral du contrat."
   ),
   "cron", "fichier", "contenu_date"

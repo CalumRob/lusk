@@ -86,6 +86,7 @@ test_that("une source absente du lockfile est résolue et signalée sans référ
     id = "source_nouvelle", url = "https://example.invalid/nouvelle",
     fichier = "nouvelle.csv", cache = cache, lock = lock_fixture(),
     horloge = as.Date("2026-11-18"), vintage_basis = "telechargement",
+    reference_declaree = "2026-11-18",
     tirer = function(url, cible) writeBin(octets_fixture("flux roulant"), cible)
   )
   expect_true(r$sans_reference)
@@ -126,6 +127,7 @@ test_that("un fichier réutilisé porte sa date de modification", {
   r <- resoudre_source(
     id = "mtime", url = "https://example.invalid/x", fichier = "deja-la.csv",
     cache = cache, lock = lock_fixture(), vintage_basis = "telechargement",
+    reference_declaree = "2026-10-02",
     tirer = function(url, cible) stop("aucun téléchargement attendu")
   )
   expect_identical(r$acquired_at, "2026-10-02")
@@ -179,6 +181,7 @@ test_that("un OSM sans timestamp lisible retombe sur la date de téléchargement
     id = "osm_sans_timestamp", url = "https://example.invalid/osm",
     fichier = "extrait.pbf", cache = tempfile("cache-pbf-vide-"), lock = lock_fixture(),
     horloge = as.Date("2026-11-18"), vintage_basis = "contenu_timestamp",
+    reference_declaree = "2026-11-18",
     tirer = function(url, cible) writeBin(charToRaw("pas de header"), cible)
   )
   expect_identical(r$vintage_basis, "telechargement")
@@ -234,6 +237,90 @@ test_that("le lockfile commité garde exactement les trois empreintes d'origine"
     expect_equal(e$vintage, "2026-11")
     expect_true(grepl("^[0-9a-f]{64}$", e$sha256))
   }
+})
+
+test_that("deux builds depuis les octets verrouillés sont byte-identiques à deux horloges", {
+  manifest <- MANIFEST_DEMOGRAPHIE
+  manifest$fichier <- paste0(manifest$id, ".txt")
+  cache <- tempfile("cache-byte-identique-")
+  dir.create(cache, recursive = TRUE)
+  contenu <- charToRaw("octets verrouillés\n")
+  h <- empreinte_fixture(contenu)
+  registre <- list()
+  for (i in seq_len(nrow(manifest))) {
+    id <- manifest$id[[i]]
+    writeBin(contenu, file.path(cache, manifest$fichier[[i]]))
+    base <- manifest$vintage_basis[[i]]
+    vintage <- if (identical(base, "declaree")) manifest$vintage[[i]] else "2026-11"
+    reference <- if (identical(base, "declaree")) manifest$date_reference[[i]] else "2026-11-18"
+    enregistrement <- list(
+      source_id = id, url = manifest$url[[i]], sha256 = h,
+      bytes = length(contenu), acquired_at = "2026-11-18",
+      vintage_basis = base, vintage = vintage, date_reference = reference
+    )
+    registre[[id]] <- enregistrement
+    ecrire_digest_cache(enregistrement, cache)
+  }
+  lock <- tempfile("lock-byte-identique-")
+  ecrire_lock(registre, lock)
+
+  construire <- function(jour) {
+    # Deux horloges différentes, mêmes octets verrouillés.
+    for (f in manifest$fichier) {
+      Sys.setFileTime(file.path(cache, f),
+                      as.POSIXct(paste0(jour, "T12:00:00"), tz = "UTC"))
+    }
+    for (i in seq_len(nrow(manifest))) {
+      resoudre_source(
+        id = manifest$id[[i]], url = manifest$url[[i]],
+        fichier = manifest$fichier[[i]], cache = cache, lock = lock,
+        horloge = as.Date(jour), vintage_basis = manifest$vintage_basis[[i]],
+        vintage_declare = manifest$vintage[[i]],
+        reference_declaree = manifest$date_reference[[i]],
+        tirer = function(url, cible) stop("aucun téléchargement attendu")
+      )
+    }
+    v <- vintages_depuis_manifest(manifest, cache = cache, lock = lock)
+    sortie <- tempfile("sortie-byte-")
+    dir.create(sortie)
+    p <- compute_payload_test(load_fixture(), vintages = v)
+    publish(p, sortie)
+    sortie
+  }
+
+  a <- construire("2026-11-18")
+  b <- construire("2027-04-02")
+  fichiers <- intersect(list.files(a), list.files(b))
+  expect_true(length(fichiers) > 0L)
+  md5 <- function(dossier) {
+    vapply(file.path(dossier, fichiers), function(f) unname(tools::md5sum(f)), character(1))
+  }
+  expect_identical(unname(md5(a)), unname(md5(b)))
+})
+
+test_that("relock_sources réécrit les enregistrements depuis un run, atomiquement", {
+  run_dir <- tempfile("run-relock-")
+  dir.create(run_dir)
+  digests <- list(
+    osm_reseaux = list(
+      source_id = "osm_reseaux", url = "https://example.invalid/osm",
+      sha256 = paste(rep("c", 64), collapse = ""), bytes = 42,
+      acquired_at = "2027-01-06", vintage_basis = "contenu_timestamp",
+      vintage = "2027-01", date_reference = "2027-01-05"
+    )
+  )
+  ecrire_digests_source(digests, file.path(run_dir, NOM_DIGESTS))
+  lock <- tempfile("lock-relock-")
+  ecrire_lock(lire_lock(), lock)
+  avant <- lire_lock(lock)
+
+  relock_sources(run_dir, "osm_reseaux", lock)
+  apres <- lire_lock(lock)
+  expect_identical(apres$osm_reseaux$sha256, digests$osm_reseaux$sha256)
+  expect_identical(apres$osm_reseaux$acquired_at, "2027-01-06")
+  expect_identical(apres$osm_reseaux$vintage, "2027-01")
+  # les autres enregistrements sont inchangés
+  expect_identical(apres$korrigo$sha256, avant$korrigo$sha256)
 })
 
 test_that("une écriture atomique du lockfile qui échoue laisse l'ancien fichier", {

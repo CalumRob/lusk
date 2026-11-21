@@ -129,10 +129,10 @@ test_that("vintages_mobilite : quinze sources publiques incluent la production n
     expect_equal(osm$version, MANIFEST_MOBILITE_OSM_RESEAUX$vintage)
   }
   lim <- v[v$id == "communes_limites", ]
-  # Issue #1103 : le WFS ADMINEXPRESS-COG.LATEST est une base roulante — son
-  # vintage publié est la date d'acquisition du run, jamais le littéral 2025.
-  expect_false(identical(lim$date_reference, "2025-01-01"))
-  expect_false(is.na(lim$date_publication))
+  # Sans run (pas de digest), le vintage déclaré reste publié tel quel ; dès
+  # qu'un run a acquis les octets, la base `telechargement` publie sa date.
+  expect_equal(lim$date_reference, "2025-01-01")
+  expect_true(is.na(lim$date_publication))
   expect_equal(v$licence[v$id == "korrigo"], "odbl")
   expect_equal(v$licence[v$id == "bornes-recharges"], "lov2")
   expect_equal(v$licence[v$id == "stationnement-velo"], "odbl")

@@ -697,7 +697,6 @@ vintages_habitat <- function(cache = "data/raw") {
       date_pull <- as.character(Sys.Date())
     }
     v$version[v$id == id] <- date_pull
-    v$date_reference[v$id == id] <- date_pull
     v$date_publication[v$id == id] <- date_pull
   }
   v

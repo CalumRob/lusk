@@ -78,7 +78,13 @@ chemin_digest_cache <- function(id, cache = "data/raw") {
 lire_digest_cache <- function(id, cache = "data/raw") {
   p <- chemin_digest_cache(id, cache)
   if (!file.exists(p)) return(NULL)
-  tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) NULL)
+  d <- tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) NULL)
+  if (!is.null(d)) {
+    for (champ in c("sha256", "acquired_at", "vintage_basis", "vintage", "date_reference")) {
+      if (is.null(d[[champ]])) d[[champ]] <- NA_character_
+    }
+  }
+  d
 }
 
 ecrire_digest_cache <- function(digest, cache = "data/raw") {
@@ -230,7 +236,14 @@ deriver_vintage <- function(chemin, jour, vintage_basis = "telechargement",
   par_telechargement <- function() {
     list(
       vintage = format(jour, "%Y-%m"),
-      date_reference = as.character(jour),
+      # Une source qui déclare NA n'a PAS de date de référence unique (ORT,
+      # DPE) : on ne lui en invente pas une, même en base `telechargement`.
+      date_reference = if (length(reference_declaree) &&
+                           !is.na(reference_declaree)) {
+        as.character(jour)
+      } else {
+        NA_character_
+      },
       vintage_basis = "telechargement"
     )
   }
@@ -372,6 +385,40 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     verrouille = verrouille_ok, sans_reference = is.null(verrouille),
     statut = "frais"
   )
+}
+
+# relock_sources ----------------------------------------------------------------
+# The deliberate relock entry point (issue #1103): rewrite lockfile records
+# from a run's source-digests.json in ONE atomic write. A failed write keeps
+# the previous lockfile intact. Without ids, every digest of the run is used.
+relock_sources <- function(run_dir, ids = NULL, lock = NULL) {
+  digests <- lire_digests_source(file.path(run_dir, NOM_DIGESTS))
+  if (!length(digests)) {
+    stop("Aucune empreinte dans ", file.path(run_dir, NOM_DIGESTS),
+         " — relock impossible.", call. = FALSE)
+  }
+  cibles <- if (is.null(ids)) names(digests) else as.character(ids)
+  manquants <- setdiff(cibles, names(digests))
+  if (length(manquants)) {
+    stop("Source absente des empreintes du run : ",
+         paste(manquants, collapse = ", "), ".", call. = FALSE)
+  }
+  registre <- lire_lock(lock)
+  for (id in cibles) {
+    d <- digests[[id]]
+    registre[[id]] <- list(
+      source_id = id,
+      url = d$url,
+      sha256 = as.character(d$sha256),
+      bytes = as.numeric(d$bytes),
+      acquired_at = as.character(d$acquired_at),
+      vintage_basis = as.character(d$vintage_basis),
+      vintage = as.character(d$vintage),
+      date_reference = as.character(d$date_reference)
+    )
+  }
+  ecrire_lock(registre, lock)
+  invisible(registre)
 }
 
 # tous_manifestes ---------------------------------------------------------------

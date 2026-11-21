@@ -14,13 +14,13 @@
 # Un manifeste sans colonne `type` est traité tout en « fichier » (manifestes
 # antérieurs à l'issue #13 — comportement historique).
 #
-# Issue #1099 : tout fetch passe désormais par resoudre_source() (pin_sources.R)
+# Issue #1103 : tout fetch passe par resoudre_source() (source_lock.R)
 # — le résolveur unique. Le téléchargement lui-même reste mockable ici via
 # telecharger_fichier/tirer_source, exactement comme avant.
 
 # ecrire_atomique -------------------------------------------------------------
 # Écrire un fichier complet dans un TEMPORAIRE du MÊME dossier, puis le renommer
-# vers sa destination (issue #1099, revue) : un téléchargement partiel ou un pin
+# vers sa destination (issue #1103) : un téléchargement partiel ou un lockfile
 # à moitié écrit ne peut jamais remplacer une bonne copie. Le seam `ecrire` est
 # injectable pour tester l'échec en cours d'écriture. Sur Windows, file.rename
 # ne remplace pas une cible existante : on ne la retire qu'après un premier
@@ -198,9 +198,11 @@ erreur_telechargement <- function(statuts, url) {
 #     téléchargées ; les sources « manuel » sont sautées sans échec et
 #     enregistrées « à traiter à la main ». Un échec cron après les retries est
 #     enregistré « échec » puis le run s'arrête bruyamment.
-# Idempotent MAIS pas naïf (point 3) et, depuis #1099, content-addressed : le
-# résolveur resoudre_source() décide, pour chaque source, d'utiliser le fichier
-# épinglé, de le télécharger (et de l'épingler) ou d'échouer fermé sur une dérive.
+# Idempotent MAIS pas naïf (point 3) et, depuis #1103, content-addressed : le
+# résolveur resoudre_source() décide, pour chaque source, d'utiliser les octets
+# du cache, de la télécharger ou de dériver son vintage ; il enregistre le digest
+# du run. La dérive n'est pas une erreur de pin : elle est attribuée aux verrous
+# et refusée à la publication si le lockfile n'a pas été relocké.
 # Retour : le tableau des statuts par source (id, mode, status) — une ligne par
 # source traitée, dans l'ordre du manifeste. En cas d'échec, le run s'arrête et
 # les statuts sont portés par l'erreur de classe « erreur_telechargement »
