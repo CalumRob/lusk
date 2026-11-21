@@ -146,13 +146,13 @@ AUTORISATIONS_RESEAU <- list(
   list(fichier = "^R/geometrie\\.R$", motif = "httr2::(request|req_perform)\\(",
        raison = "publier_geometrie() enregistre un digest par couche WFS (base telechargement)",
        couvert = TRUE),
-  list(fichier = "^R/aedar_aggregates\\.R$", motif = "utils::download\\.file\\(",
-       raison = "acquisition AEDAR (artefact data/processed/aedar, commande --check de l'operateur) — hors run des sept themes",
+  list(fichier = "^R/aedar_aggregates\\.R$", motif = "utils::download\\.file",
+       raison = "acquisition AEDAR content-pinned by sha1 in AEDAR_SOURCE_RESOURCES / by sha256 in AEDAR_TYPEQU_METADATA_RESOURCES — artefact separe, hors run des sept themes",
        couvert = FALSE)
 )
 
 MOTIF_RESEAU <- paste0(
-  "download\\.file\\(", "|req_perform\\(", "|httr::GET\\(", "|httr2::request\\(",
+  "utils::download\\.file|download\\.file\\(", "|req_perform\\(", "|httr::GET\\(", "|httr2::request\\(",
   "|curl_fetch|url\\(\"https?://|st_read\\([^)]*https?://",
   "|read_csv\\([^)]*https?://|fromJSON\\([^)]*https?://"
 )
@@ -169,7 +169,9 @@ auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) 
       # On ignore les commentaires et les paramètres par défaut (download = ...).
       l <- sub("#.*$", "", brut)
       if (!grepl(MOTIF_RESEAU, l)) next
-      if (grepl("(download|fetch|download_file)\\s*=", l)) next
+      # `download = utils::download.file` est une DÉCLARATION de seam réseau
+      # (AEDAR) : elle doit être auditée, pas ignorée.
+      if (grepl("(fetch|download_file)\\s*=", l)) next
       couvert <- FALSE; raison <- NA_character_
       for (a in autorisations) {
         if (grepl(a$fichier, rel) && grepl(a$motif, l)) {

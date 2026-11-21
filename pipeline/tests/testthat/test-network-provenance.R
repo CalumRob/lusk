@@ -15,6 +15,42 @@ test_that("toute lecture réseau est couverte ou autorisée", {
   expect_true(all(geom$couvert))
 })
 
+test_that("toute ressource AEDAR est content-pinnée par son registre", {
+  # Aucune ressource ne peut être téléchargée sans empreinte déclarée : c'est
+  # le gel propre à AEDAR, hors du lockfile des sept thèmes.
+  src <- AEDAR_SOURCE_RESOURCES
+  expect_true(is.data.frame(src) && nrow(src) > 0L)
+  expect_false(anyNA(src$sha1))
+  expect_true(all(grepl("^[0-9a-fA-F]{40}$", src$sha1)))
+  expect_equal(length(unique(src$sha1)), nrow(src))
+  meta <- AEDAR_TYPEQU_METADATA_RESOURCES
+  expect_true(is.data.frame(meta) && nrow(meta) > 0L)
+  expect_false(anyNA(meta$sha256))
+  expect_true(all(grepl("^[0-9a-fA-F]{64}$", meta$sha256)))
+
+  # Les deux fonctions d'acquisition VÉRIFIENT effectivement ces empreintes.
+  racine <- normalizePath(testthat::test_path("..", ".."))
+  code <- paste(readLines(file.path(racine, "R", "aedar_aggregates.R"), warn = FALSE),
+                collapse = "\n")
+  expect_true(grepl("verify_aedar_source_hash\\([^\\n]*resources\\$sha1", code))
+  expect_true(grepl("verify_aedar_typequ_metadata_hash\\([^\\n]*resources\\$sha256", code))
+  # La raison de l'allowlist nomme explicitement le content-pinning.
+  sites <- auditer_appels_reseau(racine)
+  aedar <- sites[grepl("aedar_aggregates\\.R", sites$fichier), ]
+  expect_true(nrow(aedar) > 0L)
+  expect_true(all(grepl("content-pinned", aedar$raison)))
+})
+
+test_that("la publication AEDAR garde le répertoire de release explicite", {
+  racine <- normalizePath(testthat::test_path("..", ".."))
+  script <- paste(readLines(
+    file.path(racine, "scripts", "publish-aedar-aggregates.R"), warn = FALSE
+  ), collapse = "\n")
+  expect_true(grepl("LUSK_SORTIE", script, fixed = TRUE))
+  expect_true(grepl("verifier_gel_release\\(sortie\\)", script))
+  expect_true(grepl("nzchar\\(sortie\\)", script))  # échec bruyant si non défini
+})
+
 test_that("l'audit réseau échoue sur une lecture non déclarée (preuve)", {
   d <- tempfile("audit-reseau-")
   dir.create(file.path(d, "R"), recursive = TRUE)
