@@ -1,0 +1,32 @@
+[
+  {
+    "source_id": "osm_reseaux",
+    "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf",
+    "sha256": "fb8e00775d77f39f4c68ad5ac4b20d5589383734308ba5579d286c9f3e010704",
+    "bytes": 330755575,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "contenu_timestamp",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-16"
+  },
+  {
+    "source_id": "bornes-recharges",
+    "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B",
+    "sha256": "733a0e8caadc28c29ddaab548d3d6b1d60d4a332d6de7530048a34e5b6629dc0",
+    "bytes": 6262114,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "contenu_date",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-11"
+  },
+  {
+    "source_id": "korrigo",
+    "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
+    "sha256": "321ded4dba4292b64ca35f1b73f9d820938b189ebc6e07165f79ca58aace2be0",
+    "bytes": 59514077,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
+  }
+]

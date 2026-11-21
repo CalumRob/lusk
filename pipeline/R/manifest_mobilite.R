@@ -384,7 +384,7 @@ MANIFEST_MOBILITE_BORNES <- tibble::tribble(
     "maximale de `date_maj` dans le fichier épinglé (sinon sa date de ",
     "téléchargement), jamais le littéral du contrat."
   ),
-  "cron", "fichier", "contenu_date_maj"
+  "cron", "fichier", "contenu_date"
 )
 
 # MANIFEST_MOBILITE_STATIONNEMENT_VELO -----------------------------------------

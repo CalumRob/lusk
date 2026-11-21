@@ -55,26 +55,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     erreur_telechargement = function(e) {
       ecrire_rapport_run(e$statuts, mode, sortie)
       stop(e)
-    },
-    # Issue #1099 : un refus de pin est une PANNE D'EXPLOITATION nommée —
-    # elle porte le source_id et les statuts déjà acquis. On écrit le même
-    # rapport que pour un échec réseau, avec une ligne « refus pin » explicite,
-    # pour que l'opérateur voie la source fautive au lieu d'un crash nu.
-    erreur_pin = function(e) {
-      refus <- e$statuts
-      if (is.null(refus)) {
-        refus <- tibble::tibble(
-          id = character(0), mode = character(0), status = character(0)
-        )
-      }
-      refus <- tibble::add_row(
-        refus, id = e$source_id, mode = "refus",
-        status = paste0("refus pin — ", e$raison)
-      )
-      ecrire_rapport_run(refus, mode, sortie)
-      stop(e)
     }
   )
+  # Issue #1103 : le run publie les empreintes de TOUTES les sources lues, à
+  # côté du payload. Elles viennent du résolveur (un seul hachage par fichier).
+  ecrire_digests_source(attr(statuts, "digests") %||% list(),
+                        file.path(sortie, NOM_DIGESTS))
 
   chemin_classes_densite <- file.path(
     cache, MANIFEST_CLASSES_DENSITE$fichier[[1L]]

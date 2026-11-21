@@ -211,10 +211,10 @@ download_sources <- function(manifest, cache = "data/raw",
   mode <- match.arg(mode)
   if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
 
-  # Issue #1099 : toute source déclare un `vintage_basis` (les manifestes
-  # historiques sont des sources datées — « fichier_date » par défaut) et
-  # TOUT fetch passe par resoudre_source(), le résolveur unique.
-  manifest <- avec_vintage_basis(manifest)
+  # Issue #1103 : chaque source déclare EXPLICITEMENT sa base de vintage (le
+  # registre 00_source_basis.R, sans défaut implicite) et TOUT fetch passe par
+  # resoudre_source(), le résolveur unique.
+  manifest <- declarer_bases(manifest)
 
   # le mode de chaque source : la colonne `mode` du manifeste, ou « cron » par
   # défaut si le manifeste ne la porte pas (manifestes antérieurs à l'issue #8)
@@ -253,6 +253,9 @@ download_sources <- function(manifest, cache = "data/raw",
   etat$statuts <- tibble::tibble(
     id = character(0), mode = character(0), status = character(0)
   )
+  # Le résolveur a déjà haché chaque fichier : on RÉUTILISE son digest, jamais
+  # un second hachage (le PBF fait 330 Mo).
+  digests <- list()
 
   for (i in seq_len(nrow(manifest))) {
     # en mode cron, une source « manuel » est sautée sans être touchée : jamais
@@ -274,7 +277,7 @@ download_sources <- function(manifest, cache = "data/raw",
       stop(erreur_manifeste(manifest$id[i]))
     }
 
-    resoudre_source(
+    resolu <- resoudre_source(
       id = manifest$id[i], url = manifest$url[i], fichier = manifest$fichier[i],
       cache = cache, type = type_source[i],
       pull = if ("pull" %in% names(manifest)) manifest$pull[[i]] else NULL,
@@ -284,10 +287,14 @@ download_sources <- function(manifest, cache = "data/raw",
       reference_declaree = reference_source[i],
       horloge = horloge, etat = etat
     )
+    digests[[manifest$id[i]]] <- resolu$digest
     etat$statuts <- tibble::add_row(
       etat$statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
     )
   }
 
+  verifier_digests_couvrent(etat$statuts, digests)
+  ecrire_digests_cache_aggregate(digests, cache)
+  attr(etat$statuts, "digests") <- digests
   etat$statuts
 }

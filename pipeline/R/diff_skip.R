@@ -21,7 +21,7 @@
 detecter_changement <- function(nouveau, commite) {
   fichiers <- setdiff(
     union(list.files(nouveau), list.files(commite)),
-    "run-report.json"
+    c("run-report.json", NOM_DIGESTS)
   )
   if (length(fichiers) == 0) return(FALSE)
 

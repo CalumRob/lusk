@@ -118,19 +118,21 @@ test_that("vintages_mobilite : quinze sources publiques incluent la production n
   expect_equal(rp$date_reference, "2023-01-01")
   expect_equal(rp$licence, "lov2")
   osm <- v[v$id == "osm_reseaux", ]
-  # Issue #1099 : OSM est une source DÉRIVÉE — son vintage publié est celui du
-  # pin (timestamp du HeaderBlock PBF), jamais un mois écrit en dur ici.
-  pin_osm <- lire_pin("osm_reseaux")
-  if (!is.null(pin_osm) && !is.null(pin_osm$vintage)) {
-    expect_equal(osm$version, pin_osm$vintage)
-    expect_equal(osm$date_reference, pin_osm$date_reference)
-    expect_equal(osm$date_publication, pin_osm$downloaded_at)
+  # Issue #1103 : OSM est une source DÉRIVÉE — son vintage publié est celui du
+  # lockfile (timestamp du HeaderBlock PBF), jamais un mois écrit en dur ici.
+  verrou_osm <- lire_lock()[["osm_reseaux"]]
+  if (!is.null(verrou_osm) && !is.null(verrou_osm$vintage)) {
+    expect_equal(osm$version, verrou_osm$vintage)
+    expect_equal(osm$date_reference, verrou_osm$date_reference)
+    expect_equal(osm$date_publication, verrou_osm$acquired_at)
   } else {
     expect_equal(osm$version, MANIFEST_MOBILITE_OSM_RESEAUX$vintage)
   }
   lim <- v[v$id == "communes_limites", ]
-  expect_equal(lim$date_reference, "2025-01-01")
-  expect_true(is.na(lim$date_publication))
+  # Issue #1103 : le WFS ADMINEXPRESS-COG.LATEST est une base roulante — son
+  # vintage publié est la date d'acquisition du run, jamais le littéral 2025.
+  expect_false(identical(lim$date_reference, "2025-01-01"))
+  expect_false(is.na(lim$date_publication))
   expect_equal(v$licence[v$id == "korrigo"], "odbl")
   expect_equal(v$licence[v$id == "bornes-recharges"], "lov2")
   expect_equal(v$licence[v$id == "stationnement-velo"], "odbl")
