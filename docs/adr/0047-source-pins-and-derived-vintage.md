@@ -36,7 +36,7 @@ sources this issue never intended to touch. Pinning is therefore **opt-in**.
 3. **One resolver, `resoudre_source()`, for every manifest fetch.** `download_sources()` delegates
    to it; the difference between listed and unlisted lives in this one seam. For listed sources:
    - pin present and cached bytes hash to it → use the bytes, no network;
-   - cached bytes missing → download once and verify against the pin;
+   - cached bytes missing → download with the usual two attempts and verify against the pin;
    - pin present but bytes differ → **hard error** naming the source, both hashes and the deliberate
      repin command. Never silent drift.
    Writes are atomic: bytes and pins are written to a temporary file in the same directory and then

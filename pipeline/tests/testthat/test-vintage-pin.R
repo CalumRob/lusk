@@ -77,6 +77,29 @@ test_that("OSM est une source dérivée : son vintage publié vient du pin", {
   expect_false(manifest$vintage_basis %in% "fichier_date")
 })
 
+test_that("vintages_mobilite lit le pin du cache explicite, pas celui versionné", {
+  cache <- cache_vintage_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  pin <- list(
+    source_id = "osm_reseaux", sha256 = "abc", bytes = 1,
+    downloaded_at = "2027-01-06", vintage = "2027-01",
+    vintage_basis = "contenu_timestamp", date_reference = "2027-01-05",
+    etat = "materialise"
+  )
+  jsonlite::write_json(pin, chemin_pin("osm_reseaux", cache), auto_unbox = TRUE)
+
+  v_cache <- vintages_mobilite(cache = cache)
+  osm_cache <- v_cache[v_cache$id == "osm_reseaux", ]
+  expect_equal(osm_cache$version, "2027-01")
+  expect_equal(osm_cache$date_reference, "2027-01-05")
+  expect_equal(osm_cache$date_publication, "2027-01-06")
+
+  # Le pin par défaut (versionné) donne un autre vintage : le cache est bien
+  # l'entrée de la dérivation, et non une variable d'environnement implicite.
+  osm_defaut <- vintages_mobilite()[vintages_mobilite()$id == "osm_reseaux", ]
+  expect_false(identical(osm_cache$version, osm_defaut$version))
+})
+
 test_that("les trois sources migrées déclarent une base de vintage dérivée", {
   expect_equal(MANIFEST_MOBILITE_OSM_RESEAUX$vintage_basis, "contenu_timestamp")
   expect_equal(MANIFEST_MOBILITE_KORRIGO$vintage_basis, "telechargement")

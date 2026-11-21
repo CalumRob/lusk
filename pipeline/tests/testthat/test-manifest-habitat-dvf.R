@@ -108,12 +108,14 @@ test_that("en mode full, les 20 fichiers se téléchargent sans collision de cac
   statuts <- download_sources(MANIFEST_HABITAT_DVF, cache = cache)
 
   expect_true(all(statuts$status == "frais"))
-  # Depuis #1099, le resolver dépose AUSSI data/raw/pins/ (le registre des
-  # empreintes) : on ne compte que les fichiers de données, pas ce répertoire.
-  fichiers <- setdiff(list.files(cache), "pins")
+  # #1099 : le pinning est OPT-IN — ces sources INSEE ne sont pas dans
+  # SOURCES_EPINGLEES, donc aucun registre pins/ n'est créé. Le cache contient
+  # exactement les 20 fichiers de données téléchargés.
+  fichiers <- list.files(cache)
   expect_length(fichiers, 20)
   # chaque fichier est distinct (le cache plat exige des noms uniques)
   expect_equal(length(unique(fichiers)), 20)
+  expect_false("pins" %in% fichiers)
 })
 
 test_that("le manifeste alimente la table des vintages partagée", {
