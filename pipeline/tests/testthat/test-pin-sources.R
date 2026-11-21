@@ -246,6 +246,30 @@ test_that("un OSM sans timestamp lisible retombe sur la date de téléchargement
   expect_identical(r$date_reference, "2026-11-18")
 })
 
+test_that("repin_source matérialise un pin en attente et dérive le vintage du contenu", {
+  cache <- cache_fixture()
+  on.exit(unlink(cache, recursive = TRUE))
+  ecrire_pin_fixture(cache, "bornes-recharges", NULL, etat = "en_attente",
+                     vintage_basis = "contenu_date_maj")
+  csv <- charToRaw(paste0(
+    "id_station_itinerance;date_maj\n",
+    "STIF-1;2026-11-16\n"
+  ))
+
+  r <- repin_source(
+    "bornes-recharges", manifest = MANIFEST_MOBILITE_BORNES, cache = cache,
+    horloge = as.Date("2026-11-18"),
+    tirer = function(url, cible) writeBin(csv, cible)
+  )
+
+  pin <- lire_pin("bornes-recharges", cache)
+  expect_equal(pin$etat, "materialise")
+  expect_equal(pin$sha256, empreinte_fixture(csv))
+  expect_equal(pin$vintage_basis, "contenu_date_maj")
+  expect_equal(pin$date_reference, "2026-11-16")
+  expect_equal(r$vintage, "2026-11")
+})
+
 test_that("download_sources résout chaque source par le resolver (un pin par source)", {
   cache <- cache_fixture()
   on.exit(unlink(cache, recursive = TRUE))
