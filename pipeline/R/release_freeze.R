@@ -1,4 +1,4 @@
-# Release freeze (issue #1103) --------------------------------------------------
+﻿# Release freeze (issue #1103) --------------------------------------------------
 # ONE guard, called before ANY connection or write by EVERY DB-publication
 # entry point (LUSK_PUBLISH_DB target, publish-serving-tables modes,
 # publish-aedar-aggregates, retained/scoped publishers, declared profiles,
@@ -81,23 +81,4 @@ verifier_gel_release <- function(sortie = Sys.getenv("LUSK_SORTIE",
   invisible(TRUE)
 }
 
-# ENTRY_POINTS_GEL_RELEASE -------------------------------------------------------
-# Enumerated so a new publication path cannot silently skip the guard. Each
-# entry is (file, symbol) — the test checks the guard call is present in each.
-ENTRY_POINTS_GEL_RELEASE <- list(
-  list(symbol = "publish_retained_backend_from_parquet",
-       file = "R/publish_postgres_configuration.R",
-       why = "cible publie_backend_retained (LUSK_PUBLISH_DB) et reprise CLI"),
-  list(symbol = "publier_declared_profiles_postgres",
-       file = "R/publish_profile.R",
-       why = "profils déclarés, cible publie_profiles_declares"),
-  list(symbol = "publier_structure_age_profile_postgres",
-       file = "R/publish_profile.R",
-       why = "profile structure_age -- publication directe"),
-  # Le pont offre_tc (#1072) est un outil de RECOVERY hors périmètre (#1103,
-  # « out of scope ») : il n'est pas une voie de publication ordinaire.
-  list(symbol = "scripts/publish-serving-tables.R", file = "scripts/publish-serving-tables.R",
-       why = "modes --programme-publish, --programme-series-publish, --owned-series-publish, --series-publish"),
-  list(symbol = "scripts/publish-aedar-aggregates.R", file = "scripts/publish-aedar-aggregates.R",
-       why = "mode --publish")
-)
+# La couverture des points d'entree n'est PLUS une liste statique : le test structurel (helper-provenance-audit.R) parcourt tous les appels a dbConnect / configuration_service_postgres dans R/ et scripts/ et exige un garde ou une exception documentee. Une nouvelle voie non gardee fait donc echouer la suite.

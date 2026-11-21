@@ -106,21 +106,52 @@ test_that("le point d'entrée retained refuse avant toute connexion DB", {
   expect_identical(appels_connect, 0L)
 })
 
-test_that("chaque point d'entrée de publication appelle le garde", {
+test_that("chaque ouverture de connexion de service est gardée (audit structurel)", {
   racine <- normalizePath(testthat::test_path("..", ".."))
-  for (entree in ENTRY_POINTS_GEL_RELEASE) {
-    chemin <- file.path(racine, entree$file)
-    expect_true(file.exists(chemin), info = entree$file)
-    source <- paste(readLines(chemin, warn = FALSE), collapse = "\n")
-    expect_true(grepl("verifier_gel_release", source, fixed = TRUE),
-                info = paste(entree$file, entree$why))
-  }
-  # Le target LUSK_PUBLISH_DB passe bien par le point d'entrée gardé.
-  cible <- paste(readLines(file.path(racine, "_targets.R"), warn = FALSE),
-                 collapse = "\n")
-  expect_true(grepl("LUSK_PUBLISH_DB", cible, fixed = TRUE))
-  expect_true(grepl("publish_retained_backend_from_parquet", cible, fixed = TRUE))
-  expect_true(grepl("publier_declared_profiles_postgres", cible, fixed = TRUE))
+  sites <- auditer_appels_db(racine)
+  expect_true(nrow(sites) > 0L)
+  # Aucune faute : tout appel non autorisé porte un garde dans son bloc.
+  expect_equal(nrow(sites[!sites$garde & !sites$autorise, , drop = FALSE]), 0L)
+  # Les exceptions sont toutes documentées (jamais une raison vide).
+  expect_false(any(sites$autorise & !nzchar(sites$raison)))
+  # Le chemin LUSK_SCALAR_SCOPE est couvert par le garde à l'ouverture.
+  scope <- sites[grepl("publish_postgres_configuration", sites$fichier), ]
+  expect_true(any(scope$garde))
+})
+
+test_that("l'audit structurel échoue sur une connexion non gardée (preuve)", {
+  d <- tempfile("audit-gel-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  writeLines(c(
+    "foo <- function(con) {",
+    "  con <- DBI::dbConnect(RPostgres::Postgres(), dbname = 'lusk')",
+    "}"
+  ), file.path(d, "R", "unguarded.R"))
+  sites <- auditer_appels_db(d)
+  expect_true(any(grepl("unguarded\\.R", sites$fichier)))
+  expect_true(any(!sites$garde & !sites$autorise))
+  expect_error(verifier_structure_gel(d), "without verifier_gel_release")
+})
+
+test_that("le chemin LUSK_SCALAR_SCOPE refuse avant toute écriture", {
+  sortie <- tempfile("sortie-scope-gel-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+  d <- digests_conformes()
+  d[[1]]$sha256 <- paste(rep("7", 64), collapse = "")
+  ecrire_digests_source(d, file.path(sortie, NOM_DIGESTS))
+  appels <- 0L
+  local_mocked_bindings(
+    dbConnect = function(...) { appels <<- appels + 1L; stop("connexion interdite") },
+    .package = "DBI"
+  )
+  withr::local_envvar(LUSK_SCALAR_SCOPE = "supply:供给")
+  erreur <- tryCatch(
+    publish_retained_backend_from_parquet(sortie),
+    error = function(e) e
+  )
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(appels, 0L)
 })
 
 test_that("les chemins cron/fixture n'appellent pas le garde", {
