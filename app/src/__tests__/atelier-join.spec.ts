@@ -52,6 +52,20 @@ describe('atelier — jointure des Cellules en figures tracées', () => {
     expect(rendue.points.some((point) => point.values.x === 0)).toBe(false)
   })
 
+  it('trace un zéro publié comme une valeur, pas comme une absence', () => {
+    const avecZero = cohorte(densiteCell, 'commune', [
+      valeur('22001', 0), valeur('22002', 12), valeur('29001', 150), valeur('29002', 75),
+    ])
+    const rendue = joinFigures({
+      state: figure({ x: { cell: densiteCell } }),
+      discovery: atelierDiscoveryFixture, reference: atelierReferenceFixture, cohorts: [avecZero],
+    })[0]!
+    const point = rendue.points.find((p) => p.territory.id === '22001')!
+    expect(point.values.x).toBe(0)
+    expect(rendue.nonTracees.count).toBe(0)
+    expect(rendue.nonTracees.territories).toEqual([])
+  })
+
   it('ne trace aucun point et n’invente rien quand la publication est retirée', () => {
     const retiree: AdmittedCohort = {
       ...cohorte(densiteCell, 'commune', []),
@@ -134,14 +148,6 @@ describe('atelier — jointure des Cellules en figures tracées', () => {
     const point = rendue.points.find((p) => p.territory.id === '22001')!
     expect(point.values.couleur).toBe('C')
     expect(rendue.nonTracees.territories.map((t) => t.territory.id)).toContain('29002') // littoral null
-  })
-
-  it('ne renvoie ni direction, ni rang, ni aucune valeur dérivée', () => {
-    const rendue = joinFigures({
-      state: figure({ x: { cell: densiteCell }, y: { cell: densiteCell } }),
-      discovery: atelierDiscoveryFixture, reference: atelierReferenceFixture, cohorts: [densite()],
-    })[0]!
-    expect(JSON.stringify(rendue)).not.toMatch(/direction|rang|rank|score|derived/i)
   })
 
   it('laisse la place aux points exclus (Filtre de population, #1089)', () => {

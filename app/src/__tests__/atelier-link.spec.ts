@@ -72,13 +72,13 @@ describe('atelier — codec de lien (state → JSON → deflate-raw → base64ur
     expect(restaure.notice).toBeUndefined()
   })
 
-  it('reste compact : une page vide est courte et deux figures restent sous 2 500 caractères', async () => {
+  it('reste compact : une page vide est courte, deux figures tiennent dans le budget du partage', async () => {
     const vide = (await encodeAtelierLink(emptyAtelierState(), codec)).length
     const deux = (await encodeAtelierLink(deuxFigures(), codec)).length
-    expect(vide).toBeGreaterThan(10)
-    expect(vide).toBeLessThan(300) // la forme décidée est plus courte que le prototype (~230 avec son intro)
-    expect(deux).toBeGreaterThan(vide + 300)
-    expect(deux).toBeLessThan(2500)
+    expect(vide).toBeGreaterThan(30)
+    expect(vide).toBeLessThan(200) // forme décidée sans l’intro du prototype (~230)
+    expect(deux).toBeGreaterThan(400)
+    expect(deux).toBeLessThanOrEqual(1200)
   })
 
   it('utilise par défaut deflate-raw via CompressionStream, sans injection', async () => {
@@ -118,5 +118,30 @@ describe('atelier — codec de lien (state → JSON → deflate-raw → base64ur
     const resultat = await decodeAtelierLink(lien, codec)
     expect(resultat.state).toEqual(emptyAtelierState())
     expect(resultat.notice).toBeTruthy()
+  })
+
+  it('rejette toute clé inconnue, à chaque niveau, avec la même notice de page vide', async () => {
+    const avecCle = (modifier: (page: Record<string, any>) => void): AtelierState => {
+      const page = JSON.parse(JSON.stringify(deuxFigures())) as Record<string, any>
+      modifier(page)
+      return page as unknown as AtelierState
+    }
+    const cas: Array<[string, AtelierState]> = [
+      ['état', avecCle((page) => { page.surprise = 1 })],
+      ['bloc', avecCle((page) => { page.blocks[0].surprise = 1 })],
+      ['figure', avecCle((page) => { page.blocks[1].figure.surprise = 1 })],
+      ['population', avecCle((page) => { page.blocks[1].figure.population.surprise = 1 })],
+      ['variables', avecCle((page) => { page.blocks[1].figure.variables.surprise = 1 })],
+      ['liaison', avecCle((page) => { page.blocks[1].figure.variables.y.cell.surprise = 1 })],
+      ['formule', avecCle((page) => { page.blocks[2].figure.variables.x.formula.surprise = 1 })],
+      ['titres d’axe', avecCle((page) => { page.blocks[1].figure.axisTitles.surprise = 1 })],
+      ['repère', avecCle((page) => { page.blocks[1].figure.overlays[0].surprise = 1 })],
+    ]
+    for (const [niveau, page] of cas) {
+      const lien = await encodeAtelierLink(page, codec)
+      const resultat = await decodeAtelierLink(lien, codec)
+      expect(resultat.state, niveau).toEqual(emptyAtelierState())
+      expect(resultat.notice, niveau).toMatch(/illisible|invalide/i)
+    }
   })
 })
