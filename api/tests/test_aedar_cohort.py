@@ -71,10 +71,11 @@ class _Rows:
 class _Conn:
     """Route the exact cohort SQL to fixture rows, like the AEDAR contract stubs."""
 
-    def __init__(self, *, ref_version="ref-v1", ref_count=3, members=None,
+    def __init__(self, *, ref_version="ref-v1", marker_ref=None, ref_count=3, members=None,
                  summary_marker="present", aggregate_marker="present",
                  summary_rows=None, percell_rows=None, fact_counts=None, called=None):
         self.ref_version = ref_version
+        self.marker_ref = ref_version if marker_ref is None else marker_ref
         self.ref_count = ref_count
         self.members = MEMBERS if members is None else members
         self.summary_marker = summary_marker
@@ -90,6 +91,8 @@ class _Conn:
         s = sql
         if s.startswith("SET TRANSACTION"):
             return None
+        if "SELECT to_regclass(%s)" in s:
+            return _Rows([], [(True,)])
         if "SELECT content_version,row_count FROM table_publication" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version, self.ref_count)])
         if "SELECT territory_id,territory_type,name FROM territory_reference" in s:
@@ -101,8 +104,8 @@ class _Conn:
             if self.summary_marker == "absent":
                 return _Rows([], [])
             # (content, rows, ref, aedar_source, aggregate content, aggregate ref, reference)
-            return _Rows([], [("summary-v1", 40, self.ref_version, "aed-v1",
-                               "aed-v1", self.ref_version, self.ref_version)])
+            return _Rows([], [("summary-v1", 40, self.marker_ref, "aed-v1",
+                               "aed-v1", self.marker_ref, self.marker_ref)])
         if "p.table_name='aedar_territorial_aggregate'" in s and "p.content_version" in s:
             if self.aggregate_marker == "absent":
                 return _Rows([], [])
@@ -238,8 +241,8 @@ def test_oversized_cohort_fails_whole():
 def test_oversized_fact_set_fails_whole_before_any_read():
     conn = _Conn(summary_rows=[_summary_row("22001")], fact_counts={"summary": 999})
     with pytest.raises(HTTPException) as error:
-        _preflight(conn, item(SUMMARY, SUMMARY_COORDS), work_budget=200_000)
-    # Bounded count LIMIT is remaining+1, so 999 > remaining fails whole.
+        _preflight(conn, item(SUMMARY, SUMMARY_COORDS), work_budget=10)
+    # Bounded count LIMIT is remaining+1 (8 here); 999 > remaining fails whole.
     assert error.value.status_code == 413
     assert not any("FROM aedar_territory_summary WHERE" in query for query in conn.queries)
 
@@ -255,7 +258,9 @@ def test_absent_summary_publication_is_a_typed_aedar_outcome():
 
 
 def test_reference_version_mismatch_fails_the_whole_request():
-    conn = _Conn(ref_version="ref-v2")
+    # The cohort resolves against ref-v1 while the AEDAR publication declares
+    # ref-v2: a hard snapshot inconsistency, not a typed absence.
+    conn = _Conn(ref_version="ref-v1", marker_ref="ref-v2")
     with pytest.raises(HTTPException) as error:
         _preflight(conn, item(SUMMARY, SUMMARY_COORDS))
     assert error.value.status_code == 503
@@ -280,6 +285,23 @@ def test_two_aedar_cohorts_in_one_batch_share_one_pin():
     with pytest.raises(HTTPException) as error:
         _preflight(conn, item(SUMMARY, SUMMARY_COORDS), snapshot_state=state)
     assert error.value.status_code == 503
+
+
+def test_both_families_pin_independently_in_one_batch():
+    """The summary and aggregate own distinct content clocks; neither fails the other."""
+    state = {}
+    _preflight(_Conn(), item(SUMMARY, SUMMARY_COORDS), snapshot_state=state)
+    _preflight(_Conn(), item(AGGREGATE, PER_CELL_COORDS), snapshot_state=state)
+    assert set(state["aedar_cohort_pin"]) == {AEDAR_SUMMARY_FAMILY, AEDAR_PER_CELL_FAMILY}
+
+
+def test_suppressed_summary_reading_is_absent_not_zero():
+    suppressed = ("22001", SUMMARY_MEASURE, None, "unavailable", None, 1200, 0,
+                  "covered", *SUMMARY_PROVENANCE)
+    conn = _Conn(summary_rows=[suppressed, _summary_row("22002", 0.75)])
+    data = _read(conn, item(SUMMARY, SUMMARY_COORDS))
+    values = {entry["territory"]["id"]: entry["value"] for entry in data["values"]}
+    assert values == {"22002": 0.75}
 
 
 # --- The batch surface: typed outcome, no partial envelope. ---
@@ -319,3 +341,33 @@ def test_v2_batch_returns_the_cohort_payload(monkeypatch):
     assert result["status"] == "available"
     assert result["data"]["shape"] == "aedar_summary_cohort"
     assert len(result["data"]["values"]) == 3
+
+
+def test_cohort_response_byte_ceiling_fails_whole(monkeypatch):
+    """The shared response-byte ceiling applies to a whole-level cohort read."""
+    from api import main, resource_execution
+    monkeypatch.setattr(resource_execution, "MAX_RESPONSE_BYTES", 200)
+
+    class BigCohortReader:
+        def admit(self, *a, **k):
+            return 1
+
+        def preflight(self, *a, **k):
+            return 1
+
+        def read(self, *a, **k):
+            return {"shape": "aedar_summary_cohort",
+                    "values": [{"value": "x" * 500}]}
+
+    previous = main.app.dependency_overrides.get(main.get_semantic_resource_reader)
+    monkeypatch.setattr(main, "pool", lambda: _Pool(_Conn()))
+    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: BigCohortReader()
+    try:
+        response = TestClient(main.app).post("/api/resources/read-batch", json={
+            "items": [{"id": "cohort-1", **item(SUMMARY, SUMMARY_COORDS).model_dump()}]})
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_semantic_resource_reader, None)
+        else:
+            main.app.dependency_overrides[main.get_semantic_resource_reader] = previous
+    assert response.status_code == 413

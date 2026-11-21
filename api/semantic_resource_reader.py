@@ -43,6 +43,18 @@ class SemanticResourceReader:
         from api.aedar_models import AEDARAddressError, aedar_resolve
         if resource.resource_kind not in {"aedar_source_grain", "aedar_territory_summary"}:
             return item, None
+        if item.target.kind == "territory_cohort":
+            # #1078: cohorts speak declared Cellule coordinates only. Validate
+            # the address with the same resolver, but never rewrite it into the
+            # internal measure alias or inject a per-territory field projection.
+            try:
+                _typequ, _measures, family, is_alias = aedar_resolve(
+                    resource.resource_kind, item.coordinates, item.intent.kind)
+            except AEDARAddressError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            if is_alias or not _measures or len(_measures) != 1:
+                raise HTTPException(422, "AEDAR cohort requires one declared Cellule address")
+            return item, family
         try:
             typequ, measures, family, is_alias = aedar_resolve(
                 resource.resource_kind, item.coordinates, item.intent.kind)
@@ -380,11 +392,12 @@ class SemanticResourceReader:
             if item.target.kind == "territory_cohort":
                 cohort = self._cohort_for_request(conn, item.target, work_budget, snapshot_state)
                 estimate = preflight_cohort(conn, item, resource, cohort,
-                    self._legacy_fields(item, catalogue), work_budget)
+                    self._legacy_fields(item, catalogue), work_budget, snapshot_state)
                 self._cohort_scopes[id(item)] = cohort
                 return estimate
             return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
-        if resource.resource_kind == "aedar_territory_summary":
+        if (resource.resource_kind == "aedar_territory_summary"
+                and item.target.kind != "territory_cohort"):
             from api.aedar_reads import _aedar_territory_summary_resource_snapshot
             from api.aedar_models import AEDAR_AGGREGATE_READINGS
             coordinates = item.coordinates or {}
@@ -400,7 +413,7 @@ class SemanticResourceReader:
         if item.target.kind == "territory_cohort":
             cohort = self._cohort_for_request(conn, item.target, work_budget, snapshot_state)
             estimate = preflight_cohort(conn, item, resource, cohort,
-                self._legacy_fields(item, catalogue), work_budget)
+                self._legacy_fields(item, catalogue), work_budget, snapshot_state)
             if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
                 from api.cohort_reads import preflight_scalar_cohort
                 scalar_item = item.model_copy(update={"fields": ["value"]})
@@ -619,7 +632,7 @@ class SemanticResourceReader:
             if cohort is None:
                 cohort = self._cohort_for_request(conn, item.target, 200_000, snapshot_state)
             data = read_cohort(conn, item, resource, cohort,
-                               self._legacy_fields(item, catalogue))
+                               self._legacy_fields(item, catalogue), snapshot_state)
             if item.fields and "scalar_facet" in item.fields and self._has_dual_scalar_series(resource):
                 from api.cohort_reads import read_scalar_cohort
                 scalar_item = item.model_copy(update={"fields": ["value"]})

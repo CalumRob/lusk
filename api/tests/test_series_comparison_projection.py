@@ -289,7 +289,8 @@ def test_reader_projection_is_requested_only_and_default_reads_stay_unchanged(mo
     monkeypatch.setattr("api.semantic_resource_reader.resolve_territory_cohort",
                         lambda conn, target, work_budget: ("commune", ("c1",), {"kind": "bretagne"}))
     monkeypatch.setattr("api.semantic_resource_reader.read_cohort",
-                        lambda conn, item, resource, cohort, fields: {"result": {"status": "measured"}})
+                        lambda conn, item, resource, cohort, fields, snapshot_state=None: {
+                            "result": {"status": "measured"}})
     item = read_item(fields=None, intent="facts", target_type="commune", target_id="c1")
     item.resource = "artif_par_habitant"
     item.target = SimpleNamespace(kind="territory_cohort", type="commune",

@@ -454,14 +454,17 @@ def test_dual_shape_member_rank_projection_fails_before_opening_the_reader(inten
             main.app.dependency_overrides[main.get_repository] = previous_repository
 
 
-def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):
+def test_aedar_cohort_alias_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):
+    # #1078: a declared AEDAR Cellule cohort is admitted. The deprecated
+    # measure alias is not a cohort address and is refused by name, before any
+    # snapshot connection is opened.
     from contextlib import contextmanager
     from types import SimpleNamespace
 
     class NoConnectionPool:
         @contextmanager
         def connection(self):
-            raise AssertionError("invalid cohort target must fail before opening a connection")
+            raise AssertionError("invalid cohort address must fail before opening a connection")
             yield
 
     catalogue = default_resource_catalogue.__wrapped__()
@@ -474,6 +477,7 @@ def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(mon
         response = TestClient(main.app).post("/api/resources/read", json={
             "resource": "aedar_territorial_aggregate",
             "target": {"kind": "territory_cohort", "type": "commune"},
+            "coordinates": {"measure": ["count_15_walk_share"]},
             "intent": {"kind": "facts"},
         })
     finally:
@@ -487,7 +491,7 @@ def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(mon
             main.app.dependency_overrides[main.get_repository] = previous_repository
 
     assert response.status_code == 422
-    assert "target kind is not declared" in response.json()["detail"]
+    assert "measure is not an AEDAR Cellule address" in response.json()["detail"]
 
 
 def test_discovery_fails_closed_on_unaccounted_producer_declaration(tmp_path):
