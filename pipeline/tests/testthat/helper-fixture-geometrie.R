@@ -144,3 +144,39 @@ fixture_geometrie_wfs_saine <- function() {
     departements = fixture_departements_wfs()
   )
 }
+
+# --- Réponse GetFeature BRUTE (issue #1119) -----------------------------------
+# L'enveloppe WFS telle que data.geopf.fr la renvoie : `timeStamp` change à
+# chaque requête ; `numberMatched`/`numberReturned` suivent la charge. Ces
+# membres sont du TRANSPORT, pas de la donnée — le digest doit les ignorer.
+# Fabriquée à partir des collections synthétiques ci-dessus : AUCUN réseau.
+
+fixture_wfs_brut <- function(collection,
+                             timeStamp = "2026-11-22T17:51:09.979Z",
+                             numberMatched = NULL, numberReturned = NULL,
+                             crs = NULL) {
+  jsonlite::toJSON(
+    c(
+      list(type = "FeatureCollection"),
+      list(features = collection$features),
+      if (!is.null(numberMatched)) list(numberMatched = numberMatched),
+      if (!is.null(numberReturned)) list(numberReturned = numberReturned),
+      if (!is.null(crs)) list(crs = crs),
+      list(timeStamp = timeStamp)
+    ),
+    auto_unbox = TRUE, digits = NA
+  )
+}
+
+# La réponse brute en OCTETS, telle que `httr2::resp_body_raw()` la renvoie :
+# c'est ce que le seam `fetch` de publier_geometrie reçoit, et c'est aussi le
+# contenu du fichier cache communes_limites.geojson.
+fixture_wfs_octets <- function(collection, ...) {
+  charToRaw(fixture_wfs_brut(collection, ...))
+}
+
+# Les trois couches du fond de carte, sous forme de corps de réponse bruts.
+fixture_geometrie_octets <- function() {
+  sain <- fixture_geometrie_wfs_saine()
+  lapply(sain, function(collection) fixture_wfs_octets(collection))
+}

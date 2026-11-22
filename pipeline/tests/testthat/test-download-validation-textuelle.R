@@ -200,7 +200,11 @@ test_that("resoudre_source re-télécharge un geojson tronqué en cache au lieu 
     horloge = as.Date("2026-11-22"), vintage_basis = "declaree",
     tirer = function(url, cible) {
       appels <<- appels + 1L
-      writeBin(charToRaw('{"type":"FeatureCollection","features":[]}'), cible)
+      # Une vraie réponse WFS porte un membre d'enveloppe après `features` : le
+      # digest communes_limites hache cette plage d'octets (#1119).
+      writeBin(charToRaw(
+        '{"type":"FeatureCollection","features":[],"timeStamp":"2026-11-22T17:51:09.979Z"}'
+      ), cible)
     }
   )
 

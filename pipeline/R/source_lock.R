@@ -106,18 +106,27 @@ lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
   if (!file.exists(p)) return(NULL)
   d <- tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) NULL)
   if (is.null(d)) return(NULL)
-  for (champ in c("sha256", "acquired_at", "vintage_basis", "vintage", "date_reference")) {
-    if (is.null(d[[champ]])) d[[champ]] <- NA_character_
+  # Review #1121 : UN seul normaliseur pour les champs d'enregistrement, y
+  # compris ceux du sidecar (un `null` JSON doit devenir NA_character_, jamais
+  # character(0) — sinon le champ disparaît à l'écriture suivante).
+  for (champ in CHAMPS_LOCK_TEXTE) {
+    d[[champ]] <- champ_caractere(d[[champ]])
   }
   # Issue #1103 (revue) : un sidecar n'est valable QUE pour les octets qu'il a
   # hachés. Nom de fichier, taille et mtime doivent concorder, sinon le digest
   # est périmé et le résolveur doit re-hacher.
   if (!is.null(fichier)) {
     cible <- file.path(cache, fichier)
+    # Issue #1119 : `bytes` est la taille de CE QUI EST HACHÉ — la plage d'octets
+    # `features` pour une lecture WFS, pas les octets du fichier. La fraîcheur du
+    # sidecar suit donc `fichier_octets` (la taille réelle du fichier) quand il
+    # est présent ; les sidecars plus anciens n'ont que `bytes` (octets bruts).
+    octets_fichier <- champ_caractere(d$fichier_octets %||% d$bytes)
     if (!file.exists(cible) ||
-        !identical(as.character(d$fichier %||% ""), as.character(fichier)) ||
-        !isTRUE(all.equal(as.numeric(d$bytes), as.numeric(file.size(cible)))) ||
-        !isTRUE(all.equal(as.numeric(d$mtime), as.numeric(file.mtime(cible))))) {
+        !identical(champ_caractere(d$fichier), champ_caractere(fichier)) ||
+        !isTRUE(all.equal(as.numeric(octets_fichier), as.numeric(file.size(cible)))) ||
+        !isTRUE(all.equal(as.numeric(champ_caractere(d$mtime)),
+                          as.numeric(file.mtime(cible))))) {
       return(NULL)
     }
   }
@@ -327,7 +336,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
                             sha256_manifeste = NULL, vintage_basis = "declaree",
                             vintage_declare = NULL, reference_declaree = NULL,
                             tirer = NULL, horloge = NULL, etat = NULL,
-                            lock = NULL) {
+                            lock = NULL, empreinte = NULL) {
   if (is.null(etat)) {
     etat <- new.env(parent = emptyenv())
     etat$statuts <- NULL
@@ -383,11 +392,17 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     jour <- jour_fichier %||% jour_fetch
   }
 
-  h <- empreinte_fichier(cible)
+  # Issue #1119 : le hacheur est choisi par le registre des lectures WFS (ou
+  # injecté). Il renvoie {sha256, bytes, hachage} : pour communes_limites, le
+  # sha256 porte sur la plage d'octets `features` du GeoJSON et non sur l'enveloppe
+  # volatile, tandis que `fichier_octets` garde la taille réelle du fichier.
+  hacheur <- empreinte %||% empreinte_source(id)
+  detail <- hacheur(cible)
+  h <- detail$sha256
   registre <- lire_lock(lock)
   verrouille <- registre[[id]]
   verrouille_ok <- !is.null(verrouille) &&
-    identical(champ_caractere(verrouille$sha256), as.character(h))
+    identical(champ_caractere(verrouille$sha256), champ_caractere(h))
 
   if (verrouille_ok) {
     # Determinism: locked bytes publish the lock's vintage, never the clock.
@@ -413,10 +428,14 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     source_id = id,
     url = url,
     sha256 = h,
-    bytes = as.numeric(file.size(cible)),
+    bytes = as.numeric(champ_caractere(detail$bytes)),
+    hachage = champ_caractere(detail$hachage),
     # Empreinte de fraîcheur du sidecar (issue #1103, revue) : nom, taille et
-    # mtime du fichier réellement haché — tout changement invalide le digest.
+    # mtime du fichier réellement lu — tout changement invalide le digest.
+    # `bytes` peut être la taille de la plage features hachée (#1119) : la taille
+    # BRUTE du fichier est donc portée séparément pour la garde de fraîcheur.
     fichier = fichier,
+    fichier_octets = as.numeric(file.size(cible)),
     mtime = as.numeric(file.mtime(cible)),
     acquired_at = acquired_at,
     vintage_basis = base,
