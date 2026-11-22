@@ -322,32 +322,54 @@ describe('shared editorial page shell', () => {
   }
 
   /**
-   * Declaration-level count, not distinct files: a second declaration in the
-   * owner itself must fail too. CSS declarations sit at the start of a line
-   * (`--role:`, including inside @media); TS object keys are quoted and at the
-   * start of a line. `var(--role, …)` usages and mid-line ternaries never match.
+   * Shape-correct, not position-correct. A CSS `--role:` and a quoted TS key
+   * are declarations wherever they appear — one-line rules, inline objects,
+   * `<style>` blocks, computed `['--role']:`. `var(--role, …)` uses a comma and
+   * never matches; a ternary `? '--role' : x` is excluded by the lookbehind.
    */
   function declarationCount(path: string, source: string, role: string): number {
     const text = stripComments(source)
     const escaped = role.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-    const cssCount = (text.match(new RegExp(`^\\s*${escaped}\\s*:`, 'gmu')) ?? []).length
-    const tsCount = (text.match(new RegExp(`^\\s*['"]${escaped}['"]\\s*:`, 'gmu')) ?? []).length
+    const cssCount = (text.match(new RegExp(`${escaped}\\s*:`, 'gu')) ?? []).length
+    const tsCount = (text.match(new RegExp(`(?<!\\?\\s)(?:\\[)?['"]${escaped}['"]\\]?\\s*:`, 'gu')) ?? []).length
     if (path.endsWith('.css')) return cssCount
     if (path.endsWith('.ts') || path.endsWith('.mjs')) return tsCount
     return cssCount + tsCount // .vue carries both a script and one or more styles
   }
 
-  it('declares every role exactly once, at its single owner', () => {
+  function declaredRoles(path: string, source: string): string[] {
+    const text = stripComments(source)
+    const css = [...text.matchAll(/(--[\w-]+)\s*:/gu)].map((match) => match[1]!)
+    const ts = [...text.matchAll(/(?<!\?\s)(?:\[)?['"](--[\w-]+)['"]\]?\s*:/gu)].map((match) => match[1]!)
+    if (path.endsWith('.css')) return css
+    if (path.endsWith('.ts') || path.endsWith('.mjs')) return ts
+    return [...css, ...ts]
+  }
+
+  it('registers every role an owner declares, then gives it exactly one owner', () => {
     const sources = productionSources()
-    // Derive the whole expected set from the owner's own keys, so a role added
-    // later cannot escape the test. Values may be identifiers (cycle-shared).
-    const moduleRoles = [...colorRolesSource.matchAll(/^\s*['"](--[\w-]+)['"]\s*:/gmu)]
+    // Derive the module half of the registry from the owner's own keys, so a
+    // new key cannot escape. Values may be identifiers (cycle-shared), so the
+    // shape of the key — not its value — is what is matched.
+    const moduleRoles = [...colorRolesSource.matchAll(/['"](--[\w-]+)['"]\s*:/gu)]
       .map((match) => match[1]!)
     expect(moduleRoles.length).toBeGreaterThan(0)
     const expected = new Map<string, { owner: string; count: number }>([
       ...moduleRoles.map((role) => [role, { owner: ROLE_OWNER, count: 1 }] as const),
       ...Object.entries(STRUCTURE_ROLES).map(([role, count]) => [role, { owner: STRUCTURE_OWNER, count }] as const),
     ])
+
+    // Complement: nothing declared by either owner may hide outside the
+    // registry. Adding a role to an owner must be a deliberate registration —
+    // a key in the module or an entry in STRUCTURE_ROLES. Component-local roles
+    // owned elsewhere are not page roles and are not part of this seam.
+    const owners = new Set([ROLE_OWNER, STRUCTURE_OWNER])
+    for (const { path, source } of sources.filter(({ path }) => owners.has(path))) {
+      for (const role of new Set(declaredRoles(path, source))) {
+        expect(expected.has(role), `${path} declares ${role}; register it in the seam`).toBe(true)
+      }
+    }
+
     for (const [role, { owner, count }] of expected) {
       let total = 0
       for (const { path, source } of sources) {
