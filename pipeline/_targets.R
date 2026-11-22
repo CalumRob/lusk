@@ -1494,9 +1494,11 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
   ))
 }
 
-# Issue #1103 : publier les empreintes de TOUTES les sources lues à côté du
-# payload. Chaque download_sources écrit l'agrégat du cache ; cette cible le
-# projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
+# Issue #1103 / #1109 : publier les empreintes de TOUTES les sources lues à
+# côté du payload. Chaque `download_sources` porte ses digests sur ses statuts
+# et écrit l'agrégat du cache ; cette cible projette UNE fois l'union des
+# lectures du run (thèmes, classifications, Programmes, géométrie) vers
+# <sortie>/source-digests.json (exclu du diff-skip) et vérifie le fichier publié.
 digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
                               sortie = SORTIE_RUN,
                               complete = selection_complete) {

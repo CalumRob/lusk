@@ -84,10 +84,11 @@ verifier_digests_couvrent_lectures_reseau <- function(digests) {
 }
 
 # ids_digests_publication / filtrer_digests_ids ---------------------------------
-# Le cache agrégé survit aux runs : on ne projette que les sources encore
-# déclarées par les manifestes du run ET les lectures réseau enregistrées
-# (géométrie). Une source retirée ne doit pas rester dans source-digests.json —
-# le garde la refuserait ensuite avec `sans_reference` (issue #1103, revue 2).
+# Le cache agrégé survit aux runs : une source retirée ne doit pas rester dans
+# source-digests.json — le garde la refuserait ensuite avec `sans_reference`
+# (issue #1103, revue 2). La projection effective du run (#1109) filtre sur les
+# sources RÉELLEMENT LUES (voir `publier_digests_run`) ; ce helper décrit les
+# ids déclarés par les manifestes que le graphe télécharge, pour les contrats.
 # `manifestes` est la LISTE des manifestes que LE GRAPHE télécharge réellement
 # (thèmes du run + classifications partagées + Programmes sur run complet).
 # `themes` reste accepté pour les appelants historiques (descripteurs de thème).
