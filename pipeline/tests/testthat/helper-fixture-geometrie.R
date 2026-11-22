@@ -153,21 +153,30 @@ fixture_geometrie_wfs_saine <- function() {
 
 fixture_wfs_brut <- function(collection,
                              timeStamp = "2026-11-22T17:51:09.979Z",
-                             numberMatched = NULL, numberReturned = NULL) {
+                             numberMatched = NULL, numberReturned = NULL,
+                             crs = NULL) {
   jsonlite::toJSON(
     c(
-      list(type = "FeatureCollection", timeStamp = timeStamp),
+      list(type = "FeatureCollection"),
+      list(features = collection$features),
       if (!is.null(numberMatched)) list(numberMatched = numberMatched),
       if (!is.null(numberReturned)) list(numberReturned = numberReturned),
-      list(features = collection$features)
+      if (!is.null(crs)) list(crs = crs),
+      list(timeStamp = timeStamp)
     ),
     auto_unbox = TRUE, digits = NA
   )
 }
 
-# La réponse brute PARSEÉE, comme `httr2::resp_body_json(simplifyVector = FALSE)`
-# la renvoie au vrai fetch — le seam injecté dans publier_geometrie reçoit cette
-# forme. Le fichier cache de communes_limites est lui aussi une telle chaîne.
-fixture_wfs_parse <- function(...) {
-  jsonlite::fromJSON(fixture_wfs_brut(...), simplifyVector = FALSE)
+# La réponse brute en OCTETS, telle que `httr2::resp_body_raw()` la renvoie :
+# c'est ce que le seam `fetch` de publier_geometrie reçoit, et c'est aussi le
+# contenu du fichier cache communes_limites.geojson.
+fixture_wfs_octets <- function(collection, ...) {
+  charToRaw(fixture_wfs_brut(collection, ...))
+}
+
+# Les trois couches du fond de carte, sous forme de corps de réponse bruts.
+fixture_geometrie_octets <- function() {
+  sain <- fixture_geometrie_wfs_saine()
+  lapply(sain, function(collection) fixture_wfs_octets(collection))
 }

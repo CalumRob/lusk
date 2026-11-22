@@ -65,7 +65,7 @@ test_that("publier_geometrie enregistre une empreinte par couche WFS", {
   sortie <- tempfile("sortie-geom-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
-  sain <- fixture_geometrie_wfs_saine()
+  sain <- fixture_geometrie_octets()
   publier_geometrie(sortie, fetch = function(niveau) sain[[niveau]],
                     horloge = as.Date("2026-11-18"))
 
@@ -84,7 +84,7 @@ test_that("le gel refuse une empreinte de géométrie sans référence au lock",
   sortie <- tempfile("sortie-geom-gel-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
-  sain <- fixture_geometrie_wfs_saine()
+  sain <- fixture_geometrie_octets()
   publier_geometrie(sortie, fetch = function(niveau) sain[[niveau]],
                     horloge = as.Date("2026-11-18"))
   erreur <- tryCatch(verifier_gel_release(sortie), error = function(e) e)

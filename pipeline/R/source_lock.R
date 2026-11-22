@@ -88,8 +88,8 @@ lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
   # est périmé et le résolveur doit re-hacher.
   if (!is.null(fichier)) {
     cible <- file.path(cache, fichier)
-    # Issue #1119 : `bytes` est la taille de CE QUI EST HACHÉ — les features
-    # canoniques pour une lecture WFS, pas les octets du fichier. La fraîcheur du
+    # Issue #1119 : `bytes` est la taille de CE QUI EST HACHÉ — la plage d'octets
+    # `features` pour une lecture WFS, pas les octets du fichier. La fraîcheur du
     # sidecar suit donc `fichier_octets` (la taille réelle du fichier) quand il
     # est présent ; les sidecars plus anciens n'ont que `bytes` (octets bruts).
     octets_fichier <- d$fichier_octets %||% d$bytes
@@ -364,7 +364,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
 
   # Issue #1119 : le hacheur est choisi par le registre des lectures WFS (ou
   # injecté). Il renvoie {sha256, bytes, hachage} : pour communes_limites, le
-  # sha256 porte sur les features canoniques du GeoJSON et non sur l'enveloppe
+  # sha256 porte sur la plage d'octets `features` du GeoJSON et non sur l'enveloppe
   # volatile, tandis que `fichier_octets` garde la taille réelle du fichier.
   hacheur <- empreinte %||% empreinte_source(id)
   detail <- hacheur(cible)
@@ -400,7 +400,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     hachage = as.character(detail$hachage),
     # Empreinte de fraîcheur du sidecar (issue #1103, revue) : nom, taille et
     # mtime du fichier réellement lu — tout changement invalide le digest.
-    # `bytes` peut être la taille des features canoniques (#1119) : la taille
+    # `bytes` peut être la taille de la plage features hachée (#1119) : la taille
     # BRUTE du fichier est donc portée séparément pour la garde de fraîcheur.
     fichier = fichier,
     fichier_octets = as.numeric(file.size(cible)),

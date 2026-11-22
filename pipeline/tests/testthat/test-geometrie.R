@@ -84,7 +84,7 @@ test_that("publier_geometrie écrit les trois fichiers GeoJSON du contrat", {
   on.exit(unlink(cible, recursive = TRUE))
 
   # le seam de fetch injecté — le réseau n'entre pas dans la boucle de test
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_octets()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
 
   for (niveau in c("communes", "epcis", "departements")) {
@@ -105,7 +105,7 @@ test_that("publier_geometrie n'écrit que les territoires bretons", {
   cible <- tempfile("geom-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_octets()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
 
   communes <- jsonlite::fromJSON(file.path(cible, "communes.geojson"), simplifyVector = FALSE)
@@ -124,7 +124,7 @@ test_that("publier_geometrie est un upsert : relancer écrase sans dupliquer", {
   cible <- tempfile("geom-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  fetch_injecte <- function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
+  fetch_injecte <- function(niveau) fixture_geometrie_octets()[[niveau]]
   publier_geometrie(cible, fetch = fetch_injecte)
   publier_geometrie(cible, fetch = fetch_injecte)
 
@@ -150,7 +150,7 @@ test_that("une collection vide aborte en nommant le niveau, l'URL et les comptes
   on.exit(unlink(cible, recursive = TRUE))
 
   err <- tryCatch(
-    publier_geometrie(cible, fetch = function(niveau) fixture_collection_vide()),
+    publier_geometrie(cible, fetch = function(niveau) fixture_wfs_octets(fixture_collection_vide())),
     error = identity
   )
   expect_s3_class(err, "error")
@@ -169,9 +169,9 @@ test_that("une couverture communale partielle est refusée comme implausible", {
 
   # une seule commune bretonne (22) : 29/35/56, présents dans l'univers
   # canonique de référence, sont absents — ce n'est pas une Bretagne valide.
-  sain <- fixture_geometrie_wfs_saine()
+  sain <- fixture_geometrie_octets()
   fetch_partiel <- function(niveau) {
-    if (niveau == "communes") fixture_communes_wfs() else sain[[niveau]]
+    if (niveau == "communes") fixture_wfs_octets(fixture_communes_wfs()) else sain[[niveau]]
   }
   err <- tryCatch(publier_geometrie(cible, fetch = fetch_partiel), error = identity)
   expect_s3_class(err, "error")
@@ -187,7 +187,7 @@ test_that("une collection saine couvrant les 4 départements passe la garde", {
   on.exit(unlink(cible, recursive = TRUE))
 
   expect_silent(publier_geometrie(
-    cible, fetch = function(niveau) fixture_geometrie_wfs_saine()[[niveau]]
+    cible, fetch = function(niveau) fixture_geometrie_octets()[[niveau]]
   ))
   communes <- jsonlite::fromJSON(file.path(cible, "communes.geojson"), simplifyVector = FALSE)
   expect_setequal(

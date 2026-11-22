@@ -90,15 +90,17 @@ url_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
 # Le VRAI fetch : une requête GetFeature par niveau (bbox Bretagne, GeoJSON).
 # Non testé dans la boucle (convention pipeline — comme telecharger_fichier) :
 # les tests vérifient l'URL via url_geometrie_wfs et injectent un faux fetch.
-# L'échec réseau remonte bruyamment — publier_geometrie s'arrête, la publication
-# ne part jamais à moitié.
+# Issue #1119 (revue) : on conserve le CORPS BRUT (`resp_body_raw()`) — c'est lui
+# qu'on hache, sans parse ni re-sérialisation. Le parse pour le filtrage se fait
+# à part dans publier_geometrie. L'échec réseau remonte bruyamment — la
+# publication ne part jamais à moitié.
 telecharger_geometrie_wfs <- function(niveau, base = WFS_GEOMETRIE_BASE,
                                       bbox = WFS_GEOMETRIE_BBOX) {
   url <- url_geometrie_wfs(niveau, base = base, bbox = bbox)
   reponse <- httr2::request(url) |>
     httr2::req_user_agent("lusk-pipeline (https://github.com/CalumRob/lusk)") |>
     httr2::req_perform()
-  httr2::resp_body_json(reponse, simplifyVector = FALSE)
+  httr2::resp_body_raw(reponse)
 }
 
 # filtrer_geometrie ------------------------------------------------------------
@@ -406,11 +408,17 @@ publier_geometrie <- function(cible = "public/data", horloge = NULL,
 
   prets <- lapply(niveaux, function(niveau) {
     brut <- fetch(niveau)
+    if (!is.raw(brut)) {
+      stop("Le fetch WFS doit renvoyer le corps BRUT (raw) de la réponse — ",
+           niveau, ".", call. = FALSE)
+    }
     # Issue #1103 : chaque couche WFS est une lecture réseau déclarée, de base
     # `telechargement` — son empreinte entre dans source-digests.json (couverture
-    # du run et gel de release). Issue #1119 : on hache les FEATURES via le
-    # helper canonique partagé, jamais l'enveloppe brute (timeStamp volatile).
+    # du run et gel de release). Issue #1119 (revue) : le helper partagé hache la
+    # plage d'octets `features` du corps brut, sans parse ni re-sérialisation.
     empreinte <- empreinte_wfs_features(brut)
+    # Le parse sert UNIQUEMENT au filtrage/mappage — jamais au hachage.
+    collection <- jsonlite::fromJSON(rawToChar(brut), simplifyVector = FALSE)
     id <- paste0("geometrie_", niveau)
     digests_lectures[[id]] <<- list(
       source_id = id,
@@ -423,11 +431,11 @@ publier_geometrie <- function(cible = "public/data", horloge = NULL,
       vintage = format(jour, "%Y-%m"),
       date_reference = as.character(jour)
     )
-    filtre <- filtrer_geometrie(brut, niveau)
+    filtre <- filtrer_geometrie(collection, niveau)
     verifier_collection_geometrie(
       filtre, niveau,
       url = url_geometrie_wfs(niveau),
-      brut_n = length(brut$features)
+      brut_n = length(collection$features)
     )
     mapper_vers_contrat(filtre, niveau)
   })
