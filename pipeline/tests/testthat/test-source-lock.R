@@ -87,7 +87,8 @@ test_that("une source absente du lockfile est résolue et signalée sans référ
     fichier = "nouvelle.csv", cache = cache, lock = lock_fixture(),
     horloge = as.Date("2026-11-18"), vintage_basis = "telechargement",
     reference_declaree = "2026-11-18",
-    tirer = function(url, cible) writeBin(octets_fixture("flux roulant"), cible)
+    # #1108 : un CSV de cache doit être structurellement valide (newline final)
+    tirer = function(url, cible) writeBin(octets_fixture("flux roulant\n"), cible)
   )
   expect_true(r$sans_reference)
   expect_false(r$verrouille)

@@ -40,13 +40,137 @@ ecrire_atomique <- function(ecrire, cible) {
   invisible(cible)
 }
 
+# Validation structurelle des textes (issue #1108) -----------------------------
+# Un export délimité ou JSON tronqué ressemble à une dérive amont : il passe le
+# garde-fou « existe et non vide » puis est réutilisé comme frais indéfiniment
+# (et, depuis #1103, se fait hacher et figer dans sources.lock.json). On ne PARSE
+# jamais le fichier entier — jusqu'à ~370 Mo — : deux lectures BORNÉES suffisent,
+# l'en-tête (délimiteur + nombre de champs attendu) et la fin (dernier octet +
+# dernier enregistrement). Les formats binaires (.rds, .zip, .7z, .gz, .pbf,
+# .parquet, .xlsx…) gardent leurs contrôles historiques et ne sont pas touchés.
+
+TAILLE_FIN_LECTURE <- 262144L  # 256 Kio : largement plusieurs enregistrements
+
+lire_octet_final <- function(chemin) {
+  con <- file(chemin, "rb")
+  on.exit(close(con), add = TRUE)
+  seek(con, where = -1L, origin = "end")
+  readBin(con, "raw", n = 1L)
+}
+
+lire_octets_fin <- function(chemin, n = TAILLE_FIN_LECTURE) {
+  taille <- file.size(chemin)
+  a_lire <- as.integer(min(taille, as.numeric(n)))
+  con <- file(chemin, "rb")
+  on.exit(close(con), add = TRUE)
+  seek(con, where = taille - a_lire, origin = "start")
+  readBin(con, "raw", n = a_lire)
+}
+
+lire_entete_csv <- function(chemin, n = 65536L) {
+  con <- file(chemin, "rb")
+  on.exit(close(con), add = TRUE)
+  brut <- readBin(con, "raw", n = as.integer(min(file.size(chemin), as.numeric(n))))
+  saut <- which(brut == as.raw(0x0a))[1L]
+  fin <- if (is.na(saut)) length(brut) else saut - 1L
+  entete <- if (fin > 0L) brut[seq_len(fin)] else raw(0L)
+  # CRLF : on retire le '\r' qui précède le '\n' (forme réelle des exports ODS).
+  if (length(entete) && entete[length(entete)] == as.raw(0x0d)) {
+    entete <- entete[-length(entete)]
+  }
+  rawToChar(entete)
+}
+
+# Compte les séparateurs HORS guillemets. Les exports ODS épinglent de la
+# géométrie GeoJSON dans des champs cités : ces champs contiennent ',' et ';'
+# qui ne sont PAS des séparateurs. Un double guillemet ("") est un guillemet
+# échappé : deux bascules consécutives, donc aucune modification nette de l'état.
+compter_separateurs <- function(ligne, separateur) {
+  caracteres <- strsplit(ligne, "", fixed = TRUE)[[1L]]
+  n <- length(caracteres)
+  total <- 0L
+  dans_guillemet <- FALSE
+  i <- 1L
+  while (i <= n) {
+    c <- caracteres[i]
+    if (identical(c, "\"")) {
+      if (dans_guillemet && i < n && identical(caracteres[i + 1L], "\"")) {
+        i <- i + 2L
+        next
+      }
+      dans_guillemet <- !dans_guillemet
+    } else if (!dans_guillemet && identical(c, separateur)) {
+      total <- total + 1L
+    }
+    i <- i + 1L
+  }
+  total
+}
+
+compter_champs <- function(ligne, separateur) {
+  compter_separateurs(ligne, separateur) + 1L
+}
+
+delimiteur_csv <- function(entete) {
+  if (compter_separateurs(entete, ";") > compter_separateurs(entete, ",")) ";" else ","
+}
+
+derniere_ligne_complete <- function(octets_fin) {
+  lignes <- strsplit(rawToChar(octets_fin), "\n", fixed = TRUE)[[1L]]
+  if (!length(lignes)) return("")
+  # strsplit supprime le champ vide final : le fichier se terminant par '\n'
+  # (vérifié avant), le dernier élément est le dernier enregistrement complet.
+  derniere <- lignes[length(lignes)]
+  if (nchar(derniere) &&
+      identical(substr(derniere, nchar(derniere), nchar(derniere)), "\r")) {
+    derniere <- substr(derniere, 1L, nchar(derniere) - 1L)
+  }
+  derniere
+}
+
+verifier_csv_structure <- function(chemin) {
+  # 1. Une coupure en milieu d'enregistrement n'a PAS de newline final.
+  if (!identical(lire_octet_final(chemin), as.raw(0x0a))) return(FALSE)
+  # 2. Le dernier enregistrement complet a le nombre de champs de l'en-tête,
+  #    compté hors guillemets (les ';' / ',' de la géométrie ne comptent pas).
+  #    On lit la FIN en bloc borné et on traite la dernière ligne physique
+  #    comme le dernier enregistrement : les exports ODS épinglés ici n'ont pas
+  #    de champ cité contenant un saut de ligne (GeoJSON compacté sur une ligne).
+  #    UN TEL CHAMP MULTILIGNE est donc accepté comme limite connue : il
+  #    déclencherait au pire un re-téléchargement supplémentaire (fail-closed),
+  #    jamais l'acceptation d'un fichier tronqué.
+  entete <- lire_entete_csv(chemin)
+  if (!nzchar(entete)) return(FALSE)
+  separateur <- delimiteur_csv(entete)
+  n_entete <- compter_champs(entete, separateur)
+  identical(
+    compter_champs(derniere_ligne_complete(lire_octets_fin(chemin)), separateur),
+    n_entete
+  )
+}
+
+verifier_json_structure <- function(chemin) {
+  octets <- lire_octets_fin(chemin)
+  i <- length(octets)
+  # communes_limites.geojson se termine par '...}}}' SANS newline final : on
+  # ignore les blancs finaux mais on N'impose PAS de newline.
+  while (i > 0L && as.integer(octets[i]) %in% c(0x20, 0x09, 0x0a, 0x0d)) {
+    i <- i - 1L
+  }
+  i > 0L && as.integer(octets[i]) %in% c(0x7d, 0x5d)  # '}' ou ']'
+}
+
 # verifier_fichier ------------------------------------------------------------
 # L'intégrité d'un fichier du cache : il existe, il n'est pas vide, et s'il
 # s'agit d'un zip il s'ouvre (ou d'un .rds il se relit — le format de cache
 # des sources api, issue #13 ; ou d'un .7z il porte la signature 7-Zip — les
-# couches OCS-GE de la Géoplateforme, issue #234). C'est le garde-fou de
-# l'idempotence (point 3) : un téléchargement partiel ou corrompu est détecté
-# et re-téléchargé au lieu d'être traité comme complet pour toujours.
+# couches OCS-GE de la Géoplateforme, issue #234). Depuis #1108, un .csv/.txt
+# doit se terminer par un saut de ligne ET avoir un dernier enregistrement
+# complet (même nombre de champs que l'en-tête, hors guillemets) ; un
+# .json/.geojson doit se terminer par '}' ou ']' (blancs finaux tolérés, newline
+# NON exigé). C'est le garde-fou de l'idempotence (point 3) : un téléchargement
+# partiel ou corrompu est détecté et re-téléchargé au lieu d'être traité comme
+# complet pour toujours.
 # La signature .7z (les six octets magiques « 37 7A BC AF 27 1C ») est la
 # seule vérification possible SANS dépendance : ni le paquet `archive` ni un
 # binaire 7-Zip ne sont disponibles (renv.lock) — une archive tronquée ou un
@@ -76,6 +200,11 @@ verifier_fichier <- function(chemin) {
     }, error = function(e) FALSE)
     if (!ok) return(FALSE)
   }
+  # Textes structurés (issue #1108) — le SEAM unique, utilisé aussi bien sur un
+  # téléchargement neuf que sur la réutilisation d'un fichier déjà en cache.
+  ext_texte <- tolower(ext)
+  if (ext_texte %in% c("csv", "txt")) return(verifier_csv_structure(chemin))
+  if (ext_texte %in% c("json", "geojson")) return(verifier_json_structure(chemin))
   TRUE
 }
 
