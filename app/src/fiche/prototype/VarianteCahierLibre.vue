@@ -18,7 +18,7 @@ export function rendererFor(
 // #1093 — the shared editorial page shell (paper, heading type, rule, prose
 // ground). Imported here and by the Atelier so neither owns a local copy.
 import '@/styles/editorialPage.css'
-import { EDITORIAL_PAGE_ROLES } from './cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES } from '@/styles/editorialPageRoles'
 /**
  * [PROTOTYPE #511 — JETABLE] Variante D — « Cahier libre ».
  *

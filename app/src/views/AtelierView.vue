@@ -18,7 +18,7 @@ import {
 import AppIcon from '@/components/AppIcon.vue'
 // #1093 — le module TS est l'unique propriétaire des rôles de couleur ; la
 // coquille CSS ne fait que les consommer. Même carte liée que le Cahier.
-import { EDITORIAL_PAGE_ROLES } from '@/fiche/prototype/cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES } from '@/styles/editorialPageRoles'
 // Le style de prose de production est importé, jamais recopié (#1074/#1093).
 import '@/fiche/prototype/cahierLayout.css'
 // #1093 — la coquille éditoriale a un seul propriétaire, partagé avec le Cahier.

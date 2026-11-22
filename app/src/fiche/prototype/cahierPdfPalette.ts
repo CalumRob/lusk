@@ -8,7 +8,7 @@
  */
 import tokensCss from '@/styles/tokens.css?raw'
 import { melangerOklab } from '@/carte/couleurs'
-import { EDITORIAL_PAGE_ROLES, CAHIER_SHARE_COLOUR } from './cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES, CAHIER_SHARE_COLOUR } from '@/styles/editorialPageRoles'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 
 // No live screen/style introspection: these are immutable bundled owner inputs.

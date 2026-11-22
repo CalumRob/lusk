@@ -1,7 +1,7 @@
 /* #1093 — The STRUCTURE of the editorial page shell.
  *
  * Colour roles have exactly one owner: `EDITORIAL_PAGE_ROLES` in
- * `fiche/prototype/cahierColorRoles.ts`, bound on both surface roots. Nothing
+ * `styles/editorialPageRoles.ts`, bound on both surface roots. Nothing
  * here redeclares `--paper`, `--ink`, `--red-soft`, `--cahier-default` and
  * friends; a change to the owner reaches both surfaces and the PDF palette.
  *
@@ -55,8 +55,12 @@
 /* Reflow the ruling margin in mobile flow — moved with the aliases so both
  * surfaces honour the same cahier rhythm at the same breakpoints. */
 @media (max-width: 760px) {
-  .editorial-page { --margin-line: 82px; }
+  .editorial-page {
+    --margin-line: 82px;
+  }
 }
 @media (max-width: 600px) {
-  .editorial-page { --margin-line: 12px; }
+  .editorial-page {
+    --margin-line: 12px;
+  }
 }

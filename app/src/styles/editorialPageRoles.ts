@@ -3,9 +3,10 @@
  *
  * Every alias below is declared exactly once, here. Both the Cahier and the
  * Atelier bind this map on their root (`EDITORIAL_PAGE_ROLES`), and the PDF
- * palette reads the same object, so the screen and the document cannot drift
- * to two values. `editorialPage.css` owns only the *structure* that consumes
- * these roles (page surface, sheet ruling, heading type, rule, margin reflow).
+ * palette spreads its entries into its token table, so the screen and the
+ * document resolve from the same declarations rather than copied hexes.
+ * `editorialPage.css` owns only the *structure* that consumes these roles
+ * (page surface, sheet ruling, heading type, rule, margin reflow).
  */
 
 /**

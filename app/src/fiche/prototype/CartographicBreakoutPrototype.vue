@@ -21,7 +21,7 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
-import { COULEUR_CYCLE_PARTAGE } from './cahierColorRoles'
+import { COULEUR_CYCLE_PARTAGE } from '@/styles/editorialPageRoles'
 import { useCahierExportPublication } from './cahierExportVenue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
@@ -330,8 +330,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 <style scoped>
 .map-breakout {
   /* Cycle alias ownership (including the shared hue) lives in
-     cahierColorRoles.ts and is applied at the Cahier root. */
-  --cahier-cycle-protected: var(--cahier-mode-bike);
+     editorialPageRoles.ts and is applied at the Cahier root. */
   margin: 0;
   padding: 0 0 var(--space-3);
 }

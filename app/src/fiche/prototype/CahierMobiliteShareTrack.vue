@@ -33,7 +33,7 @@ import {
   mobiliteShareVisibleLabel,
 } from './cahierMobiliteReadings'
 import CahierRank from './CahierRank.vue'
-import { CAHIER_SHARE_TRACK_STYLE } from './cahierColorRoles'
+import { CAHIER_SHARE_TRACK_STYLE } from '@/styles/editorialPageRoles'
 import { useCahierExportPublication } from './cahierExportVenue'
 
 type ComparisonState = {
