@@ -209,3 +209,52 @@ verifier_structure_reseau <- function(racine, autorisations = AUTORISATIONS_RESE
   }
   invisible(sites)
 }
+
+# Hachage d'enveloppes WFS (issue #1119) ----------------------------------------
+# Une réponse GetFeature porte un `timeStamp` volatile : la hacher rend le gel
+# de release (ADR-0048) permanent. Le scanner repère toute sérialisation JSON
+# hachée dont l'entrée ressemble à une réponse/enveloppe WFS entière ; seul le
+# helper canonique (wfs_digest.R) est autorisé à hacher des features WFS.
+MOTIF_HASH_JSON <- "sha256\\s*\\(.*toJSON\\s*\\("
+MOTIF_ENVELOPPE_WFS <- "toJSON\\s*\\(\\s*(brut|reponse|response|collection|limites|enveloppe|collection_wfs)\\b"
+
+auditer_hachages_wfs <- function(racine) {
+  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  trousses <- list()
+  for (f in fichiers) {
+    rel <- relatif_sous(f, racine)
+    lignes <- readLines(f, warn = FALSE)
+    for (i in seq_along(lignes)) {
+      l <- sub("#.*$", "", lignes[[i]])
+      if (!grepl(MOTIF_HASH_JSON, l)) next
+      enveloppe <- grepl(MOTIF_ENVELOPPE_WFS, l)
+      autorise <- !enveloppe || grepl("^R/wfs_digest\\.R$", rel)
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = rel, ligne = i, enveloppe = enveloppe,
+        autorise = autorise, source = trimws(l), stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(trousses)) {
+    return(data.frame(fichier = character(), ligne = integer(),
+                      enveloppe = logical(), autorise = logical(),
+                      source = character(), stringsAsFactors = FALSE))
+  }
+  do.call(rbind, trousses)
+}
+
+verifier_structure_hachages_wfs <- function(racine) {
+  sites <- auditer_hachages_wfs(racine)
+  fautes <- sites[sites$enveloppe & !sites$autorise, , drop = FALSE]
+  if (nrow(fautes)) {
+    stop(
+      "Structural WFS-hash audit — ", nrow(fautes),
+      " raw GetFeature envelope(s) hashed outside the canonical helper:\n",
+      paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", trimws(fautes$source),
+             collapse = "\n"),
+      call. = FALSE
+    )
+  }
+  invisible(sites)
+}

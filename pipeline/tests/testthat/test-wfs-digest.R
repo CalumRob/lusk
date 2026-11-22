@@ -155,3 +155,38 @@ test_that("les sources non-WFS gardent leur empreinte sur les octets bruts (#111
   expect_identical(r$digest$hachage, "octets_bruts")
   expect_identical(r$sha256, empreinte_fichier(file.path(cache, "flux.bin")))
 })
+
+# --- 3. Audit structurel : un seul propriétaire du hachage WFS ------------------
+
+test_that("aucun site ne hache une enveloppe WFS brute (#1119)", {
+  racine <- normalizePath(testthat::test_path("..", ".."))
+  expect_silent(verifier_structure_hachages_wfs(racine))
+
+  code_geom <- paste(readLines(file.path(racine, "R", "geometrie.R"), warn = FALSE),
+                     collapse = "\n")
+  expect_true(grepl("empreinte_wfs_features\\(", code_geom))
+  expect_false(grepl("toJSON\\s*\\(\\s*brut", code_geom))
+  expect_false(grepl("sha256\\s*\\(", code_geom))
+
+  code_lock <- paste(readLines(file.path(racine, "R", "source_lock.R"), warn = FALSE),
+                     collapse = "\n")
+  expect_true(grepl("empreinte_source\\(id\\)", code_lock))
+  expect_false(grepl("h <- empreinte_fichier\\(cible\\)", code_lock))
+
+  # Le registre des lectures WFS est explicite : aucune source ne bascule par défaut.
+  expect_true("communes_limites" %in% names(HACHAGE_WFS_PAR_ID))
+  expect_identical(empreinte_source("flux_Ordinaire"), empreinte_fichier_brut)
+})
+
+test_that("l'audit structurel WFS échoue sur un hachage d'enveloppe ajouté (#1119)", {
+  d <- tempfile("audit-wfs-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  writeLines(c(
+    "hache <- function(reponse) {",
+    "  paste(openssl::sha256(charToRaw(jsonlite::toJSON(reponse))))",
+    "}"
+  ), file.path(d, "R", "new-wfs-read.R"))
+  sites <- auditer_hachages_wfs(d)
+  expect_true(any(grepl("new-wfs-read\\.R", sites$fichier) & sites$enveloppe))
+  expect_error(verifier_structure_hachages_wfs(d), "raw GetFeature envelope")
+})
