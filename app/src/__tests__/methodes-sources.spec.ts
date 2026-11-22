@@ -40,10 +40,12 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     const vintages = lireVintagesCommites()
     const registres = { ...SOURCES_METHODES, ...sourceRecordsPublies() }
 
-    // Seule exception nommée : « ort » — sa ligne vintages porte elle-même
-    // ses faits éditoriaux (« en continu », lov2, jamais datée) et son
-    // absorption dans les source_records du descripteur programmes reste à
-    // faire côté pipeline ; l'ancienne couverture venait du registre supprimé.
+    // Seule exception nommée : « ort » — sa version est désormais dérivée du
+    // mois de l'actualisation maximale des lignes (base `contenu_date`, #1113),
+    // sa ligne vintages commise porte encore l'ancien libellé en attendant le
+    // republish. Son absorption dans les source_records du descripteur
+    // programmes reste à faire côté pipeline ; l'ancienne couverture venait du
+    // registre supprimé.
     // #1048 slice 3 — la source du snapshot porté reste dans la table vintages
     // commise jusqu'au republish (slice 4) mais n'a plus de documentation
     // d'app : le produit auquel elle servait est retiré.
