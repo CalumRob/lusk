@@ -49,6 +49,9 @@ sources this issue never intended to touch. Pinning is therefore **opt-in**.
    only accepts a listed source. It rebuilds the pin from the already-present file — recording that
    file's mtime as the acquisition date, never "now" — or downloads it when absent, then replaces the
    pin in one atomic write. An old pin stays intact if the rebuild fails.
+   *Retired (#1103, superseded by ADR-0048):* `repin-source.R` no longer exists — do not run this
+   command. The replacement is ADR-0048's lockfile relock, launched from `pipeline/` (the only
+   documented, working form, #1122): `cd pipeline && Rscript scripts/relock-sources.R <run-dir> [source_id...]`.
 5. **Vintage is derived, never hardcoded, for pinned sources.** The closed `vintage_basis`
    vocabulary is `fichier_date` (unlisted/dated sources: declared from an immutable filename or URL),
    `contenu_date_maj`, `contenu_timestamp` and `telechargement`. Derived bases read the actual file:

@@ -84,7 +84,10 @@ ecrire_lock <- function(enregistrements, lock = NULL) {
 
 # commande_relock ---------------------------------------------------------------
 commande_relock <- function(id = NULL) {
-  base <- "Rscript pipeline/scripts/relock-sources.R <run-dir>"
+  # Issue #1122 : une seule forme documentée, celle qui marche — lancée depuis
+  # pipeline/ pour que le .Rprofile active la bibliothèque renv. Le script
+  # refuse tôt toute invocation depuis la racine (jamais de renv:: actif ici).
+  base <- "cd pipeline && Rscript scripts/relock-sources.R <run-dir>"
   if (is.null(id)) base else paste(base, id)
 }
 

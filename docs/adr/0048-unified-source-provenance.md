@@ -44,7 +44,7 @@ The first three records are seeded from the ADR-0047 pins, keeping their sha256 
 
 Determinism: when the run's bytes hash to the lockfile record, the resolver uses the record's `acquired_at`/`vintage` verbatim — clock-free. Two cold rebuilds from the locked bytes publish identical vintages.
 
-`resoudre_source()` stays the single resolver; `ecrire_atomique()` remains the atomic-write helper. A deliberate `Rscript pipeline/scripts/relock-sources.R <run-dir> [source_id...]` rewrites records from a run's digests in one atomic write; a failed write keeps the old file.
+`resoudre_source()` stays the single resolver; `ecrire_atomique()` remains the atomic-write helper. A deliberate `cd pipeline && Rscript scripts/relock-sources.R <run-dir> [source_id...]` rewrites records from a run's digests in one atomic write; a failed write keeps the old file. The command is run **from `pipeline/`** so the project's `.Rprofile` activates the renv library; launched from the repo root the script refuses early with a clear message (it never calls `renv::restore/install/snapshot` itself). Per #1122 the relock resolver covers **every** id a complete run can digest — manifest ids from `VINTAGE_BASIS_PAR_ID` and the non-manifest network reads from `LECTURES_RESEAU` (`geometrie_{communes,epcis,departements}`, basis `telechargement`) — through the single `base_vintage()`; an id in neither registry is still a hard error.
 
 ### 3. Recorded digests
 
