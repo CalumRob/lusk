@@ -90,12 +90,17 @@ export function emptyAtelierState(): AtelierState {
  * Prochain identifiant de bloc, inédit dans l'état fourni. Un lien restauré
  * peut porter des ids troués (`b2`, `b3` après suppression de `b1`) : le
  * nombre de blocs ne suffit pas, on part du plus grand suffixe `b<n>` présent.
- * `b<max+1>` est donc absent de `blocks` par définition de max — aucune
- * boucle de vérification n'est nécessaire. Deux ajouts successifs sont sûrs
- * parce que l'appelant écrit l'état de façon synchrone avant le nouvel appel :
- * il n'y a pas de fenêtre
- * où deux blocs recevraient le même id. Les ids qui ne suivent pas `b<n>`
- * sont ignorés ; ils ne peuvent pas entrer en collision avec ce préfixe.
+ * `b<max+1>` est absent de `blocks` par définition de max pour tout état
+ * ordinaire : pas de boucle de vérification nécessaire, et deux ajouts
+ * successifs sont sûrs parce que l'appelant écrit l'état de façon synchrone
+ * avant le nouvel appel. Les ids qui ne suivent pas `b<n>` sont ignorés ; ils
+ * ne peuvent pas entrer en collision avec ce préfixe.
+ *
+ * Un lien hostile peut en revanche porter un suffixe à la limite de 2^53 :
+ * là, `suffixe + 1 === suffixe` en virgule flottante et le chemin compact
+ * renverrait un id déjà présent. Ce garde-fou — contrairement à une boucle
+ * sur le max — est donc atteignable : on bascule sur `b-<uuid>` dès que le
+ * successeur n'est pas un entier sûr ou qu'il figure déjà dans `blocks`.
  */
 export function nextBlockId(blocks: readonly AtelierBlock[]): string {
   let suffixe = 0
@@ -103,7 +108,12 @@ export function nextBlockId(blocks: readonly AtelierBlock[]): string {
     const numerique = /^b(\d+)$/.exec(bloc.id)
     if (numerique) suffixe = Math.max(suffixe, Number(numerique[1]))
   }
-  return `b${suffixe + 1}`
+  const suivant = suffixe + 1
+  if (Number.isSafeInteger(suivant)) {
+    const candidat = `b${suivant}`
+    if (!blocks.some((bloc) => bloc.id === candidat)) return candidat
+  }
+  return `b-${crypto.randomUUID()}`
 }
 
 /**
@@ -224,11 +234,27 @@ function isBlock(value: unknown): value is AtelierBlock {
   return false
 }
 
+/**
+ * Les ids forment un espace unique sur toute la page : prose et figures
+ * partagent le même identifiant de bloc. Un lien hostile peut transporter
+ * deux blocs du même id (ou un texte qui emprunte l'id d'une figure) : sans
+ * ce contrôle, éditer ou retirer l'un toucherait l'autre.
+ */
+function idsUniques(blocks: readonly AtelierBlock[]): boolean {
+  const vus = new Set<string>()
+  for (const bloc of blocks) {
+    if (vus.has(bloc.id)) return false
+    vus.add(bloc.id)
+  }
+  return true
+}
+
 /** Strict structural gate for a restored link. Never throws; rejects anything not a v1 page. */
 export function isValidAtelierState(value: unknown): value is AtelierState {
   return isRecord(value) && hasOnlyKeys(value, ['v', 'title', 'blocks']) &&
     value.v === STATE_VERSION &&
     typeof value.title === 'string' &&
     Array.isArray(value.blocks) &&
-    value.blocks.every(isBlock)
+    value.blocks.every(isBlock) &&
+    idsUniques(value.blocks as AtelierBlock[])
 }

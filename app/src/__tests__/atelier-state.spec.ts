@@ -25,8 +25,22 @@ describe('atelier — identifiant du prochain bloc', () => {
     expect(nextBlockId(blocs('b', 'b02', 'autre'))).toBe('b3')
   })
 
-  it('supporte un suffixe très élevé sans dépendre du nombre de blocs', () => {
-    expect(nextBlockId(blocs('b9007199254740991'))).toBe('b9007199254740992')
+  it('garde le chemin compact b<n> pour un suffixe élevé mais sûr', () => {
+    expect(nextBlockId(blocs('b999999'))).toBe('b1000000')
+  })
+
+  it('échappe à un suffixe non sûr dont le successeur serait un id existant', () => {
+    // À 2^53, suffixe + 1 === suffixe : le chemin compact renverrait l'id déjà
+    // présent, et le bloc ajouté entrerait en collision avec lui.
+    const existants = blocs('b9007199254740992')
+    const suivant = nextBlockId(existants)
+    expect(suivant).not.toBe('b9007199254740992')
+    expect(existants.some((bloc) => bloc.id === suivant)).toBe(false)
+    expect(suivant).toMatch(/^b-[0-9a-f-]{36}$/u)
+
+    // L'échappatoire reste valable pour un second ajout.
+    const apresAjout = [...existants, { kind: 'prose' as const, id: suivant, markdown: '' }]
+    expect(nextBlockId(apresAjout)).not.toBe(suivant)
   })
 
   it('ne modifie pas les blocs reçus', () => {
