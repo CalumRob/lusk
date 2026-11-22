@@ -1247,13 +1247,24 @@ for (t in THEMES_RUN) {
 # Aucun chemin n'écrit plus sous modeles-lecture/**. La chaîne Programmes
 # ci-dessus (projection_programmes comprise) garde sa reachability inchangée.
 
+# `paste0("verif_", character(0))` recyclerait le préfixe en une cible
+# « verif_ » inexistante (#1109) : un thème sans verrou n'a AUCUNE dépendance
+# de ce type. Le même helper sert au thème Programmes du run complet.
+deps_verifs <- function(specs) {
+  slugs <- if (is.null(specs)) {
+    character(0)
+  } else {
+    vapply(specs, function(v) v$slug, character(1))
+  }
+  if (!length(slugs)) character(0) else paste0("verif_", slugs[nzchar(slugs)])
+}
+
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
-  spec <- VERIFICATIONS_RUN[[t$theme]]
-  slugs <- if (is.null(spec)) character(0) else vapply(spec, function(v) v$slug, character(1))
   rapports <- c(rapports, list(rapport_theme(
-    t, precedent = precedent, verifs = paste0("verif_", slugs)
+    t, precedent = precedent,
+    verifs = deps_verifs(VERIFICATIONS_RUN[[t$theme]])
   )))
   precedent <- as.name(paste0("rapport_", t$theme))
 }
@@ -1263,8 +1274,7 @@ for (t in THEMES_RUN) {
 if (selection_complete) {
   rapports <- c(rapports, list(rapport_theme(
     theme_programmes(), precedent = precedent,
-    verifs = paste0("verif_", vapply(VERIFICATIONS_PROGRAMMES,
-                                     function(v) v$slug, character(1)))
+    verifs = deps_verifs(VERIFICATIONS_PROGRAMMES)
   )))
 }
 
@@ -1484,28 +1494,34 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
   ))
 }
 
-# Issue #1103 : publier les empreintes de TOUTES les sources lues à côté du
-# payload. Chaque download_sources écrit l'agrégat du cache ; cette cible le
-# projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
+# Issue #1103 / #1109 : publier les empreintes de TOUTES les sources lues à
+# côté du payload. Chaque `download_sources` porte ses digests sur ses statuts
+# et écrit l'agrégat du cache ; cette cible projette UNE fois l'union des
+# lectures du run (thèmes, classifications, Programmes, géométrie) vers
+# <sortie>/source-digests.json (exclu du diff-skip) et vérifie le fichier publié.
 digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
-                              sortie = SORTIE_RUN) {
-  noms <- paste0("sources_", names(themes))
-  if (identical(MODE_RUN, "full")) noms <- c(noms, "sources_programmes")
-  deps <- lapply(noms, as.name)
-  chemin_cache <- file.path(cache, NOM_DIGESTS)
-  chemin_sortie <- file.path(sortie, NOM_DIGESTS)
+                              sortie = SORTIE_RUN,
+                              complete = selection_complete) {
+  # #1109 : les ids publiés viennent des statuts des TÉLÉCHARGEMENTS du graphe,
+  # pas d'une liste dérivée de THEMES_RUN seulement. On attend donc toutes les
+  # cibles sources réellement câblées : les thèmes, les deux classifications
+  # partagées du référentiel, Programmes sur le run complet, et la géométrie.
+  telechargements <- c(
+    paste0("sources_", names(themes)),
+    "sources_classes_densite", "sources_classes_littoral",
+    if (complete) "sources_programmes"
+  )
+  statuts <- lapply(telechargements, as.name)
+  deps <- c(statuts, list(as.name("geometrie")))
   tar_target_raw(
     "digests_run",
     as.call(c(
       list(as.name("{")), deps,
-      list(bquote(ecrire_digests_source(
-        filtrer_digests_ids(
-          c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
-            lire_digests_source(.(chemin_cache))),   # sources de manifeste
-          ids_digests_publication(THEMES_RUN)        # ids encore déclarés
-        ),
-        .(chemin_sortie)
-      )))
+      # `..()` n'est remplacé que si `splice = TRUE` : sans lui la commande
+      # contiendrait l'appel littéral `..(statuts)` et échouerait au build.
+      list(bquote(publier_digests_run(
+        list(..(statuts)), cache = .(cache), sortie = .(sortie)
+      ), splice = TRUE))
     )),
     cue = tar_cue(mode = "always")
   )

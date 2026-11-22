@@ -84,19 +84,90 @@ verifier_digests_couvrent_lectures_reseau <- function(digests) {
 }
 
 # ids_digests_publication / filtrer_digests_ids ---------------------------------
-# Le cache agrégé survit aux runs : on ne projette que les sources encore
-# déclarées par les manifestes du run ET les lectures réseau enregistrées
-# (géométrie). Une source retirée ne doit pas rester dans source-digests.json —
-# le garde la refuserait ensuite avec `sans_reference` (issue #1103, revue 2).
-ids_digests_publication <- function(themes) {
-  ids <- unlist(lapply(themes, function(t) {
-    if (!is.null(t$manifest)) as.character(t$manifest$id) else character(0)
+# Le cache agrégé survit aux runs : une source retirée ne doit pas rester dans
+# source-digests.json — le garde la refuserait ensuite avec `sans_reference`
+# (issue #1103, revue 2). La projection effective du run (#1109) filtre sur les
+# sources RÉELLEMENT LUES (voir `publier_digests_run`) ; ce helper décrit les
+# ids déclarés par les manifestes que le graphe télécharge, pour les contrats.
+# `manifestes` est la LISTE des manifestes que LE GRAPHE télécharge réellement
+# (thèmes du run + classifications partagées + Programmes sur run complet).
+# `themes` reste accepté pour les appelants historiques (descripteurs de thème).
+# Aucune liste d'ids maintenue à la main : un manifeste ajouté au run entre
+# automatiquement dans la couverture (issue #1109).
+ids_digests_publication <- function(themes = NULL, manifestes = list()) {
+  manifestes <- c(
+    if (is.null(themes)) list() else lapply(themes, function(t) {
+      if (!is.null(t$manifest)) t$manifest else NULL
+    }),
+    manifestes
+  )
+  ids <- unlist(lapply(manifestes, function(m) {
+    if (is.data.frame(m) && "id" %in% names(m)) as.character(m$id) else character(0)
   }), use.names = FALSE)
   unique(c(ids, names(LECTURES_RESEAU)))
 }
 
 filtrer_digests_ids <- function(digests, ids) {
   digests[names(digests) %in% ids]
+}
+
+# Sources réellement lues par un run --------------------------------------------
+# Les statuts renvoyés par chaque `download_sources()` du graphe portent en
+# attribut les digests calculés par le résolveur. Un id au statut « frais » est
+# une source LUE : son empreinte doit figurer dans le fichier publié. Les
+# sources « à traiter à la main » (mode cron) ne sont pas lues et n'attendent
+# donc pas d'empreinte.
+statuts_liste <- function(statuts) {
+  if (is.null(statuts)) return(list())
+  if (is.data.frame(statuts)) list(statuts) else statuts
+}
+
+ids_sources_lues <- function(statuts) {
+  ids <- unlist(lapply(statuts_liste(statuts), function(s) {
+    if (!is.data.frame(s) || !"id" %in% names(s)) return(character(0))
+    if ("status" %in% names(s)) as.character(s$id[s$status %in% "frais"]) else as.character(s$id)
+  }), use.names = FALSE)
+  unique(ids)
+}
+
+digests_sources_lus <- function(statuts) {
+  digests <- unlist(lapply(statuts_liste(statuts), function(s) attr(s, "digests")),
+                    recursive = FALSE)
+  deduper_digests(digests)
+}
+
+verifier_digests_couvrent_ids <- function(ids, digests) {
+  manquants <- setdiff(as.character(ids), names(digests))
+  if (length(manquants)) {
+    stop(
+      "Contrat source-digests.json : source lue sans empreinte publiée — ",
+      paste(manquants, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
+# Projection finale du run : on ne publie que les sources réellement lues
+# (téléchargements du graphe + lectures réseau géométrie), jamais le résidu
+# d'un cache longuement partagé. Le contrat porte sur le FICHIER PUBLÉ — une
+# source lue absente du fichier fait échouer `digests_run` (#1109).
+publier_digests_run <- function(statuts = list(), cache = "data/raw",
+                                sortie = "public/data") {
+  ids_attendus <- c(ids_sources_lues(statuts), names(LECTURES_RESEAU))
+  digests <- filtrer_digests_ids(
+    c(
+      lire_digests_source(file.path(sortie, NOM_DIGESTS)),  # géométrie / lectures réseau
+      lire_digests_source(chemin_digests_cache(cache)),     # manifestes du cache
+      digests_sources_lus(statuts)                          # téléchargements du run
+    ),
+    ids_attendus
+  )
+  ecrire_digests_source(digests, file.path(sortie, NOM_DIGESTS))
+  verifier_digests_couvrent_ids(
+    ids_attendus, lire_digests_source(file.path(sortie, NOM_DIGESTS))
+  )
+  invisible(digests)
 }
 
 # verifier_digests_couvrent -----------------------------------------------------
