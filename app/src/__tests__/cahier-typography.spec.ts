@@ -28,7 +28,7 @@ const atelierPageCssSource = readFileSync(
   'utf8',
 )
 const colorRolesSource = readFileSync(
-  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierColorRoles.ts'),
+  join(process.cwd(), 'src', 'styles', 'editorialPageRoles.ts'),
   'utf8',
 )
 const aedarAccessSectionSource = readFileSync(
@@ -291,16 +291,29 @@ describe('Cahier typography roles', () => {
  */
 describe('shared editorial page shell', () => {
   const appRoot = process.cwd()
+  const ROLE_OWNER = 'src/styles/editorialPageRoles.ts'
+  const STRUCTURE_OWNER = 'src/styles/editorialPage.css'
+  // The responsive role legitimately has a base + two media declarations, all
+  // in its one owner; the two ruling roles have one declaration each.
+  const STRUCTURE_ROLES: Readonly<Record<string, number>> = {
+    '--margin-line': 3,
+    '--rule': 1,
+    '--fine-rule': 1,
+  }
 
-  // Production sources only: test fixtures deliberately inject roles locally.
-  function productionSources(directory = join(appRoot, 'src')): { path: string; source: string }[] {
+  // Production sources: both app/src and app/scripts (a harness importing a
+  // renamed export must not escape this seam). Test fixtures may inject roles
+  // locally, so __tests__ is deliberately out of scope.
+  function walk(directory: string): { path: string; source: string }[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const full = join(directory, entry.name)
-      if (entry.isDirectory()) return entry.name === '__tests__' ? [] : productionSources(full)
-      if (!/\.(?:ts|vue|css)$/u.test(entry.name)) return []
+      if (entry.isDirectory()) return entry.name === '__tests__' ? [] : walk(full)
+      if (!/\.(?:ts|vue|css|mjs)$/u.test(entry.name)) return []
       return [{ path: relative(appRoot, full).replaceAll('\\', '/'), source: readFileSync(full, 'utf8') }]
     })
   }
+  const productionSources = (): { path: string; source: string }[] =>
+    ['src', 'scripts'].flatMap((directory) => walk(join(appRoot, directory)))
 
   function stripComments(source: string): string {
     return source
@@ -308,30 +321,49 @@ describe('shared editorial page shell', () => {
       .replace(/(^|[^:])\/\/[^\n]*/gmu, '$1')
   }
 
-  it('declares every page role in exactly one owner, CSS or TS', () => {
+  /**
+   * Declaration-level count, not distinct files: a second declaration in the
+   * owner itself must fail too. CSS declarations sit at the start of a line
+   * (`--role:`, including inside @media); TS object keys are quoted and at the
+   * start of a line. `var(--role, …)` usages and mid-line ternaries never match.
+   */
+  function declarationCount(path: string, source: string, role: string): number {
+    const text = stripComments(source)
+    const escaped = role.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const cssCount = (text.match(new RegExp(`^\\s*${escaped}\\s*:`, 'gmu')) ?? []).length
+    const tsCount = (text.match(new RegExp(`^\\s*['"]${escaped}['"]\\s*:`, 'gmu')) ?? []).length
+    if (path.endsWith('.css')) return cssCount
+    if (path.endsWith('.ts') || path.endsWith('.mjs')) return tsCount
+    return cssCount + tsCount // .vue carries both a script and one or more styles
+  }
+
+  it('declares every role exactly once, at its single owner', () => {
     const sources = productionSources()
-    const owners: Readonly<Record<string, string>> = {
-      '--paper': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--paper-deep': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--ink': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--muted': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--red': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--red-soft': 'src/fiche/prototype/cahierColorRoles.ts',
-      '--cahier-default': 'src/fiche/prototype/cahierColorRoles.ts',
-      // Responsive roles stay in CSS: an inline style cannot carry a media query.
-      '--margin-line': 'src/styles/editorialPage.css',
-      '--rule': 'src/styles/editorialPage.css',
-      '--fine-rule': 'src/styles/editorialPage.css',
+    // Derive the whole expected set from the owner's own keys, so a role added
+    // later cannot escape the test. Values may be identifiers (cycle-shared).
+    const moduleRoles = [...colorRolesSource.matchAll(/^\s*['"](--[\w-]+)['"]\s*:/gmu)]
+      .map((match) => match[1]!)
+    expect(moduleRoles.length).toBeGreaterThan(0)
+    const expected = new Map<string, { owner: string; count: number }>([
+      ...moduleRoles.map((role) => [role, { owner: ROLE_OWNER, count: 1 }] as const),
+      ...Object.entries(STRUCTURE_ROLES).map(([role, count]) => [role, { owner: STRUCTURE_OWNER, count }] as const),
+    ])
+    for (const [role, { owner, count }] of expected) {
+      let total = 0
+      for (const { path, source } of sources) {
+        const found = declarationCount(path, source, role)
+        expect(found, `${role} may only be declared in ${owner}, not ${path}`).toBe(path === owner ? count : 0)
+        total += found
+      }
+      expect(total, `${role} must have exactly ${count} declaration(s)`).toBe(count)
     }
-    for (const [role, owner] of Object.entries(owners)) {
-      // A declaration has a value after the colon; `var(--paper, ...)` usages
-      // and ternaries like `'--paper' : other` must not count as owners.
-      const declaration = new RegExp(`['"]?${role}['"]?\\s*:\\s*['"]?(?:var\\(|color-mix\\(|[\\d#])`, 'u')
-      const sites = sources
-        .filter(({ source }) => declaration.test(stripComments(source)))
-        .map(({ path }) => path)
-      expect(sites, `${role} must be declared only in ${owner}`).toEqual([owner])
-    }
+  })
+
+  it('has no dangling reference to the renamed role map', () => {
+    const offenders = productionSources()
+      .filter(({ source }) => /\bCAHIER_COLOR_ROLES\b/u.test(source))
+      .map(({ path }) => path)
+    expect(offenders).toEqual([])
   })
 
   it('owns the page surface and structure in CSS, consumed by both surfaces', () => {
