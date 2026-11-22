@@ -156,6 +156,10 @@ test_that("le vintage des bornes vient de la date maximale du contenu", {
 
 test_that("le vintage ORT vient de l'actualisation maximale des lignes lues (#1113)", {
   fixture <- testthat::test_path("fixtures", "programmes-ort-vintage-fixture.xlsx")
+  # Le lecteur garde la date PAR LIGNE (2026-10-02 / 2026-11-05) et l'extracteur
+  # ne retourne que la plus récente — sans réimplémenter le parsing du XLSX.
+  expect_equal(lire_ort(fixture)$actualisation, c("2026-10-02", "2026-11-05"))
+  expect_identical(deriver_actualisation_ort(fixture), as.Date("2026-11-05"))
   cache <- tempfile("cache-ort-")
   dir.create(file.path(cache, ".digests"), recursive = TRUE)
   fichier <- "programmes-ort-vintage-fixture.xlsx"

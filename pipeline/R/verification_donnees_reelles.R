@@ -1469,8 +1469,13 @@ verifier_programmes_reel <- function(acv, pvd, crte, ti, ort, scdl,
                       vintages_programmes()$source[
                         vintages_programmes()$id == "acv"]),
                 "programmes", "l'estampille ACV hors contrat")
-  verifier_vrai(all(ort$vintage_version == "en continu"),
-                "programmes", "le vintage ORT n'est pas « en continu »")
+  # #1113 : la version du JEU ORT est dérivée de l'actualisation maximale des
+  # lignes lues (base `contenu_date`) — l'estampille de chaque ligne ORT doit
+  # l'égaler, sans aucune date de publication inventée. Rien n'est figé ici :
+  # la valeur attendue vient des données du run, pas d'un littéral de contrat.
+  version_ort_attendue <- format(max(as.Date(ort_source$actualisation)), "%Y-%m")
+  verifier_vrai(all(ort$vintage_version == version_ort_attendue),
+                "programmes", "le vintage ORT ne vient pas de l'actualisation maximale")
   verifier_vrai(all(is.na(ort$vintage_date_publication)),
                 "programmes", "une date de publication sur une ligne ORT")
   verifier_vrai(all(!is.na(ort$vintage_date_reference) &

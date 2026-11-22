@@ -8,6 +8,8 @@
 # publication — aucun alignement de date. La fraîcheur ORT est l'actualisation
 # PAR LIGNE « Dernière actualisation » : la référence et la publication source
 # sont NA (la métadonnée de page, mai 2025, est périmée d'environ 15 mois).
+# Depuis #1113 sa base est `contenu_date` : la version du JEU est dérivée de
+# l'actualisation maximale des lignes, le manifeste ne déclare aucun vintage.
 
 test_that("MANIFEST_PROGRAMMES : les cinq sources du thème, les 11 colonnes standard", {
   m <- MANIFEST_PROGRAMMES
@@ -69,7 +71,11 @@ test_that("MANIFEST_PROGRAMMES : la source ORT — la ressource XLSX uniquement"
   # fichier de cache
   expect_true(grepl("xlsx", ort$fichier))
   expect_true(grepl("grist.numerique.gouv.fr", ort$url))
-  expect_equal(ort$vintage, "en continu")
+  # Décision #1113 : l'ORT ne déclare AUCUN vintage figé — sa base est
+  # `contenu_date`, la version publiée est dérivée de l'actualisation maximale
+  # des lignes lues par le résolveur (jamais un libellé « en continu » périmé).
+  expect_true(is.na(ort$vintage))
+  expect_equal(base_vintage("ort"), "contenu_date")
   # la fraîcheur est PAR LIGNE (la colonne « Dernière actualisation ») — la
   # référence et la publication source sont NA : la métadonnée de page
   # (mai 2025) est périmée d'environ 15 mois et ne doit JAMAIS être citée

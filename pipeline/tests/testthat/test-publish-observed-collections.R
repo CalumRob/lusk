@@ -10,6 +10,11 @@ programme_collection_fixture <- function() {
     vintage_version=grant$version,vintage_date_reference=grant$date_reference,
     vintage_date_publication=grant$date_publication)
   acv <- stamp("acv"); ort <- stamp("ort")
+  # #1113 : ORT ne déclare aucun vintage au manifeste (base `contenu_date`) —
+  # la fixture porte la version dérivée du mois de l'actualisation maximale
+  # de ses lignes (ici 2025-11-10 → 2025-11) sur le membre ET la table vintages.
+  ort$version <- format(as.Date("2025-11-10"), "%Y-%m")
+  vintages$version[vintages$id == "ort"] <- ort$version
   members <- data.frame(territoire=c("C_TEST","C_ORT"),type="commune",sigle=c("ACV","ORT"),
     convention_valant_ort=c(TRUE,FALSE),vintage_source=c(acv$source,ort$source),
     vintage_version=c(acv$version,ort$version),

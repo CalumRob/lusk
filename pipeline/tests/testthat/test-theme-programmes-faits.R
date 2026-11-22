@@ -19,7 +19,9 @@ membres_faits <- function() {
     sigle = c("ACV", "PVD", "CRTE", "ORT", "ORT"),
     convention_valant_ort = c(TRUE, FALSE, FALSE, FALSE, FALSE),
     vintage_source = c("src-acv", "src-pvd", "src-crte", "src-ort", "src-ort"),
-    vintage_version = c("v1", "v2", "v3", "en continu", "en continu"),
+    # #1113 : la version du JEU ORT est dérivée du mois de l'actualisation
+    # maximale (ici 2026-07) — chaque ligne garde sa propre référence.
+    vintage_version = c("v1", "v2", "v3", "2026-07", "2026-07"),
     vintage_date_reference = c("2025-01-01", "2025-01-01", "2025-07-17",
                                "2026-07-15", "2026-07-20"),
     vintage_date_publication = c("2025-09-24", "2026-04-27", "2025-09-24",
@@ -63,6 +65,10 @@ test_that("construire_indicateurs_programmes : les adhésions deviennent l'indic
   ort <- couverture[couverture$detail == "ORT", ]
   expect_setequal(ort$territoire, c("29001", "200000002"))
   expect_false(any(is.na(ort$vintage_date_reference)))
+  # chaque ligne garde SA référence par ligne, mais TOUTES portent la version
+  # du JEU dérivée de l'actualisation maximale (et aucune publication (#1113)
+  expect_equal(ort$vintage_date_reference, c("2026-07-15", "2026-07-20"))
+  expect_true(all(ort$vintage_version == "2026-07"))
   expect_true(all(is.na(ort$vintage_date_publication)))
 })
 

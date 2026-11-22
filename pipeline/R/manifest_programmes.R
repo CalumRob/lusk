@@ -170,7 +170,9 @@ MANIFEST_PROGRAMMES_TI <- tibble::tribble(
 # En cours), dates, « Dernière actualisation » (PAR LIGNE), doublon.
 # La fraîcheur du fichier est l'actualisation par ligne : la métadonnée de
 # page (dernière modification mai 2025) est périmée d'environ 15 mois — elle
-# n'est jamais citée (référence et publication source NA).
+# n'est jamais citée (référence et publication source NA). Depuis #1113 la base
+# est `contenu_date` : la VERSION du jeu est dérivée de l'actualisation
+# maximale des lignes (le manifeste ne déclare aucun vintage — NA).
 MANIFEST_PROGRAMMES_ORT <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
@@ -178,7 +180,9 @@ MANIFEST_PROGRAMMES_ORT <- tibble::tribble(
   "DGALN/ANCT — Liste des communes couvertes par des opérations de revitalisation de territoire (ORT) : conventions signées (classeur XLSX, feuille « Suivi conventions »)",
   "https://grist.numerique.gouv.fr/o/dgaln/api/docs/j4i9oKD3jzFtgEUuM9sXnL/download/xlsx?",
   "ort-conventions.xlsx",
-  "en continu", NA_character_, NA_character_, "lov2",
+  # #1113 : aucun vintage déclaré — base `contenu_date`, version dérivée au run
+  # de l'actualisation maximale des lignes (voir source_basis.R / source_lock.R).
+  NA_character_, NA_character_, NA_character_, "lov2",
   paste0(
     "L'outil ORT (opération de revitalisation de territoire, loi Elan 2018) : ",
     "la liste officielle des communes couvertes par une convention, produite ",
@@ -195,7 +199,10 @@ MANIFEST_PROGRAMMES_ORT <- tibble::tribble(
     "Terminée ni Non signée). La fraîcheur est l'actualisation par ligne : la ",
     "métadonnée de page (dernière modification mai 2025) est périmée d'environ ",
     "15 mois — la référence et la publication source sont donc NA, chaque ligne ",
-    "d'adhésion ORT porte l'actualisation de SA convention."
+    "d'adhésion ORT porte l'actualisation de SA convention. ISSUE #1113 : la ",
+    "base est `contenu_date` — la version du JEU est le mois de l'actualisation ",
+    "maximale des lignes lues (jamais un libellé figé), sans date de publication ",
+    "inventée."
   ),
   "cron", "fichier"
 )
