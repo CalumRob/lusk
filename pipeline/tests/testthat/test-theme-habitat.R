@@ -111,7 +111,9 @@ test_that("vintages_habitat : les DPE (base roulante) portent l'horloge du run s
   # règle des deux horloges (#408) interdit une ligne sans AUCUNE date ; la
   # référence reste NA, la sémantique roulante d'ADR-0009 intacte.
   for (id in MANIFEST_HABITAT_DPE$id) {
-    expect_equal(v$version[v$id == id], as.character(Sys.Date()), info = id)
+    # Issue #1114 : la version suit le format dérivé YYYY-MM ; l'horloge complète
+    # reste dans date_publication (jamais un jour dans `version`).
+    expect_equal(v$version[v$id == id], format(Sys.Date(), "%Y-%m"), info = id)
     expect_equal(v$date_publication[v$id == id], as.character(Sys.Date()), info = id)
   }
 })
