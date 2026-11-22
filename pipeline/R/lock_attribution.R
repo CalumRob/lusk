@@ -29,49 +29,84 @@ sources_verification <- function(spec, manifest = NULL) {
 # attribuer_echec_lock ----------------------------------------------------------
 attribuer_echec_lock <- function(ids_sources, digests = list(), lock = NULL) {
   registre <- lire_lock(lock)
+  vide <- function(type, message) {
+    list(
+      type = type, sources = list(), source = NULL, date_lockfile = NULL,
+      message = message, expected = NULL, observed = NULL
+    )
+  }
   if (!length(digests)) {
-    return(list(
-      type = "drift", source = NULL,
-      message = "données : aucun source-digests.json, pas de référence — relock requis",
-      expected = NULL, observed = NULL
+    return(vide(
+      "drift", "données : aucun source-digests.json, pas de référence — relock requis"
     ))
   }
+  # #1109 : on ne s'arrête PAS au premier coupable. Chaque entrée du verrou
+  # dont l'empreinte diffère ou qui n'a pas de référence est nommée dans le
+  # message, avec sa date de lockfile. Les entrées conformes sont tues.
+  anomalie <- list()
   for (id in ids_sources) {
     verrou <- registre[[id]]
     digest <- digests[[id]]
     if (is.null(verrou)) {
-      return(list(
-        type = "drift", source = id, date_lockfile = NULL,
-        message = sprintf("données : pas de référence pour %s, relock requis", id),
-        expected = NULL, observed = if (is.null(digest)) NULL else digest$sha256
-      ))
+      anomalie[[id]] <- list(
+        source_id = id, date_lockfile = NULL, expected = NULL,
+        observed = if (is.null(digest)) NULL else as.character(digest$sha256),
+        raison = "sans_reference"
+      )
+      next
     }
-    if (is.null(digest)) {
-      return(list(
-        type = "drift", source = id, date_lockfile = as.character(verrou$acquired_at),
-        message = sprintf(
-          "données : dérive de %s depuis %s, relock requis (empreinte observée absente)",
-          id, as.character(verrou$acquired_at)
-        ),
-        expected = as.character(verrou$sha256), observed = NULL
-      ))
-    }
+    date <- as.character(verrou$acquired_at)
     sha_attendu <- as.character(verrou$sha256)
+    if (is.null(digest)) {
+      anomalie[[id]] <- list(
+        source_id = id, date_lockfile = date, expected = sha_attendu,
+        observed = NULL, raison = "empreinte_absente"
+      )
+      next
+    }
     sha_observe <- as.character(digest$sha256)
     if (!identical(sha_attendu, sha_observe)) {
-      return(list(
-        type = "drift", source = id, date_lockfile = as.character(verrou$acquired_at),
-        message = sprintf(
-          "données : dérive de %s depuis %s, relock requis — attendu %s, observé %s",
-          id, as.character(verrou$acquired_at), sha_attendu, sha_observe
-        ),
-        expected = sha_attendu, observed = sha_observe
-      ))
+      anomalie[[id]] <- list(
+        source_id = id, date_lockfile = date, expected = sha_attendu,
+        observed = sha_observe, raison = "dérive"
+      )
     }
   }
+  if (!length(anomalie)) {
+    return(vide(
+      "regression", "régression de code : entrées identiques, sortie modifiée"
+    ))
+  }
+  decrire <- function(x) {
+    if (is.null(x$date_lockfile)) {
+      sprintf("pas de référence pour %s", x$source_id)
+    } else {
+      sprintf("%s depuis %s", x$source_id, x$date_lockfile)
+    }
+  }
+  prefixe <- if (length(anomalie) == 1L &&
+                 is.null(anomalie[[1L]]$date_lockfile)) {
+    "données : "
+  } else {
+    "données : dérive de "
+  }
+  message <- paste0(
+    prefixe,
+    paste(vapply(anomalie, decrire, character(1)), collapse = ", "),
+    ", relock requis"
+  )
+  if (length(anomalie) == 1L) {
+    x <- anomalie[[1L]]
+    detail <- character(0)
+    if (!is.null(x$expected)) detail <- c(detail, paste("attendu", x$expected))
+    detail <- c(detail, if (is.null(x$observed)) "empreinte observée absente" else paste("observé", x$observed))
+    message <- paste0(message, " — ", paste(detail, collapse = ", "))
+  }
+  first <- anomalie[[1L]]
   list(
-    type = "regression", source = NULL, message = "régression de code : entrées identiques, sortie modifiée",
-    expected = NULL, observed = NULL
+    type = "drift", sources = anomalie, source = first$source_id,
+    date_lockfile = first$date_lockfile, message = message,
+    expected = first$expected, observed = first$observed
   )
 }
 
@@ -90,7 +125,7 @@ enregistrer_attribution_derive <- function(attribution, sortie = "public/data") 
     function(temporaire) {
       jsonlite::write_json(
         c(deja, list(attribution)), temporaire, auto_unbox = TRUE,
-        pretty = TRUE, na = "null", digits = 17
+        pretty = TRUE, na = "null", null = "null", digits = 17
       )
     },
     p

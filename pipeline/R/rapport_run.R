@@ -52,7 +52,7 @@ ecrire_rapport_run <- function(statuts, mode, cible = "public/data",
   jsonlite::write_json(
     rapport,
     file.path(cible, "run-report.json"),
-    dataframe = "rows", na = "null", pretty = TRUE,
+    dataframe = "rows", na = "null", null = "null", pretty = TRUE,
     auto_unbox = TRUE, digits = 17
   )
   invisible(rapport)

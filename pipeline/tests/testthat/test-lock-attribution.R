@@ -36,6 +36,38 @@ test_that("une source sans référence produit une dérive « pas de référence
   expect_match(a$message, "relock requis", fixed = TRUE)
 })
 
+test_that("la dérive nomme TOUTES les entrées fautives avec leur date (#1109)", {
+  verrou <- tempfile("lock-attribution-multiple-")
+  on.exit(unlink(verrou), add = TRUE)
+  sha <- function(caractere) paste(rep(caractere, 64), collapse = "")
+  ecrire_lock(list(
+    stable = list(source_id = "stable", sha256 = sha("c"), acquired_at = "2026-11-01"),
+    acv = list(source_id = "acv", sha256 = sha("a"), acquired_at = "2026-11-20"),
+    rp_logement_princ = list(source_id = "rp_logement_princ", sha256 = sha("b"),
+                             acquired_at = "2026-11-18")
+  ), verrou)
+  digests <- list(
+    stable = list(source_id = "stable", sha256 = sha("c")),
+    acv = list(source_id = "acv", sha256 = sha("0")),
+    source_nouvelle = list(source_id = "source_nouvelle", sha256 = sha("e"))
+    # rp_logement_princ : aucune empreinte observée
+  )
+  a <- attribuer_echec_lock(
+    c("stable", "acv", "rp_logement_princ", "source_nouvelle"), digests, verrou
+  )
+  expect_equal(a$type, "drift")
+  expect_setequal(names(a$sources), c("acv", "rp_logement_princ", "source_nouvelle"))
+  expect_false("stable" %in% names(a$sources))
+  expect_match(a$message, "acv depuis 2026-11-20", fixed = TRUE)
+  expect_match(a$message, "rp_logement_princ depuis 2026-11-18", fixed = TRUE)
+  expect_match(a$message, "pas de référence pour source_nouvelle", fixed = TRUE)
+  expect_false(grepl("stable", a$message, fixed = TRUE))
+  expect_identical(a$sources$acv$date_lockfile, "2026-11-20")
+  expect_identical(a$sources$rp_logement_princ$date_lockfile, "2026-11-18")
+  expect_null(a$sources$source_nouvelle$date_lockfile)
+  expect_null(a$sources$source_nouvelle$expected)
+})
+
 test_that("des empreintes identiques produisent une régression fatale", {
   l <- lock_test()
   digests <- list(
@@ -46,6 +78,28 @@ test_that("des empreintes identiques produisent une régression fatale", {
   expect_equal(a$type, "regression")
   expect_match(a$message, "régression de code : entrées identiques, sortie modifiée",
                fixed = TRUE)
+})
+
+test_that("les valeurs absentes d'une attribution sont sérialisées null (#1109)", {
+  digests <- list(source_nouvelle = list(
+    source_id = "source_nouvelle", sha256 = paste(rep("a", 64), collapse = "")
+  ))
+  a <- attribuer_echec_lock("source_nouvelle", digests)
+  sortie <- tempfile("sortie-attribution-null-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  enregistrer_attribution_derive(a, sortie)
+  ecrire_rapport_run(
+    tibble::tibble(id = "source_nouvelle", mode = "cron", status = "frais"),
+    "cron", cible = sortie, attributions = list(a)
+  )
+  for (fichier in c(NOM_ATTRIBUTIONS, "run-report.json")) {
+    lignes <- readLines(file.path(sortie, fichier), warn = FALSE)
+    expect_true(any(grepl('"date_lockfile": null', lignes, fixed = TRUE)), info = fichier)
+    expect_true(any(grepl('"expected": null', lignes, fixed = TRUE)), info = fichier)
+    expect_false(any(grepl('"date_lockfile": {}', lignes, fixed = TRUE)), info = fichier)
+    expect_false(any(grepl('"expected": {}', lignes, fixed = TRUE)), info = fichier)
+  }
 })
 
 test_that("le wrapper rapporte la dérive et la trace dans le rapport de run", {
