@@ -91,7 +91,9 @@ test_that("DPE : un sidecar valide publie la vintage dérivée (YYYY-MM + date c
   v <- vintages_habitat(cache = cache)
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
   expect_true(all(dpe$version == "2026-11"))
-  expect_true(all(dpe$date_publication == "2026-11-18"))
+  # Base roulante sans date déclarée (ADR-0048) : la date d'acquisition du
+  # sidecar n'est pas "inventée" comme date de publication — NA, comme ORT.
+  expect_true(all(is.na(dpe$date_publication)))
   expect_true(all(is.na(dpe$date_reference)))
   # RP et DVF (declaree) ne bougent pas
   expect_equal(v$version[v$id == "logements"], "2023")
