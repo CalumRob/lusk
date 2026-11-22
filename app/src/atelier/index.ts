@@ -7,7 +7,7 @@
  */
 
 export {
-  DEFAULT_TITLE, STATE_VERSION, cellKey, emptyAtelierState, isValidAtelierState,
+  DEFAULT_TITLE, STATE_VERSION, cellKey, emptyAtelierState, isValidAtelierState, nextBlockId,
 } from './state'
 export type {
   AtelierBlock, AtelierLevel, AtelierState, Attribute, AttributeBinding, Binding, CellRef,

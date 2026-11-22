@@ -12,7 +12,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
-  DEFAULT_TITLE, LINK_PARAM, decodeAtelierLink, emptyAtelierState, encodeAtelierLink,
+  DEFAULT_TITLE, LINK_PARAM, decodeAtelierLink, emptyAtelierState, encodeAtelierLink, nextBlockId,
   type AtelierState, type ProseBlock as ProseBlockState,
 } from '@/atelier'
 import AppIcon from '@/components/AppIcon.vue'
@@ -36,25 +36,6 @@ const nouveauBloc = ref<string | null>(null)
 let minuteurSync: ReturnType<typeof setTimeout> | undefined
 let minuteurCopie: ReturnType<typeof setTimeout> | undefined
 
-/**
- * Un id doit être inédit dans l'état auquel on l'ajoute : un lien restauré
- * peut porter des ids troués (`b2`, `b3` après suppression de `b1`), et un
- * compteur seeded sur le nombre de blocs redonnerait `b3`. On part donc du
- * plus grand suffixe numérique présent, jamais du nombre de blocs. Les ids
- * existants ne sont pas touchés — le lien doit round-tripper exactement.
- */
-function nouvelIdentifiant(): string {
-  const existants = new Set(etat.value.blocks.map((bloc) => bloc.id))
-  let suffixe = 0
-  for (const id of existants) {
-    const numerique = /^b(\d+)$/.exec(id)
-    if (numerique) suffixe = Math.max(suffixe, Number(numerique[1]))
-  }
-  let candidat = suffixe + 1
-  while (existants.has(`b${candidat}`)) candidat++
-  return `b${candidat}`
-}
-
 const titre = computed(() => etat.value.title)
 const blocs = computed(() => etat.value.blocks)
 
@@ -64,7 +45,7 @@ function mettreTitre(valeur: string): void {
 
 /** Les blocs restent en ordre d'insertion — aucun réordonnancement dans ce ticket. */
 function ajouterTexte(index = etat.value.blocks.length): void {
-  const bloc: ProseBlockState = { kind: 'prose', id: nouvelIdentifiant(), markdown: '' }
+  const bloc: ProseBlockState = { kind: 'prose', id: nextBlockId(etat.value.blocks), markdown: '' }
   const blocks = [...etat.value.blocks]
   blocks.splice(index, 0, bloc)
   etat.value = { ...etat.value, blocks }

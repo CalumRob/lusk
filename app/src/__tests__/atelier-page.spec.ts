@@ -256,13 +256,17 @@ describe('atelier — titre, partage et restauration', () => {
 })
 
 describe('atelier — style du bouton-icône', () => {
-  it('reste scopé et règle la densité d’insertion par propriétés héritées', () => {
+  it('reste scopé et reçoit ses dimensions de la page par propriétés héritées', () => {
     const source = readFileSync(resolve(process.cwd(), 'src', 'atelier', 'IconButton.vue'), 'utf8')
     const page = readFileSync(resolve(process.cwd(), 'src', 'atelier', 'atelierPage.css'), 'utf8')
 
     expect(source).toContain('<style scoped>')
-    expect(source).toContain('--atelier-icone-largeur, 32px')
-    expect(source).toContain('--atelier-icone-hauteur, 32px')
-    expect(page).toMatch(/\.atelier-insertion\s*\{[^}]*--atelier-icone-largeur:\s*28px[^}]*--atelier-icone-hauteur:\s*24px/u)
+    expect(source).toContain('var(--atelier-icone-largeur')
+    expect(source).toContain('var(--atelier-icone-hauteur')
+    // La page fournit effectivement les deux propriétés ; les valeurs exactes
+    // sont un choix visuel vérifié par le flux navigateur (#1092), pas ici.
+    const reglesInsertion = [...page.matchAll(/\.atelier-insertion\s*\{([^}]*)\}/gu)].map((regle) => regle[1] ?? '')
+    expect(reglesInsertion.some((regle) =>
+      /--atelier-icone-largeur\s*:/u.test(regle) && /--atelier-icone-hauteur\s*:/u.test(regle))).toBe(true)
   })
 })

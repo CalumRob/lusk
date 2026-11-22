@@ -87,6 +87,26 @@ export function emptyAtelierState(): AtelierState {
 }
 
 /**
+ * Prochain identifiant de bloc, inédit dans l'état fourni. Un lien restauré
+ * peut porter des ids troués (`b2`, `b3` après suppression de `b1`) : le
+ * nombre de blocs ne suffit pas, on part du plus grand suffixe `b<n>` présent.
+ * `b<max+1>` est donc absent de `blocks` par définition de max — aucune
+ * boucle de vérification n'est nécessaire. Deux ajouts successifs sont sûrs
+ * parce que l'appelant écrit l'état de façon synchrone avant le nouvel appel :
+ * il n'y a pas de fenêtre
+ * où deux blocs recevraient le même id. Les ids qui ne suivent pas `b<n>`
+ * sont ignorés ; ils ne peuvent pas entrer en collision avec ce préfixe.
+ */
+export function nextBlockId(blocks: readonly AtelierBlock[]): string {
+  let suffixe = 0
+  for (const bloc of blocks) {
+    const numerique = /^b(\d+)$/.exec(bloc.id)
+    if (numerique) suffixe = Math.max(suffixe, Number(numerique[1]))
+  }
+  return `b${suffixe + 1}`
+}
+
+/**
  * Stable identity of a Cellule's publication. A Cellule bound twice — in two
  * figures, or as an x and a Formule operand — has one key, so it is acquired
  * once and reused. Coordinates are sorted so key order in the link is irrelevant.
