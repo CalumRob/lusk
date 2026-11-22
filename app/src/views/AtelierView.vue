@@ -18,6 +18,8 @@ import {
 import AppIcon from '@/components/AppIcon.vue'
 // Le style de prose de production est importé, jamais recopié (#1074/#1093).
 import '@/fiche/prototype/cahierLayout.css'
+// #1093 — la coquille éditoriale a un seul propriétaire, partagé avec le Cahier.
+import '@/styles/editorialPage.css'
 
 import EditableText from '../atelier/EditableText.vue'
 import IconButton from '../atelier/IconButton.vue'
@@ -117,13 +119,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <article class="atelier cahier presentation-editorial cahier--sans-grille">
+  <article class="atelier editorial-page cahier presentation-editorial cahier--sans-grille">
     <div class="atelier-wrap">
-      <section class="atelier-page" aria-labelledby="atelier-titre">
-        <header class="atelier-entete">
+      <section class="atelier-page editorial-sheet" aria-labelledby="atelier-titre">
+        <header class="atelier-entete editorial-rule">
           <EditableText
             id="atelier-titre"
-            class="atelier-titre"
+            class="atelier-titre editorial-page-title"
             tag="h1"
             label="Titre de la page"
             :model-value="titre"

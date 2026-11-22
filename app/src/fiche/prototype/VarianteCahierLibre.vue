@@ -15,6 +15,9 @@ export function rendererFor(
 </script>
 
 <script setup lang="ts">
+// #1093 — the shared editorial page shell (paper, heading type, rule, prose
+// ground). Imported here and by the Atelier so neither owns a local copy.
+import '@/styles/editorialPage.css'
 import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
 /**
  * [PROTOTYPE #511 — JETABLE] Variante D — « Cahier libre ».
@@ -456,7 +459,7 @@ onBeforeUnmount(() => {
 <template>
   <article
     ref="rootRef"
-    class="cahier presentation-editorial"
+    class="cahier editorial-page presentation-editorial"
     :class="{
       'cahier--sans-grille': props.presentation === 'plain',
       'cahier--indexed-sections': props.layoutVariant === 'indexed-sections',
@@ -494,7 +497,7 @@ onBeforeUnmount(() => {
           v-for="currentUnit in units"
           :key="currentUnit.key"
           :id="pageAnchorFor(currentUnit.key)"
-          class="cahier-page"
+          class="cahier-page editorial-sheet"
           :data-figure="pageAnchorFor(currentUnit.key)"
           :aria-labelledby="`${pageAnchorFor(currentUnit.key)}-title`"
         >
@@ -503,7 +506,7 @@ onBeforeUnmount(() => {
             :class="{ 'page-layout--sticky': props.presentation === 'plain' }"
           >
             <div class="page-main">
-              <header class="page-heading">
+              <header class="page-heading editorial-rule">
                 <span
                   v-if="props.layoutVariant === 'indexed-sections'"
                   class="page-heading-index"
@@ -513,7 +516,7 @@ onBeforeUnmount(() => {
                   <small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
                 </span>
                 <h2
-                  class="cahier-baseline-anchor"
+                  class="cahier-baseline-anchor editorial-page-title"
                   :id="`${pageAnchorFor(currentUnit.key)}-title`"
                 >{{ currentUnit.label }}</h2>
                 <span
@@ -684,12 +687,12 @@ onBeforeUnmount(() => {
 
         <section
           :id="sourceEntry?.anchor ?? 'figure-sources'"
-          class="sources-page"
+          class="sources-page editorial-sheet"
           :data-figure="sourceEntry?.anchor ?? 'figure-sources'"
           aria-labelledby="sources-title"
         >
           <div v-if="props.layoutVariant !== 'indexed-sections'" class="page-margin" aria-hidden="true"><div class="page-number"><span>fin</span> ·</div></div>
-          <header class="page-heading"><h2 id="sources-title">Carnet des sources</h2></header>
+          <header class="page-heading"><h2 class="editorial-page-title" id="sources-title">Carnet des sources</h2></header>
           <dl class="sources-list">
             <div v-for="source in content.sourceRegister" :key="source.id">
               <dt><RouterLink to="/sources">{{ source.source }}</RouterLink></dt>
@@ -733,22 +736,10 @@ onBeforeUnmount(() => {
   --z-page-header: calc(var(--z-sticky) - 1);
   /* ThemeTabs is bounded to .fiche-en-tete-surface; only AppHeader stays pinned over the reading surface. */
   --cahier-sticky-top: var(--header-height);
-  --paper: var(--editorial-paper);
-  --paper-deep: var(--editorial-paper-deep);
+  /* #1093 — the paper/ink/rule aliases and the page surface moved to the shared
+     editorial layer (src/styles/editorialPage.css). Cahier-only roles stay. */
   --cahier-map-ground: var(--editorial-paper-deep);
-  --ink: var(--editorial-ink);
-  --muted: var(--editorial-muted);
-  --red: var(--editorial-margin);
-  --red-soft: var(--editorial-margin-soft);
-  --cahier-default: var(--muted);
   --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
-  --margin-line: var(--editorial-margin-offset);
-  --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
-  --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
-  min-height: 0;
-  color: var(--ink);
-  background: transparent;
-  font-family: var(--font-body);
 }
 
 .cahier--sans-grille .cahier-page,
@@ -777,13 +768,8 @@ onBeforeUnmount(() => {
   --cahier-unit-padding: var(--space-3);
 }
 
-.cahier-page,
-.sources-page {
-  background-color: var(--paper);
-  background-image:
-    linear-gradient(to right, transparent 0, transparent var(--margin-line), var(--red-soft) var(--margin-line), var(--red-soft) calc(var(--margin-line) + 1px), transparent calc(var(--margin-line) + 1px)),
-    repeating-linear-gradient(to bottom, transparent 0 7px, var(--fine-rule) 7px 8px, transparent 8px 15px, var(--fine-rule) 15px 16px, transparent 16px 23px, var(--fine-rule) 23px 24px, transparent 24px 30px, var(--rule) 30px 32px);
-}
+/* #1093 — the paper ground (colour + ruling) is owned by .editorial-sheet in
+   the shared layer; the sans-grille and indexed overrides below still apply. */
 
 .cahier-reader { display: grid; grid-template-columns: minmax(160px, 210px) minmax(0, 1fr); gap: clamp(28px, 4vw, 68px); max-width: 1640px; margin: 0 auto; padding: 0 0 64px; }
 .cahier-spine { position: sticky; top: 24px; align-self: start; padding-top: 4px; }
@@ -815,9 +801,11 @@ onBeforeUnmount(() => {
 .page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); }
 .page-copy { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
 .page-layout--sticky .page-main { min-width: 0; }
-.page-layout--sticky .page-heading { padding-right: 0; padding-left: 0; padding-bottom: var(--space-2); border-bottom: 1px solid var(--red-soft); }
+/* #1093 — the rule and the type come from .editorial-rule / .editorial-page-title
+   in the shared layer; only the Cahier's own alignment stays local. */
+.page-layout--sticky .page-heading { padding-right: 0; padding-left: 0; padding-bottom: var(--space-2); }
 .page-layout--sticky .page-copy { padding-right: 0; padding-left: 0; }
-.page-heading h2 { max-width: none; margin: 0; color: var(--ink); font: var(--text-page-heading); letter-spacing: var(--text-page-heading-tracking); text-align: center; }
+.page-heading h2 { text-align: center; }
 .cahier--indexed-sections {
   --cahier-indexed-heading-index-column: 72px;
   --cahier-indexed-heading-column-gap: var(--space-6);
@@ -839,7 +827,6 @@ onBeforeUnmount(() => {
   column-gap: var(--cahier-indexed-heading-column-gap);
   margin-bottom: var(--cahier-indexed-heading-margin-block-end);
   padding: var(--cahier-indexed-heading-padding-block-start) 0 var(--cahier-indexed-heading-padding-block-end);
-  border-bottom: 1px solid var(--red-soft);
   background-color: var(--paper);
 }
 .cahier--indexed-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
@@ -1057,7 +1044,7 @@ onBeforeUnmount(() => {
 @media (max-width: 760px) {
   .cahier--sans-grille { --cahier-page-left-inset: 28px; --cahier-page-right-inset: 116px; }
   .cahier--indexed-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
-  .cahier { --margin-line: 82px; }
+  /* #1093 — the mobile --margin-line reflow lives with the shared aliases. */
   .cahier-page,
   .sources-page { border: 0; box-shadow: none; }
   .cahier-reader {
@@ -1085,7 +1072,6 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
   .cahier--indexed-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
-  .cahier { --margin-line: 12px; }
   .cahier-home-link { display: none; }
   .cahier-reader { padding: 0 0 88px; }
   .cahier-pages { gap: 64px; }
