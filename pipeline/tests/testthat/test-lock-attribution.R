@@ -102,6 +102,91 @@ test_that("les valeurs absentes d'une attribution sont sérialisées null (#1109
   }
 })
 
+test_that("verifier_egale / verifier_vrai signalent une condition verrou_casse nommée (#1118)", {
+  err <- expect_error(
+    verifier_vrai(FALSE, "un verrou", "un détail"),
+    class = "verrou_casse"
+  )
+  expect_match(conditionMessage(err),
+               "Verrou « données réelles » cassé — un verrou", fixed = TRUE)
+  expect_match(conditionMessage(err), "un détail", fixed = TRUE)
+  err2 <- expect_error(
+    verifier_egale(40, 42, "un autre verrou"),
+    class = "verrou_casse"
+  )
+  expect_match(conditionMessage(err2), "attendu « 42 »", fixed = TRUE)
+  expect_silent(verifier_vrai(TRUE, "ok"))
+  expect_silent(verifier_egale(42, 42, "ok"))
+})
+
+test_that("une erreur hors verrou n'est PAS attribuée et propage son message (#1118)", {
+  # Un artefact amont manquant, une lecture qui échoue, une panne de téléchargement
+  # ne sont PAS des valeurs de verrou cassées : le wrapper ne doit ni les
+  # étiqueter « régression de code » (empreintes identiques), ni les avaler en
+  # « dérive » (empreintes divergentes). Le message d'origine est re-signalisé.
+  l <- lock_test()
+  identiques <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  divergentes <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  divergentes$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
+  sortie <- tempfile("sortie-hors-verrou-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  err <- expect_error(verifier_avec_attribution(
+    verifier = function(x) stop("artefact absent : mobilite.parquet"),
+    args = list(x = 1), ids_sources = "osm_reseaux", sortie = sortie,
+    digests = identiques
+  ))
+  expect_match(conditionMessage(err), "artefact absent : mobilite.parquet", fixed = TRUE)
+  expect_false(grepl("régression de code", conditionMessage(err), fixed = TRUE))
+
+  err2 <- expect_error(verifier_avec_attribution(
+    verifier = function(x) stop("lecture Parquet impossible"),
+    args = list(x = 1), ids_sources = "osm_reseaux", sortie = sortie,
+    digests = divergentes
+  ))
+  expect_match(conditionMessage(err2), "lecture Parquet impossible", fixed = TRUE)
+  expect_false(grepl("dérive de", conditionMessage(err2), fixed = TRUE))
+  expect_length(lire_attributions(sortie), 0L)
+})
+
+test_that("un verrou cassé avec empreintes identiques reste une régression fatale (#1118)", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  sortie <- tempfile("sortie-verrou-regression-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  err <- expect_error(verifier_avec_attribution(
+    verifier = function(x) {
+      verifier_vrai(FALSE, "un verrou", "valeur 40 au lieu de 42")
+    },
+    args = list(x = 1), ids_sources = "osm_reseaux", sortie = sortie,
+    digests = digests
+  ))
+  expect_match(conditionMessage(err),
+               "régression de code : entrées identiques, sortie modifiée", fixed = TRUE)
+  expect_match(conditionMessage(err),
+               "Verrou « données réelles » cassé — un verrou", fixed = TRUE)
+  expect_length(lire_attributions(sortie), 0L)
+})
+
+test_that("un verrou cassé avec dérive reste une attribution non fatale (#1118)", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  digests$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
+  sortie <- tempfile("sortie-verrou-drive-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  a <- verifier_avec_attribution(
+    verifier = function(x) verifier_egale(40, 42, "un verrou"),
+    args = list(x = 1), ids_sources = "osm_reseaux", sortie = sortie,
+    digests = digests
+  )
+  expect_equal(a$type, "drift")
+  expect_match(a$verrou, "Verrou « données réelles » cassé — un verrou", fixed = TRUE)
+  expect_match(a$message, "dérive de osm_reseaux", fixed = TRUE)
+})
+
 test_that("le wrapper rapporte la dérive et la trace dans le rapport de run", {
   l <- lock_test()
   digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
@@ -111,7 +196,7 @@ test_that("le wrapper rapporte la dérive et la trace dans le rapport de run", {
   on.exit(unlink(sortie, recursive = TRUE))
 
   resultat <- verifier_avec_attribution(
-    verifier = function(x) stop("verrou cassé — valeur attendue 42, obtenue 40"),
+    verifier = function(x) verifier_egale(40, 42, "valeur"),
     args = list(x = 1),
     ids_sources = "osm_reseaux",
     sortie = sortie,
@@ -146,7 +231,9 @@ test_that("le wrapper arrête bruyamment sur une régression de code", {
 
   erreur <- tryCatch(
     verifier_avec_attribution(
-      verifier = function(x) stop("verrou cassé — 42 attendu, 40 obtenu"),
+      verifier = function(x) {
+        verifier_vrai(FALSE, "regression fixture", "42 attendu, 40 obtenu")
+      },
       args = list(x = 1), ids_sources = "osm_reseaux",
       sortie = sortie, digests = digests
     ),
@@ -174,7 +261,7 @@ test_that("le wrapper retourne l'attribution comme valeur de cible", {
   digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
   digests$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
   a <- verifier_avec_attribution(
-    verifier = function() stop("verrou cassé"), args = list(),
+    verifier = function() verifier_vrai(FALSE, "retour cible"), args = list(),
     ids_sources = "osm_reseaux", sortie = tempfile("sortie-retour-"),
     digests = digests
   )

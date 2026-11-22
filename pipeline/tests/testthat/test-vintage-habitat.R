@@ -67,36 +67,86 @@ test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée"
   expect_equal(v$date_publication[v$id == "dvf_2025_dep22"], "2026-05-18")
 })
 
-test_that("DPE : un sidecar valide publie la vintage dérivée (YYYY-MM + date complète)", {
-  # Issue #1114 : dans un vrai run, le pull DPE écrit un sidecar par département.
-  # La table publiée doit porter SA valeur dérivée — version au mois, acquisition
-  # complète en date_publication — et NON le mtime du .rds recollé en `version`.
-  cache <- tempfile("cache-dpe-sidecar-")
-  dir.create(file.path(cache, ".digests"), recursive = TRUE)
-  on.exit(unlink(cache, recursive = TRUE))
-
+# Une attestation DPE (sidecar OU enregistrement de lockfile) : la base roulante
+# n'a PAS de date de référence (ADR-0009) — SON unique horloge de fraîcheur est
+# la date d'acquisition attestée. Issue #1118 : #1117 l'avait effacée en
+# appliquant aux DPE la règle ORT (« NA déclaré ⇒ pas de publication inventée »)
+# alors que pour une base roulante l'acquisition EST la publication, pas une
+# invention. Le contrat compute.R refuse un fait sans aucune horloge.
+attester_dpe <- function(cache, acquired_at = "2026-11-18",
+                         vintage = "2026-11", lock = NULL) {
+  dir.create(file.path(cache, ".digests"), recursive = TRUE, showWarnings = FALSE)
   for (id in MANIFEST_HABITAT_DPE$id) {
     f <- MANIFEST_HABITAT_DPE$fichier[MANIFEST_HABITAT_DPE$id == id]
     cible <- file.path(cache, f)
     readr::write_rds(tibble::tibble(x = 1), cible)
-    Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+    Sys.setFileTime(cible, as.POSIXct(paste0(acquired_at, "T12:00:00"), tz = "UTC"))
     ecrire_digest_cache(list(
       source_id = id, url = "https://example.invalid/dpe", sha256 = paste0("sha-", id),
       bytes = file.size(cible), fichier = f, mtime = as.numeric(file.mtime(cible)),
-      acquired_at = "2026-11-18", vintage_basis = "telechargement",
-      vintage = "2026-11", date_reference = NA_character_
+      acquired_at = acquired_at, vintage_basis = "telechargement",
+      vintage = vintage, date_reference = NA_character_
     ), cache)
   }
+  invisible(cache)
+}
+
+test_that("DPE : un sidecar valide publie la vintage dérivée (YYYY-MM + horloge d'acquisition)", {
+  # Issue #1118 : dans un vrai run, le pull DPE écrit un sidecar par département.
+  # La table publiée porte SA valeur dérivée — version au mois, date d'acquisition
+  # complète en date_publication (sa seule horloge), référence NA.
+  cache <- tempfile("cache-dpe-sidecar-")
+  on.exit(unlink(cache, recursive = TRUE))
+  attester_dpe(cache)
 
   v <- vintages_habitat(cache = cache)
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
   expect_true(all(dpe$version == "2026-11"))
-  # Base roulante sans date déclarée (ADR-0048) : la date d'acquisition du
-  # sidecar n'est pas "inventée" comme date de publication — NA, comme ORT.
-  expect_true(all(is.na(dpe$date_publication)))
+  expect_true(all(dpe$date_publication == "2026-11-18"))
   expect_true(all(is.na(dpe$date_reference)))
   # RP et DVF (declaree) ne bougent pas
   expect_equal(v$version[v$id == "logements"], "2023")
+})
+
+test_that("DPE : un enregistrement de lockfile atteste aussi l'horloge d'acquisition (#1118)", {
+  # L'autre canal d'attestation : le lockfile (sans sidecar). La branche
+  # `lock_utilisable` de la projection doit publier la même horloge.
+  cache <- tempfile("cache-dpe-lock-")
+  dir.create(cache, recursive = TRUE)
+  on.exit(unlink(cache, recursive = TRUE))
+  verrou <- tempfile("lock-dpe-")
+  on.exit(unlink(verrou), add = TRUE)
+  ecrire_lock(lapply(MANIFEST_HABITAT_DPE$id, function(id) {
+    list(source_id = id, sha256 = paste0("sha-", id),
+         acquired_at = "2026-10-05", vintage_basis = "telechargement",
+         vintage = "2026-10", date_reference = NA_character_)
+  }), verrou)
+
+  v <- vintages_depuis_manifest(MANIFEST_HABITAT_DPE, cache = cache,
+                                lock = verrou, exiger_attestation = TRUE)
+  expect_true(all(v$version == "2026-10"))
+  expect_true(all(v$date_publication == "2026-10-05"))
+  expect_true(all(is.na(v$date_reference)))
+})
+
+test_that("payload Habitat : un DPE attesté garde son horloge et le contrat passe (#1118)", {
+  # Le chemin qui a cassé le run3 : le DPE attesté publiait ses deux horloges NA
+  # et `verifier_horloges_vintage` refusait le payload (part_passoires). On
+  # construit le payload avec la table de vintages attestée, exactement comme le
+  # run le fait.
+  cache <- tempfile("cache-dpe-payload-")
+  on.exit(unlink(cache, recursive = TRUE))
+  attester_dpe(cache)
+  v <- vintages_habitat(cache = cache)
+
+  p <- compute_payload_test(load_fixture_habitat(), theme = theme_habitat(),
+                            vintages = v)
+  dpe <- p$indicateurs[p$indicateurs$key %in% c("part_passoires", "distribution_dpe"), ]
+  expect_true(nrow(dpe) > 0L)
+  expect_true(all(!is.na(dpe$vintage_date_publication)))
+  expect_true(all(dpe$vintage_date_publication == "2026-11-18"))
+  expect_true(all(is.na(dpe$vintage_date_reference)))
+  expect_true(all(dpe$vintage_version == "2026-11"))
 })
 
 test_that("chaque estampille du payload vient de la source de référence déclarée", {

@@ -59,6 +59,21 @@
 # colonnes, estampilles, règles d'agrégation) restent FORTS — la dérive
 # d'époque ne touche que les couches vivantes, jamais le snapshot.
 
+# erreur_verrou_casse ----------------------------------------------------------
+# Condition NOMMÉE d'une VALEUR de verrou « données réelles » cassée. C'est le
+# SEUL signal que `verifier_avec_attribution()` est autorisé à attribuer
+# (dérive de données / régression de code). Toute autre erreur — artefact amont
+# absent, lecture Parquet impossible, échec réseau — est une défaillance
+# d'exécution : elle doit propager son message d'origine, sans attribution
+# (#1118 — le run3 avait étiqueté un Parquet Mobilité manquant « régression de
+# code : entrées identiques, sortie modifiée »).
+erreur_verrou_casse <- function(message) {
+  structure(
+    list(message = message, call = NULL),
+    class = c("verrou_casse", "error", "condition")
+  )
+}
+
 # verifier_egale / verifier_vrai ----------------------------------------------
 # Les deux micro-gardes des verrous : un échec s'arrête bruyamment en nommant
 # le verrou et le fait constaté (jamais un message muet). `obtenu` vs
@@ -68,17 +83,21 @@
 # réels, jamais un flottant comparé sans marge).
 verifier_egale <- function(obtenu, attendu, verrou, ...) {
   if (!isTRUE(all.equal(obtenu, attendu, ...))) {
-    stop("Verrou « données réelles » cassé — ", verrou, " : attendu « ",
-         paste(attendu, collapse = ", "), " », obtenu « ",
-         paste(obtenu, collapse = ", "), " ».", call. = FALSE)
+    stop(erreur_verrou_casse(paste0(
+      "Verrou « données réelles » cassé — ", verrou, " : attendu « ",
+      paste(attendu, collapse = ", "), " », obtenu « ",
+      paste(obtenu, collapse = ", "), " »."
+    )))
   }
   invisible(TRUE)
 }
 
 verifier_vrai <- function(condition, verrou, detail = "") {
   if (!isTRUE(condition)) {
-    stop("Verrou « données réelles » cassé — ", verrou, ".",
-         if (nzchar(detail)) paste0(" ", detail) else "", call. = FALSE)
+    stop(erreur_verrou_casse(paste0(
+      "Verrou « données réelles » cassé — ", verrou, ".",
+      if (nzchar(detail)) paste0(" ", detail) else ""
+    )))
   }
   invisible(TRUE)
 }

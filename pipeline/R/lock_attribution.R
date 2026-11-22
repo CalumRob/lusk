@@ -55,8 +55,8 @@ attribuer_echec_lock <- function(ids_sources, digests = list(), lock = NULL) {
       )
       next
     }
-    date <- as.character(verrou$acquired_at)
-    sha_attendu <- as.character(verrou$sha256)
+    date <- champ_caractere(verrou$acquired_at)
+    sha_attendu <- champ_caractere(verrou$sha256)
     if (is.null(digest)) {
       anomalie[[id]] <- list(
         source_id = id, date_lockfile = date, expected = sha_attendu,
@@ -136,6 +136,8 @@ enregistrer_attribution_derive <- function(attribution, sortie = "public/data") 
 # verifier_avec_attribution -----------------------------------------------------
 # Wraps a verifier so a data drift is reported (non-fatal) and a code
 # regression is fatal. The verifier's own error message is preserved in both.
+# Only a broken lock VALUE (condition `verrou_casse`) is attributed: any other
+# error propagates unchanged, unattributed (#1118).
 verifier_avec_attribution <- function(verifier, args = list(),
                                       ids_sources = character(0),
                                       cache = "data/raw", sortie = "public/data",
@@ -145,6 +147,15 @@ verifier_avec_attribution <- function(verifier, args = list(),
     NULL
   }, error = function(e) e)
   if (is.null(echec)) return(list())
+  # #1118 : n'attribuer qu'une VALEUR de verrou cassée — la condition nommée
+  # `verrou_casse` des helpers verifier_egale/verifier_vrai. Toute autre
+  # erreur (artefact amont absent, lecture impossible, échec réseau) n'est pas
+  # une affaire de dérive/régression de source : elle propage son message
+  # d'origine, sans attribution écrite. Le run3 avait ainsi étiqueté un Parquet
+  # Mobilité manquant « régression de code : entrées identiques, sortie
+  # modifiée » — le wrapper comparait les digests avant de savoir QUE l'erreur
+  # venait du verrou.
+  if (!inherits(echec, "verrou_casse")) stop(echec)
   if (is.null(digests)) digests <- lire_digests_source(chemin_digests_cache(cache))
   attribution <- attribuer_echec_lock(ids_sources, digests, lock)
   if (identical(attribution$type, "regression")) {
