@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const figureCss = readFileSync(
@@ -12,6 +12,23 @@ const layoutCss = readFileSync(
 )
 const varianteCahierLibreSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
+  'utf8',
+)
+// #1093 — the shared editorial page layer and its two consumers.
+const sharedEditorialPageSource = readFileSync(
+  join(process.cwd(), 'src', 'styles', 'editorialPage.css'),
+  'utf8',
+)
+const atelierViewSource = readFileSync(
+  join(process.cwd(), 'src', 'views', 'AtelierView.vue'),
+  'utf8',
+)
+const atelierPageCssSource = readFileSync(
+  join(process.cwd(), 'src', 'atelier', 'atelierPage.css'),
+  'utf8',
+)
+const colorRolesSource = readFileSync(
+  join(process.cwd(), 'src', 'styles', 'editorialPageRoles.ts'),
   'utf8',
 )
 const aedarAccessSectionSource = readFileSync(
@@ -263,4 +280,189 @@ describe('Cahier typography roles', () => {
     expect(accessEvidenceRule).not.toMatch(/width:\s*min\(|max-width/)
   })
 
+})
+
+/**
+ * #1093 — ONE owner per page role, consumed by both surfaces. The trap this
+ * closes is scope-dependent styling: --paper and the page-heading rules used to
+ * live only inside VarianteCahierLibre.vue's `<style scoped>`, so the Atelier
+ * imported --paper and got white. These assertions pin the ownership seam;
+ * the browser receipts pin the rendered look.
+ */
+describe('shared editorial page shell', () => {
+  const appRoot = process.cwd()
+  const ROLE_OWNER = 'src/styles/editorialPageRoles.ts'
+  const STRUCTURE_OWNER = 'src/styles/editorialPage.css'
+  // The responsive role legitimately has a base + two media declarations, all
+  // in its one owner; the two ruling roles have one declaration each.
+  const STRUCTURE_ROLES: Readonly<Record<string, number>> = {
+    '--margin-line': 3,
+    '--rule': 1,
+    '--fine-rule': 1,
+  }
+
+  // Production sources: both app/src and app/scripts (a harness importing a
+  // renamed export must not escape this seam). Test fixtures may inject roles
+  // locally, so __tests__ is deliberately out of scope.
+  function walk(directory: string): { path: string; source: string }[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(directory, entry.name)
+      if (entry.isDirectory()) return entry.name === '__tests__' ? [] : walk(full)
+      if (!/\.(?:ts|vue|css|mjs)$/u.test(entry.name)) return []
+      return [{ path: relative(appRoot, full).replaceAll('\\', '/'), source: readFileSync(full, 'utf8') }]
+    })
+  }
+  const productionSources = (): { path: string; source: string }[] =>
+    ['src', 'scripts'].flatMap((directory) => walk(join(appRoot, directory)))
+
+  function stripComments(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/(^|[^:])\/\/[^\n]*/gmu, '$1')
+  }
+
+  /**
+   * Shape-correct, not position-correct. A CSS `--role:` and a quoted TS key
+   * are declarations wherever they appear — one-line rules, inline objects,
+   * `<style>` blocks, computed `['--role']:`. `var(--role, …)` uses a comma and
+   * never matches; a ternary `? '--role' : x` is excluded by the lookbehind.
+   */
+  function declarationCount(path: string, source: string, role: string): number {
+    const text = stripComments(source)
+    const escaped = role.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    const cssCount = (text.match(new RegExp(`${escaped}\\s*:`, 'gu')) ?? []).length
+    const tsCount = (text.match(new RegExp(`(?<!\\?\\s)(?:\\[)?['"]${escaped}['"]\\]?\\s*:`, 'gu')) ?? []).length
+    if (path.endsWith('.css')) return cssCount
+    if (path.endsWith('.ts') || path.endsWith('.mjs')) return tsCount
+    return cssCount + tsCount // .vue carries both a script and one or more styles
+  }
+
+  function declaredRoles(path: string, source: string): string[] {
+    const text = stripComments(source)
+    const css = [...text.matchAll(/(--[\w-]+)\s*:/gu)].map((match) => match[1]!)
+    const ts = [...text.matchAll(/(?<!\?\s)(?:\[)?['"](--[\w-]+)['"]\]?\s*:/gu)].map((match) => match[1]!)
+    if (path.endsWith('.css')) return css
+    if (path.endsWith('.ts') || path.endsWith('.mjs')) return ts
+    return [...css, ...ts]
+  }
+
+  it('registers every role an owner declares, then gives it exactly one owner', () => {
+    const sources = productionSources()
+    // Derive the module half of the registry from the owner's own keys, so a
+    // new key cannot escape. Values may be identifiers (cycle-shared), so the
+    // shape of the key — not its value — is what is matched.
+    const moduleRoles = [...colorRolesSource.matchAll(/['"](--[\w-]+)['"]\s*:/gu)]
+      .map((match) => match[1]!)
+    expect(moduleRoles.length).toBeGreaterThan(0)
+    const expected = new Map<string, { owner: string; count: number }>([
+      ...moduleRoles.map((role) => [role, { owner: ROLE_OWNER, count: 1 }] as const),
+      ...Object.entries(STRUCTURE_ROLES).map(([role, count]) => [role, { owner: STRUCTURE_OWNER, count }] as const),
+    ])
+
+    // Complement: nothing declared by either owner may hide outside the
+    // registry. Adding a role to an owner must be a deliberate registration —
+    // a key in the module or an entry in STRUCTURE_ROLES. Component-local roles
+    // owned elsewhere are not page roles and are not part of this seam.
+    const owners = new Set([ROLE_OWNER, STRUCTURE_OWNER])
+    for (const { path, source } of sources.filter(({ path }) => owners.has(path))) {
+      for (const role of new Set(declaredRoles(path, source))) {
+        expect(expected.has(role), `${path} declares ${role}; register it in the seam`).toBe(true)
+      }
+    }
+
+    for (const [role, { owner, count }] of expected) {
+      let total = 0
+      for (const { path, source } of sources) {
+        const found = declarationCount(path, source, role)
+        expect(found, `${role} may only be declared in ${owner}, not ${path}`).toBe(path === owner ? count : 0)
+        total += found
+      }
+      expect(total, `${role} must have exactly ${count} declaration(s)`).toBe(count)
+    }
+  })
+
+  it('has no dangling reference to the renamed role map', () => {
+    const offenders = productionSources()
+      .filter(({ source }) => /\bCAHIER_COLOR_ROLES\b/u.test(source))
+      .map(({ path }) => path)
+    expect(offenders).toEqual([])
+  })
+
+  it('owns the page surface and structure in CSS, consumed by both surfaces', () => {
+    const page = cssRule(sharedEditorialPageSource, '.editorial-page')
+    expect(page).toContain('color: var(--ink)')
+    expect(page).toContain('background: transparent')
+    expect(page).toContain('font-family: var(--font-body)')
+    expect(page).not.toMatch(/--(?:paper|paper-deep|ink|muted|red|red-soft|cahier-default)\s*:/u)
+    // The ruling rules moved verbatim: no brand fallback was introduced.
+    expect(page).toContain('--rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent)')
+    expect(page).toContain('--fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent)')
+    // Paper colour + ruling texture are one shared sheet, never a local copy.
+    const sheet = cssRule(sharedEditorialPageSource, '.editorial-sheet')
+    expect(sheet).toContain('background-color: var(--paper)')
+    expect(sheet).toContain('repeating-linear-gradient')
+    expect(sharedEditorialPageSource).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?--margin-line:\s*82px/u)
+    expect(sharedEditorialPageSource).toMatch(/@media\s*\(max-width:\s*600px\)[\s\S]*?--margin-line:\s*12px/u)
+    expect(varianteCahierLibreSource).not.toMatch(/\.cahier-page,\s*\.sources-page\s*\{[^}]*background-color:\s*var\(--paper\)/u)
+    expect(atelierPageCssSource).not.toMatch(/\.atelier-page\s*\{[^}]*background-color:\s*var\(--paper\)/u)
+    // Both import the layer, carry its classes and bind the one TS role map.
+    expect(varianteCahierLibreSource).toContain("import '@/styles/editorialPage.css'")
+    expect(atelierViewSource).toContain("import '@/styles/editorialPage.css'")
+    expect(varianteCahierLibreSource).toMatch(/class="[^"]*\beditorial-page\b[^"]*"/u)
+    expect(varianteCahierLibreSource).toMatch(/class="[^"]*\beditorial-sheet\b[^"]*"/u)
+    expect(atelierViewSource).toMatch(/class="[^"]*\beditorial-page\b[^"]*"/u)
+    expect(atelierViewSource).toMatch(/class="[^"]*\beditorial-sheet\b[^"]*"/u)
+    expect(varianteCahierLibreSource).toContain(':style="EDITORIAL_PAGE_ROLES"')
+    expect(atelierViewSource).toContain(':style="EDITORIAL_PAGE_ROLES"')
+    expect(colorRolesSource).toContain('export const EDITORIAL_PAGE_ROLES')
+  })
+
+  it('owns the page-heading type once; each header composes over it', () => {
+    const title = cssRule(sharedEditorialPageSource, '.editorial-page-title')
+    expect(title).toContain('font: var(--text-page-heading)')
+    expect(title).toContain('letter-spacing: var(--text-page-heading-tracking)')
+    expect(title).toContain('color: var(--ink)')
+    // The Cahier heading no longer carries the type declarations itself; it
+    // opts into the shared type and keeps only its own alignment.
+    const cahierHeading = cssRule(varianteCahierLibreSource, '.page-heading h2')
+    expect(cahierHeading).not.toContain('font: var(--text-page-heading)')
+    expect(cahierHeading).toContain('text-align: center')
+    expect(varianteCahierLibreSource).toMatch(/class="cahier-baseline-anchor editorial-page-title"/u)
+    // The Atelier imports the same type instead of copying the declarations.
+    const atelierTitle = cssRule(atelierPageCssSource, '.atelier-titre')
+    expect(atelierTitle).not.toContain('font: var(--text-page-heading)')
+    expect(atelierTitle).not.toContain('letter-spacing: var(--text-page-heading-tracking)')
+    expect(atelierViewSource).toContain('class="atelier-titre editorial-page-title"')
+  })
+
+  it('owns the thin red rule once; each header keeps its own real interface', () => {
+    expect(cssRule(sharedEditorialPageSource, '.editorial-rule')).toContain('border-bottom: 1px solid var(--red-soft)')
+    expect(cssRule(varianteCahierLibreSource, '.page-layout--sticky .page-heading')).not.toContain('border-bottom')
+    expect(atelierPageCssSource).not.toMatch(/\.atelier-entete\s*\{[^}]*border-bottom/u)
+    expect(varianteCahierLibreSource).toContain('class="page-heading editorial-rule"')
+    expect(atelierViewSource).toContain('class="atelier-entete editorial-rule"')
+    // Deletion test applied structurally: different interfaces, so two
+    // compositions over the shared type/rule layer — not a slot-only header.
+    expect(varianteCahierLibreSource).toContain('page-heading-index')
+    expect(varianteCahierLibreSource).toContain('page-heading-comparaison')
+    expect(atelierViewSource).toContain('atelier-partager')
+    expect(atelierViewSource).not.toContain('page-heading-index')
+    expect(atelierViewSource).not.toContain('page-heading-comparaison')
+  })
+
+  it('keeps the Atelier sheet on the clean ground of the production cahier', () => {
+    // The Mobilité reference is indexed-sections: its sheet suppresses the
+    // ruling. The Atelier imports the shared ground but makes the same choice,
+    // so it is judged against that reference, not an ordinary fiche.
+    expect(varianteCahierLibreSource).toMatch(/\.cahier--indexed-sections \.cahier-page,\s*\.cahier--indexed-sections \.sources-page\s*\{[^}]*background-image:\s*none/s)
+    expect(cssRule(atelierPageCssSource, '.atelier-page')).toContain('background-image: none')
+  })
+
+  it('keeps the Cahier prose owner shared and the Atelier a consumer, not a copy', () => {
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('color: var(--cahier-default)')
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('font-size: 15px')
+    expect(atelierViewSource).toContain("import '@/fiche/prototype/cahierLayout.css'")
+    expect(atelierPageCssSource).not.toMatch(/\.argument-copy\s*\{/u)
+    expect(atelierPageCssSource).not.toMatch(/\.cahier-prose\s*\{/u)
+  })
 })

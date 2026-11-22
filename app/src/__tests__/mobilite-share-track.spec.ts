@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 
 import CahierMobiliteShareTrack from '@/fiche/prototype/CahierMobiliteShareTrack.vue'
-import { CAHIER_SHARE_COLOUR, CAHIER_SHARE_TRACK_STYLE } from '@/fiche/prototype/cahierColorRoles'
+import { CAHIER_SHARE_COLOUR, CAHIER_SHARE_TRACK_STYLE } from '@/styles/editorialPageRoles'
 import type { MobiliteShareEvidence } from '@/fiche/content/themeContent'
 
 function shareFigure(overrides: Partial<MobiliteShareEvidence> = {}): MobiliteShareEvidence {

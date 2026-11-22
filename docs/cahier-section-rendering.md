@@ -523,7 +523,7 @@ native seam; the retained source-contract tests assert the mounted SFCs.
   separate surface variant, not the document value. A missing/truncated face
   rejects generation. There is no system-font substitution, runtime font
   download or reader-side Python.
-- `cahierColorRoles.ts` owns the Cahier-scoped colour aliases used by the real
+- `styles/editorialPageRoles.ts` owns the shared page colour aliases used by the real
   shell and the document painter, including the cycle-shared hue that DESIGN.md's
   mode scale does not tokenise. `cahierPdfPalette.ts` resolves the canonical
   `:root` block of the bundled `styles/tokens.css?raw` source (including

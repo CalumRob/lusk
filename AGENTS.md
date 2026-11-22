@@ -46,6 +46,14 @@ Layers, cheapest first:
 3. **Expensive craft passes.** Orchestrator session ONLY — never workers, no standing agent. One
    scoped `/impeccable critique <surface>` when an issue ships a genuinely NEW screen/tab/surface;
    otherwise on demand only.
+4. **Visual gate before merge (any ticket that creates or changes a visible surface).** The detector
+   scans *source*, not what renders. The orchestrator screenshots the surface at **desktop and phone**
+   widths and compares it with the reference named in the issue's acceptance criteria before merge —
+   e.g. the Atelier against the production Mobilité cahier
+   (`/territoire/commune/35238?theme=mobilite`), not against an ordinary fiche. A structural test or a
+   green detector is not evidence that the rendered page matches the reference; the recorded
+   before/after receipts are. For a ticket that must leave a surface pixel-identical, capture both
+   before and after against the same fixture and report any difference that cannot be justified.
 
 Intent usage policy — *enforce-in-docs, method-as-skills*: intent skills are invoked at milestones
 by the orchestrator, never standing. `fortify` = edge-state inventory → issue generator;

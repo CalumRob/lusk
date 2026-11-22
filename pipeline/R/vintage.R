@@ -56,10 +56,11 @@ attestation_vintage <- function(id, cache, fichier = NULL, lock = NULL) {
   verrouille <- lire_lock(lock)[[id]]
   lock_utilisable <- !is.null(verrouille) &&
     (is.null(digest) ||
-       identical(as.character(verrouille$sha256), as.character(digest$sha256)))
+       identical(champ_caractere(verrouille$sha256), champ_caractere(digest$sha256)))
   list(digest = digest, verrouille = verrouille, lock_utilisable = lock_utilisable)
 }
 
+# vintages_depuis_manifest ------------------------------------------------------
 vintages_depuis_manifest <- function(manifest,
                                       cache = Sys.getenv("LUSK_CACHE", unset = "data/raw"),
                                       lock = NULL, exiger_attestation = FALSE) {
@@ -90,23 +91,35 @@ vintages_depuis_manifest <- function(manifest,
     }
     if (lock_utilisable) {
       # Locked bytes: deterministic, clock-free vintage from the lockfile.
-      vintages$version[i] <- as.character(verrouille$vintage)
-      vintages$date_reference[i] <- as.character(verrouille$date_reference)
-      vintages$date_publication[i] <- as.character(verrouille$acquired_at)
+      vintages$version[i] <- champ_caractere(verrouille$vintage)
+      vintages$date_reference[i] <- champ_caractere(verrouille$date_reference)
+      vintages$date_publication[i] <- champ_caractere(verrouille$acquired_at)
     } else if (!is.null(digest)) {
       # A real run: the derived value recorded by the resolver (never a stale
       # literal for a `telechargement` source).
-      vintages$version[i] <- as.character(digest$vintage)
-      vintages$date_reference[i] <- as.character(digest$date_reference)
-      vintages$date_publication[i] <- as.character(digest$acquired_at)
+      vintages$version[i] <- champ_caractere(digest$vintage)
+      vintages$date_reference[i] <- champ_caractere(digest$date_reference)
+      vintages$date_publication[i] <- champ_caractere(digest$acquired_at)
     }
     # Sans digest ni verrou, aucun run n'atteste d'acquisition : on garde le
     # vintage déclaré (par exemple un builder de thème appelé hors d'un run).
-    # Une source qui déclare NA n'a pas de date de publication (ORT line-by-line,
-    # DPE base roulante) : on ne lui en invente pas une à partir de
-    # l'acquisition — ADR-0048, respecté aussi par les sources attestées.
+    #
+    # #1118 — un fait publié porte TOUJOURS au moins une horloge de fraîcheur
+    # (compute.R::verifier_horloges_vintage, miroir de validate.ts). Quand la
+    # source ne déclare PAS de date de publication, deux profils coexistent :
+    #   - une horloge de RÉFÉRENCE attestée existe (`date_reference` non NA —
+    #     bases `contenu_date`/`contenu_timestamp` comme ORT, dont la fraîcheur
+    #     est portée par la date de contenu par ligne) : la publication reste
+    #     NA, c'est la référence qui porte l'horloge ;
+    #   - aucune référence (base roulante `telechargement` comme DPE, ADR-0009) :
+    #     l'acquisition attestée est SA seule horloge. On la GARDE en
+    #     `date_publication`. L'effacer — la règle #1117 écrite pour ORT et
+    #     étendue à tort au DPE — laissait le fait sans aucune date et faisait
+    #     échouer `payload_habitat` sur une base attestée.
     if (!is.na(manifest$date_publication[i])) next
-    vintages$date_publication[i] <- NA_character_
+    if (!is.na(vintages$date_reference[i])) {
+      vintages$date_publication[i] <- NA_character_
+    }
   }
   vintages
 }

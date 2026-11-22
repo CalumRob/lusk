@@ -31,6 +31,8 @@ const cahierEvidenceSourceStyles = readFileSync(
   'utf-8',
 )
 const tokensStyles = readFileSync(join(process.cwd(), 'src', 'styles', 'tokens.css'), 'utf-8')
+// #1093 — the page surface and page-heading type now live in one shared layer.
+const sharedPageStyles = readFileSync(join(process.cwd(), 'src', 'styles', 'editorialPage.css'), 'utf-8')
 
 function regleCss(css: string, selector: string): string {
   const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))
@@ -222,10 +224,10 @@ describe('Variante E — partage de l’espace public', () => {
   })
 
   it('routes Cahier reading and title styles through semantic font roles', () => {
-    expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
+    expect(regleCss(sharedPageStyles, '\\.editorial-page')).toContain(
       'font-family: var(--font-body);',
     )
-    const pageHeading = regleCss(varianteCahierLibreStyles, '\\.page-heading h2')
+    const pageHeading = regleCss(sharedPageStyles, '\\.editorial-page-title')
     expect(pageHeading).toContain('font: var(--text-page-heading);')
     expect(pageHeading).toContain('letter-spacing: var(--text-page-heading-tracking);')
     expect(pageHeading).not.toMatch(/font-(?:family|weight)\s*:|line-height\s*:/)

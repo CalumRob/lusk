@@ -5,7 +5,7 @@
  * it is never imported by the app and never ships in production.
  */
 import { composerCahierPdf } from '../src/fiche/prototype/cahierPdfComposer'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, nextTick } from 'vue'
 import LuskBrand from '../src/components/LuskBrand.vue'
 import { MARQUE_LUSK_LOCKUP } from '../src/components/luskBrandMark'
 import AccessRampFigureCahier from '../src/fiche/prototype/AccessRampFigureCahier.vue'
@@ -14,7 +14,7 @@ import CahierMobiliteComparisonBars from '../src/fiche/prototype/CahierMobiliteC
 import CahierMobiliteRaccordementCurve from '../src/fiche/prototype/CahierMobiliteRaccordementCurve.vue'
 import { cahierFigureStrokeVars } from '../src/fiche/prototype/cahierFigureNativeGeometry'
 import '../src/styles/tokens.css'
-import { CAHIER_COLOR_ROLES } from '../src/fiche/prototype/cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES } from '../src/styles/editorialPageRoles'
 import { PALETTE_PDF } from '../src/fiche/prototype/cahierPdfPalette'
 import { projeterRequeteExport } from '../src/fiche/prototype/cahierExportCapture'
 import { capturePdfFixture, PDF_FIXTURE_SECTION_KEYS } from '../src/__tests__/helpers/cahierPdfFixtures'
@@ -165,7 +165,7 @@ async function generer(
 // Independent browser CSS engine, not the PDF resolver, owns the expected RGB.
 ;(window as any).auditerCahierCouleurs = () => {
   const element = document.createElement('div')
-  for (const [key, value] of Object.entries(CAHIER_COLOR_ROLES)) element.style.setProperty(key, value)
+  for (const [key, value] of Object.entries(EDITORIAL_PAGE_ROLES)) element.style.setProperty(key, value)
   document.body.append(element)
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 1
