@@ -73,7 +73,7 @@ test_that("MANIFEST_PROGRAMMES : la source ORT — la ressource XLSX uniquement"
   expect_true(grepl("grist.numerique.gouv.fr", ort$url))
   # Décision #1113 : l'ORT ne déclare AUCUN vintage figé — sa base est
   # `contenu_date`, la version publiée est dérivée de l'actualisation maximale
-  # des lignes lues par le résolveur (jamais un libellé « en continu » périmé).
+  # des lignes lues par le résolveur (jamais un libellé figé et périmé).
   expect_true(is.na(ort$vintage))
   expect_equal(base_vintage("ort"), "contenu_date")
   # la fraîcheur est PAR LIGNE (la colonne « Dernière actualisation ») — la
