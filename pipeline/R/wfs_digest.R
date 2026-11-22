@@ -33,3 +33,40 @@ empreinte_wfs_features <- function(collection) {
     hachage = "features_wfs_canoniques"
   )
 }
+
+# --- Hachage d'un fichier du cache ---------------------------------------------
+# Un « hacheur » renvoie toujours {sha256, bytes, hachage} : `bytes` est la
+# taille de CE QUI EST HACHÉ (octets bruts ou features canoniques). La taille
+# brute du fichier reste portée à part par le digest (`fichier_octets`) pour la
+# validité du sidecar — les deux ne doivent pas être confondus.
+
+empreinte_fichier_brut <- function(chemin) {
+  list(
+    sha256 = empreinte_fichier(chemin),
+    bytes = as.numeric(file.size(chemin)),
+    hachage = "octets_bruts"
+  )
+}
+
+# communes_limites.geojson est téléchargé sur le MÊME WFS que le fond de carte :
+# son enveloppe porte le même timeStamp volatile. On laisse les octets du fichier
+# INTACTS (c'est le contrat du cache) et on ne canonise que l'empreinte.
+empreinte_fichier_wfs <- function(chemin) {
+  collection <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+  empreinte_wfs_features(collection)
+}
+
+# HACHAGE_WFS_PAR_ID -------------------------------------------------------------
+# Les sources de MANIFEST_* dont le fichier cache est une réponse GetFeature
+# GeoJSON. Registre par id, comme VINTAGE_BASIS_PAR_ID : aucun défaut implicite —
+# une nouvelle lecture WFS doit être déclarée ici (et couverte par un test).
+HACHAGE_WFS_PAR_ID <- c(communes_limites = "empreinte_fichier_wfs")
+
+# Le hacheur d'une source, résolu au point d'usage (pas de dépendance Collate).
+empreinte_source <- function(id) {
+  nom <- unname(HACHAGE_WFS_PAR_ID[as.character(id)])
+  if (length(nom) != 1L || is.na(nom) || !nzchar(nom)) {
+    return(empreinte_fichier_brut)
+  }
+  get(nom, envir = asNamespace("lusk"), mode = "function", inherits = FALSE)
+}

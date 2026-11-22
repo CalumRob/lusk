@@ -88,9 +88,14 @@ lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
   # est périmé et le résolveur doit re-hacher.
   if (!is.null(fichier)) {
     cible <- file.path(cache, fichier)
+    # Issue #1119 : `bytes` est la taille de CE QUI EST HACHÉ — les features
+    # canoniques pour une lecture WFS, pas les octets du fichier. La fraîcheur du
+    # sidecar suit donc `fichier_octets` (la taille réelle du fichier) quand il
+    # est présent ; les sidecars plus anciens n'ont que `bytes` (octets bruts).
+    octets_fichier <- d$fichier_octets %||% d$bytes
     if (!file.exists(cible) ||
         !identical(as.character(d$fichier %||% ""), as.character(fichier)) ||
-        !isTRUE(all.equal(as.numeric(d$bytes), as.numeric(file.size(cible)))) ||
+        !isTRUE(all.equal(as.numeric(octets_fichier), as.numeric(file.size(cible)))) ||
         !isTRUE(all.equal(as.numeric(d$mtime), as.numeric(file.mtime(cible))))) {
       return(NULL)
     }
@@ -301,7 +306,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
                             sha256_manifeste = NULL, vintage_basis = "declaree",
                             vintage_declare = NULL, reference_declaree = NULL,
                             tirer = NULL, horloge = NULL, etat = NULL,
-                            lock = NULL) {
+                            lock = NULL, empreinte = NULL) {
   if (is.null(etat)) {
     etat <- new.env(parent = emptyenv())
     etat$statuts <- NULL
@@ -357,7 +362,13 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     jour <- jour_fichier %||% jour_fetch
   }
 
-  h <- empreinte_fichier(cible)
+  # Issue #1119 : le hacheur est choisi par le registre des lectures WFS (ou
+  # injecté). Il renvoie {sha256, bytes, hachage} : pour communes_limites, le
+  # sha256 porte sur les features canoniques du GeoJSON et non sur l'enveloppe
+  # volatile, tandis que `fichier_octets` garde la taille réelle du fichier.
+  hacheur <- empreinte %||% empreinte_source(id)
+  detail <- hacheur(cible)
+  h <- detail$sha256
   registre <- lire_lock(lock)
   verrouille <- registre[[id]]
   verrouille_ok <- !is.null(verrouille) &&
@@ -385,10 +396,14 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     source_id = id,
     url = url,
     sha256 = h,
-    bytes = as.numeric(file.size(cible)),
+    bytes = as.numeric(detail$bytes),
+    hachage = as.character(detail$hachage),
     # Empreinte de fraîcheur du sidecar (issue #1103, revue) : nom, taille et
-    # mtime du fichier réellement haché — tout changement invalide le digest.
+    # mtime du fichier réellement lu — tout changement invalide le digest.
+    # `bytes` peut être la taille des features canoniques (#1119) : la taille
+    # BRUTE du fichier est donc portée séparément pour la garde de fraîcheur.
     fichier = fichier,
+    fichier_octets = as.numeric(file.size(cible)),
     mtime = as.numeric(file.mtime(cible)),
     acquired_at = acquired_at,
     vintage_basis = base,

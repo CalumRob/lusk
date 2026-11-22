@@ -65,3 +65,93 @@ test_that("des features différentes donnent des digests géométrie différents
   expect_false(identical(d1$sha256, d2$sha256))
   expect_false(identical(d1$bytes, d2$bytes))
 })
+
+# --- 2. Le cache communes_limites : mêmes règles, octets laissés intacts --------
+# communes_limites.geojson est téléchargé par le même WFS et CACHÉ tel quel. Son
+# empreinte doit suivre la même règle que le fond de carte, sinon chaque
+# re-téléchargement change son sha256 par le seul timeStamp et le gel refuse le
+# run. Les octets du fichier restent ceux du téléchargement : c'est le DIGEST
+# qui est canonique, pas le fichier.
+
+resoudre_limites <- function(brut, cache) {
+  resoudre_source(
+    id = "communes_limites",
+    url = MANIFEST_MOBILITE_COMMUNES_LIMITES$url[[1]],
+    fichier = "communes_limites.geojson", cache = cache,
+    lock = tempfile("lock-vide-limites-"),
+    horloge = as.Date("2026-11-22"), vintage_basis = "telechargement",
+    tirer = function(url, cible) writeLines(brut, cible)
+  )
+}
+
+cache_neuf <- function() {
+  cache <- tempfile("cache-limites-")
+  dir.create(cache)
+  cache
+}
+
+test_that("communes_limites : un timeStamp différent ne change pas le digest (#1119)", {
+  c1 <- cache_neuf(); c2 <- cache_neuf()
+  on.exit(unlink(c(c1, c2), recursive = TRUE), add = TRUE)
+  communes <- fixture_communes_wfs_departements()
+
+  a <- fixture_wfs_brut(communes, timeStamp = "2026-11-22T17:51:09.979Z",
+                        numberMatched = 5L, numberReturned = 5L)
+  b <- fixture_wfs_brut(communes, timeStamp = "2026-11-22T17:51:12.123456Z",
+                        numberMatched = 999L, numberReturned = 999L)
+
+  r1 <- resoudre_limites(a, c1)
+  r2 <- resoudre_limites(b, c2)  # deux téléchargements, un seul changement : l'enveloppe
+
+  expect_identical(r1$sha256, r2$sha256)
+  expect_identical(r1$digest$bytes, r2$digest$bytes)
+  expect_identical(r1$digest$hachage, "features_wfs_canoniques")
+  # Les octets du fichier restent BIEN ceux du téléchargement (enveloppe incluse).
+  expect_true(grepl("17:51:09\\.979Z",
+                    paste(readLines(file.path(c1, "communes_limites.geojson")),
+                          collapse = "\n")))
+  expect_true(grepl("17:51:12\\.123456Z",
+                    paste(readLines(file.path(c2, "communes_limites.geojson")),
+                          collapse = "\n")))
+
+  # Après un re-téléchargement (mtime changé), le sidecar est réécrit depuis les
+  # octets réels et reste valide — sa fraîcheur ne dépend PAS des `bytes`
+  # canoniques du digest.
+  writeLines(b, file.path(c1, "communes_limites.geojson"))
+  Sys.setFileTime(file.path(c1, "communes_limites.geojson"),
+                  as.POSIXct("2026-11-23T09:00:00", tz = "UTC"))
+  r3 <- resoudre_limites(b, c1)
+  expect_identical(r3$sha256, r1$sha256)
+  sidecar <- lire_digest_cache("communes_limites", c1, "communes_limites.geojson")
+  expect_identical(sidecar$sha256, r3$sha256)
+})
+
+test_that("communes_limites : des features différentes changent le digest (#1119)", {
+  c1 <- cache_neuf(); c2 <- cache_neuf()
+  on.exit(unlink(c(c1, c2), recursive = TRUE), add = TRUE)
+  communes <- fixture_communes_wfs_departements()
+  modifiees <- communes
+  modifiees$features[[1]]$properties$nom_officiel <- "Commune renommée"
+
+  r1 <- resoudre_limites(
+    fixture_wfs_brut(communes, timeStamp = "2026-11-22T17:51:09.979Z"), c1
+  )
+  r2 <- resoudre_limites(
+    fixture_wfs_brut(modifiees, timeStamp = "2026-11-22T17:51:09.979Z"), c2
+  )
+  expect_false(identical(r1$sha256, r2$sha256))
+})
+
+test_that("les sources non-WFS gardent leur empreinte sur les octets bruts (#1119)", {
+  cache <- tempfile("cache-brut-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE), add = TRUE)
+  r <- resoudre_source(
+    id = "flux_Ordinaire", url = "https://example.invalid/flux",
+    fichier = "flux.bin", cache = cache, lock = tempfile("lock-vide-brut-"),
+    horloge = as.Date("2026-11-22"), vintage_basis = "telechargement",
+    tirer = function(url, cible) writeLines("octets ordinaires", cible)
+  )
+  expect_identical(r$digest$hachage, "octets_bruts")
+  expect_identical(r$sha256, empreinte_fichier(file.path(cache, "flux.bin")))
+})
