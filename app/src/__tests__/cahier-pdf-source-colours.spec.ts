@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import {  COULEUR_CYCLE_PARTAGE } from '@/fiche/prototype/cahierColorRoles'
+import {  COULEUR_CYCLE_PARTAGE } from '@/styles/editorialPageRoles'
 
 const source = vi.hoisted(() => ({ css: '' }))
 
@@ -25,7 +25,7 @@ it('ne consomme que le bloc :root canonique des jetons, jamais une surcharge mé
 
 it('n’entretient qu’un propriétaire pour la teinte cycle partagée', () => {
   const lire = (chemin: string) => readFileSync(resolve(process.cwd(), chemin), 'utf8')
-  const proprietaire = lire('src/fiche/prototype/cahierColorRoles.ts')
+  const proprietaire = lire('src/styles/editorialPageRoles.ts')
   expect(proprietaire.toLowerCase()).toContain(COULEUR_CYCLE_PARTAGE.toLowerCase())
   expect(proprietaire).toContain('COULEUR_CYCLE_PARTAGE')
   const consommateurs = [

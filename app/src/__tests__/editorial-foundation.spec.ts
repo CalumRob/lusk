@@ -63,8 +63,13 @@ describe('shared E editorial foundation', () => {
     for (const path of ['src/fiche/prototype/VarianteCahierLibre.vue', 'src/components/fiche/OngletTheme.vue', 'src/views/IndicateurPage.vue']) {
       expect(read(path)).toMatch(/class="[^"]*presentation-editorial/)
     }
-    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toMatch(/\.cahier\s*\{[^}]*background:\s*transparent/s)
-    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('background-color: var(--paper)')
+    // #1093 — the page surface and paper sheet moved to one shared owner; both
+    // surfaces opt in by carrying its classes instead of redefining the ground.
+    const pageLayer = read('src/styles/editorialPage.css')
+    expect(pageLayer).toMatch(/\.editorial-page\s*\{[^}]*background:\s*transparent/s)
+    expect(pageLayer).toMatch(/\.editorial-sheet\s*\{[^}]*background-color:\s*var\(--paper\)/s)
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toMatch(/class="[^"]*\beditorial-page\b/s)
+    expect(read('src/views/AtelierView.vue')).toMatch(/class="[^"]*\beditorial-page\b/s)
     expect(read('src/main.ts')).toContain("'./styles/editorial.css'")
   })
 
@@ -74,7 +79,8 @@ describe('shared E editorial foundation', () => {
     expect(css).not.toContain('--paper:')
     expect(css).not.toContain('--margin-line:')
     expect(read('src/views/IndicateurPage.vue')).not.toMatch(/\.indicateur-page\s*\{[^}]*background:/)
-    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('--margin-line: var(--editorial-margin-offset)')
+    expect(read('src/styles/editorialPage.css')).toContain('--margin-line: var(--editorial-margin-offset)')
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).not.toContain('--margin-line: var(--editorial-margin-offset)')
   })
 
   it('grounds inline cahier maps in deep paper through the owner token', () => {
@@ -99,9 +105,14 @@ describe('shared E editorial foundation', () => {
     const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
     const mobile600 = mediaBlocks(cahier, 600)
     const mobile760 = mediaBlocks(cahier, 760).find((block) => block.includes('.page-margin'))
+    // #1093 — the margin-line reflow moved with the aliases to the shared layer.
+    const pageLayer = read('src/styles/editorialPage.css')
+    const shared600 = mediaBlocks(pageLayer, 600)[0] ?? ''
+    const shared760 = mediaBlocks(pageLayer, 760)[0] ?? ''
 
     expect(mobile600).toHaveLength(1)
-    expect(mobile600[0]).toContain('--margin-line: 12px')
+    expect(shared600).toContain('--margin-line: 12px')
+    expect(shared760).toContain('--margin-line: 82px')
     expect(mobile760).toBeDefined()
     expect(mobile760).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
   })

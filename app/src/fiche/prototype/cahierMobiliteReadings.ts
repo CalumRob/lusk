@@ -24,7 +24,7 @@ import type {
 import type { ComparisonRank } from '@/fiche/content/territoryFacts'
 import { formatServedRank, formatServedRankAria, puceRangDirection } from '@/fiche/figureGrammaire'
 import { LIBELLES_DIRECTION } from '@/methodes/indicateurs'
-import { COULEUR_CYCLE_PARTAGE } from './cahierColorRoles'
+import { COULEUR_CYCLE_PARTAGE } from '@/styles/editorialPageRoles'
 
 /**
  * Narrow native inputs: the readings consume exactly the fields the screen

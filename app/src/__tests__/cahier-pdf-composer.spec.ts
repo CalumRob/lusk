@@ -7,7 +7,7 @@ import {
   composerCahierPdf,
 } from '@/fiche/prototype/cahierPdfComposer'
 import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
-import { COULEUR_CYCLE_PARTAGE } from '@/fiche/prototype/cahierColorRoles'
+import { COULEUR_CYCLE_PARTAGE } from '@/styles/editorialPageRoles'
 import { sousTitreComparaison, texteSousTitre } from '@/fiche/prototype/cahierPdfComparaison'
 import type { SousTitreComparaison } from '@/fiche/prototype/cahierPdfComparaison'
 import { POLICES_PDF } from '@/fiche/prototype/cahierPdfFonts'

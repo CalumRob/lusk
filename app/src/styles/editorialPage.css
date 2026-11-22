@@ -1,0 +1,66 @@
+/* #1093 — The STRUCTURE of the editorial page shell.
+ *
+ * Colour roles have exactly one owner: `EDITORIAL_PAGE_ROLES` in
+ * `styles/editorialPageRoles.ts`, bound on both surface roots. Nothing
+ * here redeclares `--paper`, `--ink`, `--red-soft`, `--cahier-default` and
+ * friends; a change to the owner reaches both surfaces and the PDF palette.
+ *
+ * This file owns only what CSS must own: the page surface, the sheet colour
+ * and ruling, the page-heading type, the thin red rule, and the responsive
+ * margin-line reflow (inline styles cannot carry media queries). The rules
+ * below were moved verbatim out of VarianteCahierLibre.vue's `<style scoped>`.
+ *
+ * Header decision: the Cahier heading (sticky, page counter, comparison
+ * control, theme·territory context) and the Atelier heading (editable title,
+ * « Partager », no counter) are two genuinely different interfaces. By the
+ * deletion test a single component whose whole interface were optional slots
+ * would be two headers in one costume, so they are two compositions over this
+ * one shared type/layout layer, not one slot-only header component.
+ */
+
+/* Page surface. The colour roles it consumes come from the TS owner. */
+.editorial-page {
+  --margin-line: var(--editorial-margin-offset);
+  --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
+  --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
+  min-height: 0;
+  color: var(--ink);
+  background: transparent;
+  font-family: var(--font-body);
+}
+
+/* The paper sheet: colour + ruling. Each surface keeps its own geometry and
+ * variants; the Cahier's sans-grille / indexed-sections overrides still win. */
+.editorial-sheet {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(to right, transparent 0, transparent var(--margin-line), var(--red-soft) var(--margin-line), var(--red-soft) calc(var(--margin-line) + 1px), transparent calc(var(--margin-line) + 1px)),
+    repeating-linear-gradient(to bottom, transparent 0 7px, var(--fine-rule) 7px 8px, transparent 8px 15px, var(--fine-rule) 15px 16px, transparent 16px 23px, var(--fine-rule) 23px 24px, transparent 24px 30px, var(--rule) 30px 32px);
+}
+
+/* Page-heading type — shared by both header compositions, never copied. */
+.editorial-page-title {
+  max-width: none;
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-page-heading);
+  letter-spacing: var(--text-page-heading-tracking);
+}
+
+/* The thin red rule under either header composition. */
+.editorial-rule {
+  border-bottom: 1px solid var(--red-soft);
+}
+
+/* Reflow the ruling margin in mobile flow — moved with the aliases so both
+ * surfaces honour the same cahier rhythm at the same breakpoints. */
+@media (max-width: 760px) {
+  .editorial-page {
+    --margin-line: 82px;
+  }
+}
+@media (max-width: 600px) {
+  .editorial-page {
+    --margin-line: 12px;
+  }
+}

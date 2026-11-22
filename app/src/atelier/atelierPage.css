@@ -1,18 +1,23 @@
 /* L'Atelier (#1080) — coquille de page, en-tête composé, blocs et emplacement
  * vide. Porté du prototype `prototype/atelier-cell-picker` (0657b2fe), réduit
- * à ce ticket : ni figures, ni modale, ni réordonnancement. Le style de prose
- * (`.cahier-prose`, `.argument-copy`) vient de cahierLayout.css importé par la
- * vue — il n'est pas recopié ici. Le type du titre vient des tokens de
- * production ; les règles de `.page-heading` du Cahier restent scopées dans sa
- * variante et ne sont ni copiées ni extraites (#1093). */
+ * à ce ticket : ni figures, ni modale, ni réordonnancement.
+ *
+ * #1093 — le sol de page (papier + texture), les alias d'encre, le type de
+ * titre et le filet rouge viennent de `src/styles/editorialPage.css`, importé
+ * par la vue et par le Cahier. Le style de prose (`.cahier-prose`,
+ * `.argument-copy`) vient de cahierLayout.css. Rien n'est recopié ici.
+ *
+ * Décision d'en-tête (test de suppression) : le `.page-heading` du Cahier
+ * (compteur, comparaison, contexte theme·territoire, collant) et l'en-tête de
+ * l'Atelier (titre éditable, « Partager », pas de compteur) n'ont pas la même
+ * interface. Un composant unique dont toute l'interface serait des slots
+ * optionnels serait deux en-têtes déguisés : ce sont donc deux compositions
+ * locales sur une seule couche de type et de filet partagée. */
 
 .atelier {
   --cahier-grid-jump: 24px;
   --cahier-prose-line-height: 1.45;
   --cahier-prose-paragraph-gap: var(--space-3);
-  color: var(--ink);
-  font-family: var(--font-body);
-  background: transparent;
 }
 
 .atelier-wrap {
@@ -28,8 +33,10 @@
   min-height: min(70vh, 720px);
   padding: 0 64px 56px;
   border: 1px solid var(--editorial-page-border-color);
-  background-color: var(--paper);
   box-shadow: 0 14px 30px var(--editorial-page-shadow-color);
+  /* La production indexed-sections (Mobilité, la référence) supprime le réglage
+     de la feuille : la page reste un papier crème uni. Même choix ici. */
+  background-image: none;
 }
 
 /* En-tête composé pour l'Atelier : pas de compteur de page, un titre éditable
@@ -41,16 +48,11 @@
   column-gap: var(--space-6);
   margin-bottom: calc(var(--space-6) + var(--space-1));
   padding: var(--space-4) 0 14px;
-  border-bottom: 1px solid var(--red-soft);
   background-color: var(--paper);
 }
 
+/* Le type de titre vient de .editorial-page-title (couche partagée). */
 .atelier-titre {
-  max-width: none;
-  margin: 0;
-  color: var(--ink);
-  font: var(--text-page-heading);
-  letter-spacing: var(--text-page-heading-tracking);
   text-align: left;
 }
 
