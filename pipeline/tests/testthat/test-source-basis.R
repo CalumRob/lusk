@@ -21,6 +21,26 @@ test_that("base_vintage échoue bruyamment sur un id inconnu", {
   expect_error(base_vintage("source_inexistante"), "Aucune base de vintage")
 })
 
+test_that("base_vintage résout aussi les lectures réseau non-manifeste (#1122)", {
+  for (id in names(LECTURES_RESEAU)) {
+    expect_identical(base_vintage(id), "telechargement", info = id)
+  }
+})
+
+test_that("les deux registres ne se chevauchent pas et couvrent tout digest (#1122)", {
+  expect_length(intersect(names(VINTAGE_BASIS_PAR_ID), names(LECTURES_RESEAU)), 0L)
+  manifestes <- tous_manifestes()
+  ids <- ids_digests_publication(manifestes = unname(manifestes))
+  expect_setequal(
+    ids,
+    unique(c(unlist(lapply(manifestes, function(m) as.character(m$id))),
+             names(LECTURES_RESEAU)))
+  )
+  bases <- vapply(ids, base_vintage, character(1))
+  expect_false(anyNA(bases))
+  expect_true(all(bases %in% BASIS_VINTAGE))
+})
+
 test_that("le registre couvre toutes les sources sans base implicite", {
   ids <- unique(unlist(lapply(tous_manifestes(), function(m) as.character(m$id))))
   expect_setequal(ids, names(VINTAGE_BASIS_PAR_ID))
