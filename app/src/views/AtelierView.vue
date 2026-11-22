@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
 <template>
   <article class="atelier cahier presentation-editorial cahier--sans-grille">
     <div class="atelier-wrap">
-      <section class="cahier-page atelier-page" aria-labelledby="atelier-titre">
+      <section class="atelier-page" aria-labelledby="atelier-titre">
         <header class="atelier-entete">
           <EditableText
             id="atelier-titre"
