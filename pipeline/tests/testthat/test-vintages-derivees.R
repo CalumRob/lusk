@@ -77,6 +77,64 @@ test_that("un sidecar valide atteste la source : le vintage dérivé est publié
   expect_true(grepl("^\\d{4}-\\d{2}$", v$version))
 })
 
+test_that("toute source à base dérivée attestée porte au moins une horloge (#1118)", {
+  # Les trois bases dérivées, avec les deux profils de déclaration : une source
+  # dont la fraîcheur vit dans le contenu (contenu_date / contenu_timestamp,
+  # ex. ORT) garde publication NA mais porte une référence ; une base roulante
+  # (telechargement, ex. DPE) n'a pas de référence et DOIT garder l'acquisition
+  # comme publication. Aucune ligne attestée ne peut sortir SANS horloge —
+  # c'est ce que refuse `verifier_horloges_vintage` (compute.R) côté payload.
+  cache <- tempfile("cache-horloges-")
+  dir.create(file.path(cache, ".digests"), recursive = TRUE)
+  on.exit(unlink(cache, recursive = TRUE))
+  m <- tibble::tribble(
+    ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference, ~date_publication,
+    ~licence, ~vintage_basis,
+    "ort_fixture", "ORT (fixture)", "https://example.invalid/ort", "ort.csv",
+    NA_character_, NA_character_, NA_character_, "lov2", "contenu_date",
+    "osm_fixture", "OSM (fixture)", "https://example.invalid/osm", "osm.pbf",
+    NA_character_, NA_character_, NA_character_, "lov2", "contenu_timestamp",
+    "dpe_fixture", "DPE (fixture)", "https://example.invalid/dpe", "dpe.csv",
+    NA_character_, NA_character_, NA_character_, "lov2", "telechargement",
+    "korrigo_fixture", "Korrigo (fixture)", "https://example.invalid/korrigo",
+    "korrigo.csv", NA_character_, NA_character_, "2026-01-01", "lov2",
+    "telechargement"
+  )
+  # référence attestée : NON NA pour les bases à contenu (l'horloge est le
+  # contenu), NA pour les bases roulantes (l'horloge est l'acquisition).
+  reference_attestee <- c(
+    ort_fixture = "2026-10-15", osm_fixture = "2026-10-16",
+    dpe_fixture = NA_character_, korrigo_fixture = "2026-10-17"
+  )
+  for (i in seq_len(nrow(m))) {
+    cible <- file.path(cache, m$fichier[i])
+    writeBin(charToRaw("octets du run\n"), cible)
+    Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+    ecrire_digest_cache(list(
+      source_id = m$id[i], url = m$url[i], sha256 = paste0("sha-", m$id[i]),
+      bytes = file.size(cible), fichier = m$fichier[i],
+      mtime = as.numeric(file.mtime(cible)), acquired_at = "2026-11-18",
+      vintage_basis = m$vintage_basis[i], vintage = "2026-11",
+      date_reference = reference_attestee[[m$id[i]]]
+    ), cache)
+  }
+
+  v <- vintages_depuis_manifest(m, cache = cache, lock = tempfile("lock-vide-"),
+                                exiger_attestation = TRUE)
+  for (i in seq_len(nrow(v))) {
+    expect_true(
+      !is.na(v$date_reference[i]) || !is.na(v$date_publication[i]),
+      info = paste("aucune horloge pour", v$id[i])
+    )
+  }
+  # les deux profils restent distincts : ORT garde sa référence et NA en
+  # publication ; la base roulante DPE garde l'acquisition et NA en référence.
+  expect_equal(v$date_reference[v$id == "ort_fixture"], "2026-10-15")
+  expect_true(is.na(v$date_publication[v$id == "ort_fixture"]))
+  expect_equal(v$date_publication[v$id == "dpe_fixture"], "2026-11-18")
+  expect_true(is.na(v$date_reference[v$id == "dpe_fixture"]))
+})
+
 test_that("verifier_vintages_attestees : une table dont le vintage dérivé n'est pas YYYY-MM échoue", {
   cache <- tempfile("cache-format-")
   dir.create(cache, recursive = TRUE)
