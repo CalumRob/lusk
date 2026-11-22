@@ -154,6 +154,51 @@ test_that("le vintage des bornes vient de la date maximale du contenu", {
   unlink(cache, recursive = TRUE)
 })
 
+test_that("le vintage ORT vient de l'actualisation maximale des lignes lues (#1113)", {
+  fixture <- testthat::test_path("fixtures", "programmes-ort-vintage-fixture.xlsx")
+  # Le lecteur garde la date PAR LIGNE (2026-10-02 / 2026-11-05) et l'extracteur
+  # ne retourne que la plus récente — sans réimplémenter le parsing du XLSX.
+  expect_equal(lire_ort(fixture)$actualisation, c("2026-10-02", "2026-11-05"))
+  expect_identical(deriver_actualisation_ort(fixture), as.Date("2026-11-05"))
+  cache <- tempfile("cache-ort-")
+  dir.create(file.path(cache, ".digests"), recursive = TRUE)
+  fichier <- "programmes-ort-vintage-fixture.xlsx"
+  file.copy(fixture, file.path(cache, fichier))
+
+  # Le chemIN RÉEL : le résolveur dérive le vintage via le registre des
+  # extracteurs, qui réutilise lire_ort() (jamais une réimplémentation du XLSX).
+  r <- resoudre_source(
+    id = "ort", url = "https://example.invalid/ort",
+    fichier = fichier, cache = cache, lock = lock_fixture(),
+    horloge = as.Date("2026-11-18"), vintage_basis = "contenu_date",
+    tirer = function(url, cible) stop("aucun téléchargement attendu")
+  )
+  expect_identical(r$vintage_basis, "contenu_date")
+  expect_identical(r$date_reference, "2026-11-05")
+  expect_identical(r$vintage, "2026-11")
+
+  # Le digest du run est réutilisé par la table publiée : la version est la
+  # dérivée, la référence est la date d'actualisation maximale, et la publication
+  # reste NA (ORT n'a pas de date de publication inventée).
+  manifest <- MANIFEST_PROGRAMMES[MANIFEST_PROGRAMMES$id == "ort", ]
+  manifest$fichier <- fichier
+  v <- vintages_depuis_manifest(manifest, cache = cache, lock = lock_fixture())
+  expect_identical(v$version, "2026-11")
+  expect_identical(v$date_reference, "2026-11-05")
+  expect_true(is.na(v$date_publication))
+  unlink(cache, recursive = TRUE)
+})
+
+test_that("une source contenu_date sans extracteur est une erreur de contrat (#1113)", {
+  expect_error(
+    deriver_vintage(
+      tempfile("ort-sans-extracteur-"), as.Date("2026-11-18"),
+      vintage_basis = "contenu_date", id = "source_sans_extracteur"
+    ),
+    "Aucun extracteur de date de contenu"
+  )
+})
+
 test_that("le vintage OSM vient du HeaderBlock PBF compressé (champ 32)", {
   octets <- pbf_fixture(1794864156, compresse = TRUE)
   r <- resoudre_source(

@@ -156,17 +156,17 @@ const membresEchelle: MembreProgramme[] = [
   },
   {
     territoire: '22003', type: 'commune', sigle: 'ORT', convention_valant_ort: false,
-    vintage_source: 'DGALN/ANCT — ORT', vintage_version: 'en continu',
+    vintage_source: 'DGALN/ANCT — ORT', vintage_version: '2026-07',
     vintage_date_reference: '2026-07-20', vintage_date_publication: null,
   },
   {
     territoire: '29003', type: 'commune', sigle: 'ORT', convention_valant_ort: false,
-    vintage_source: 'DGALN/ANCT — ORT', vintage_version: 'en continu',
+    vintage_source: 'DGALN/ANCT — ORT', vintage_version: '2026-07',
     vintage_date_reference: '2026-07-21', vintage_date_publication: null,
   },
   {
     territoire: '200000003', type: 'epci', sigle: 'ORT', convention_valant_ort: false,
-    vintage_source: 'DGALN/ANCT — ORT', vintage_version: 'en continu',
+    vintage_source: 'DGALN/ANCT — ORT', vintage_version: '2026-07',
     vintage_date_reference: '2026-07-21', vintage_date_publication: null,
   },
 ]

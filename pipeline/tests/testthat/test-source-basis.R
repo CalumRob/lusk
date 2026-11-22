@@ -58,14 +58,31 @@ test_that("les exports roulants ont une base telechargement honnête", {
   pour_telechargement <- c(
     "sirene_snapshot", "korrigo", "sncf_voyageurs", "dila_bdl",
     "dpe_22", "dpe_29", "dpe_35", "dpe_56",
-    "territoires_industrie", "ort", "subventions_scdl", "communes_limites"
+    "territoires_industrie", "subventions_scdl", "communes_limites"
   )
   for (id in pour_telechargement) {
     expect_equal(b[[id]], "telechargement", info = id)
   }
 })
 
-test_that("les deux sources à contenu daté gardent leur base dérivée", {
+test_that("les sources à contenu daté gardent leur base dérivée", {
   expect_equal(VINTAGE_BASIS_PAR_ID[["osm_reseaux"]], "contenu_timestamp")
   expect_equal(VINTAGE_BASIS_PAR_ID[["bornes-recharges"]], "contenu_date")
+  # Décision #1113 : l'ORT porte sa propre date de contenu (actualisation par
+  # ligne) — sa base est `contenu_date`, jamais `telechargement`.
+  expect_equal(VINTAGE_BASIS_PAR_ID[["ort"]], "contenu_date")
+})
+
+test_that("chaque source contenu_date a un extracteur enregistré (contrat #1113)", {
+  ids <- unique(unlist(lapply(tous_manifestes(), function(m) as.character(m$id))))
+  contenu_date <- ids[vapply(ids, base_vintage, character(1)) == "contenu_date"]
+  expect_true("ort" %in% contenu_date)
+  # le registre des extracteurs couvre EXACTEMENT les sources contenu_date :
+  # aucune source ne peut déclarer cette base sans extracteur (et inversement).
+  expect_setequal(contenu_date, names(CONTENT_DATE_EXTRACTOR_PAR_ID))
+  for (id in contenu_date) {
+    expect_true(is.function(extracteur_date_contenu(id)), info = id)
+  }
+  expect_error(extracteur_date_contenu("source_sans_extracteur"),
+               "Aucun extracteur de date de contenu")
 })

@@ -20,7 +20,9 @@
 #     ORT.
 #   - chaque ligne porte le vintage de SA source (mise à jour du jeu ANCT ;
 #     ORT : l'actualisation PAR LIGNE « Dernière actualisation », jamais la
-#     métadonnée de page, périmée d'environ 15 mois).
+#     métadonnée de page, périmée d'environ 15 mois). La VERSION du jeu ORT est
+#     dérivée (#1113) du mois de l'actualisation maximale — chaque ligne garde
+#     sa propre date de référence et aucune date de publication inventée.
 #
 # Le seam de test (la couture établie) : les lecteurs lisent les FIXTURES
 # (petits échantillons CSV/XLSX fidèles aux sources réelles, dans fixtures/),
@@ -103,7 +105,11 @@ vintages_programmes_fixture <- function() {
     "pvd", "ANCT — PVD", "2025", "lov2", "2025-01-01", "2026-04-27",
     "crte", "ANCT — CRTE", "2025", "lov2", "2025-07-17", "2025-09-24",
     "territoires_industrie", "CDC/ANCT — TI", "2022", "lov2", "2022-12-31", "2025-09-30",
-    "ort", "DGALN/ANCT — ORT", "en continu", "lov2", NA, NA
+    # #1113 : la version du JEU ORT est le mois de l'actualisation maximale des
+    # lignes du fixture — dérivée de la donnée, jamais un libellé figé.
+    "ort", "DGALN/ANCT — ORT",
+    format(max(as.Date(donnees_programmes_fixture()$ort$actualisation)), "%Y-%m"),
+    "lov2", NA, NA
   )
 }
 
@@ -417,7 +423,9 @@ test_that("construire_membres_programmes : chaque ligne porte le vintage de SA s
   # plus récente de ses conventions (22004 : 2026-04-01)
   ort <- lire("ORT")
   expect_true(all(ort$vintage_source == "DGALN/ANCT — ORT"))
-  expect_true(all(ort$vintage_version == "en continu"))
+  # la version du JEU est dérivée de l'actualisation maximale du classeur
+  version_ort <- format(max(as.Date(donnees_programmes_fixture()$ort$actualisation)), "%Y-%m")
+  expect_true(all(ort$vintage_version == version_ort))
   lire_ort <- function(territoire) {
     ort$vintage_date_reference[ort$territoire == territoire]
   }
@@ -489,11 +497,12 @@ test_that("vintages_programmes : six sources (les cinq ANCT/DGALN + la SCDL), ch
                   c("acv", "pvd", "crte", "territoires_industrie", "ort",
                     "subventions_scdl"))
 
-  # l'ORT : version « en continu », la fraîcheur est PAR LIGNE — la référence
-  # et la publication source sont NA (la métadonnée de page, périmée d'environ
-  # 15 mois, n'est JAMAIS citée)
+  # l'ORT : aucun vintage DÉCLARÉ (#1113) — la version est dérivée au run de
+  # l'actualisation maximale des lignes lues (voir test-source-lock.R) ; la
+  # référence et la publication source restent NA (la métadonnée de page,
+  # périmée d'environ 15 mois, n'est JAMAIS citée). La fraîcheur est PAR LIGNE.
   ort <- v[v$id == "ort", ]
-  expect_equal(ort$version, "en continu")
+  expect_true(is.na(ort$version))
   expect_true(is.na(ort$date_reference))
   expect_true(is.na(ort$date_publication))
   expect_equal(ort$licence, "lov2")

@@ -7,11 +7,12 @@
 #
 #   declaree          dated release whose identity IS the vintage (INSEE RP/DVF/
 #                     BPE, OCS-GE millesimes, frozen static snapshots)
-#   contenu_date      file carrying its own update date (bornes `date_maj`)
+#   contenu_date      file carrying its own update date (bornes `date_maj`, ORT
+#                     `Dernière actualisation` par ligne)
 #   contenu_timestamp OSM PBF HeaderBlock osmosis_replication_timestamp
 #   telechargement    rolling export with no stable content date (ODS exports,
-#                     Grist, data-fair/DPE, SIRENE, SNCF GTFS, DILA all_latest,
-#                     any live `latest` alias): vintage = acquisition date
+#                     data-fair/DPE, SIRENE, SNCF GTFS, DILA all_latest, any live
+#                     `latest` alias): vintage = acquisition date
 
 # BASIS_VINTAGE ------------------------------------------------------------------
 BASIS_VINTAGE <- c("declaree", "contenu_date", "contenu_timestamp", "telechargement")
@@ -20,10 +21,13 @@ BASIS_VINTAGE_DERIVES <- c("contenu_date", "contenu_timestamp", "telechargement"
 # VINTAGE_BASIS_PAR_ID -----------------------------------------------------------
 # The single source of truth for the basis of every manifest source. Keys are
 # manifest source ids (an id shared by several manifests has ONE basis).
-# Rolling exports are deliberately `telechargement`: ODS exports/csv and Grist
-# send no content date, data-fair DPE is a rolling base, SIRENE's "coupe" label
-# is a contract vintage and not a stable content date, SNCF/DILA are rolling
-# feeds. DVF keeps `declaree`: its URL carries an explicit year
+# Rolling exports are deliberately `telechargement`: ODS exports/csv send no
+# content date, data-fair DPE is a rolling base, SIRENE's "coupe" label is a
+# contract vintage and not a stable content date, SNCF/DILA are rolling feeds.
+# ORT is a Grist XLSX BUT carries its own content date (column « Dernière
+# actualisation » on every row, read by lire_ort()) — decision #1113: its basis
+# is `contenu_date`, the dataset vintage is the newest row actualisation.
+# DVF keeps `declaree`: its URL carries an explicit year
 # (`geo-dvf/latest/csv/<year>/...`) and the year in the filename is the
 # immutable release identity — the `latest` alias only moves the whole tree.
 VINTAGE_BASIS_PAR_ID <- c(
@@ -58,7 +62,7 @@ VINTAGE_BASIS_PAR_ID <- c(
   dila_bdl = "telechargement",
   # Programmes
   territoires_industrie = "telechargement",
-  ort = "telechargement",
+  ort = "contenu_date",
   subventions_scdl = "telechargement"
 )
 # DVF: twenty year/département releases, vintage = the year in the URL/filename.
@@ -95,6 +99,29 @@ VINTAGE_BASIS_PAR_ID <- c(VINTAGE_BASIS_PAR_ID, stats::setNames(
 VINTAGE_BASIS_PAR_ID <- c(VINTAGE_BASIS_PAR_ID, c(
   acv = "declaree", pvd = "declaree", crte = "declaree"
 ))
+
+# CONTENT_DATE_EXTRACTOR_PAR_ID --------------------------------------------------
+# One content-date extractor per `contenu_date` source, keyed by source id,
+# declared next to the basis registry (issue #1113). Values are the NAMES of
+# extractor functions, resolved lazily at call time by extracteur_date_contenu()
+# so there is no DESCRIPTION Collate dependency: every extractor returns the
+# max content date found in the file (a Date), or NULL when none is readable.
+# A `contenu_date` source with no registration is a contract error, enforced by
+# test-source-basis.R. `deriver_vintage()` falls back to `telechargement` when
+# the extractor finds no date, recording the basis it actually used.
+CONTENT_DATE_EXTRACTOR_PAR_ID <- c(
+  `bornes-recharges` = "deriver_date_maj",
+  ort = "deriver_actualisation_ort"
+)
+
+extracteur_date_contenu <- function(id) {
+  nom <- unname(CONTENT_DATE_EXTRACTOR_PAR_ID[as.character(id)])
+  if (length(nom) != 1L || is.na(nom) || !nzchar(nom)) {
+    stop("Aucun extracteur de date de contenu (issue #1113) pour : ",
+         as.character(id), ".", call. = FALSE)
+  }
+  get(nom, envir = asNamespace("lusk"), mode = "function", inherits = FALSE)
+}
 
 # base_vintage -------------------------------------------------------------------
 # The single resolver for a source id. Unknown ids are a hard error: a new

@@ -242,7 +242,8 @@ deriver_timestamp_pbf <- function(chemin) {
 # manifest's literal; derived bases read the file, falling back to the
 # acquisition date (basis `telechargement`) when no content date is present.
 deriver_vintage <- function(chemin, jour, vintage_basis = "telechargement",
-                            vintage_declare = NULL, reference_declaree = NULL) {
+                            vintage_declare = NULL, reference_declaree = NULL,
+                            id = NULL) {
   base <- vintage_basis %||% "telechargement"
   par_telechargement <- function() {
     list(
@@ -266,7 +267,9 @@ deriver_vintage <- function(chemin, jour, vintage_basis = "telechargement",
     ))
   }
   if (identical(base, "contenu_date")) {
-    date <- deriver_date_maj(chemin)
+    # One registry of extractors, keyed by source id — no if-cascade on ids.
+    # The ORT extractor reuses lire_ort() itself (no re-implemented XLSX parse).
+    date <- extracteur_date_contenu(id)(chemin)
     if (!is.null(date)) {
       return(list(
         vintage = format(date, "%Y-%m"), date_reference = as.character(date),
@@ -369,7 +372,8 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   } else {
     d <- deriver_vintage(
       cible, jour, vintage_basis = vintage_basis,
-      vintage_declare = vintage_declare, reference_declaree = reference_declaree
+      vintage_declare = vintage_declare, reference_declaree = reference_declaree,
+      id = id
     )
     acquired_at <- as.character(jour)
     vintage <- d$vintage

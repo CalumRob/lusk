@@ -16,9 +16,18 @@ Every manifest source declares **exactly one** basis, explicitly, from this clos
 | basis | used for | published vintage |
 |---|---|---|
 | `declaree` | dated releases whose identity is the vintage (RP 2023, DVF 2025, BPE 2025, OCS-GE millesimes, frozen snapshots) | the declared version/date |
-| `contenu_date` | file carrying its own update date (bornes `date_maj`) | that date, else acquisition date |
+| `contenu_date` | file carrying its own update date (bornes `date_maj`; ORT's per-row « Dernière actualisation », read by `lire_ort()`) | that date, else acquisition date |
 | `contenu_timestamp` | OSM PBF HeaderBlock `osmosis_replication_timestamp` (field 32, after inflating the zlib blob) | that date, else acquisition date |
-| `telechargement` | rolling exports with no stable content date (ODS `exports/csv`, Grist, data-fair/DPE, SIRENE, SNCF GTFS, DILA `all_latest`, live `latest` aliases) | acquisition date of the bytes actually used |
+| `telechargement` | rolling exports with no stable content date (ODS `exports/csv`, data-fair/DPE, SIRENE, SNCF GTFS, DILA `all_latest`, live `latest` aliases) | acquisition date of the bytes actually used |
+
+ORT is a Grist XLSX, but unlike a generic Grist export it carries its own
+content date on every row. Per issue #1113 its basis is `contenu_date`: the
+dataset-level `version` is the month of the **newest** row actualisation and
+`date_reference` is that exact date, while each membership row keeps its own
+actualisation as `vintage_date_reference` and `vintage_date_publication = NA`.
+The extractor is registered by source id alongside the basis registry
+(`source_basis.R`) and reuses `lire_ort()`; a `contenu_date` source with no
+registered extractor is a contract error.
 
 There is no implicit default and **no load-time mutation of the manifests**: the registry is resolved at the use sites (`download_sources()`, `vintages_depuis_manifest()`, `relock_sources()`) through `base_vintage(id)` / `declarer_bases(manifest)`. An unknown id fails loudly — there is no `DESCRIPTION` Collate dependency and no namespace rewriting. A contract test enumerates every `MANIFEST_*` and asserts each id resolves to exactly one valid basis. When a content date cannot be read for a derived basis, the honest fallback is `telechargement`. HTTP `Last-Modified`/`ETag` is never a vintage (ODS exports send neither). A source whose manifest declares no single reference/publication date (ORT line-by-line actualisation, DPE rolling base) never gets one invented from the acquisition clock. Without a run digest (a theme builder called outside a run), the declared vintage stands — no acquisition can be attested; every real run publishes the derived value.
 

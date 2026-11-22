@@ -967,11 +967,15 @@ const vintageTi = {
   vintage_date_publication: '2025-09-30',
 }
 
-/** Le vintage ORT — la fraîcheur PAR LIGNE, publication null (manifest #175). */
+/**
+ * Le vintage ORT — la version du JEU est dérivée du mois de l'actualisation
+ * maximale des lignes (base `contenu_date`, #1113) ; chaque ligne garde sa date
+ * de référence propre et la publication reste null (manifest #175).
+ */
 const vintageOrt = {
   vintage_source:
     'DGALN/ANCT — Liste des communes couvertes par des opérations de revitalisation de territoire (ORT) : conventions signées (classeur XLSX, feuille « Suivi conventions »)',
-  vintage_version: 'en continu',
+  vintage_version: '2026-07',
   vintage_date_publication: null as string | null,
 }
 

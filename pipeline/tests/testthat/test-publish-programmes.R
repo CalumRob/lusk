@@ -133,6 +133,18 @@ statuts_programmes_pub <- function(status = "frais") {
 # (publier_programmes) et la machinerie partagée sont RÉELS.
 executer_run_programmes_pub <- function(cache, sortie, donnees,
                                         conventions, statuts) {
+  # #1113 : enregistrer un sidecar ORT dans le cache du fixture — le run exerce
+  # ainsi la DÉRIVATION réelle (base `contenu_date`, extracteur + lire_ort()),
+  # jamais le vintage déclaré NA du manifeste, sans aucun réseau.
+  dir.create(cache, recursive = TRUE, showWarnings = FALSE)
+  fixture_ort <- testthat::test_path("fixtures", "programmes-ort-vintage-fixture.xlsx")
+  resoudre_source(
+    id = "ort", fichier = "ort-conventions.xlsx", cache = cache,
+    horloge = as.Date("2026-11-18"), vintage_basis = base_vintage("ort"),
+    tirer = function(url, cible) file.copy(fixture_ort, cible)
+  )
+  # vintages_programmes() n'a pas de paramètre `cache` : il lit LUSK_CACHE.
+  withr::local_envvar(LUSK_CACHE = cache)
   local_mocked_bindings(
     reference_territoires_canonique_du_cache = reference_cache_seam_test,
     download_sources = function(manifest, cache, mode) statuts,
