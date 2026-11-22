@@ -1,0 +1,160 @@
+# Attribution des échecs de verrous (issue #1103) -------------------------------
+# Un verrou qui casse est soit une DÉRIVE DE DONNÉES (une entrée diffère du
+# lockfile, ou n'a pas de référence) — rapportée, non fatale — soit une
+# RÉGRESSION DE CODE (toutes les entrées sont identiques au lockfile) — fatale.
+
+lock_test <- function() {
+  l <- lire_lock()
+  l
+}
+
+digest_de <- function(l, id) {
+  e <- l[[id]]
+  list(source_id = id, sha256 = e$sha256, acquired_at = e$acquired_at,
+       vintage = e$vintage, date_reference = e$date_reference)
+}
+
+test_that("une empreinte modifiée produit la dérive de données, non fatale", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  digests$osm_reseaux$sha256 <- paste(rep("0", 64), collapse = "")
+  a <- attribuer_echec_lock("osm_reseaux", digests)
+  expect_equal(a$type, "drift")
+  expect_match(a$message, "dérive de osm_reseaux depuis 2026-11-18", fixed = TRUE)
+  expect_match(a$message, "relock requis", fixed = TRUE)
+  expect_equal(a$expected, l$osm_reseaux$sha256)
+  expect_equal(a$observed, paste(rep("0", 64), collapse = ""))
+})
+
+test_that("une source sans référence produit une dérive « pas de référence »", {
+  l <- lock_test()
+  digests <- list(source_nouvelle = list(source_id = "source_nouvelle",
+                                         sha256 = paste(rep("a", 64), collapse = "")))
+  a <- attribuer_echec_lock("source_nouvelle", digests)
+  expect_equal(a$type, "drift")
+  expect_match(a$message, "pas de référence pour source_nouvelle", fixed = TRUE)
+  expect_match(a$message, "relock requis", fixed = TRUE)
+})
+
+test_that("des empreintes identiques produisent une régression fatale", {
+  l <- lock_test()
+  digests <- list(
+    osm_reseaux = digest_de(l, "osm_reseaux"),
+    korrigo = digest_de(l, "korrigo")
+  )
+  a <- attribuer_echec_lock(c("osm_reseaux", "korrigo"), digests)
+  expect_equal(a$type, "regression")
+  expect_match(a$message, "régression de code : entrées identiques, sortie modifiée",
+               fixed = TRUE)
+})
+
+test_that("le wrapper rapporte la dérive et la trace dans le rapport de run", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  digests$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
+  sortie <- tempfile("sortie-attribution-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+
+  resultat <- verifier_avec_attribution(
+    verifier = function(x) stop("verrou cassé — valeur attendue 42, obtenue 40"),
+    args = list(x = 1),
+    ids_sources = "osm_reseaux",
+    sortie = sortie,
+    digests = digests
+  )
+  expect_false(isTRUE(resultat))
+  a <- lire_attributions(sortie)
+  expect_length(a, 1L)
+  expect_equal(a[[1]]$type, "drift")
+  expect_match(a[[1]]$message, "dérive de osm_reseaux", fixed = TRUE)
+
+  ecrire_rapport_run(
+    tibble::tibble(id = "osm_reseaux", mode = "cron", status = "frais"),
+    "cron", cible = sortie, timestamp = "2026-11-18T00:00:00Z"
+  )
+  rapport <- jsonlite::fromJSON(file.path(sortie, "run-report.json"))
+  expect_true("attributions" %in% names(rapport))
+  message_attr <- if (is.data.frame(rapport$attributions)) {
+    rapport$attributions$message[[1L]]
+  } else {
+    rapport$attributions[[1L]]$message
+  }
+  expect_match(message_attr, "dérive de osm_reseaux", fixed = TRUE)
+})
+
+test_that("le wrapper arrête bruyamment sur une régression de code", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  sortie <- tempfile("sortie-regression-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+
+  erreur <- tryCatch(
+    verifier_avec_attribution(
+      verifier = function(x) stop("verrou cassé — 42 attendu, 40 obtenu"),
+      args = list(x = 1), ids_sources = "osm_reseaux",
+      sortie = sortie, digests = digests
+    ),
+    error = function(e) e
+  )
+  expect_s3_class(erreur, "error")
+  expect_match(conditionMessage(erreur),
+               "régression de code : entrées identiques, sortie modifiée", fixed = TRUE)
+  expect_length(lire_attributions(sortie), 0L)
+})
+
+test_that("un verrou qui passe n'écrit aucune attribution", {
+  sortie <- tempfile("sortie-ok-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+  expect_identical(verifier_avec_attribution(
+    verifier = function() TRUE, args = list(),
+    ids_sources = "osm_reseaux", sortie = sortie
+  ), list())
+  expect_length(lire_attributions(sortie), 0L)
+})
+
+test_that("le wrapper retourne l'attribution comme valeur de cible", {
+  l <- lock_test()
+  digests <- list(osm_reseaux = digest_de(l, "osm_reseaux"))
+  digests$osm_reseaux$sha256 <- paste(rep("b", 64), collapse = "")
+  a <- verifier_avec_attribution(
+    verifier = function() stop("verrou cassé"), args = list(),
+    ids_sources = "osm_reseaux", sortie = tempfile("sortie-retour-"),
+    digests = digests
+  )
+  expect_type(a, "list")
+  expect_equal(a$type, "drift")
+  expect_match(a$message, "dérive de osm_reseaux", fixed = TRUE)
+  expect_identical(
+    verifier_avec_attribution(
+      verifier = function() TRUE, args = list(),
+      ids_sources = "osm_reseaux", sortie = tempfile("sortie-retour-ok-")
+    ),
+    list()
+  )
+})
+
+test_that("les rapports du graphe dépendent des verrous du même run", {
+  withr::local_dir(pkgload::pkg_path())
+  withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
+                      LUSK_SORTIE = tempfile("sortie-rapport-"),
+                      LUSK_CACHE = tempfile("cache-rapport-"))
+  edges <- targets::tar_network()$edges
+  for (theme in c("economie", "milieux", "mobilite")) {
+    verifs <- edges$from[grepl("^verif_", edges$from) &
+                           edges$to == paste0("rapport_", theme)]
+    expect_true(length(verifs) > 0L, info = theme)
+  }
+})
+
+test_that("les ids d'entrée de la REGISTRE sont extraits correctement", {
+  spec_args <- list(slug = "x", verifier = function() TRUE,
+                    args = list(fichier = "consoenaf", base_epci = "epci"))
+  expect_equal(sources_verification(spec_args), "consoenaf")
+  spec_brut <- list(slug = "y", verifier = function() TRUE, sur_brut = TRUE,
+                    args = list(base_epci = "epci"))
+  expect_setequal(sources_verification(spec_brut, MANIFEST_ECONOMIE),
+                  MANIFEST_ECONOMIE$id)
+})

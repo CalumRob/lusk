@@ -1,6 +1,7 @@
 # ADR-0047: Opt-in content-addressed source pins and derived vintage
 
-- **Status:** accepted — decision 2026-11-21: pinning is **opt-in**, source by source; implementation for issue #1099 (parent #1040)
+- **Status:** **superseded by ADR-0048** (2026-11-21, issue #1103) — unified source provenance: one committed lockfile, explicit basis per source, attributed locks and a release freeze. The opt-in pins and `pins/` registry are retired. Kept as the historical record of the decision ADR-0048 replaces.
+- **Former status:** accepted — decision 2026-11-21: pinning was **opt-in**, source by source; implementation for issue #1099 (parent #1040)
 - **Related:** ADR-0001, ADR-0004, ADR-0005, ADR-0024; issue #1040; CONTEXT.md « Version de table publiée »
 
 ## Context

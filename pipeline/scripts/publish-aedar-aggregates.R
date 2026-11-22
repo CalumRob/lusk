@@ -3,6 +3,10 @@ pkgload::load_all(".",quiet=TRUE)
 args <- commandArgs(trailingOnly=TRUE)
 if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"))
   stop("Usage: Rscript scripts/publish-aedar-aggregates.R --check|--publish|--full-vintage (from pipeline/)",call.=FALSE)
+# Le gel de release contrôle le répertoire du RUN (LUSK_SORTIE), PAS le
+# répertoire des artefacts canoniques AEDAR — la publication AEDAR lit ses
+# Parquets dans LUSK_AEDAR_CANONICAL_DIR mais doit attester des empreintes du run.
+sortie <- Sys.getenv("LUSK_SORTIE", unset = "")
 canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
 raw_dir <- Sys.getenv("LUSK_AEDAR_RAW_DIR",file.path("data","raw"))
 density_path <- Sys.getenv("LUSK_AEDAR_DENSITY_AGGREGATE",file.path(raw_dir,"aedar_density_aggregate.parquet"))
@@ -60,6 +64,9 @@ if (args[[1]]=="--full-vintage") {
 if (args[[1]]=="--publish") {
   if (!identical(Sys.getenv("LUSK_PUBLISH_AEDAR"),"1") || identical(Sys.getenv("LUSK_MODE"),"cron"))
     stop("AEDAR Postgres publication requires explicit LUSK_PUBLISH_AEDAR=1 and is disabled for cron",call.=FALSE)
+  if (!nzchar(sortie))
+    stop("AEDAR publication requires LUSK_SORTIE (run directory with source-digests.json)",call.=FALSE)
+  verifier_gel_release(sortie)  # issue #1103 : gel de release sur le répertoire du run
   con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   result <- tryCatch({
     facts_result <- publish_aedar_aggregates(projection,con)

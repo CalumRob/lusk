@@ -108,10 +108,9 @@ test_that("en mode full, les 20 fichiers se téléchargent sans collision de cac
   statuts <- download_sources(MANIFEST_HABITAT_DVF, cache = cache)
 
   expect_true(all(statuts$status == "frais"))
-  # #1099 : le pinning est OPT-IN — ces sources INSEE ne sont pas dans
-  # SOURCES_EPINGLEES, donc aucun registre pins/ n'est créé. Le cache contient
-  # exactement les 20 fichiers de données téléchargés.
-  fichiers <- list.files(cache)
+  # #1103 : les sidecars de provenance (.digests/, source-digests.json) sont
+  # des artefacts de run distincts des 20 fichiers de données téléchargés.
+  fichiers <- list.files(cache, pattern = "\\.csv\\.gz$")
   expect_length(fichiers, 20)
   # chaque fichier est distinct (le cache plat exige des noms uniques)
   expect_equal(length(unique(fichiers)), 20)

@@ -724,11 +724,19 @@ typed_reading_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_
 # NB : sur un échec du TÉLÉCHARGEMENT lui-même, les statuts sont portés par
 # l'erreur (issue #8) — le rapport d'échec est une responsabilité de l'étape
 # de câblage cron (étape 5 du port), pas du DAG.
-rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
+rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN, verifs = character(0),
                           precedent = NULL) {
   nom <- theme$theme
   brut <- as.name(paste0("brut_", nom))
   sources <- as.name(paste0("sources_", nom))
+  # Issue #1103 (revue) : le rapport dépend DES verrous du même run ; chaque
+  # verrou retourne son attribution (ou list()), agrégée dans le rapport.
+  deps_verif <- lapply(verifs, as.name)
+  expr_attributions <- if (length(verifs)) {
+    as.call(c(list(as.name("c")), deps_verif))
+  } else {
+    quote(list())
+  }
   corps <- list(
     bquote(brut_ <- .(brut)),
     bquote(couverture <- if ("couverture" %in% names(brut_)) {
@@ -737,12 +745,14 @@ rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
       NULL
     }),
     bquote(ecrire_rapport_run(.(sources), .(mode), .(sortie),
-                              couverture = couverture)),
+                              couverture = couverture,
+                              attributions = .(expr_attributions))),
     bquote(file.path(.(sortie), "run-report.json"))
   )
   if (!is.null(precedent)) {
     corps <- c(list(bquote(.(precedent))), corps)
   }
+  corps <- c(deps_verif, corps)
   tar_target_raw(
     paste0("rapport_", nom),
     as.call(c(list(as.name("{")), corps)),
@@ -980,11 +990,20 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
         appels[[param]] <- as.name(paste0("fichier_", theme$theme, "_", id))
       }
     }
+    # Issue #1103 : le verrou est enveloppé — une dérive de données est
+    # RAPPORTÉE (non fatale), une entrée identique avec sortie modifiée est une
+    # RÉGRESSION DE CODE (fatale). Les ids d'entrée viennent de la REGISTRE.
+    ids_sources <- sources_verification(v, theme$manifest)
+    commande <- as.call(list(
+      as.name("verifier_avec_attribution"),
+      fn_sym,
+      as.call(c(list(as.name("list")), appels)),
+      ids_sources,
+      cache,
+      sortie
+    ))
     cibles <- c(cibles, list(
-      tar_target_raw(
-        paste0("verif_", v$slug),
-        as.call(c(list(fn_sym), appels))
-      )
+      tar_target_raw(paste0("verif_", v$slug), commande)
     ))
   }
   cibles
@@ -996,7 +1015,8 @@ verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
 # par source (dédupliquées entre verrous), puis les verrous LEAF qui reçoivent
 # leurs chemins en arguments — la même mécanique que verifications_theme,
 # sans grappe.
-verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
+verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN,
+                                     sortie = SORTIE_RUN) {
   cibles <- list(
     tar_target_raw(
       "sources_programmes",
@@ -1024,11 +1044,17 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
         appels[[param]] <- as.name(paste0("fichier_programmes_", id))
       }
     }
+    ids_sources <- sources_verification(v, MANIFEST_PROGRAMMES_COMPLET)
+    commande <- as.call(list(
+      as.name("verifier_avec_attribution"),
+      fn_sym,
+      as.call(c(list(as.name("list")), appels)),
+      ids_sources,
+      cache,
+      sortie
+    ))
     cibles <- c(cibles, list(
-      tar_target_raw(
-        paste0("verif_", v$slug),
-        as.call(c(list(fn_sym), appels))
-      )
+      tar_target_raw(paste0("verif_", v$slug), commande)
     ))
   }
   cibles
@@ -1224,15 +1250,22 @@ for (t in THEMES_RUN) {
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
-  rapports <- c(rapports, list(rapport_theme(t, precedent = precedent)))
+  spec <- VERIFICATIONS_RUN[[t$theme]]
+  slugs <- if (is.null(spec)) character(0) else vapply(spec, function(v) v$slug, character(1))
+  rapports <- c(rapports, list(rapport_theme(
+    t, precedent = precedent, verifs = paste0("verif_", slugs)
+  )))
   precedent <- as.name(paste0("rapport_", t$theme))
 }
 # Le run COMPLET (le cron, #343) : le rapport de run du thème Programmes,
 # chaîné DERNIER — le rapport final porte les statuts du thème Programmes,
 # exactement comme six run_pipeline séquentiels (le dernier thème gagne).
 if (selection_complete) {
-  rapports <- c(rapports, list(rapport_theme(theme_programmes(),
-                                             precedent = precedent)))
+  rapports <- c(rapports, list(rapport_theme(
+    theme_programmes(), precedent = precedent,
+    verifs = paste0("verif_", vapply(VERIFICATIONS_PROGRAMMES,
+                                     function(v) v$slug, character(1)))
+  )))
 }
 
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le
@@ -1411,7 +1444,10 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
   }
   publication_dependencies <- c(
     lapply(paste0("publie_", scalar_owners), as.name),
-    list(as.name("fusion_vintages"), as.name("scalar_serving_artifacts"),
+    # Issue #1103 (revue) : le garde doit lire les empreintes de CE run —
+    # dépendance explicite à la cible qui les publie (jamais un fichier périmé).
+    list(as.name("digests_run"), as.name("fusion_vintages"),
+      as.name("scalar_serving_artifacts"),
       as.name("typed_reading_serving_artifacts")))
   publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
     list(as.call(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
@@ -1436,7 +1472,9 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
       publie_habitat
       publie_mobilite
       publie_backend_retained
+      digests_run
       profile_serving_artifacts
+      verifier_gel_release(SORTIE_RUN)  # garde au point d'ouverture de la publication
       publier_declared_profiles_postgres(SORTIE_RUN,
         unique(c(profile_serving_owners(metadata_demographie),
                  profile_serving_owners(metadata_habitat),
@@ -1444,6 +1482,33 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
     }),
     cue = tar_cue(mode = "always")
   ))
+}
+
+# Issue #1103 : publier les empreintes de TOUTES les sources lues à côté du
+# payload. Chaque download_sources écrit l'agrégat du cache ; cette cible le
+# projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
+digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
+                              sortie = SORTIE_RUN) {
+  noms <- paste0("sources_", names(themes))
+  if (identical(MODE_RUN, "full")) noms <- c(noms, "sources_programmes")
+  deps <- lapply(noms, as.name)
+  chemin_cache <- file.path(cache, NOM_DIGESTS)
+  chemin_sortie <- file.path(sortie, NOM_DIGESTS)
+  tar_target_raw(
+    "digests_run",
+    as.call(c(
+      list(as.name("{")), deps,
+      list(bquote(ecrire_digests_source(
+        filtrer_digests_ids(
+          c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
+            lire_digests_source(.(chemin_cache))),   # sources de manifeste
+          ids_digests_publication(THEMES_RUN)        # ids encore déclarés
+        ),
+        .(chemin_sortie)
+      )))
+    )),
+    cue = tar_cue(mode = "always")
+  )
 }
 
 list(
@@ -1464,6 +1529,7 @@ list(
   publication_retained_backend,
   publication_profile,
   rapports,
+  digests_run_cible(),
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
   verifications,
   publication_programmes,

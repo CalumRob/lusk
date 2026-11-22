@@ -1,4 +1,4 @@
-#!/usr/bin/env Rscript
+﻿#!/usr/bin/env Rscript
 # Desktop-only publication of retained canonical resources to PostgreSQL.
 # The operator's libpq password file is private. No Parquet is copied to the Pi.
 if (!requireNamespace("pkgload", quietly = TRUE)) {
@@ -32,18 +32,21 @@ if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets"
        call. = FALSE)
  }
 command <- args[[1L]]
+# Un seul répertoire de publication : les projections SONT LUES là et le gel
+# de release contrôle EXACTEMENT ce répertoire (issue #1103, revue 2).
+sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
 owned_command <- command %in% c("--owned-series-check","--owned-series-publish")
 if ((selector_count || all_count) && !owned_command)
   stop("--indicator-id/--all apply only to owned-series commands",call.=FALSE)
 if (all_count && command!="--owned-series-publish") stop("--all applies only to --owned-series-publish",call.=FALSE)
 if (command=="--owned-series-check" && publish_all) stop("--all is publish-only",call.=FALSE)
 if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
-  inputs <- read_programme_serving_inputs(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+  inputs <- read_programme_serving_inputs(sortie)
   annual_registry <- register_programme_series_publishers(list(),inputs$metadata)
   annual <- annual_registry$subventions_annuelles_owned$project(inputs$canonical)
   collection_registry <- register_programme_observed_collections(inputs$metadata)
   collections <- lapply(collection_registry,function(publisher) publisher$project(inputs$canonical))
-  artifact_directory <- Sys.getenv("LUSK_SORTIE",file.path("..","public","data"))
+  artifact_directory <- sortie
   projections <- c(list(subventions_annuelles=annual),collections)
   for (name in names(projections)) {
     projection <- projections[[name]]
@@ -52,6 +55,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
   if (args[[1L]]=="--programme-publish") {
     if (!identical(Sys.getenv("LUSK_PUBLISH_PROGRAMMES"),"1") || identical(Sys.getenv("LUSK_MODE"),"cron"))
       stop("Programme publication requires explicit LUSK_PUBLISH_PROGRAMMES=1 and is disabled for cron",call.=FALSE)
+    verifier_gel_release(sortie)  # issue #1103 : gel de release, zéro écriture
     con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
     tryCatch({
       publish_owned_series_projection(annual,owned_series_postgres_adapter(con))
@@ -62,7 +66,8 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
 }
 if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) {
   mode <- if (args[[1L]]=="--programme-series-check") "check" else "publish"
-  projections <- read_programme_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+  projections <- read_programme_series_projections(sortie)
+  if (mode == "publish") verifier_gel_release(sortie)  # issue #1103 : gel de release
   connect <- function() do.call(DBI::dbConnect,
     c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
    result <- dispatch_owned_series_cli(mode,projections,connect,require_scope=FALSE)
@@ -74,7 +79,8 @@ if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) 
 }
 if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   mode <- if (args[[1L]]=="--owned-series-check") "check" else "publish"
-   projections <- read_owned_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")),indicator_id=indicator_id)
+  if (mode == "publish") verifier_gel_release(sortie)  # issue #1103 : gel de release
+   projections <- read_owned_series_projections(sortie,indicator_id=indicator_id)
   connect <- function() {
     do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   }
@@ -96,13 +102,14 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   if (mode=="publish") cat("Each dataset commits independently; if one fails, retry the command to safely reconcile both.\n")
 } else if (args[[1L]] %in% c("--series-check", "--series-publish")) {
   if (args[[1L]] == "--series-publish") require_series_publish_opt_in()
-  projection <- read_conso_enaf_series_projection(file.path("..", "public", "data"))
+  projection <- read_conso_enaf_series_projection(sortie)
   version <- scalar_content_version(projection)
   cat("Validated canonical conso_enaf_annuel:", nrow(projection$points), "rows; version", version,
       "; comparison", projection$descriptor$comparison_point,
       "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id,
       "; excluded Région fiche rows", projection$excluded$region$row_count, "\n")
   if (args[[1L]] == "--series-publish") {
+    verifier_gel_release(sortie)  # issue #1103 : gel de release, zéro écriture
     config <- configuration_service_postgres()
     connection <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
     result <- tryCatch(publish_series_projection(projection, series_postgres_adapter(connection),
@@ -270,3 +277,4 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
     Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data")))
   cat("Reconciled retained backend owners:", paste(names(changed), collapse=", "), "\n")
 }
+

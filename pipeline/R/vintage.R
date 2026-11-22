@@ -8,10 +8,15 @@
 # Issue #13 : le build des vintages est générique — il se projette depuis le
 # manifeste DU THÈME ; le module du thème expose son builder (vintages_<theme>)
 # qui passe son propre manifeste.
+# Issue #1103 : la table publiée porte la vintage DÉRIVÉE de chaque source.
+# Quand les octets du run égalent ceux du lockfile, la valeur est celle du
+# lockfile (déterministe, sans horloge) ; sinon elle vient du digest du run,
+# jamais d'un littéral figé pour les bases dérivées.
 
 vintages_depuis_manifest <- function(manifest,
-                                     cache = Sys.getenv("LUSK_CACHE", unset = "data/raw")) {
-  manifest <- avec_vintage_basis(manifest)
+                                      cache = Sys.getenv("LUSK_CACHE", unset = "data/raw"),
+                                      lock = NULL) {
+  manifest <- declarer_bases(manifest)
   vintages <- manifest %>%
     dplyr::transmute(
       id = id,
@@ -22,18 +27,34 @@ vintages_depuis_manifest <- function(manifest,
       date_publication = date_publication
     )
 
-  # Issue #1099 : pour une source dont le vintage est DÉRIVÉ du fichier, la
-  # table publiée porte le vintage du pin — jamais le littéral du manifeste.
-  # Les sources datées (« fichier_date » : INSEE, static.data.gouv, OSM
-  # millésimé) gardent leur vintage déclaré, inchangé.
+  registre <- lire_lock(lock)
   for (i in seq_len(nrow(manifest))) {
     base <- manifest$vintage_basis[i]
     if (!(base %in% BASIS_VINTAGE_DERIVES)) next
-    pin <- lire_pin(manifest$id[i], cache)
-    if (is.null(pin) || is.null(pin$vintage)) next
-    vintages$version[i] <- pin$vintage
-    vintages$date_reference[i] <- pin$date_reference %||% pin$downloaded_at
-    vintages$date_publication[i] <- pin$downloaded_at %||% vintages$date_publication[i]
+    id <- manifest$id[i]
+    digest <- lire_digest_cache(id, cache, fichier = manifest$fichier[i])
+    verrouille <- registre[[id]]
+    lock_utilisable <- !is.null(verrouille) &&
+      (is.null(digest) ||
+         identical(as.character(verrouille$sha256), as.character(digest$sha256)))
+    if (lock_utilisable) {
+      # Locked bytes: deterministic, clock-free vintage from the lockfile.
+      vintages$version[i] <- as.character(verrouille$vintage)
+      vintages$date_reference[i] <- as.character(verrouille$date_reference)
+      vintages$date_publication[i] <- as.character(verrouille$acquired_at)
+    } else if (!is.null(digest)) {
+      # A real run: the derived value recorded by the resolver (never a stale
+      # literal for a `telechargement` source).
+      vintages$version[i] <- as.character(digest$vintage)
+      vintages$date_reference[i] <- as.character(digest$date_reference)
+      vintages$date_publication[i] <- as.character(digest$acquired_at)
+    }
+    # Sans digest ni verrou, aucun run n'atteste d'acquisition : on garde le
+    # vintage déclaré (par exemple un builder de thème appelé hors d'un run).
+    # Une source qui déclare NA n'a pas de date de publication (ORT, DPE) :
+    # on ne lui en invente pas une à partir de l'acquisition.
+    if (!is.na(manifest$date_publication[i])) next
+    vintages$date_publication[i] <- NA_character_
   }
   vintages
 }
@@ -54,7 +75,7 @@ vintages_depuis_manifest <- function(manifest,
 # remplaçante. Déclaré par le thème (retire_vintages du descripteur), jamais
 # inféré — le thème sait quelles sources il a retirées.
 fusionner_vintages <- function(vintages, sortie = "public/data",
-                               retires = character(0)) {
+                                retires = character(0)) {
   chemin <- file.path(sortie, "vintages.parquet")
   if (!file.exists(chemin)) {
     return(vintages)

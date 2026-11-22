@@ -31,7 +31,7 @@ test_that("les vintages Habitat sont par source : RP annuel, DVF semestriel, DPE
   )
 
   # DPE : la base roulante — pas de date de référence unique ; sans pull,
-  # l'horloge de publication est celle du RUN (#408 : au moins une horloge)
+  # l'horloge de publication est celle du RUN (#408 : au moins une horloge).
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
   expect_true(all(is.na(dpe$date_reference)))
   expect_true(all(dpe$version == as.character(Sys.Date())))

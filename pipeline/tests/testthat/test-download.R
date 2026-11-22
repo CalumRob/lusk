@@ -39,7 +39,7 @@ manifeste_factice <- function(fichier = "fichier-test.zip", mode = "cron") {
     id = "test", source = "test", url = "https://example.invalid/x",
     fichier = fichier, vintage = "2023", date_reference = "2023-01-01",
     date_publication = "2026-06-30", licence = "lov2", note = "test",
-    mode = mode
+    mode = mode, vintage_basis = "declaree"
   )
 }
 
@@ -58,7 +58,8 @@ manifeste_mixte <- function() {
     date_publication = c("2026-06-30", "2026-06-30", "2026-06-30"),
     licence = c("lov2", "lov2", "lov2"),
     note = c("test", "test", "test"),
-    mode = c("cron", "manuel", "cron")
+    mode = c("cron", "manuel", "cron"),
+    vintage_basis = c("declaree", "declaree", "declaree")
   )
 }
 
@@ -172,7 +173,8 @@ test_that("download_sources vérifie l'empreinte épinglée des sources", {
     fichier = "source.txt",
     mode = "cron",
     type = "fichier",
-    sha256 = empreinte
+    sha256 = empreinte,
+    vintage_basis = "declaree"
   )
   local_mocked_bindings(
     telecharger_fichier = function(url, cible) writeBin(contenu, cible),
@@ -370,7 +372,8 @@ manifeste_api <- function() {
     note = c("test", "test"),
     mode = c("cron", "cron"),
     type = c("fichier", "api"),
-    pull = list(NULL, function() tibble::tibble(x = 1))
+    pull = list(NULL, function() tibble::tibble(x = 1)),
+    vintage_basis = c("declaree", "declaree")
   )
 }
 

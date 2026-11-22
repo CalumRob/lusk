@@ -14,13 +14,13 @@
 # Un manifeste sans colonne `type` est traité tout en « fichier » (manifestes
 # antérieurs à l'issue #13 — comportement historique).
 #
-# Issue #1099 : tout fetch passe désormais par resoudre_source() (pin_sources.R)
+# Issue #1103 : tout fetch passe par resoudre_source() (source_lock.R)
 # — le résolveur unique. Le téléchargement lui-même reste mockable ici via
 # telecharger_fichier/tirer_source, exactement comme avant.
 
 # ecrire_atomique -------------------------------------------------------------
 # Écrire un fichier complet dans un TEMPORAIRE du MÊME dossier, puis le renommer
-# vers sa destination (issue #1099, revue) : un téléchargement partiel ou un pin
+# vers sa destination (issue #1103) : un téléchargement partiel ou un lockfile
 # à moitié écrit ne peut jamais remplacer une bonne copie. Le seam `ecrire` est
 # injectable pour tester l'échec en cours d'écriture. Sur Windows, file.rename
 # ne remplace pas une cible existante : on ne la retire qu'après un premier
@@ -198,9 +198,11 @@ erreur_telechargement <- function(statuts, url) {
 #     téléchargées ; les sources « manuel » sont sautées sans échec et
 #     enregistrées « à traiter à la main ». Un échec cron après les retries est
 #     enregistré « échec » puis le run s'arrête bruyamment.
-# Idempotent MAIS pas naïf (point 3) et, depuis #1099, content-addressed : le
-# résolveur resoudre_source() décide, pour chaque source, d'utiliser le fichier
-# épinglé, de le télécharger (et de l'épingler) ou d'échouer fermé sur une dérive.
+# Idempotent MAIS pas naïf (point 3) et, depuis #1103, content-addressed : le
+# résolveur resoudre_source() décide, pour chaque source, d'utiliser les octets
+# du cache, de la télécharger ou de dériver son vintage ; il enregistre le digest
+# du run. La dérive n'est pas une erreur de pin : elle est attribuée aux verrous
+# et refusée à la publication si le lockfile n'a pas été relocké.
 # Retour : le tableau des statuts par source (id, mode, status) — une ligne par
 # source traitée, dans l'ordre du manifeste. En cas d'échec, le run s'arrête et
 # les statuts sont portés par l'erreur de classe « erreur_telechargement »
@@ -211,10 +213,10 @@ download_sources <- function(manifest, cache = "data/raw",
   mode <- match.arg(mode)
   if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
 
-  # Issue #1099 : toute source déclare un `vintage_basis` (les manifestes
-  # historiques sont des sources datées — « fichier_date » par défaut) et
-  # TOUT fetch passe par resoudre_source(), le résolveur unique.
-  manifest <- avec_vintage_basis(manifest)
+  # Issue #1103 : chaque source déclare EXPLICITEMENT sa base de vintage (le
+  # registre 00_source_basis.R, sans défaut implicite) et TOUT fetch passe par
+  # resoudre_source(), le résolveur unique.
+  manifest <- declarer_bases(manifest)
 
   # le mode de chaque source : la colonne `mode` du manifeste, ou « cron » par
   # défaut si le manifeste ne la porte pas (manifestes antérieurs à l'issue #8)
@@ -253,6 +255,9 @@ download_sources <- function(manifest, cache = "data/raw",
   etat$statuts <- tibble::tibble(
     id = character(0), mode = character(0), status = character(0)
   )
+  # Le résolveur a déjà haché chaque fichier : on RÉUTILISE son digest, jamais
+  # un second hachage (le PBF fait 330 Mo).
+  digests <- list()
 
   for (i in seq_len(nrow(manifest))) {
     # en mode cron, une source « manuel » est sautée sans être touchée : jamais
@@ -274,7 +279,7 @@ download_sources <- function(manifest, cache = "data/raw",
       stop(erreur_manifeste(manifest$id[i]))
     }
 
-    resoudre_source(
+    resolu <- resoudre_source(
       id = manifest$id[i], url = manifest$url[i], fichier = manifest$fichier[i],
       cache = cache, type = type_source[i],
       pull = if ("pull" %in% names(manifest)) manifest$pull[[i]] else NULL,
@@ -284,10 +289,14 @@ download_sources <- function(manifest, cache = "data/raw",
       reference_declaree = reference_source[i],
       horloge = horloge, etat = etat
     )
+    digests[[manifest$id[i]]] <- resolu$digest
     etat$statuts <- tibble::add_row(
       etat$statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
     )
   }
 
+  verifier_digests_couvrent(etat$statuts, digests)
+  if (length(digests)) ecrire_digests_cache_aggregate(digests, cache)
+  attr(etat$statuts, "digests") <- digests
   etat$statuts
 }
