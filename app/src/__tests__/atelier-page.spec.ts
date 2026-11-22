@@ -136,6 +136,37 @@ describe('atelier — blocs de texte', () => {
 
     expect(wrapper.findAll('.atelier-md').map((p) => p.text())).toEqual(['Premier', 'Deuxième', 'Troisième'])
   })
+
+  it('donne un id inédit après restauration d’une page trouée, sans toucher aux blocs existants', async () => {
+    // b1 a été supprimé avant le partage : les ids restaurés ne sont pas contigus.
+    const etat = pageAvec([
+      { kind: 'prose', id: 'b2', markdown: 'Premier' },
+      { kind: 'prose', id: 'b3', markdown: 'Troisième' },
+    ])
+    const lien = await lienDe(etat)
+    expect((await decodeAtelierLink(lien, codec)).state.blocks.map((bloc) => bloc.id)).toEqual(['b2', 'b3'])
+
+    const { wrapper } = await monter(`/atelier?c=${lien}`)
+    expect(wrapper.findAll('.bloc-prose').map((bloc) => bloc.attributes('data-bloc'))).toEqual(['b2', 'b3'])
+
+    await ajouterTexte(wrapper, 'Nouveau')
+    const ids = wrapper.findAll('.bloc-prose').map((bloc) => bloc.attributes('data-bloc'))
+    expect(new Set(ids).size).toBe(ids.length) // aucun id dupliqué
+    expect(ids).toEqual(['b2', 'b3', 'b4'])
+    const nouvelId = ids[2]!
+
+    // Éditer le nouveau ne modifie que lui.
+    const nouveau = wrapper.find(`[data-bloc="${nouvelId}"]`)
+    await nouveau.find('button[aria-label="Modifier le texte"]').trigger('click')
+    await nouveau.find('textarea.atelier-prose-zone').setValue('Nouveau édité')
+    await nouveau.find('button[aria-label="Enregistrer le texte"]').trigger('click')
+    expect(wrapper.findAll('.atelier-md').map((p) => p.text())).toEqual(['Premier', 'Troisième', 'Nouveau édité'])
+
+    // Retirer le nouveau ne retire que lui.
+    await wrapper.find(`[data-bloc="${nouvelId}"] button[aria-label="Retirer le texte"]`).trigger('click')
+    expect(wrapper.findAll('.atelier-md').map((p) => p.text())).toEqual(['Premier', 'Troisième'])
+    expect(wrapper.findAll('.bloc-prose').map((bloc) => bloc.attributes('data-bloc'))).toEqual(['b2', 'b3'])
+  })
 })
 
 describe('atelier — titre, partage et restauration', () => {

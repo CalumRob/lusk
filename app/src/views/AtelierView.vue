@@ -33,11 +33,27 @@ const restaure = ref(false)
 const copie = ref(false)
 const nouveauBloc = ref<string | null>(null)
 
-let compteur = 0
 let minuteurSync: ReturnType<typeof setTimeout> | undefined
 let minuteurCopie: ReturnType<typeof setTimeout> | undefined
 
-const nouvelIdentifiant = (): string => `b${++compteur}`
+/**
+ * Un id doit être inédit dans l'état auquel on l'ajoute : un lien restauré
+ * peut porter des ids troués (`b2`, `b3` après suppression de `b1`), et un
+ * compteur seeded sur le nombre de blocs redonnerait `b3`. On part donc du
+ * plus grand suffixe numérique présent, jamais du nombre de blocs. Les ids
+ * existants ne sont pas touchés — le lien doit round-tripper exactement.
+ */
+function nouvelIdentifiant(): string {
+  const existants = new Set(etat.value.blocks.map((bloc) => bloc.id))
+  let suffixe = 0
+  for (const id of existants) {
+    const numerique = /^b(\d+)$/.exec(id)
+    if (numerique) suffixe = Math.max(suffixe, Number(numerique[1]))
+  }
+  let candidat = suffixe + 1
+  while (existants.has(`b${candidat}`)) candidat++
+  return `b${candidat}`
+}
 
 const titre = computed(() => etat.value.title)
 const blocs = computed(() => etat.value.blocks)
@@ -108,7 +124,6 @@ onMounted(async () => {
     const decoded = await decodeAtelierLink(encoded)
     etat.value = decoded.state
     notice.value = decoded.notice
-    compteur = etat.value.blocks.length
   }
   restaure.value = true
   planifierSync()
