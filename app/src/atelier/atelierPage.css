@@ -1,0 +1,212 @@
+/* L'Atelier (#1080) — coquille de page, en-tête composé, blocs et emplacement
+ * vide. Porté du prototype `prototype/atelier-cell-picker` (0657b2fe), réduit
+ * à ce ticket : ni figures, ni modale, ni réordonnancement. Le style de prose
+ * (`.cahier-prose`, `.argument-copy`) vient de cahierLayout.css importé par la
+ * vue — il n'est pas recopié ici. Le type du titre vient des tokens de
+ * production ; les règles de `.page-heading` du Cahier restent scopées dans sa
+ * variante et ne sont ni copiées ni extraites (#1093). */
+
+.atelier {
+  --cahier-grid-jump: 24px;
+  --cahier-prose-line-height: 1.45;
+  --cahier-prose-paragraph-gap: var(--space-3);
+  color: var(--ink);
+  font-family: var(--font-body);
+  background: transparent;
+}
+
+.atelier-wrap {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-24);
+}
+
+.atelier-page {
+  position: relative;
+  min-width: 0;
+  min-height: min(70vh, 720px);
+  padding: 0 64px 56px;
+  border: 1px solid var(--editorial-page-border-color);
+  background-color: var(--paper);
+  box-shadow: 0 14px 30px var(--editorial-page-shadow-color);
+}
+
+/* En-tête composé pour l'Atelier : pas de compteur de page, un titre éditable
+   et « Partager » à droite. La place de l'action PDF est réservée plus bas. */
+.atelier-entete {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-6);
+  margin-bottom: calc(var(--space-6) + var(--space-1));
+  padding: var(--space-4) 0 14px;
+  border-bottom: 1px solid var(--red-soft);
+  background-color: var(--paper);
+}
+
+.atelier-titre {
+  max-width: none;
+  margin: 0;
+  color: var(--ink);
+  font: var(--text-page-heading);
+  letter-spacing: var(--text-page-heading-tracking);
+  text-align: left;
+}
+
+.atelier-entete__actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--space-4);
+}
+
+.atelier-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--red);
+  font: var(--type-figure-label);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.atelier-action:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.atelier-action:active { background: color-mix(in srgb, currentColor 14%, transparent); }
+.atelier-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+
+.atelier-notice {
+  margin: var(--space-4) 0;
+  color: var(--muted);
+  font: var(--type-figure-legend);
+}
+
+/* ------------------------------------------------------------- blocs */
+
+.atelier-blocs {
+  display: grid;
+  gap: 0;
+  padding-bottom: 18px;
+}
+
+.atelier-bloc { position: relative; min-width: 0; }
+.atelier-bloc__actions {
+  position: absolute;
+  top: 0;
+  right: -52px;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.atelier-bloc:hover > .atelier-bloc__actions,
+.atelier-bloc:focus-within > .atelier-bloc__actions,
+.atelier-bloc__actions--visibles { opacity: 1; }
+.atelier-bloc__actions--visibles { position: static; display: flex; justify-content: flex-end; }
+
+@media (max-width: 760px), (hover: none) {
+  .atelier-bloc__actions { position: static; display: flex; justify-content: flex-end; opacity: 0.55; }
+}
+
+.atelier-insertion {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 24px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.atelier-insertion:hover,
+.atelier-insertion:focus-within { opacity: 1; }
+.atelier-insertion .atelier-icone { width: 28px; height: 24px; }
+@media (max-width: 760px), (hover: none) { .atelier-insertion { opacity: 0.45; } }
+
+.atelier-libelle {
+  display: block;
+  margin: 0 0 2px;
+  color: var(--muted);
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking, 0.08em);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------- Markdown propre au lecteur */
+
+/* Seules les pièces absentes de cahierLayout.css sont définies ici : titres,
+   listes, emphase. Le corps (`cahier-prose`, `argument-copy`) est importé. */
+.atelier-md > * + * { margin-top: var(--space-3); }
+.atelier-md > .atelier-md-h2,
+.atelier-md > .atelier-md-h3 { margin-bottom: 0; }
+.atelier-md > :is(h2, h3) + * { margin-top: var(--space-2); }
+.atelier-md .atelier-md-h2 {
+  margin: var(--space-5) 0 0;
+  color: var(--ink);
+  font: var(--text-cahier-section);
+  letter-spacing: 0;
+  text-align: left;
+}
+.atelier-md .atelier-md-h3 {
+  margin: var(--space-4) 0 0;
+  color: var(--ink);
+  font: var(--type-figure-title);
+  text-align: left;
+}
+.atelier-md > :first-child { margin-top: 0; }
+.atelier-md .atelier-md-liste { padding-left: 1.25rem; text-align: left; }
+.atelier-md .atelier-md-liste li { padding-left: 0.25rem; }
+.atelier-md .atelier-md-liste li::marker { color: var(--red); font-variant-numeric: tabular-nums; }
+.atelier-md strong { font-family: var(--font-body-emphasis); font-weight: 600; }
+.atelier-md em { font-style: italic; }
+
+/* ------------------------------------------------- emplacement vide */
+
+.atelier-emplace {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding: var(--space-8) var(--space-6);
+  background: var(--paper-deep);
+  text-align: center;
+}
+.atelier-emplace p {
+  margin: 0;
+  color: var(--cahier-default);
+  font: var(--type-figure-label);
+  letter-spacing: var(--type-figure-label-tracking);
+}
+.atelier-emplace__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); }
+.atelier-ajouter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--cahier-default) 30%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--cahier-default);
+  font: 600 var(--type-figure-lecture-size, 0.8125rem)/1 var(--font-ui);
+  cursor: pointer;
+}
+.atelier-ajouter:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.atelier-ajouter:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.atelier-ajouter__plus { font: 400 1.25rem/1 var(--font-figure-label); }
+
+/* ---------------------------------------------------------------- narrow */
+@media (max-width: 760px) {
+  .atelier-wrap { padding: 0 0 var(--space-16); }
+  .atelier-page { padding: 0 var(--space-4) 40px; border: 0; box-shadow: none; }
+  .atelier-entete { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-1); }
+  .atelier-titre { grid-column: 1 / -1; grid-row: 1; }
+  .atelier-entete__actions { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: space-between; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atelier * { transition: none !important; }
+}

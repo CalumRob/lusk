@@ -24,6 +24,8 @@ const CARTES_ATTENDUES = [
   // Le catalogue (#409) — la route exacte AVANT sa sœur paramétrée.
   '/indicateurs',
   '/indicateurs/:theme/:indicator',
+  // L'Atelier (#1080) — page d'exploration du lecteur, ouverte par la navigation.
+  '/atelier',
 ]
 
 describe('router — route table', () => {
@@ -60,6 +62,13 @@ describe('router — route table', () => {
     expect(new Set(names).size).toBe(names.length)
   })
 
+  it('donne à l’Atelier un titre de page dédié (#1080)', () => {
+    const atelier = routes.find((r) => r.path === '/atelier')
+    expect(atelier).toBeDefined()
+    expect(atelier?.name).toBe('atelier')
+    expect(atelier?.meta?.title).toBe('Atelier')
+  })
+
   it('passes route params as props on the territoire route', () => {
     const territoire = routes.find((r) => r.path === '/territoire/:type/:id')
     expect(territoire?.props).toBe(true)
@@ -78,6 +87,7 @@ describe('router — navigation resolves to the French placeholder views', () =>
     '/a-propos',
     '/indicateurs',
     '/indicateurs/demographie/densite',
+    '/atelier',
   ])('resolves "%s" to a registered component', async (path) => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push(path)

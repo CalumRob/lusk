@@ -29,6 +29,9 @@ import SourcesView from '../views/SourcesView.vue'
  */
 const CarteView = () => import('../views/CarteView.vue')
 const IndicateurView = () => import('../views/IndicateurView.vue')
+// L'Atelier (#1080) se charge à la demande : sa page n'entre dans aucun autre
+// chemin de navigation (fiche, carte, catalogue).
+const AtelierView = () => import('../views/AtelierView.vue')
 export const routes = [
   {
     path: '/',
@@ -104,6 +107,14 @@ export const routes = [
     component: IndicateurView,
     props: true,
     meta: { title: 'Indicateur' },
+  },
+  {
+    // L'Atelier (#1080) — page publique d'exploration du lecteur. Son état
+    // vit entièrement dans le lien `?c=` ; la route n'a donc aucun paramètre.
+    path: '/atelier',
+    name: 'atelier',
+    component: AtelierView,
+    meta: { title: 'Atelier' },
   },
 ] as const
 

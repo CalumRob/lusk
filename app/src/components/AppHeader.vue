@@ -2,8 +2,9 @@
 /**
  * AppHeader (DESIGN.md §5 + #410 — la bascule atomique): sticky 60px chrome,
  * Lusk wordmark (serif → /) — the sole home affordance (#61) — centered nav
- * **Territoires · Indicateurs · Sources · À propos** with a 2px underline on
- * the active route, Contact → calumrobertson.fr (external). No locale toggle
+ * **Territoires · Indicateurs · Atelier · Sources · À propos** with a 2px
+ * underline on the active route, Contact → calumrobertson.fr (external).
+ * Atelier (#1080) is the reader's exploration page. No locale toggle
  * (French-only v1).
  *
  * La bascule (#410) : Carte et Méthodes ont quitté la navigation — AUCUN lien
@@ -81,13 +82,16 @@ const territoiresActif = computed(() =>
   correspond(['/communes', '/epcis', '/departements', '/territoire'], route.path),
 )
 const indicateursActif = computed(() => correspond(['/indicateurs'], route.path))
+const atelierActif = computed(() => correspond(['/atelier'], route.path))
 const sourcesActif = computed(() => correspond(['/sources'], route.path))
 const aProposActif = computed(() => correspond(['/a-propos'], route.path))
 
 /* Les liens simples de la bascule (#410) — Territoires vit à part comme
-   menu déroulant (bureau) / étiquette de groupe (tiroir). */
+   menu déroulant (bureau) / étiquette de groupe (tiroir). L'Atelier s'insère
+   entre Indicateurs et Sources (#1080), sur bureau comme dans le tiroir. */
 const liensSimples = computed(() => [
   { label: 'Indicateurs', chemin: '/indicateurs', actif: indicateursActif.value },
+  { label: 'Atelier', chemin: '/atelier', actif: atelierActif.value },
   { label: 'Sources', chemin: '/sources', actif: sourcesActif.value },
   { label: 'À propos', chemin: '/a-propos', actif: aProposActif.value },
 ])
