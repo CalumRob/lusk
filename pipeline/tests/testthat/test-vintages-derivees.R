@@ -162,6 +162,31 @@ ecrire_projet_vintages <- function(projet, horloge, payload, pipe) {
   invisible(projet)
 }
 
+test_that("vintages_economie : le cache atteint la projection pour sirene_snapshot (base dérivée)", {
+  # Issue #1114 : thread `cache` jusqu'au builder — sans lui, une source
+  # `telechargement` publierait le littéral du manifeste au lieu du sidecar.
+  cache <- tempfile("cache-sirene-")
+  dir.create(cache, recursive = TRUE)
+  on.exit(unlink(cache, recursive = TRUE))
+  f <- MANIFEST_ECONOMIE_SIRENE$fichier[[1L]]
+  cible <- file.path(cache, f)
+  writeBin(charToRaw("sirene-fixture\n"), cible)
+  Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+  ecrire_digest_cache(list(
+    source_id = "sirene_snapshot", url = "https://example.invalid/sirene",
+    sha256 = "abc", bytes = file.size(cible), fichier = f,
+    mtime = as.numeric(file.mtime(cible)), acquired_at = "2026-11-18",
+    vintage_basis = "telechargement", vintage = "2026-11",
+    date_reference = "2026-11-18"
+  ), cache)
+
+  v <- vintages_economie(cache = cache)
+  expect_equal(v$version[v$id == "sirene_snapshot"], "2026-11")
+  expect_equal(v$date_publication[v$id == "sirene_snapshot"], "2026-11-18")
+  # les sources declaree ne bougent pas
+  expect_equal(v$version[v$id == "rp_emploi"], "2023")
+})
+
 test_that("absences délibérées de vintages.json (ADR-0048 §3bis) — aucun ajout silencieux", {
   # Ces ids sont dans source-digests.json mais PAS dans la table des vintages :
   # lectures réseau géométrie, lignes techniques OCS-GE (une source éditoriale
