@@ -183,6 +183,20 @@ lire_ort <- function(chemin) {
     )
 }
 
+# deriver_actualisation_ort ----------------------------------------------------
+# Extracteur de date de contenu enregistré pour `ort` (issue #1113) : la date
+# d'actualisation MAXIMALE des lignes que lire_ort() lit réellement — le lecteur
+# est réutilisé, jamais une réimplémentation du parsing du classeur. Retourne
+# NULL quand aucune date n'est lisible (le résolveur retombe alors sur
+# `telechargement`, en enregistrant la base réellement utilisée).
+deriver_actualisation_ort <- function(chemin) {
+  lignes <- tryCatch(lire_ort(chemin), error = function(e) NULL)
+  if (is.null(lignes) || !"actualisation" %in% names(lignes)) return(NULL)
+  dates <- suppressWarnings(as.Date(lignes$actualisation, tryFormats = "%Y-%m-%d"))
+  dates <- dates[!is.na(dates)]
+  if (!length(dates)) NULL else max(dates)
+}
+
 # date_iso --------------------------------------------------------------------
 # La date « Dernière actualisation » en ISO (AAAA-MM-JJ), quelle que soit la
 # forme lue : un POSIXct (le classeur réel documenté), un numéro de série
