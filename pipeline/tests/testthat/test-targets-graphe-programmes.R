@@ -99,7 +99,7 @@ test_that("le seam publier_programmes est appelé PAR SYMBOLE, la forme d'appel 
                     commande("brut_programmes"), fixed = TRUE))
   expect_true(grepl("fichiers_programmes", commande("brut_programmes"),
                     fixed = TRUE))
-  expect_true(grepl("vintages_programmes()",
+  expect_true(grepl("vintages_programmes(cache =",
                     commande("vintages_table_programmes"), fixed = TRUE))
 })
 

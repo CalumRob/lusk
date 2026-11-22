@@ -321,6 +321,19 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   } else {
     bquote(.(vintages_fn)())
   }
+  # Issue #1114 : la table des vintages court APRÈS la résolution des octets de
+  # SES sources. `sources_<thème>` ordonne le téléchargement (les sidecars
+  # `.digests/*.json` sont des entrées NON suivies) ; `fichiers_<thème>` porte
+  # la fraîcheur PAR CONTENU et fait rejouer la table quand les octets changent.
+  # Le garde échoue fort si une base dérivée n'a ni lock ni sidecar valide :
+  # jamais un littéral de manifeste publié pour une source roulante.
+  appel_vintages <- bquote({
+    .(sources)
+    .(fichiers)
+    table_vintages <- .(appel_vintages)
+    verifier_vintages_attestees(table_vintages, .(manifeste), cache = .(cache))
+    table_vintages
+  })
 
   grappe <- list(
     # download : idempotent (saute ce qui existe et est valide, retente et
@@ -1114,7 +1127,18 @@ programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN,
         .(construire)(cache = .(cache))
       })
     ),
-    tar_target_raw("vintages_table_programmes", bquote(.(vintages_fn)())),
+    # Issue #1114 : la table Programmes court APRÈS ses propres téléchargements
+    # (sources_programmes) et rejoue au changement d'octets (fichiers_programmes,
+    # fraîcheur par contenu). Le cache est threadé jusqu'au builder pour lire les
+    # sidecars, et le garde échoue fort sur une base dérivée non attestée.
+    tar_target_raw("vintages_table_programmes", bquote({
+      sources_programmes
+      fichiers_programmes
+      table_vintages <- .(vintages_fn)(cache = .(cache))
+      verifier_vintages_attestees(table_vintages, MANIFEST_PROGRAMMES_COMPLET,
+                                  cache = .(cache))
+      table_vintages
+    })),
     tar_target_raw(
       "publie_programmes",
       bquote({

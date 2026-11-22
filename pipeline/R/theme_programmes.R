@@ -286,8 +286,11 @@ MANIFEST_PROGRAMMES_COMPLET <- dplyr::bind_rows(
 # pour que la table PARTAGÉE des vintages porte aussi la source des
 # subventions après un run du thème (issue #178, issue #124 — upsert par id,
 # jamais l'écrasement last-writer-wins des sources des autres thèmes).
-vintages_programmes <- function() {
-  vintages_depuis_manifest(MANIFEST_PROGRAMMES_COMPLET)
+vintages_programmes <- function(cache = "data/raw") {
+  # Issue #1114 : le cache atteint la projection pour lire les sidecars écrits
+  # par le téléchargement — sans lui, les sources roulantes publieraient le
+  # littéral du manifeste. Le graphe appelle ce builder APRÈS sources_programmes.
+  vintages_depuis_manifest(MANIFEST_PROGRAMMES_COMPLET, cache = cache)
 }
 
 # construire_membres_programmes ------------------------------------------------
