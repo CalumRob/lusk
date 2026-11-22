@@ -123,7 +123,9 @@
 }
 .atelier-insertion:hover,
 .atelier-insertion:focus-within { opacity: 1; }
-.atelier-insertion .atelier-icone { width: 28px; height: 24px; }
+/* Le bouton-icône porte son propre style scopé : on règle sa densité via les
+   propriétés héritées qu'il expose, pas en franchissant cette frontière. */
+.atelier-insertion { --atelier-icone-largeur: 28px; --atelier-icone-hauteur: 24px; }
 @media (max-width: 760px), (hover: none) { .atelier-insertion { opacity: 0.45; } }
 
 .atelier-libelle {

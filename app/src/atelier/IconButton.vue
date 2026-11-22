@@ -13,12 +13,15 @@ withDefaults(defineProps<{ icon: Component; label: string; size?: number }>(), {
   </button>
 </template>
 
-<style>
+<style scoped>
+/* Rien ici ne doit traverser une frontière de composant. Les deux dimensions
+   sont des propriétés héritées : la page règle la densité de ses boutons
+   d'insertion sur l'ancêtre, sans avoir à percer ce style scopé. */
 .atelier-icone {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--atelier-icone-largeur, 32px);
+  height: var(--atelier-icone-hauteur, 32px);
   padding: 0;
   border: 0;
   border-radius: 0;

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 
 import { flushPromises, mount } from '@vue/test-utils'
@@ -250,5 +252,17 @@ describe('atelier — titre, partage et restauration', () => {
     expect(wrapper.text()).toContain('[Cliquer](javascript:alert(1))')
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.find('a').exists()).toBe(false)
+  })
+})
+
+describe('atelier — style du bouton-icône', () => {
+  it('reste scopé et règle la densité d’insertion par propriétés héritées', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src', 'atelier', 'IconButton.vue'), 'utf8')
+    const page = readFileSync(resolve(process.cwd(), 'src', 'atelier', 'atelierPage.css'), 'utf8')
+
+    expect(source).toContain('<style scoped>')
+    expect(source).toContain('--atelier-icone-largeur, 32px')
+    expect(source).toContain('--atelier-icone-hauteur, 32px')
+    expect(page).toMatch(/\.atelier-insertion\s*\{[^}]*--atelier-icone-largeur:\s*28px[^}]*--atelier-icone-hauteur:\s*24px/u)
   })
 })
