@@ -687,17 +687,26 @@ validations_habitat <- list(
 # déclarée reste celle du jour où CE payload est construit, jamais une date de
 # source inventée ; la référence reste NA, la sémantique roulante d'ADR-0009).
 vintages_habitat <- function(cache = "data/raw") {
-  v <- vintages_depuis_manifest(MANIFEST_HABITAT)
+  # Issue #1114 : le cache atteint la projection — les sidecars écrits par le
+  # pull DPE portent la vintage DÉRIVÉE (base `telechargement`). On ne recolle
+  # plus le mtime du .rds dans `version` : la date complète reste dans
+  # `date_publication`, la version suit le format dérivé YYYY-MM.
+  v <- vintages_depuis_manifest(MANIFEST_HABITAT, cache = cache)
   dpe_ids <- MANIFEST_HABITAT$id[MANIFEST_HABITAT$type == "api"]
   for (id in dpe_ids) {
+    version <- v$version[v$id == id]
+    # Sans attestation (aucun run — premier build, fixtures), le manifeste DPE
+    # ne déclare pas de vintage (NA) : l'horloge du pull reste le mtime du .rds,
+    # à défaut celle du run (#408 — jamais une ligne sans aucune date).
+    if (!is.na(version) && nzchar(version)) next
     chemin <- file.path(cache, MANIFEST_HABITAT$fichier[MANIFEST_HABITAT$id == id])
-    if (file.exists(chemin)) {
-      date_pull <- as.character(as.Date(file.info(chemin)$mtime))
+    date_pull <- if (file.exists(chemin)) {
+      as.Date(file.info(chemin)$mtime)
     } else {
-      date_pull <- as.character(Sys.Date())
+      Sys.Date()
     }
-    v$version[v$id == id] <- date_pull
-    v$date_publication[v$id == id] <- date_pull
+    v$version[v$id == id] <- format(date_pull, "%Y-%m")
+    v$date_publication[v$id == id] <- as.character(date_pull)
   }
   v
 }

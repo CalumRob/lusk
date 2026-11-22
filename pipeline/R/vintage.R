@@ -102,9 +102,12 @@ vintages_depuis_manifest <- function(manifest,
     }
     # Sans digest ni verrou, aucun run n'atteste d'acquisition : on garde le
     # vintage déclaré (par exemple un builder de thème appelé hors d'un run).
-    # Une source qui déclare NA n'a pas de date de publication (ORT, DPE) :
-    # on ne lui en invente pas une à partir de l'acquisition.
-    if (!is.na(manifest$date_publication[i])) next
+    # Une source qui déclare NA n'a PAS de date de publication DÉCLARÉE (ORT,
+    # DPE) : hors attestation, on ne lui en invente pas une. Mais quand le run
+    # atteste l'acquisition, `acquired_at` est une date RÉELLE (issue #1114) —
+    # on ne l'écrase pas avec NA sous prétexte que le manifeste déclare NA.
+    atteste <- lock_utilisable || !is.null(digest)
+    if (atteste || !is.na(manifest$date_publication[i])) next
     vintages$date_publication[i] <- NA_character_
   }
   vintages
