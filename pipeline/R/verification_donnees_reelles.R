@@ -1171,11 +1171,16 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
     # re-baselinés à la précision naturelle (longueurs au 3ᵉ — le 6ᵉ chahute
     # entre extraits re-téléchargés) ; les modes b (Geovelo épinglé) restent
     # FORTS
-   verifier_egale(round(lire_rt("53", "c_longueur"), 3), 93688.551,
+    # Issue #1105 : re-dérivés UNE FOIS le 2026-11-22 sur le cache reconstruit
+    # après la perte du disque (extrait OSM du 2026-11-16, communes_limites du
+    # 2026-11-18). Sans valeur forensique : les octets des anciennes valeurs
+    # sont perdus, aucune empreinte ne permet d'attribuer l'écart. Les dérives
+    # suivantes sont attribuées par sources.lock.json (ADR-0048).
+   verifier_egale(round(lire_rt("53", "c_longueur"), 3), 93739.119,
                   "Mobilité e2e — les routes de la région")
-   verifier_egale(round(lire_rt("53", "t_longueur"), 3), 46240.240,
+   verifier_egale(round(lire_rt("53", "t_longueur"), 3), 46851.523,
                   "Mobilité e2e — les trottoirs de la région")
-  verifier_egale(round(lire_rt("53", "b_longueur"), 3), 4940.309,
+  verifier_egale(round(lire_rt("53", "b_longueur"), 3), 4913.233,
                  "Mobilité e2e — le réseau cyclable de la région (mode b)")
   verifier_egale(lire_rt("29083", "b_longueur"), 0,
                  "Mobilité e2e — l'île de Sein sans réseau cyclable")
@@ -1186,17 +1191,20 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   # sources normalisées du BRUT et les artefacts du chaînon aux comptes
   # verrouillés. Korrigo (GTFS) et bornes (IRVE) sont des sources VIVANTES
   # (flux vivants) : leurs comptes sont relatifs à l'époque du cache (issue
-  # #380) — re-baselinés sur le cache restauré (27 543 arrêts, 9 900 lignes /
-  # 1 909 stations, 707 communes)
-  verifier_egale(nrow(donnees$korrigo), 27543L,
+  # #380) — re-baselinés une fois le 2026-11-22 (#1105) sur le cache
+  # reconstruit après la perte du disque : 29 982 arrêts (Korrigo du
+  # 2026-11-18), 7 805 points / 1 736 stations / 692 communes (bornes, date_maj
+  # 2026-11-11). Sans valeur forensique ; les dérives suivantes sont attribuées
+  # par sources.lock.json (ADR-0048).
+  verifier_egale(nrow(donnees$korrigo), 29982L,
                  "Mobilité e2e — les arrêts GTFS korrigo")
-  verifier_egale(nrow(donnees$bornes_recharges), 9900L,
+  verifier_egale(nrow(donnees$bornes_recharges), 7805L,
                  "Mobilité e2e — les points de charge")
   verifier_egale(nrow(donnees$stationnement_velo), 4808L,
                  "Mobilité e2e — le hub stationnement vélo")
   verifier_egale(nrow(analytiques$offre_tc_communes), 1200L,
                  "Mobilité e2e — l'offre TC par commune")
-  verifier_egale(nrow(analytiques$bornes_communes), 707L,
+  verifier_egale(nrow(analytiques$bornes_communes), 692L,
                  "Mobilité e2e — les bornes par commune")
   verifier_egale(nrow(analytiques$stationnement_velo_communes), 1202L,
                  "Mobilité e2e — le stationnement vélo par commune")
@@ -1245,7 +1253,12 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   verifier_vrai(all(tc_communes$n_adresses > 0L), "Mobilité e2e",
                 "un dénominateur d'adresses résidentielles non positif")
   tc_valeurs <- offre$value[offre$key == "offre_tc"]
-  verifier_egale(length(tc_valeurs), nrow(base) + n_epci + n_dep + 1L,
+  # Issue #1105 : les communes portées sont celles du spine d'adresses (1 200 ;
+  # Île-de-Sein 29083 et Île-Molène 29084 n'ont aucune adresse résidentielle),
+  # pas toute la base (1 202) — le compte suit la table communale verrouillée
+  # ci-dessus, jamais nrow(base). Jamais atteint avant #1105 : le verrou des
+  # routes s'arrêtait avant.
+  verifier_egale(length(tc_valeurs), nrow(tc_communes) + n_epci + n_dep + 1L,
                  "Mobilité e2e — l'offre TC aux quatre niveaux")
   verifier_vrai(all(!is.na(tc_valeurs)), "Mobilité e2e",
                 "une part d'offre TC absente du payload")
@@ -1254,9 +1267,9 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
 
   # Les bornes (IRVE) sont une source VIVANTE (issue #380) : verrous de
   # VALEUR relatifs à l'époque du cache (comptes exacts, re-baselinés)
-  verifier_egale(lire_offre("53", "bornes_recharge"), 1909L,
+  verifier_egale(lire_offre("53", "bornes_recharge"), 1736L,
                  "Mobilité e2e — les bornes de la région")
-  verifier_egale(lire_offre("35", "bornes_recharge"), 623L,
+  verifier_egale(lire_offre("35", "bornes_recharge"), 580L,
                  "Mobilité e2e — les bornes de l'Ille-et-Vilaine")
   # les densités de ravitaillement (issue #953) : la règle est portée par son
   # seam de vérification (testé sur des entrées synthétiques mélangées) — le

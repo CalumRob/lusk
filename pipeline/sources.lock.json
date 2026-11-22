@@ -28,5 +28,695 @@
     "vintage_basis": "telechargement",
     "vintage": "2026-11",
     "date_reference": "2026-11-18"
+  },
+  {
+    "source_id": "geometrie_communes",
+    "url": "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG-CARTO-PE.LATEST%3Acommune&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326",
+    "sha256": "be9a1115698ec76e7e8f80a8ed85c496b67ade0ef4389ad58309588456e70bc9",
+    "bytes": 2734670,
+    "acquired_at": "2026-11-22",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-22"
+  },
+  {
+    "source_id": "geometrie_epcis",
+    "url": "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG-CARTO-PE.LATEST%3Aepci&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326",
+    "sha256": "48a6c1d87b3e62405bca64901a86b19671679c2f17fe3e97ea561efe78c5a533",
+    "bytes": 564350,
+    "acquired_at": "2026-11-22",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-22"
+  },
+  {
+    "source_id": "geometrie_departements",
+    "url": "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG-CARTO-PE.LATEST%3Adepartement&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326",
+    "sha256": "d8e423e8208169cde58ed56bd16e02ec06c2cfcd5b79ba4a3268243590cd0f9d",
+    "bytes": 269863,
+    "acquired_at": "2026-11-22",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-22"
+  },
+  {
+    "source_id": "menages",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_MENAGES_COMP/DS_RP_MENAGES_COMP_2023_CSV_FR",
+    "sha256": "3e26b46de4b7bc184648f63f4ce893fc70c1262848e5c03843305efcca6c0757",
+    "bytes": 31807348,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "age_detail",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_POPULATION_PRINC/DS_RP_POPULATION_PRINC_2023_CSV_FR",
+    "sha256": "553ab6016f4693e820efefd683740ec571d54226aaf7b7ad52fbd27b2d4c01bf",
+    "bytes": 32699741,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "logements",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR",
+    "sha256": "c93ccc1db5706511ae303fdc9543b5e7012a07925e09f618c5d4e8fbeb081530",
+    "bytes": 97954253,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "dvf_2021_dep22",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2021/departements/22.csv.gz",
+    "sha256": "79ce2f8bd0443fe522e04b2f9a3961111961eee243fd68095cf809631081eb6e",
+    "bytes": 1778940,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-12-31"
+  },
+  {
+    "source_id": "dvf_2021_dep29",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2021/departements/29.csv.gz",
+    "sha256": "fac847fda21f3005e426d90c7f07a687b27c17523df23415d2cbf5314abbe479",
+    "bytes": 2229367,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-12-31"
+  },
+  {
+    "source_id": "dvf_2021_dep35",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2021/departements/35.csv.gz",
+    "sha256": "55767aa6307149d740e455e91745c9be5666b501f5785896b1bc87fe070af585",
+    "bytes": 2089235,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-12-31"
+  },
+  {
+    "source_id": "dvf_2021_dep56",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2021/departements/56.csv.gz",
+    "sha256": "1578eef3fe317f53a6df95231d5302e42e6c7eadf4b27ed326d39503358dd4b0",
+    "bytes": 1803722,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-12-31"
+  },
+  {
+    "source_id": "dvf_2022_dep22",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2022/departements/22.csv.gz",
+    "sha256": "c7807eda2a3cfb774c414d83459340fbc02bcbe191e7fdfb841384483ec08fa8",
+    "bytes": 1801461,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-12-31"
+  },
+  {
+    "source_id": "dvf_2022_dep29",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2022/departements/29.csv.gz",
+    "sha256": "c795c16b676f9e7163f1aedc6e12e505e3dc83b1d812ffb7a4cdc784fb3cdda9",
+    "bytes": 2052081,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-12-31"
+  },
+  {
+    "source_id": "dvf_2022_dep35",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2022/departements/35.csv.gz",
+    "sha256": "e1b9434741fc037fde6554005ab5ae8e8bbc2aed68e97c65b860ab46442a992f",
+    "bytes": 2220859,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-12-31"
+  },
+  {
+    "source_id": "dvf_2022_dep56",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2022/departements/56.csv.gz",
+    "sha256": "848d3648b74bc0d0e538d0ddf140482df15b34bd5c31646a446137a9b06e133c",
+    "bytes": 1809965,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-12-31"
+  },
+  {
+    "source_id": "dvf_2023_dep22",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2023/departements/22.csv.gz",
+    "sha256": "04582cf7f14db27ca57b88f885824420c14691ecbef2a3a02556dc85b1b514c1",
+    "bytes": 1456870,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-12-31"
+  },
+  {
+    "source_id": "dvf_2023_dep29",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2023/departements/29.csv.gz",
+    "sha256": "983205a83b1b2c89244d425aac1066e5fbd0282e0d4c320d8f152310168eabbf",
+    "bytes": 1736317,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-12-31"
+  },
+  {
+    "source_id": "dvf_2023_dep35",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2023/departements/35.csv.gz",
+    "sha256": "6e24472a6e21043c592f113a202a3f61bf0a941c3f47fc4afdbc05a4236cd46f",
+    "bytes": 1846827,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-12-31"
+  },
+  {
+    "source_id": "dvf_2023_dep56",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2023/departements/56.csv.gz",
+    "sha256": "350abe357095c620ce32ba1bc3a7d69a3802ef44adb151fc545f2d5388c0a366",
+    "bytes": 1444308,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-12-31"
+  },
+  {
+    "source_id": "dvf_2024_dep22",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/22.csv.gz",
+    "sha256": "8a58029400ef412df7cb73eac4886e39be04db8b84ed538859e7e1cdf0f09805",
+    "bytes": 1326816,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "dvf_2024_dep29",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/29.csv.gz",
+    "sha256": "a3258b670b677efe1a558744d75c43186424ed44b548ad2ff24474bc6b595229",
+    "bytes": 1516475,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "dvf_2024_dep35",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/35.csv.gz",
+    "sha256": "6490cd2e3f71d3492fda9ca326255175cc75ccfd9965dc49216b1da09a30fc5b",
+    "bytes": 1646822,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "dvf_2024_dep56",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/56.csv.gz",
+    "sha256": "0db7f66f5abbe2b35319a3d3324d6bc904520ad521af97d963a05bd81ac99551",
+    "bytes": 1302272,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "dvf_2025_dep22",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2025/departements/22.csv.gz",
+    "sha256": "80f289338e657e941cd66ec9bbeb74231397f7c2f6a4d30362f825f92408c8a1",
+    "bytes": 1355039,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-12-31"
+  },
+  {
+    "source_id": "dvf_2025_dep29",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2025/departements/29.csv.gz",
+    "sha256": "b8aa5120e934056f13f10df0e1a1f0f09088956bd9e2229798f05787ebea7523",
+    "bytes": 1474124,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-12-31"
+  },
+  {
+    "source_id": "dvf_2025_dep35",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2025/departements/35.csv.gz",
+    "sha256": "83f194c9d23b5a10c5ba6784381a99d5912d97063ec26bdf71d88caaedb4f624",
+    "bytes": 1761813,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-12-31"
+  },
+  {
+    "source_id": "dvf_2025_dep56",
+    "url": "https://files.data.gouv.fr/geo-dvf/latest/csv/2025/departements/56.csv.gz",
+    "sha256": "25abc304d8fbf00f25c39d0c20e5807c7563aeda56649689cf6ab91e21e0ea55",
+    "bytes": 1376784,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-12-31"
+  },
+  {
+    "source_id": "dpe_22",
+    "url": "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant",
+    "sha256": "4eebfa256896fa44a5f8b756f81e0c807871c946d97e10bb356856cb51094385",
+    "bytes": 96891113,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": null
+  },
+  {
+    "source_id": "dpe_29",
+    "url": "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant",
+    "sha256": "eb14aa1bbc6059620dd385766e47e3d8af6a70f91eb6b4c5cb15ef41f22ac3f6",
+    "bytes": 162829369,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": null
+  },
+  {
+    "source_id": "dpe_35",
+    "url": "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant",
+    "sha256": "addc80d41904ba9593fb10bc107842b9b2abc9093be4a7ae8d386f93b9993318",
+    "bytes": 212587501,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": null
+  },
+  {
+    "source_id": "dpe_56",
+    "url": "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant",
+    "sha256": "22b17f270a8b5a6fc176fceaf66f38034c1e46e1c7b063e01d09be930be65bc5",
+    "bytes": 143054672,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": null
+  },
+  {
+    "source_id": "sirene_snapshot",
+    "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/sirene-v3-consolidee/exports/csv?select=siret,activiteprincipaleetablissement,codecommuneetablissement,etatadministratifetablissement,trancheeffectifsetablissement,classeetablissement,datederniertraitementetablissement&where=etatadministratifetablissement='Actif'",
+    "sha256": "d1d22f4c4e7e2260eb75e60cc938b783125abb988496a1f2b31d5819a0850e0d",
+    "bytes": 99341490,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
+  },
+  {
+    "source_id": "flores_a38",
+    "url": "https://api.insee.fr/melodi/file/DS_FLORES_A38/DS_FLORES_A38_2024_CSV_FR",
+    "sha256": "eddf5533fbfea5f576fde7637a31b1a2ed293205806df34d7f241246f1fad758",
+    "bytes": 98246546,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "flores_a88",
+    "url": "https://api.insee.fr/melodi/file/DS_FLORES_A88/DS_FLORES_A88_2024_CSV_FR",
+    "sha256": "c75fd93c492bba53428320e79331ce302f204f53c737348bf9d816deb28ef613",
+    "bytes": 24425241,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-12-31"
+  },
+  {
+    "source_id": "rp_emploi",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_TD_ACTIVITE_PCSACTIVITY_COMP/DS_RP_TD_ACTIVITE_PCSACTIVITY_COMP_2023_CSV_FR",
+    "sha256": "cde7a8dcbeef10f9df23bb86dc07f86375af73610795f78d9470a77d00f738b0",
+    "bytes": 78999893,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "rp_chomage",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_EMPLOI_LR_PRINC/DS_RP_EMPLOI_LR_PRINC_2023_CSV_FR",
+    "sha256": "f51238c0fad35faec851a02c868e711c0270eb7daeac04819d791a0f4a90b60f",
+    "bytes": 121040685,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "rp_logement_princ",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR",
+    "sha256": "c93ccc1db5706511ae303fdc9543b5e7012a07925e09f618c5d4e8fbeb081530",
+    "bytes": 97954253,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "ocsge_reseaux_22_2025",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2025-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2025-01-01.7z",
+    "sha256": "fed537c6ae323406f4894be3662c839575643ab74c04db8363a452901da83f81",
+    "bytes": 189061207,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "ocsge_reseaux_29_2024",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2024-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2024-01-01.7z",
+    "sha256": "4d5af532df5e24ec73f4b22086c62dca781384d62fa32dd9bbe89f47bb6f8d65",
+    "bytes": 214365375,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-01-01"
+  },
+  {
+    "source_id": "ocsge_reseaux_35_2023",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2023-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2023-01-01.7z",
+    "sha256": "519d738c4f0722ebcecb320e37f1086ffaf72695db1a6b0e39c0af21ce89eda4",
+    "bytes": 189759723,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "ocsge_reseaux_56_2024",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2024-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2024-01-01.7z",
+    "sha256": "b39485d81de71e410299c7072c5d0c024d1bb64fb877c0af1c863c270b59b45f",
+    "bytes": 193927588,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-01-01"
+  },
+  {
+    "source_id": "amenagements_cyclables",
+    "url": "https://static.data.gouv.fr/resources/amenagements-cyclables-france-metropolitaine/20260807-093413/france-20260807.parquet",
+    "sha256": "edfe6cab6e8036e4d56bdef02f8d430f49cf47af216d7acb0ed7f25d0c5b061d",
+    "bytes": 64514194,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2026-08",
+    "date_reference": "2026-08-07"
+  },
+  {
+    "source_id": "communes_limites",
+    "url": "https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST%3Acommune&count=3000&outputFormat=application/json&bbox=-5.5,47.0,-0.5,49.0,EPSG:4326",
+    "sha256": "70d133b6a77d95f93a3bb2edb9ab86b05f72075ebba2ef94eceee21ef2ddc861",
+    "bytes": 97246463,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
+  },
+  {
+    "source_id": "stationnement-velo",
+    "url": "https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv",
+    "sha256": "ff00845f7c04cb3a1e30c0a3889cc7ea44d0f3c000ed6961472550713853c4b5",
+    "bytes": 37840909,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2022-2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "bpe_b316",
+    "url": "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet",
+    "sha256": "3bad0dc8b02eff0bee86832acf97fdeccef02116bbeb8a6dca2ad0e99d054f6a",
+    "bytes": 172025693,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "cog_passage",
+    "url": "https://www.insee.fr/fr/statistiques/fichier/7671867/table_passage_annuelle_2025.zip",
+    "sha256": "803527a040748f4c7dc5e97777cb5838e8b7d4cc36d0b182f53a83e9787d595b",
+    "bytes": 960555,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "sncf_voyageurs",
+    "url": "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip",
+    "sha256": "ed4b78f89ee146c37464afeb8151b37b884dae49d26262ea09ed52ccc6f5548f",
+    "bytes": 5589768,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
+  },
+  {
+    "source_id": "dila_bdl",
+    "url": "https://lecomarquage.service-public.gouv.fr/donnees_locales_v4/all_latest.tar.bz2",
+    "sha256": "ef88397c32742b3eff6575835271e7d2fab43334166b761b14f38829d1a986ce",
+    "bytes": 366265920,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
+  },
+  {
+    "source_id": "epci",
+    "url": "https://www.insee.fr/fr/statistiques/fichier/2510634/epci_au_01-01-2025.zip",
+    "sha256": "06510f6199943196b6f28c45ef65003243e73684063fd2ce21c1c35de5731696",
+    "bytes": 1106419,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "consoenaf",
+    "url": "https://static.data.gouv.fr/resources/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025/20260724-142909/conso-com.csv",
+    "sha256": "a239e2f1d6b6f73845b33af6c931a6d99ecea900b43f8a7f58c645c0434e72c7",
+    "bytes": 32598117,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "serie_historique",
+    "url": "https://api.insee.fr/melodi/file/DS_RP_SERIE_HISTORIQUE/DS_RP_SERIE_HISTORIQUE_2023_CSV_FR",
+    "sha256": "0a5e3e51a4068b31f4995d412a4e5ed0c985976825290055df5ab375d2609caa",
+    "bytes": 18999257,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_22_2021",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2021-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2021-01-01.7z",
+    "sha256": "4ae48d6734eaa85cbb0e60360e106d5c0d0aec57010ffd79a4ae31ee94eef772",
+    "bytes": 179121857,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_22_2025",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2025-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2025-01-01.7z",
+    "sha256": "fed537c6ae323406f4894be3662c839575643ab74c04db8363a452901da83f81",
+    "bytes": 189061207,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_29_2021",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2021-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2021-01-01.7z",
+    "sha256": "effc3709f596e0066fd210b5584483a7628d213f9155c0500d67d94adcc3d875",
+    "bytes": 288034641,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_29_2024",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2024-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2024-01-01.7z",
+    "sha256": "4d5af532df5e24ec73f4b22086c62dca781384d62fa32dd9bbe89f47bb6f8d65",
+    "bytes": 214365375,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_35_2020",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2020-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2020-01-01.7z",
+    "sha256": "a4aafdeba39de6bcbbac9745633d67ef985a3867ecbb6ec5c9c59daeb73aa0ef",
+    "bytes": 188997569,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2020",
+    "date_reference": "2020-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_35_2023",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2023-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2023-01-01.7z",
+    "sha256": "519d738c4f0722ebcecb320e37f1086ffaf72695db1a6b0e39c0af21ce89eda4",
+    "bytes": 189759723,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2023",
+    "date_reference": "2023-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_56_2022",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2022-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2022-01-01.7z",
+    "sha256": "50d315d044ed714c604cd3d0ae3fa9a2fe37456b966c987e5167f6d6ce568b5b",
+    "bytes": 253076990,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-01-01"
+  },
+  {
+    "source_id": "ocsge_artificialisation_56_2024",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2024-01-01/OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2024-01-01.7z",
+    "sha256": "b39485d81de71e410299c7072c5d0c024d1bb64fb877c0af1c863c270b59b45f",
+    "bytes": 193927588,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2024",
+    "date_reference": "2024-01-01"
+  },
+  {
+    "source_id": "ocsge_patch_correctif_22",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D022_2021-01-01/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D022_2021-01-01.7z",
+    "sha256": "957b72ced6570487398ed8f68addbaaf5ca1e394c545e0453a815a4c1111b5c9",
+    "bytes": 2093058,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-01-01"
+  },
+  {
+    "source_id": "ocsge_patch_correctif_29",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D029_2021-01-01/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D029_2021-01-01.7z",
+    "sha256": "3e0b0eb49fc74990d7904e9ddf2cb9b94748c2ed16907cb004608ddc6c578af4",
+    "bytes": 2141438,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2021",
+    "date_reference": "2021-01-01"
+  },
+  {
+    "source_id": "ocsge_patch_correctif_56",
+    "url": "https://data.geopf.fr/telechargement/download/OCSGE/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D056_2022-01-01/OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D056_2022-01-01.7z",
+    "sha256": "8aa57444084aeedd41be16fea2ce5ada2b1953842953c39a26e5c23404a3512c",
+    "bytes": 1962281,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2022",
+    "date_reference": "2022-01-01"
+  },
+  {
+    "source_id": "classe_densite_communale",
+    "url": "https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx",
+    "sha256": "8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978",
+    "bytes": 2409302,
+    "acquired_at": "2026-11-17",
+    "vintage_basis": "declaree",
+    "vintage": "Grille de densité 2025 — géographie communale au 01/01/2026",
+    "date_reference": "2021-01-01"
+  },
+  {
+    "source_id": "classe_littorale_communale",
+    "url": "https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=dreal_b:l_communes_littorales&OUTPUTFORMAT=csv&propertyName=Code_insee,Commune,Dpt,Classement&SRSNAME=EPSG:4326",
+    "sha256": "d68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc",
+    "bytes": 13611,
+    "acquired_at": "2026-11-19",
+    "vintage_basis": "declaree",
+    "vintage": "Liste positive DREAL Bretagne — métadonnées de diffusion modifiées le 2023-04-21",
+    "date_reference": null
+  },
+  {
+    "source_id": "acv",
+    "url": "https://static.data.gouv.fr/resources/programme-action-coeur-de-ville/20250924-154200/liste-acv-com2025-20250704.csv",
+    "sha256": "326179113b4940c3d1ca9667835df5a32d23084d161d30693a1ee09349079e26",
+    "bytes": 13843,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "pvd",
+    "url": "https://static.data.gouv.fr/resources/programme-petites-villes-de-demain/20260427-160836/liste-pvd-com2025-20260427.csv",
+    "sha256": "ebe298269ac2851a244898e6870168b68e4ada3fffc090c6eeac84a66b21b0d9",
+    "bytes": 84593,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-01-01"
+  },
+  {
+    "source_id": "crte",
+    "url": "https://static.data.gouv.fr/resources/contrat-de-relance-et-de-transition-ecologique/20250924-161900/liste-crte-grpt2025-20250717.csv",
+    "sha256": "2c35aca4e7ce9fca991a8fd8bfa42525292ac1194010150e767626eb732644f8",
+    "bytes": 363134,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "declaree",
+    "vintage": "2025",
+    "date_reference": "2025-07-17"
+  },
+  {
+    "source_id": "territoires_industrie",
+    "url": "https://opendata.caissedesdepots.fr/api/explore/v2.1/catalog/datasets/liste-des-territoires-dindustrie-et-des-communes-concernees/exports/csv?use_labels=true",
+    "sha256": "5741a3d6aec50fb9d1bea6ce39260e0bf4b2c9a8aad657627dbdbaf88b49cdac",
+    "bytes": 103229629,
+    "acquired_at": "2026-11-22",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-22"
+  },
+  {
+    "source_id": "ort",
+    "url": "https://grist.numerique.gouv.fr/o/dgaln/api/docs/j4i9oKD3jzFtgEUuM9sXnL/download/xlsx?",
+    "sha256": "e7dad85788f41a96c26edbbf37c427c3bfc7c228f2976824c8f53e1923aba575",
+    "bytes": 1696658,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "contenu_date",
+    "vintage": "2026-10",
+    "date_reference": "2026-10-20"
+  },
+  {
+    "source_id": "subventions_scdl",
+    "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/subventions_attribuees_scdl0/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B",
+    "sha256": "fa969e6f5d6cbf163a91b466ffead97f7fde355fd596d5c14997ea81501c79e2",
+    "bytes": 48523416,
+    "acquired_at": "2026-11-18",
+    "vintage_basis": "telechargement",
+    "vintage": "2026-11",
+    "date_reference": "2026-11-18"
   }
 ]
