@@ -14,6 +14,19 @@ const varianteCahierLibreSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
   'utf8',
 )
+// #1093 — the shared editorial page layer and its two consumers.
+const sharedEditorialPageSource = readFileSync(
+  join(process.cwd(), 'src', 'styles', 'editorialPage.css'),
+  'utf8',
+)
+const atelierViewSource = readFileSync(
+  join(process.cwd(), 'src', 'views', 'AtelierView.vue'),
+  'utf8',
+)
+const atelierPageCssSource = readFileSync(
+  join(process.cwd(), 'src', 'atelier', 'atelierPage.css'),
+  'utf8',
+)
 const aedarAccessSectionSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierAedarAccessSection.vue'),
   'utf8',
@@ -263,4 +276,90 @@ describe('Cahier typography roles', () => {
     expect(accessEvidenceRule).not.toMatch(/width:\s*min\(|max-width/)
   })
 
+})
+
+/**
+ * #1093 — the page shell must have ONE owner. The trap this closes is
+ * scope-dependent styling: `--paper` and the page-heading rules used to live
+ * only inside VarianteCahierLibre.vue's `<style scoped>`, so any surface outside
+ * that scope (the Atelier) imported `--paper` and got white. These assertions
+ * pin the new seam rather than pixel values; the browser receipts pin the look.
+ */
+describe('shared editorial page shell', () => {
+  it('owns the page ground and alias roles in one layer, consumed by both surfaces', () => {
+    // The alias block moved out of the Cahier's scoped style, verbatim.
+    expect(cssRule(sharedEditorialPageSource, '.editorial-page')).toContain('--paper: var(--editorial-paper)')
+    expect(cssRule(sharedEditorialPageSource, '.editorial-page')).toContain('--ink: var(--editorial-ink)')
+    expect(cssRule(sharedEditorialPageSource, '.editorial-page')).toContain('--margin-line: var(--editorial-margin-offset)')
+    expect(cssRule(sharedEditorialPageSource, '.editorial-page')).toContain('font-family: var(--font-body)')
+    // Paper colour + ruling texture are one shared sheet, never a local copy.
+    const sheet = cssRule(sharedEditorialPageSource, '.editorial-sheet')
+    expect(sheet).toContain('background-color: var(--paper)')
+    expect(sheet).toContain('repeating-linear-gradient')
+    expect(sharedEditorialPageSource).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?--margin-line:\s*82px/u)
+    expect(sharedEditorialPageSource).toMatch(/@media\s*\(max-width:\s*600px\)[\s\S]*?--margin-line:\s*12px/u)
+
+    // Neither surface redefines those aliases nor duplicates the sheet ground.
+    expect(varianteCahierLibreSource).not.toContain('--paper: var(--editorial-paper)')
+    expect(varianteCahierLibreSource).not.toContain('--ink: var(--editorial-ink)')
+    expect(varianteCahierLibreSource).not.toMatch(/\.cahier-page,\s*\.sources-page\s*\{[^}]*background-color:\s*var\(--paper\)/u)
+    expect(atelierPageCssSource).not.toMatch(/\.atelier-page\s*\{[^}]*background-color:\s*var\(--paper\)/u)
+    // Both surfaces opt in by importing the layer and carrying its classes.
+    expect(varianteCahierLibreSource).toContain("import '@/styles/editorialPage.css'")
+    expect(atelierViewSource).toContain("import '@/styles/editorialPage.css'")
+    expect(varianteCahierLibreSource).toMatch(/class="[^"]*\beditorial-page\b[^"]*"/u)
+    expect(varianteCahierLibreSource).toMatch(/class="[^"]*\beditorial-sheet\b[^"]*"/u)
+    expect(atelierViewSource).toMatch(/class="[^"]*\beditorial-page\b[^"]*"/u)
+    expect(atelierViewSource).toMatch(/class="[^"]*\beditorial-sheet\b[^"]*"/u)
+  })
+
+  it('owns the page-heading type once; each header composes over it', () => {
+    const title = cssRule(sharedEditorialPageSource, '.editorial-page-title')
+    expect(title).toContain('font: var(--text-page-heading)')
+    expect(title).toContain('letter-spacing: var(--text-page-heading-tracking)')
+    expect(title).toContain('color: var(--ink)')
+    // The Cahier heading no longer carries the type declarations itself; it
+    // opts into the shared type and keeps only its own alignment.
+    const cahierHeading = cssRule(varianteCahierLibreSource, '.page-heading h2')
+    expect(cahierHeading).not.toContain('font: var(--text-page-heading)')
+    expect(cahierHeading).toContain('text-align: center')
+    expect(varianteCahierLibreSource).toMatch(/class="cahier-baseline-anchor editorial-page-title"/u)
+    // The Atelier imports the same type instead of copying the declarations.
+    const atelierTitle = cssRule(atelierPageCssSource, '.atelier-titre')
+    expect(atelierTitle).not.toContain('font: var(--text-page-heading)')
+    expect(atelierTitle).not.toContain('letter-spacing: var(--text-page-heading-tracking)')
+    expect(atelierViewSource).toContain('class="atelier-titre editorial-page-title"')
+  })
+
+  it('owns the thin red rule once and records the two-header deletion-test decision', () => {
+    expect(cssRule(sharedEditorialPageSource, '.editorial-rule')).toContain('border-bottom: 1px solid var(--red-soft)')
+    expect(cssRule(varianteCahierLibreSource, '.page-layout--sticky .page-heading')).not.toContain('border-bottom')
+    expect(atelierPageCssSource).not.toMatch(/\.atelier-entete\s*\{[^}]*border-bottom/u)
+    expect(varianteCahierLibreSource).toContain('class="page-heading editorial-rule"')
+    expect(atelierViewSource).toContain('class="atelier-entete editorial-rule"')
+    // Deletion test: two genuinely different interfaces (counter + comparison
+    // vs editable title + share) are two compositions, not one slot-only header.
+    expect(sharedEditorialPageSource).toContain('deletion test')
+    expect(sharedEditorialPageSource).toContain('two compositions')
+    expect(varianteCahierLibreSource).toContain('page-heading-index')
+    expect(varianteCahierLibreSource).toContain('page-heading-comparaison')
+    expect(atelierViewSource).toContain('atelier-partager')
+    expect(atelierViewSource).not.toContain('page-heading-index')
+  })
+
+  it('keeps the Atelier sheet on the clean ground of the production cahier', () => {
+    // The Mobilité reference is indexed-sections: its sheet suppresses the
+    // ruling. The Atelier imports the shared ground but makes the same choice,
+    // so it is judged against that reference, not an ordinary fiche.
+    expect(varianteCahierLibreSource).toMatch(/\.cahier--indexed-sections \.cahier-page,\s*\.cahier--indexed-sections \.sources-page\s*\{[^}]*background-image:\s*none/s)
+    expect(cssRule(atelierPageCssSource, '.atelier-page')).toContain('background-image: none')
+  })
+
+  it('keeps the Cahier prose owner shared and the Atelier a consumer, not a copy', () => {
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('color: var(--cahier-default)')
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('font-size: 15px')
+    expect(atelierViewSource).toContain("import '@/fiche/prototype/cahierLayout.css'")
+    expect(atelierPageCssSource).not.toMatch(/\.argument-copy\s*\{/u)
+    expect(atelierPageCssSource).not.toMatch(/\.cahier-prose\s*\{/u)
+  })
 })
