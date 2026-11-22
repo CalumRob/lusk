@@ -1247,13 +1247,24 @@ for (t in THEMES_RUN) {
 # Aucun chemin n'écrit plus sous modeles-lecture/**. La chaîne Programmes
 # ci-dessus (projection_programmes comprise) garde sa reachability inchangée.
 
+# `paste0("verif_", character(0))` recyclerait le préfixe en une cible
+# « verif_ » inexistante (#1109) : un thème sans verrou n'a AUCUNE dépendance
+# de ce type. Le même helper sert au thème Programmes du run complet.
+deps_verifs <- function(specs) {
+  slugs <- if (is.null(specs)) {
+    character(0)
+  } else {
+    vapply(specs, function(v) v$slug, character(1))
+  }
+  if (!length(slugs)) character(0) else paste0("verif_", slugs[nzchar(slugs)])
+}
+
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
-  spec <- VERIFICATIONS_RUN[[t$theme]]
-  slugs <- if (is.null(spec)) character(0) else vapply(spec, function(v) v$slug, character(1))
   rapports <- c(rapports, list(rapport_theme(
-    t, precedent = precedent, verifs = paste0("verif_", slugs)
+    t, precedent = precedent,
+    verifs = deps_verifs(VERIFICATIONS_RUN[[t$theme]])
   )))
   precedent <- as.name(paste0("rapport_", t$theme))
 }
@@ -1263,8 +1274,7 @@ for (t in THEMES_RUN) {
 if (selection_complete) {
   rapports <- c(rapports, list(rapport_theme(
     theme_programmes(), precedent = precedent,
-    verifs = paste0("verif_", vapply(VERIFICATIONS_PROGRAMMES,
-                                     function(v) v$slug, character(1)))
+    verifs = deps_verifs(VERIFICATIONS_PROGRAMMES)
   )))
 }
 

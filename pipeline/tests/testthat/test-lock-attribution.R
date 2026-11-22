@@ -149,6 +149,21 @@ test_that("les rapports du graphe dépendent des verrous du même run", {
   }
 })
 
+test_that("un thème sans verrou n'a aucune dépendance verif_ (#1109)", {
+  # `paste0("verif_", character(0))` renvoie "verif_" : le rapport d'un thème
+  # sans verrou (Démographie, Habitat) dépendait d'une cible inexistante.
+  withr::local_dir(pkgload::pkg_path())
+  withr::local_envvar(LUSK_THEMES = "demographie,habitat", LUSK_MODE = "full",
+                      LUSK_SORTIE = tempfile("sortie-sans-verif-"),
+                      LUSK_CACHE = tempfile("cache-sans-verif-"))
+  manifeste <- targets::tar_manifest()
+  expect_false("verif_" %in% manifeste$name)
+  for (theme in c("demographie", "habitat")) {
+    commande <- manifeste$command[manifeste$name == paste0("rapport_", theme)]
+    expect_false(grepl("verif_", commande, fixed = TRUE), info = theme)
+  }
+})
+
 test_that("les ids d'entrée de la REGISTRE sont extraits correctement", {
   spec_args <- list(slug = "x", verifier = function() TRUE,
                     args = list(fichier = "consoenaf", base_epci = "epci"))
