@@ -40,14 +40,17 @@ async function monter(chemin = '/atelier') {
   await router.isReady()
   const wrapper = mount(AtelierView, { global: { plugins: [router] } })
   await flushPromises()
-  // Le codec par défaut passe par CompressionStream/Blob.stream : quelques
-  // ticks réels, au-delà de flushPromises(), sont nécessaires au décodage.
-  await new Promise((resolve) => setTimeout(resolve, 80))
+  // Le codec par défaut passe par CompressionStream/Blob.stream : on avance
+  // le temps simulé pour laisser le décodage se terminer, sans attente réelle.
+  await vi.advanceTimersByTimeAsync(80)
   montee = wrapper
   return { router, wrapper }
 }
 
 beforeEach(() => {
+  // Seuls les minuteries sont simulées : `flushPromises()` utilise setImmediate
+  // et doit rester réelle, sinon elle attendrait une timer qu'on ne fait pas avancer.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   ecrirePressePapier.mockClear()
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -58,6 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   montee?.unmount()
   montee = null
+  vi.useRealTimers()
 })
 
 async function ajouterTexte(wrapper: ReturnType<typeof mount>, texte: string): Promise<void> {
@@ -182,7 +186,7 @@ describe('atelier — titre, partage et restauration', () => {
     await ajouterTexte(wrapper, 'Texte **partagé**')
     await wrapper.find('button.atelier-partager').trigger('click')
     await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await vi.advanceTimersByTimeAsync(80)
 
     expect(ecrirePressePapier).toHaveBeenCalledTimes(1)
     const url = ecrirePressePapier.mock.calls[0]![0] as string
@@ -200,9 +204,12 @@ describe('atelier — titre, partage et restauration', () => {
     expect(router.currentRoute.value.query[LINK_PARAM]).toBeUndefined()
 
     await ajouterTexte(wrapper, 'Sync')
+    // La synchronisation est différée de 400 ms : rien dans l'URL avant l'avance.
     expect(router.currentRoute.value.query[LINK_PARAM]).toBeUndefined()
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await vi.advanceTimersByTimeAsync(450)
+    // Le callback du débounce attend l'encodeur asynchrone avant router.replace.
+    await flushPromises()
     expect(typeof router.currentRoute.value.query[LINK_PARAM]).toBe('string')
   })
 
