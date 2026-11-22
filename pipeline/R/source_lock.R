@@ -243,7 +243,7 @@ deriver_timestamp_pbf <- function(chemin) {
 # acquisition date (basis `telechargement`) when no content date is present.
 deriver_vintage <- function(chemin, jour, vintage_basis = "telechargement",
                             vintage_declare = NULL, reference_declaree = NULL,
-                             id = NULL) {
+                            id = NULL) {
   base <- vintage_basis %||% "telechargement"
   par_telechargement <- function() {
     list(
