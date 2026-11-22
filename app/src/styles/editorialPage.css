@@ -1,35 +1,28 @@
-/* #1093 — One owner for the editorial page shell.
+/* #1093 — The STRUCTURE of the editorial page shell.
  *
- * These declarations were moved verbatim out of VarianteCahierLibre.vue's
- * `<style scoped>`. They used to resolve only inside that component, so any
- * other surface that imported `--paper` got white: that is the scope trap this
- * layer closes. Both the Cahier and the Atelier import this file and carry its
- * `.editorial-page` / `.editorial-sheet` / `.editorial-page-title` /
- * `.editorial-rule` classes. Nothing here invents a value — every declaration
- * is the one the production Mobilité cahier already computed.
+ * Colour roles have exactly one owner: `EDITORIAL_PAGE_ROLES` in
+ * `fiche/prototype/cahierColorRoles.ts`, bound on both surface roots. Nothing
+ * here redeclares `--paper`, `--ink`, `--red-soft`, `--cahier-default` and
+ * friends; a change to the owner reaches both surfaces and the PDF palette.
  *
- * Header decision (deletion test): the Cahier heading (sticky, page counter,
- * comparison control, theme·territory context) and the Atelier heading
- * (editable title, « Partager », no counter) are two genuinely different
- * interfaces. A single component whose whole interface were optional slots
+ * This file owns only what CSS must own: the page surface, the sheet colour
+ * and ruling, the page-heading type, the thin red rule, and the responsive
+ * margin-line reflow (inline styles cannot carry media queries). The rules
+ * below were moved verbatim out of VarianteCahierLibre.vue's `<style scoped>`.
+ *
+ * Header decision: the Cahier heading (sticky, page counter, comparison
+ * control, theme·territory context) and the Atelier heading (editable title,
+ * « Partager », no counter) are two genuinely different interfaces. By the
+ * deletion test a single component whose whole interface were optional slots
  * would be two headers in one costume, so they are two compositions over this
- * one shared type/layout layer rather than one slot-only header component.
+ * one shared type/layout layer, not one slot-only header component.
  */
 
-/* Alias roles + the page surface. The Cahier also binds CAHIER_COLOR_ROLES
- * inline (the screen/PDF shared owner); these values are identical, so moving
- * the aliases here changes no computed value on the Mobilité page. */
+/* Page surface. The colour roles it consumes come from the TS owner. */
 .editorial-page {
-  --paper: var(--editorial-paper);
-  --paper-deep: var(--editorial-paper-deep);
-  --ink: var(--editorial-ink);
-  --muted: var(--editorial-muted);
-  --red: var(--editorial-margin);
-  --red-soft: var(--editorial-margin-soft);
-  --cahier-default: var(--muted);
   --margin-line: var(--editorial-margin-offset);
-  --rule: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
-  --fine-rule: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 8%, transparent);
+  --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
+  --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
   min-height: 0;
   color: var(--ink);
   background: transparent;

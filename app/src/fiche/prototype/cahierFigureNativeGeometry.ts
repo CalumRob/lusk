@@ -230,7 +230,7 @@ export const CSS_PX_EN_MM = 25.4 / 96
 /**
  * Native figure stroke grammar, in screen CSS pixels. The mounted figures
  * receive these values as injected CSS custom properties at runtime (the same
- * screen-grammar mechanism as `CAHIER_COLOR_ROLES`); the PDF painter converts
+ * screen-grammar mechanism as `EDITORIAL_PAGE_ROLES`); the PDF painter converts
  * the identical object instead of carrying parallel millimetre literals.
  */
 export interface CahierFigureStroke {

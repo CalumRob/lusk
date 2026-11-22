@@ -1,4 +1,12 @@
-/** Cahier-scoped colour aliases, shared by the screen and document painter. */
+/**
+ * #1093 — the SINGLE owner of the editorial page colour roles.
+ *
+ * Every alias below is declared exactly once, here. Both the Cahier and the
+ * Atelier bind this map on their root (`EDITORIAL_PAGE_ROLES`), and the PDF
+ * palette reads the same object, so the screen and the document cannot drift
+ * to two values. `editorialPage.css` owns only the *structure* that consumes
+ * these roles (page surface, sheet ruling, heading type, rule, margin reflow).
+ */
 
 /**
  * Native shared-cycle hue (Mobilité « partagé » segments). DESIGN.md's mode
@@ -7,7 +15,7 @@
  */
 export const COULEUR_CYCLE_PARTAGE = '#8c4c9e'
 
-export const CAHIER_COLOR_ROLES = {
+export const EDITORIAL_PAGE_ROLES = {
   '--paper': 'var(--editorial-paper)',
   '--paper-deep': 'var(--editorial-paper-deep)',
   '--ink': 'var(--editorial-ink)',

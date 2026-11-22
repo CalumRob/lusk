@@ -8,7 +8,7 @@
  */
 import tokensCss from '@/styles/tokens.css?raw'
 import { melangerOklab } from '@/carte/couleurs'
-import { CAHIER_COLOR_ROLES, CAHIER_SHARE_COLOUR } from './cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES, CAHIER_SHARE_COLOUR } from './cahierColorRoles'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 
 // No live screen/style introspection: these are immutable bundled owner inputs.
@@ -20,7 +20,7 @@ if (!rootBlock) throw new Error('Bloc :root des jetons introuvable pour le PDF.'
 const TOKENS_PDF: Readonly<Record<string, string>> = {
   ...Object.fromEntries([...rootBlock[1]!.matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)]
     .map((match) => [match[1]!, match[2]!.trim()])),
-  ...CAHIER_COLOR_ROLES,
+  ...EDITORIAL_PAGE_ROLES,
 }
 
 export const PALETTE_PDF = {

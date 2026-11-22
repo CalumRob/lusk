@@ -18,7 +18,7 @@ export function rendererFor(
 // #1093 — the shared editorial page shell (paper, heading type, rule, prose
 // ground). Imported here and by the Atelier so neither owns a local copy.
 import '@/styles/editorialPage.css'
-import { CAHIER_COLOR_ROLES } from './cahierColorRoles'
+import { EDITORIAL_PAGE_ROLES } from './cahierColorRoles'
 /**
  * [PROTOTYPE #511 — JETABLE] Variante D — « Cahier libre ».
  *
@@ -464,7 +464,7 @@ onBeforeUnmount(() => {
       'cahier--sans-grille': props.presentation === 'plain',
       'cahier--indexed-sections': props.layoutVariant === 'indexed-sections',
     }"
-    :style="CAHIER_COLOR_ROLES"
+    :style="EDITORIAL_PAGE_ROLES"
   >
       <div class="cahier-reader">
       <aside class="cahier-spine" aria-label="Sommaire du cahier">
