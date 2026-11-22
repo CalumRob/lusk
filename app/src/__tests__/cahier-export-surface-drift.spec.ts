@@ -86,6 +86,9 @@ const PRODUCERS: Readonly<Record<string, readonly string[]>> = {
     'VarianteCahierLibre.vue', 'CahierAedarOverviewSection.vue', 'CahierAedarAccessSection.vue',
     'CahierAedarProfileSection.vue', 'AedarDiversityLossMapsCahier.vue',
     'AedarEquipmentExplorerCahier.vue', 'CahierMobiliteSection.vue',
+    // #1080 : l'Atelier réutilise la prose cahier importée (cahierLayout.css)
+    // pour son texte de lecteur — c'est un émetteur de la classe partagée.
+    'markdown.ts',
   ],
   '.page-subtitle': ['VarianteCahierLibre.vue'],
   '.cahier-evidence-source': [

@@ -73,7 +73,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const LIENS_NAV = ['Territoires', 'Indicateurs', 'Sources', 'À propos']
+const LIENS_NAV = ['Territoires', 'Indicateurs', 'Atelier', 'Sources', 'À propos']
 
 describe('AppHeader — le mot-clé et la navigation', () => {
   it('renders the locked brand lockup — ermine + italic "lusk" — linking to /', async () => {
@@ -99,12 +99,12 @@ describe('AppHeader — le mot-clé et la navigation', () => {
   it('underlines the active nav item for the current route', async () => {
     const { router, wrapper } = await montage('/sources')
 
-    const sources = wrapper.findAll('.nav-lien')[2]
+    const sources = wrapper.findAll('.nav-lien')[3]
     expect(sources.classes()).toContain('nav-lien--actif')
 
     await router.push('/communes')
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.nav-lien')[2].classes()).not.toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[3].classes()).not.toContain('nav-lien--actif')
     expect(wrapper.findAll('.nav-lien')[0].classes()).toContain('nav-lien--actif')
   })
 
@@ -128,11 +128,21 @@ describe('AppHeader — le mot-clé et la navigation', () => {
 
   it('keeps À propos active on its own route only', async () => {
     const { router, wrapper } = await montage('/a-propos')
-    expect(wrapper.findAll('.nav-lien')[3].classes()).toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[4].classes()).toContain('nav-lien--actif')
 
     await router.push('/')
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.nav-lien')[3].classes()).not.toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[4].classes()).not.toContain('nav-lien--actif')
+  })
+
+  it('expose « Atelier » dans la navigation principale, entre Indicateurs et Sources (#1080)', async () => {
+    const { wrapper } = await montage('/atelier')
+
+    const atelier = wrapper.find('.nav-bureau a[href="/atelier"]')
+    expect(atelier.exists()).toBe(true)
+    expect(atelier.text()).toBe('Atelier')
+    expect(routes.some((r) => r.path === '/atelier')).toBe(true)
+    expect(wrapper.findAll('.nav-lien')[2].classes()).toContain('nav-lien--actif')
   })
 
   it('exposes no link to /carte — épargnée mais sans lien (ruling PO, #410)', async () => {
@@ -306,6 +316,7 @@ describe('AppHeader — le tiroir mobile', () => {
       'Les EPCI',
       'Les départements',
       'Indicateurs',
+      'Atelier',
       'Sources',
       'À propos',
       'Contact',
@@ -318,6 +329,18 @@ describe('AppHeader — le tiroir mobile', () => {
     await wrapper.find('.bouton-menu').trigger('click')
     await wrapper.find('.tiroir a[href="/sources"]').trigger('click')
 
+    expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('expose « Atelier » dans le tiroir mobile et le referme (#1080)', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    const atelier = wrapper.find('.tiroir a[href="/atelier"]')
+    expect(atelier.exists()).toBe(true)
+    expect(atelier.text()).toBe('Atelier')
+
+    await atelier.trigger('click')
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
   })
 

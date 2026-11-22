@@ -110,6 +110,22 @@ describe('atelier — codec de lien (state → JSON → deflate-raw → base64ur
     expect(resultat.notice).toMatch(/version/i)
   })
 
+  it.each([
+    ['même nature', (page: AtelierState): AtelierState => ({
+      ...page, blocks: [...page.blocks, { ...page.blocks[0]!, id: page.blocks[0]!.id }],
+    })],
+    ['nature différente', (page: AtelierState): AtelierState => ({
+      ...page, blocks: [...page.blocks, { ...page.blocks[0]!, id: page.blocks[1]!.id }],
+    })],
+  ])('rejette deux blocs qui partagent le même id (%s)', async (_cas, avecDoublon) => {
+    // Le codec reçoit l'état avant compression : on fabrique le doublon à ce
+    // seam, exactement comme un lien hostile pourrait le transporter.
+    const lien = await encodeAtelierLink(avecDoublon(deuxFigures()), codec)
+    const resultat = await decodeAtelierLink(lien, codec)
+    expect(resultat.state).toEqual(emptyAtelierState())
+    expect(resultat.notice).toMatch(/illisible|invalide/i)
+  })
+
   it('ne restaure jamais à moitié : un bloc invalide vide toute la page', async () => {
     const page = deuxFigures()
     const figure = page.blocks.find((block) => block.kind === 'figure')
