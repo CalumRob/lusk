@@ -124,13 +124,25 @@ extracteur_date_contenu <- function(id) {
 }
 
 # base_vintage -------------------------------------------------------------------
-# The single resolver for a source id. Unknown ids are a hard error: a new
-# manifest source cannot inherit a basis silently.
+# The single resolver for EVERY source the pipeline can digest (issue #1122):
+# manifest ids from VINTAGE_BASIS_PAR_ID AND non-manifest network reads from
+# LECTURES_RESEAU (source_digests.R — the three Admin Express WFS layers
+# `geometrie_{communes,epcis,departements}`, basis `telechargement`). There is
+# NO second, merged registry: both existing sources of truth are consulted
+# here, at call time, so a new source declared in either one resolves at once.
+# An id in neither stays a hard error — a new source cannot inherit a basis
+# silently. With no basis resolver covering the whole run, relock_sources()
+# could never relock a complete run and the release guard could never pass.
 base_vintage <- function(id) {
-  base <- unname(VINTAGE_BASIS_PAR_ID[as.character(id)])
+  id <- as.character(id)
+  base <- unname(VINTAGE_BASIS_PAR_ID[id])
+  if (length(base) != 1L || is.na(base) || !nzchar(base)) {
+    lecture <- LECTURES_RESEAU[[id]]
+    if (!is.null(lecture)) base <- champ_caractere(lecture$vintage_basis)
+  }
   if (length(base) != 1L || is.na(base) || !nzchar(base) || !base %in% BASIS_VINTAGE) {
-    stop("Aucune base de vintage déclarée (issue #1103) pour : ",
-         as.character(id), ".", call. = FALSE)
+    stop("Aucune base de vintage déclarée (issue #1103/#1122) pour : ",
+         id, ".", call. = FALSE)
   }
   base
 }
