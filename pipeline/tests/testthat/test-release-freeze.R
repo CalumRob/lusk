@@ -42,6 +42,44 @@ test_that("une source sans référence refuse avec zéro écriture", {
   expect_match(conditionMessage(erreur), "aucune référence pour 'inconnu'", fixed = TRUE)
 })
 
+test_that("le garde couvre les publications Programmes (#1109)", {
+  # Les six sources du manifeste complet sont lues par le run complet ; dès
+  # qu'elles sont verrouillées, leur absence ou leur dérive dans le fichier
+  # publié doit refuser la publication, comme toute autre source.
+  ids <- MANIFEST_PROGRAMMES_COMPLET$id
+  sha <- paste(rep("a", 64), collapse = "")
+  registre <- stats::setNames(lapply(ids, function(id) {
+    list(source_id = id, url = "https://example.invalid/x", sha256 = sha,
+         bytes = 10, acquired_at = "2026-11-22", vintage_basis = "telechargement",
+         vintage = "2026-11", date_reference = "2026-11-22")
+  }), ids)
+  digests <- stats::setNames(lapply(ids, function(id) {
+    e <- registre[[id]]
+    list(source_id = id, sha256 = e$sha256, bytes = e$bytes,
+         acquired_at = e$acquired_at, vintage_basis = e$vintage_basis,
+         vintage = e$vintage, date_reference = e$date_reference)
+  }), ids)
+
+  sortie <- tempfile("sortie-gel-programmes-")
+  lock <- tempfile("lock-gel-programmes-")
+  dir.create(sortie)
+  on.exit(unlink(c(sortie, lock), recursive = TRUE), add = TRUE)
+  ecrire_lock(registre, lock)
+
+  ecrire_digests_source(digests[-1], file.path(sortie, NOM_DIGESTS))
+  erreur <- tryCatch(verifier_gel_release(sortie, lock = lock), error = function(e) e)
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "empreinte_absente")
+  expect_true(grepl(ids[[1L]], conditionMessage(erreur), fixed = TRUE))
+
+  digests[[2L]]$sha256 <- paste(rep("f", 64), collapse = "")
+  ecrire_digests_source(digests, file.path(sortie, NOM_DIGESTS))
+  erreur <- tryCatch(verifier_gel_release(sortie, lock = lock), error = function(e) e)
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "derive")
+  expect_true(grepl(ids[[2L]], conditionMessage(erreur), fixed = TRUE))
+})
+
 test_that("une source verrouillée absente du run refuse aussi", {
   d <- digests_conformes()
   d <- d[-1]

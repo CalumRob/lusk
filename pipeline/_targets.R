@@ -1498,23 +1498,25 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
 # payload. Chaque download_sources écrit l'agrégat du cache ; cette cible le
 # projette une fois vers <sortie>/source-digests.json (exclu du diff-skip).
 digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
-                              sortie = SORTIE_RUN) {
-  noms <- paste0("sources_", names(themes))
-  if (identical(MODE_RUN, "full")) noms <- c(noms, "sources_programmes")
-  deps <- lapply(noms, as.name)
-  chemin_cache <- file.path(cache, NOM_DIGESTS)
-  chemin_sortie <- file.path(sortie, NOM_DIGESTS)
+                              sortie = SORTIE_RUN,
+                              complete = selection_complete) {
+  # #1109 : les ids publiés viennent des statuts des TÉLÉCHARGEMENTS du graphe,
+  # pas d'une liste dérivée de THEMES_RUN seulement. On attend donc toutes les
+  # cibles sources réellement câblées : les thèmes, les deux classifications
+  # partagées du référentiel, Programmes sur le run complet, et la géométrie.
+  telechargements <- c(
+    paste0("sources_", names(themes)),
+    "sources_classes_densite", "sources_classes_littoral",
+    if (complete) "sources_programmes"
+  )
+  statuts <- lapply(telechargements, as.name)
+  deps <- c(statuts, list(as.name("geometrie")))
   tar_target_raw(
     "digests_run",
     as.call(c(
       list(as.name("{")), deps,
-      list(bquote(ecrire_digests_source(
-        filtrer_digests_ids(
-          c(lire_digests_source(.(chemin_sortie)),   # géométrie / lectures réseau
-            lire_digests_source(.(chemin_cache))),   # sources de manifeste
-          ids_digests_publication(THEMES_RUN)        # ids encore déclarés
-        ),
-        .(chemin_sortie)
+      list(bquote(publier_digests_run(
+        list(..(statuts)), cache = .(cache), sortie = .(sortie)
       )))
     )),
     cue = tar_cue(mode = "always")
