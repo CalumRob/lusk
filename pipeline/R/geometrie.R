@@ -408,14 +408,16 @@ publier_geometrie <- function(cible = "public/data", horloge = NULL,
     brut <- fetch(niveau)
     # Issue #1103 : chaque couche WFS est une lecture réseau déclarée, de base
     # `telechargement` — son empreinte entre dans source-digests.json (couverture
-    # du run et gel de release).
-    canonique <- jsonlite::toJSON(brut, auto_unbox = TRUE, digits = NA)
+    # du run et gel de release). Issue #1119 : on hache les FEATURES via le
+    # helper canonique partagé, jamais l'enveloppe brute (timeStamp volatile).
+    empreinte <- empreinte_wfs_features(brut)
     id <- paste0("geometrie_", niveau)
     digests_lectures[[id]] <<- list(
       source_id = id,
       url = url_geometrie_wfs(niveau),
-      sha256 = paste(openssl::sha256(charToRaw(canonique))),
-      bytes = as.numeric(nchar(canonique, type = "bytes")),
+      sha256 = empreinte$sha256,
+      bytes = empreinte$bytes,
+      hachage = empreinte$hachage,
       acquired_at = as.character(jour),
       vintage_basis = "telechargement",
       vintage = format(jour, "%Y-%m"),

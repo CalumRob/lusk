@@ -144,3 +144,30 @@ fixture_geometrie_wfs_saine <- function() {
     departements = fixture_departements_wfs()
   )
 }
+
+# --- Réponse GetFeature BRUTE (issue #1119) -----------------------------------
+# L'enveloppe WFS telle que data.geopf.fr la renvoie : `timeStamp` change à
+# chaque requête ; `numberMatched`/`numberReturned` suivent la charge. Ces
+# membres sont du TRANSPORT, pas de la donnée — le digest doit les ignorer.
+# Fabriquée à partir des collections synthétiques ci-dessus : AUCUN réseau.
+
+fixture_wfs_brut <- function(collection,
+                             timeStamp = "2026-11-22T17:51:09.979Z",
+                             numberMatched = NULL, numberReturned = NULL) {
+  jsonlite::toJSON(
+    c(
+      list(type = "FeatureCollection", timeStamp = timeStamp),
+      if (!is.null(numberMatched)) list(numberMatched = numberMatched),
+      if (!is.null(numberReturned)) list(numberReturned = numberReturned),
+      list(features = collection$features)
+    ),
+    auto_unbox = TRUE, digits = NA
+  )
+}
+
+# La réponse brute PARSEÉE, comme `httr2::resp_body_json(simplifyVector = FALSE)`
+# la renvoie au vrai fetch — le seam injecté dans publier_geometrie reçoit cette
+# forme. Le fichier cache de communes_limites est lui aussi une telle chaîne.
+fixture_wfs_parse <- function(...) {
+  jsonlite::fromJSON(fixture_wfs_brut(...), simplifyVector = FALSE)
+}
