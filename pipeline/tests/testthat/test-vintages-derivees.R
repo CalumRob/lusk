@@ -162,6 +162,27 @@ ecrire_projet_vintages <- function(projet, horloge, payload, pipe) {
   invisible(projet)
 }
 
+test_that("absences délibérées de vintages.json (ADR-0048 §3bis) — aucun ajout silencieux", {
+  # Ces ids sont dans source-digests.json mais PAS dans la table des vintages :
+  # lectures réseau géométrie, lignes techniques OCS-GE (une source éditoriale
+  # les remplace), classifications dont la vintage vit dans source_records.
+  tables <- list(
+    vintages_demographie(), vintages_habitat(), vintages_economie(),
+    vintages_mobilite(), vintages_milieux(), vintages_programmes()
+  )
+  ids <- unique(unlist(lapply(tables, function(t) t$id), use.names = FALSE))
+
+  absents <- c(
+    "geometrie_communes", "geometrie_epcis", "geometrie_departements",
+    "ocsge_reseaux_22_2025", "ocsge_reseaux_29_2024",
+    "ocsge_reseaux_35_2023", "ocsge_reseaux_56_2024",
+    "classe_densite_communale", "classe_littorale_communale"
+  )
+  expect_false(any(absents %in% ids))
+  # les QUATRE lignes techniques sont remplacées par UNE source éditoriale
+  expect_true("ocsge_reseaux_routiers" %in% ids)
+})
+
 test_that("fixture : les octets changent entre deux tar_make et la version publiée suit", {
   projet <- tempfile("vintages-fixture-")
   on.exit(unlink(projet, recursive = TRUE))
