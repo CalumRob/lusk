@@ -106,8 +106,11 @@ lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
   if (!file.exists(p)) return(NULL)
   d <- tryCatch(jsonlite::fromJSON(p, simplifyVector = FALSE), error = function(e) NULL)
   if (is.null(d)) return(NULL)
-  for (champ in c("sha256", "acquired_at", "vintage_basis", "vintage", "date_reference")) {
-    if (is.null(d[[champ]])) d[[champ]] <- NA_character_
+  # Review #1121 : UN seul normaliseur pour les champs d'enregistrement, y
+  # compris ceux du sidecar (un `null` JSON doit devenir NA_character_, jamais
+  # character(0) — sinon le champ disparaît à l'écriture suivante).
+  for (champ in CHAMPS_LOCK_TEXTE) {
+    d[[champ]] <- champ_caractere(d[[champ]])
   }
   # Issue #1103 (revue) : un sidecar n'est valable QUE pour les octets qu'il a
   # hachés. Nom de fichier, taille et mtime doivent concorder, sinon le digest
@@ -118,11 +121,12 @@ lire_digest_cache <- function(id, cache = "data/raw", fichier = NULL) {
     # `features` pour une lecture WFS, pas les octets du fichier. La fraîcheur du
     # sidecar suit donc `fichier_octets` (la taille réelle du fichier) quand il
     # est présent ; les sidecars plus anciens n'ont que `bytes` (octets bruts).
-    octets_fichier <- d$fichier_octets %||% d$bytes
+    octets_fichier <- champ_caractere(d$fichier_octets %||% d$bytes)
     if (!file.exists(cible) ||
-        !identical(as.character(d$fichier %||% ""), as.character(fichier)) ||
+        !identical(champ_caractere(d$fichier), champ_caractere(fichier)) ||
         !isTRUE(all.equal(as.numeric(octets_fichier), as.numeric(file.size(cible)))) ||
-        !isTRUE(all.equal(as.numeric(d$mtime), as.numeric(file.mtime(cible))))) {
+        !isTRUE(all.equal(as.numeric(champ_caractere(d$mtime)),
+                          as.numeric(file.mtime(cible))))) {
       return(NULL)
     }
   }
@@ -398,7 +402,7 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   registre <- lire_lock(lock)
   verrouille <- registre[[id]]
   verrouille_ok <- !is.null(verrouille) &&
-    identical(champ_caractere(verrouille$sha256), as.character(h))
+    identical(champ_caractere(verrouille$sha256), champ_caractere(h))
 
   if (verrouille_ok) {
     # Determinism: locked bytes publish the lock's vintage, never the clock.
@@ -424,8 +428,8 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
     source_id = id,
     url = url,
     sha256 = h,
-    bytes = as.numeric(detail$bytes),
-    hachage = as.character(detail$hachage),
+    bytes = as.numeric(champ_caractere(detail$bytes)),
+    hachage = champ_caractere(detail$hachage),
     # Empreinte de fraîcheur du sidecar (issue #1103, revue) : nom, taille et
     # mtime du fichier réellement lu — tout changement invalide le digest.
     # `bytes` peut être la taille de la plage features hachée (#1119) : la taille
