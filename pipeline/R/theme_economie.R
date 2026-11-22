@@ -71,8 +71,10 @@ construire_donnees_economie <- function(cache = "data/raw") {
 # SA publication, AUCUN alignement (les sources RP sœurs rp_emploi / rp_chomage
 # partagent le millésime 2023 mais pas la publication : 2026-06-30 vs
 # 2026-07-15).
-vintages_economie <- function() {
-  vintages_depuis_manifest(MANIFEST_ECONOMIE)
+vintages_economie <- function(cache = "data/raw") {
+  # Issue #1114 : le cache atteint la projection — sirene_snapshot est une base
+  # `telechargement`, sa vintage vient du sidecar du run, jamais du littéral.
+  vintages_depuis_manifest(MANIFEST_ECONOMIE, cache = cache)
 }
 
 # construire_analytiques_economie ----------------------------------------------

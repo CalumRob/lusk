@@ -51,6 +51,25 @@ Every run writes `source-digests.json` beside the payload, covering every source
 
 **Non-manifest network reads.** Coverage is not limited to `MANIFEST_*`: the three Admin Express WFS layers fetched by `publier_geometrie()` are declared as `geometrie_{communes,epcis,departements}` with basis `telechargement`, hashed once per run and entered into both the coverage contract and the release freeze. Every network read in `pipeline/R` is audited structurally: a `download.file`/`httr2`/ analogous call must either be covered by such a digest (manifests via `resoudre_source`, DPE via its `api` pull, geometry via `publier_geometrie`) or sit in an explicit allowlist with a reason (AEDAR's operator `--check` acquisitions are a separate artifact outside the seven-theme run). A new, unlisted network read fails the suite. AEDAR inputs are separately frozen by their own content pins (`sha1` in `AEDAR_SOURCE_RESOURCES`, `sha256` in `AEDAR_TYPEQU_METADATA_RESOURCES`, both verified on acquisition) and live outside this lockfile.
 
+### 3bis. Digests recorded ≠ vintages published — deliberate asymmetry (issue #1114)
+
+`source-digests.json` covers **every network read of the run**; `vintages.json` is the
+reader-facing source table (one line per published dataset, joined by id to the app's
+`SOURCES_METHODES` registry and to theme `source_records`). The following ids are
+present in run digests but absent from `vintages.json` **by design** — this is not
+the stale-literal bug of #1114 and must not be "fixed" by appending them:
+
+| digest id(s) | why no vintage line |
+|---|---|
+| `geometrie_communes`, `geometrie_epcis`, `geometrie_departements` | The three Admin Express WFS layers of `publier_geometrie()` (decision 3 above): non-manifest network reads declared in `LECTURES_RESEAU`, covered by digests and the release freeze, but geometry layers — no published dataset, no `SOURCES_METHODES` entry. Adding them to `vintages.json` would break the app's documentation-parity contract. |
+| `ocsge_reseaux_22_2025`, `ocsge_reseaux_29_2024`, `ocsge_reseaux_35_2023`, `ocsge_reseaux_56_2024` | Four **technical** OCS-GE road-surface rows of `MANIFEST_MOBILITE` (basis `declaree`). `vintages_mobilite()` excludes them via `IDS_OCSGE_RESEAUX` and publishes ONE editorial source `ocsge_reseaux_routiers` (version `2023–2025`, `VINTAGES_MOBILITE_OCSGE_RESEAUX`) instead — a deliberate many-to-one mapping, already present in `vintages.json` and the registry. |
+| `classe_densite_communale`, `classe_littorale_communale` | `declaree` classification sources downloaded by the dedicated `sources_classes_densite` / `sources_classes_littoral` targets, not members of any theme manifest. Their vintage is published in the reader-facing **classification metadata** `source_records` (`metadata_classes_densite()`, the Milieux littoral metadata), validated by the app's metadata validator — not as a row of the shared per-source vintage table. |
+
+The fail-closed gate of decision 3 applies to the vintages table the run **publishes**:
+it requires attestation for every derived-basis source in the themes' manifests. It
+does not require a vintage line for a network read that is deliberately not a
+published source.
+
 ### 4. Attributed lock failures
 
 A failing `verif_*` compares its inputs (from `VERIFICATIONS_RUN`'s `args`, or every theme source for `sur_brut`) to the lockfile using the run's digests:

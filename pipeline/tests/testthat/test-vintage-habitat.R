@@ -32,9 +32,11 @@ test_that("les vintages Habitat sont par source : RP annuel, DVF semestriel, DPE
 
   # DPE : la base roulante — pas de date de référence unique ; sans pull,
   # l'horloge de publication est celle du RUN (#408 : au moins une horloge).
+  # Issue #1114 : la version est au format dérivé YYYY-MM, la date complète
+  # reste dans date_publication (plus jamais un jour dans `version`).
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
   expect_true(all(is.na(dpe$date_reference)))
-  expect_true(all(dpe$version == as.character(Sys.Date())))
+  expect_true(all(dpe$version == format(Sys.Date(), "%Y-%m")))
   expect_true(all(dpe$date_publication == as.character(Sys.Date())))
 })
 
@@ -54,14 +56,47 @@ test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée"
   v <- vintages_habitat(cache = cache)
 
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
-  # version ET date_publication = la date du pull (le jour, pas l'heure)
-  expect_true(all(dpe$version == "2026-07-01"))
+  # Issue #1114 : la version suit le format dérivé (YYYY-MM), la date complète
+  # du pull reste dans date_publication — jamais un jour dans `version`.
+  expect_true(all(dpe$version == "2026-07"))
   expect_true(all(dpe$date_publication == "2026-07-01"))
   # la base roulante garde sa sémantique : pas de date de référence
   expect_true(all(is.na(dpe$date_reference)))
   # RP et DVF ne bougent pas : leurs dates restent celles du manifeste
   expect_equal(v$date_publication[v$id == "logements"], "2026-06-30")
   expect_equal(v$date_publication[v$id == "dvf_2025_dep22"], "2026-05-18")
+})
+
+test_that("DPE : un sidecar valide publie la vintage dérivée (YYYY-MM + date complète)", {
+  # Issue #1114 : dans un vrai run, le pull DPE écrit un sidecar par département.
+  # La table publiée doit porter SA valeur dérivée — version au mois, acquisition
+  # complète en date_publication — et NON le mtime du .rds recollé en `version`.
+  cache <- tempfile("cache-dpe-sidecar-")
+  dir.create(file.path(cache, ".digests"), recursive = TRUE)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  for (id in MANIFEST_HABITAT_DPE$id) {
+    f <- MANIFEST_HABITAT_DPE$fichier[MANIFEST_HABITAT_DPE$id == id]
+    cible <- file.path(cache, f)
+    readr::write_rds(tibble::tibble(x = 1), cible)
+    Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
+    ecrire_digest_cache(list(
+      source_id = id, url = "https://example.invalid/dpe", sha256 = paste0("sha-", id),
+      bytes = file.size(cible), fichier = f, mtime = as.numeric(file.mtime(cible)),
+      acquired_at = "2026-11-18", vintage_basis = "telechargement",
+      vintage = "2026-11", date_reference = NA_character_
+    ), cache)
+  }
+
+  v <- vintages_habitat(cache = cache)
+  dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
+  expect_true(all(dpe$version == "2026-11"))
+  # Base roulante sans date déclarée (ADR-0048) : la date d'acquisition du
+  # sidecar n'est pas "inventée" comme date de publication — NA, comme ORT.
+  expect_true(all(is.na(dpe$date_publication)))
+  expect_true(all(is.na(dpe$date_reference)))
+  # RP et DVF (declaree) ne bougent pas
+  expect_equal(v$version[v$id == "logements"], "2023")
 })
 
 test_that("chaque estampille du payload vient de la source de référence déclarée", {

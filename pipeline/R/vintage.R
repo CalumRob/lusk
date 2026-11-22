@@ -13,9 +13,56 @@
 # lockfile (déterministe, sans horloge) ; sinon elle vient du digest du run,
 # jamais d'un littéral figé pour les bases dérivées.
 
+# Erreurs nommées du fail-closed (issue #1114) ----------------------------------
+# Une base dérivée SANS attestation (ni lockfile, ni sidecar valide) ne publie
+# jamais le littéral du manifeste : elle lève une condition nommée. Même garde
+# pour un format de version dérivée qui ne serait pas `YYYY-MM`.
+erreur_vintage_non_attestee <- function(id) {
+  structure(
+    list(
+      message = paste0(
+        "Vintage non attestée (issue #1114) pour la source « ", as.character(id),
+        " » : base dérivée sans enregistrement de lockfile ni sidecar valide. ",
+        "Aucun run n'atteste d'acquisition — le littéral du manifeste ne peut ",
+        "pas être publié."
+      ),
+      call = NULL, id = as.character(id)
+    ),
+    class = c("erreur_vintage_non_attestee", "error", "condition")
+  )
+}
+
+erreur_format_vintage <- function(id, version) {
+  structure(
+    list(
+      message = paste0(
+        "Format de vintage invalide (issue #1114) pour la source « ",
+        as.character(id), " » : « ", as.character(version),
+        " » — une base dérivée publie une version YYYY-MM."
+      ),
+      call = NULL, id = as.character(id), version = as.character(version)
+    ),
+    class = c("erreur_format_vintage", "error", "condition")
+  )
+}
+
+# attestation_vintage -----------------------------------------------------------
+# L'attestation d'une source — le digest du run et/ou le lockfile. Le lock n'est
+# utilisable que pour les octets qu'il verrouille ou quand aucun digest n'existe
+# (le fichier n'a pas bougé depuis le lock). Partagé par la projection et par la
+# garde de fail-closed pour qu'elles ne puissent pas diverger.
+attestation_vintage <- function(id, cache, fichier = NULL, lock = NULL) {
+  digest <- lire_digest_cache(id, cache, fichier = fichier)
+  verrouille <- lire_lock(lock)[[id]]
+  lock_utilisable <- !is.null(verrouille) &&
+    (is.null(digest) ||
+       identical(as.character(verrouille$sha256), as.character(digest$sha256)))
+  list(digest = digest, verrouille = verrouille, lock_utilisable = lock_utilisable)
+}
+
 vintages_depuis_manifest <- function(manifest,
                                       cache = Sys.getenv("LUSK_CACHE", unset = "data/raw"),
-                                      lock = NULL) {
+                                      lock = NULL, exiger_attestation = FALSE) {
   manifest <- declarer_bases(manifest)
   vintages <- manifest %>%
     dplyr::transmute(
@@ -27,16 +74,20 @@ vintages_depuis_manifest <- function(manifest,
       date_publication = date_publication
     )
 
-  registre <- lire_lock(lock)
   for (i in seq_len(nrow(manifest))) {
     base <- manifest$vintage_basis[i]
     if (!(base %in% BASIS_VINTAGE_DERIVES)) next
     id <- manifest$id[i]
-    digest <- lire_digest_cache(id, cache, fichier = manifest$fichier[i])
-    verrouille <- registre[[id]]
-    lock_utilisable <- !is.null(verrouille) &&
-      (is.null(digest) ||
-         identical(as.character(verrouille$sha256), as.character(digest$sha256)))
+    attestation <- attestation_vintage(id, cache, fichier = manifest$fichier[i],
+                                       lock = lock)
+    digest <- attestation$digest
+    verrouille <- attestation$verrouille
+    lock_utilisable <- attestation$lock_utilisable
+    # Issue #1114 : en mode run, une base dérivée sans lock ni sidecar est une
+    # erreur nommée — jamais le littéral du manifeste publié.
+    if (exiger_attestation && !lock_utilisable && is.null(digest)) {
+      stop(erreur_vintage_non_attestee(id))
+    }
     if (lock_utilisable) {
       # Locked bytes: deterministic, clock-free vintage from the lockfile.
       vintages$version[i] <- as.character(verrouille$vintage)
@@ -51,12 +102,40 @@ vintages_depuis_manifest <- function(manifest,
     }
     # Sans digest ni verrou, aucun run n'atteste d'acquisition : on garde le
     # vintage déclaré (par exemple un builder de thème appelé hors d'un run).
-    # Une source qui déclare NA n'a pas de date de publication (ORT, DPE) :
-    # on ne lui en invente pas une à partir de l'acquisition.
+    # Une source qui déclare NA n'a pas de date de publication (ORT line-by-line,
+    # DPE base roulante) : on ne lui en invente pas une à partir de
+    # l'acquisition — ADR-0048, respecté aussi par les sources attestées.
     if (!is.na(manifest$date_publication[i])) next
     vintages$date_publication[i] <- NA_character_
   }
   vintages
+}
+
+# verifier_vintages_attestees --------------------------------------------------
+# Garde de fail-closed du GRAPHE (issue #1114) : la table d'un thème est produite
+# APRÈS le téléchargement de ses sources (les cibles `sources_<thème>` et
+# `fichiers_<thème>` sont des dépendances) ; on exige donc que chaque source à
+# base dérivée porte une attestation, et que sa version publiée soit YYYY-MM.
+# Les sources `declaree` gardent leur vintage déclaré, sans attestation requise.
+verifier_vintages_attestees <- function(vintages, manifest,
+                                        cache = Sys.getenv("LUSK_CACHE", unset = "data/raw"),
+                                        lock = NULL) {
+  manifest <- declarer_bases(manifest)
+  for (i in seq_len(nrow(manifest))) {
+    base <- manifest$vintage_basis[i]
+    if (!(base %in% BASIS_VINTAGE_DERIVES)) next
+    id <- manifest$id[i]
+    attestation <- attestation_vintage(id, cache, fichier = manifest$fichier[i],
+                                       lock = lock)
+    if (!attestation$lock_utilisable && is.null(attestation$digest)) {
+      stop(erreur_vintage_non_attestee(id))
+    }
+    ligne <- vintages[vintages$id == id, , drop = FALSE]
+    if (nrow(ligne) && !grepl("^\\d{4}-\\d{2}$", as.character(ligne$version[[1L]]))) {
+      stop(erreur_format_vintage(id, ligne$version[[1L]]))
+    }
+  }
+  invisible(vintages)
 }
 
 # fusionner_vintages -----------------------------------------------------------
