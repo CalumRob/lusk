@@ -42,6 +42,81 @@ test_that("une source retirée de tous les manifestes est filtrée du cache agr�
   expect_setequal(names(filtre), c("serie_historique", "geometrie_communes"))
 })
 
+test_that("aucune commande du graphe ne contient de splice bquote non résolu (#1112)", {
+  # `bquote(f(list(..(x))))` sans `splice = TRUE` laisse le nom `..` dans la
+  # commande : le target échoue alors avec `could not find function ".."`.
+  racine <- pkgload::pkg_path()
+  withr::local_dir(racine)
+  withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
+                      LUSK_SORTIE = tempfile("sortie-splice-"),
+                      LUSK_CACHE = tempfile("cache-splice-"))
+  manifeste <- targets::tar_manifest()
+  expect_false(any(grepl("..(", manifeste$command, fixed = TRUE)))
+  commande <- manifeste$command[manifeste$name == "digests_run"]
+  # Toute dépendance `sources_*` du target est bien citée dans sa commande —
+  # pas seulement dans la liste des dépendances calculée par targets.
+  aretes <- targets::tar_network(store = tempfile("reseau-splice-"))$edges
+  dependances <- aretes$from[aretes$to == "digests_run" &
+                               grepl("^sources_", aretes$from)]
+  expect_true(length(dependances) >= 8L)
+  for (cible in dependances) {
+    expect_true(grepl(cible, commande, fixed = TRUE), info = cible)
+  }
+})
+
+test_that("la commande réelle de digests_run s'évalue et publie tous les ids lus (#1112)", {
+  cache <- tempfile("cache-eval-digests-")
+  sortie <- tempfile("sortie-eval-digests-")
+  dir.create(cache); dir.create(sortie)
+  on.exit(unlink(c(cache, sortie), recursive = TRUE), add = TRUE)
+
+  racine <- pkgload::pkg_path()
+  withr::local_dir(racine)
+  withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
+                      LUSK_CACHE = cache, LUSK_SORTIE = sortie)
+  commande <- targets::tar_manifest(names = "digests_run")$command
+  # `publier_geometrie` a déjà écrit les trois lectures réseau dans le fichier.
+  ecrire_digests_source(stats::setNames(
+    lapply(names(LECTURES_RESEAU), function(id) enregistrement(id, paste0("sha-", id))),
+    names(LECTURES_RESEAU)
+  ), file.path(sortie, NOM_DIGESTS))
+
+  themes <- stats::setNames(
+    list(theme_demographie(), theme_habitat(), theme_economie(),
+         theme_mobilite(), theme_milieux()),
+    c("demographie", "habitat", "economie", "mobilite", "milieux")
+  )
+  fournir <- stats::setNames(
+    c(lapply(themes, function(t) t$manifest$id),
+      list(MANIFEST_CLASSES_DENSITE$id, MANIFEST_CLASSES_LITTORAL$id,
+           MANIFEST_PROGRAMMES_COMPLET$id)),
+    c(paste0("sources_", names(themes)), "sources_classes_densite",
+      "sources_classes_littoral", "sources_programmes")
+  )
+  statut_pour <- function(ids) {
+    s <- tibble::tibble(id = ids, mode = "cron", status = "frais")
+    attr(s, "digests") <- stats::setNames(
+      lapply(ids, function(id) enregistrement(id, paste0("sha-", id))), ids
+    )
+    s
+  }
+  environnement <- new.env(parent = environment())
+  for (nom in names(fournir)) assign(nom, statut_pour(fournir[[nom]]), envir = environnement)
+  assign("geometrie", "geometrie publiee", envir = environnement)
+
+  expression <- parse(text = commande)[[1L]]
+  eval(expression, envir = environnement)
+  publies <- lire_digests_source(file.path(sortie, NOM_DIGESTS))
+  expect_setequal(
+    names(publies),
+    ids_digests_publication(manifestes = c(
+      lapply(themes, function(t) t$manifest),
+      list(MANIFEST_CLASSES_DENSITE, MANIFEST_CLASSES_LITTORAL,
+           MANIFEST_PROGRAMMES_COMPLET)
+    ))
+  )
+})
+
 test_that("la cible digests_run projette les ids courants, pas tout le cache", {
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)

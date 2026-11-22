@@ -1517,9 +1517,11 @@ digests_run_cible <- function(themes = THEMES_RUN, cache = CACHE_RUN,
     "digests_run",
     as.call(c(
       list(as.name("{")), deps,
+      # `..()` n'est remplacé que si `splice = TRUE` : sans lui la commande
+      # contiendrait l'appel littéral `..(statuts)` et échouerait au build.
       list(bquote(publier_digests_run(
         list(..(statuts)), cache = .(cache), sortie = .(sortie)
-      )))
+      ), splice = TRUE))
     )),
     cue = tar_cue(mode = "always")
   )
