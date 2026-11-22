@@ -20,7 +20,7 @@ function fermeSimple(src: string, depuis: number): number {
   return -1
 }
 
-export function enLigne(src: string): VNodeChild[] {
+function enLigne(src: string): VNodeChild[] {
   const sortie: VNodeChild[] = []
   let tampon = ''
   const vider = () => {
@@ -58,7 +58,7 @@ const TITRE = /^(#{2,3}) (.+)$/
 const PUCE = /^- (.*)$/
 const NUMERO = /^\d+\. (.*)$/
 
-export function rendreMarkdown(source: string): VNodeChild[] {
+function rendreMarkdown(source: string): VNodeChild[] {
   const lignes = source.replace(/\r/g, '').split('\n')
   const sortie: VNodeChild[] = []
   let i = 0

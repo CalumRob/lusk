@@ -5,6 +5,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
 
+import * as moduleMarkdown from '../atelier/markdown'
 import { ProseMarkdown } from '../atelier/markdown'
 
 /**
@@ -19,6 +20,10 @@ function rendre(source: string) {
 }
 
 describe('atelier — rendu du texte (sous-ensemble Markdown)', () => {
+  it('n’exporte que le composant de lecture : aucun helper interne ne fuit', () => {
+    expect(Object.keys(moduleMarkdown)).toEqual(['ProseMarkdown'])
+  })
+
   it('rend un paragraphe joint et justifié par la classe cahier partagée', () => {
     const hote = rendre('Une première ligne.\nUne deuxième ligne.')
     expect(hote.find('p').text()).toBe('Une première ligne. Une deuxième ligne.')
