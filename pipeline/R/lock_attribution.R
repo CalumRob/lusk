@@ -55,8 +55,8 @@ attribuer_echec_lock <- function(ids_sources, digests = list(), lock = NULL) {
       )
       next
     }
-    date <- as.character(verrou$acquired_at)
-    sha_attendu <- as.character(verrou$sha256)
+    date <- champ_caractere(verrou$acquired_at)
+    sha_attendu <- champ_caractere(verrou$sha256)
     if (is.null(digest)) {
       anomalie[[id]] <- list(
         source_id = id, date_lockfile = date, expected = sha_attendu,

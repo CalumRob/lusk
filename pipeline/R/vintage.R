@@ -56,21 +56,11 @@ attestation_vintage <- function(id, cache, fichier = NULL, lock = NULL) {
   verrouille <- lire_lock(lock)[[id]]
   lock_utilisable <- !is.null(verrouille) &&
     (is.null(digest) ||
-       identical(as.character(verrouille$sha256), as.character(digest$sha256)))
+       identical(champ_caractere(verrouille$sha256), champ_caractere(digest$sha256)))
   list(digest = digest, verrouille = verrouille, lock_utilisable = lock_utilisable)
 }
 
-# champ_caractere ---------------------------------------------------------------
-# Un champ de lockfile peut être JSON `null` — typiquement `date_reference`
-# d'une base roulante (DPE, ADR-0009). `lire_lock()` le ramène NULL, et
-# `as.character(NULL)` est un vecteur VIDE qui casserait l'affectation d'une
-# cellule de la table. On normalise en NA_character_ : « pas de date de
-# référence », pas « pas d'attestation » (#1118).
-champ_caractere <- function(x) {
-  if (length(x) != 1L) return(NA_character_)
-  as.character(x)
-}
-
+# vintages_depuis_manifest ------------------------------------------------------
 vintages_depuis_manifest <- function(manifest,
                                       cache = Sys.getenv("LUSK_CACHE", unset = "data/raw"),
                                       lock = NULL, exiger_attestation = FALSE) {

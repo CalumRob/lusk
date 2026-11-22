@@ -17,6 +17,26 @@
 # Per-source digest sidecars are written under <cache>/.digests/ so vintage
 # builders never re-hash large files and keep the `cache=` plumbing.
 
+# champ_caractere ---------------------------------------------------------------
+# L'UNIQUE normaliseur des champs d'enregistrement — lockfile `sources.lock.json`
+# ET digests de run `source-digests.json`. `jsonlite` ramène un JSON `null` à
+# NULL et un `[]` à une liste vide ; `as.character(NULL)` donne character(0),
+# ce qui casse l'affectation d'une cellule et ré-écrit `[]` dans le lockfile au
+# relock suivant (review PR #1121 : le relock #1105 écrit un enregistrement pour
+# CHAQUE source, dont les DPE dont `date_reference` est NA). On normalise en
+# NA_character_ — « champ absent », pas « pas d'attestation ».
+champ_caractere <- function(x) {
+  if (length(x) != 1L) return(NA_character_)
+  as.character(x)
+}
+
+# Les champs TEXTE d'un enregistrement, normalisés une fois pour toutes dès la
+# lecture du lockfile : aucun consommateur n'a à refaire la conversion.
+CHAMPS_LOCK_TEXTE <- c(
+  "source_id", "url", "sha256", "acquired_at", "vintage_basis", "vintage",
+  "date_reference"
+)
+
 # chemin_lock -------------------------------------------------------------------
 chemin_lock <- function(lock = NULL) {
   if (!is.null(lock)) return(lock)
@@ -39,6 +59,12 @@ lire_lock <- function(lock = NULL) {
   enregistrements <- if (is.list(brut) && !is.null(brut$sources)) brut$sources else brut
   if (!is.list(enregistrements) || !length(enregistrements)) return(list())
   noms <- vapply(enregistrements, function(e) as.character(e$source_id %||% ""), character(1))
+  enregistrements <- lapply(enregistrements, function(e) {
+    for (champ in CHAMPS_LOCK_TEXTE) {
+      e[[champ]] <- champ_caractere(e[[champ]])
+    }
+    e
+  })
   stats::setNames(enregistrements, noms)
 }
 
@@ -361,14 +387,16 @@ resoudre_source <- function(id, url = NULL, fichier = NULL, cache = "data/raw",
   registre <- lire_lock(lock)
   verrouille <- registre[[id]]
   verrouille_ok <- !is.null(verrouille) &&
-    identical(as.character(verrouille$sha256), as.character(h))
+    identical(champ_caractere(verrouille$sha256), as.character(h))
 
   if (verrouille_ok) {
     # Determinism: locked bytes publish the lock's vintage, never the clock.
-    acquired_at <- as.character(verrouille$acquired_at)
-    vintage <- as.character(verrouille$vintage)
-    date_reference <- as.character(verrouille$date_reference)
-    base <- as.character(verrouille$vintage_basis)
+    # Les champs sont déjà normalisés par lire_lock() : un `date_reference`
+    # JSON null est NA_character_, jamais un vecteur vide.
+    acquired_at <- champ_caractere(verrouille$acquired_at)
+    vintage <- champ_caractere(verrouille$vintage)
+    date_reference <- champ_caractere(verrouille$date_reference)
+    base <- champ_caractere(verrouille$vintage_basis)
   } else {
     d <- deriver_vintage(
       cible, jour, vintage_basis = vintage_basis,
@@ -427,15 +455,18 @@ relock_sources <- function(run_dir, ids = NULL, lock = NULL) {
   registre <- lire_lock(lock)
   for (id in cibles) {
     d <- digests[[id]]
+    # Un digest de run est du JSON au même titre que le lockfile : un champ
+    # `null` (date_reference des bases roulantes) doit devenir NA_character_,
+    # jamais character(0) ré-écrit `[]` dans le lockfile par write_json.
     registre[[id]] <- list(
-      source_id = id,
-      url = d$url,
-      sha256 = as.character(d$sha256),
-      bytes = as.numeric(d$bytes),
-      acquired_at = as.character(d$acquired_at),
-      vintage_basis = as.character(d$vintage_basis),
-      vintage = as.character(d$vintage),
-      date_reference = as.character(d$date_reference)
+      source_id = champ_caractere(id),
+      url = champ_caractere(d$url),
+      sha256 = champ_caractere(d$sha256),
+      bytes = as.numeric(champ_caractere(d$bytes)),
+      acquired_at = champ_caractere(d$acquired_at),
+      vintage_basis = champ_caractere(d$vintage_basis),
+      vintage = champ_caractere(d$vintage),
+      date_reference = champ_caractere(d$date_reference)
     )
   }
   ecrire_lock(registre, lock)
