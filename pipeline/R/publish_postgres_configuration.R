@@ -106,8 +106,29 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
       scoped_result <- publish_scoped_retained_backend(con, plan,
                                                        guard$absent_sources)
     } else {
+      # Full retained publication (#1126). The scoped branch above proves the
+      # required order: refresh the scalar-bound declared-profile companion
+      # metadata-only for the candidate scalar version, then publish reference
+      # -> scalar -> declared profiles -> typed readings in ONE outer
+      # transaction. The old full path did none of that: each owner committed
+      # independently and the Habitat selected reading refused against the
+      # stale DPE binding once the scalar version moved, leaving reference,
+      # scalar, comparison and demographie committed and the rest stale (API
+      # fail-closed -> 503). Do exactly what the scoped path does. The lock is
+      # session-wide and released by the finally below; the profile artifacts
+      # are restored there on any failure, before the connection is closed.
+      DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
+      locked <- TRUE
+      target_reference <- project_territory_reference(
+        nanoparquet::read_parquet(file.path(sortie, "territoires.parquet")))
+      target_snapshot <- project_retained_scalar_snapshot(sortie, target_reference)
+      profile_backup <- backup_profile()
+      refresh_declared_profile_scalar_binding(sortie,
+        declared_profile_owners(),
+        scalar_content_version(target_snapshot$scalar))
       publish_retained_backend_snapshot(con, sortie,
-        conso_source_path=conso_source_path)
+        conso_source_path=conso_source_path,
+        atomic=TRUE, companion_profiles=TRUE)
     }
     success <- TRUE
   }, finally={
