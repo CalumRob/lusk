@@ -72,6 +72,49 @@ The littoral builder obtains its crosswalk through
 it. A stale or renamed crosswalk fails closed; the publisher never invents an
 NC classification for a commune absent from the pinned DREAL positive list.
 
+### Measured operator sequence (#1156)
+
+Rehearsed end to end on 2026-11-23 against a template copy of `lusk`. Each
+command commits independently, so the outage runs from the first data commit
+until the last dependent one; **measured 22 minutes** for steps 1–6 with the
+AEDAR aggregates pre-built, or about 60 minutes if steps 0a/0b run inside the
+window.
+
+Environment, once per window (all from `pipeline/`, private libpq passfile):
+
+```text
+LUSK_PUBLISH_HOST / LUSK_PUBLISH_DATABASE / LUSK_PUBLISH_USER
+LUSK_SORTIE=<run directory whose source-digests.json equals sources.lock.json>
+PGPASSFILE=<private passfile>
+LUSK_MILIEUX_CONSO_SOURCE=<path to conso-com.csv>     # required when the Milieux absence marker is non-empty
+LUSK_AEDAR_RAW_DIR=<raw cache>
+```
+
+| # | Command | Opt-in | Measured |
+|---|---|---|---|
+| 0a | `scripts/build-aedar-density-aggregate.R` | — | 18m00 |
+| 0b | `scripts/build-aedar-littoral-aggregate.R` | — | 19m44 |
+| 1 | `scripts/publish-serving-tables.R --publish` | — | 2m18 |
+| 2 | `scripts/publish-serving-tables.R --owned-series-publish --all` | `LUSK_PUBLISH_OWNED_SERIES=1` | 4m44 |
+| 3 | `scripts/publish-serving-tables.R --series-publish` | `LUSK_PUBLISH_SERIES=1` | 11s |
+| 4 | `scripts/publish-serving-tables.R --programme-publish` | `LUSK_PUBLISH_PROGRAMMES=1` | 13s |
+| 5 | `scripts/publish-aedar-aggregates.R --check` | — | 1m45 |
+| 6 | `scripts/publish-aedar-aggregates.R --publish` | `LUSK_PUBLISH_AEDAR=1` | 13m23 |
+
+Steps 2 and 3 are **both** required and own different things: `--publish` covers
+the reference, scalar snapshot, comparisons, declared profiles and typed
+readings; `--owned-series-publish` writes the owned datasets
+(`series_dataset_publication`); `--series-publish` writes the ordered-series
+family and is the only writer of the `ordered_series` table marker. Skipping it
+leaves that marker bound to the previous reference and the API refuses the
+family.
+
+After the window, verify: the four `offre_tc` anchors (Rennes 0.9967512,
+Brest 0.9260954, Finistère 0.6486402, Bretagne 0.5663383), the "adresses"
+descriptor, zero retired ids, zero `table_publication` rows whose
+`reference_content_version` differs from the live reference, and the littoral
+C/NC counts against the DREAL positive list.
+
 **Full retained publication is atomic (#1126).** The full backend publication
 (`publish-serving-tables.R --publish` / the `publie_backend_retained` target,
 i.e. `publish_retained_backend_from_parquet`) now refreshes the declared-profile
