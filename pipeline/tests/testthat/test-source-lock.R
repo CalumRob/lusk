@@ -262,9 +262,18 @@ test_that("le digest est écrit une seule fois dans le sidecar du cache", {
   unlink(cache, recursive = TRUE)
 })
 
-test_that("le lockfile commité garde exactement les trois empreintes d'origine", {
+test_that("le lockfile commité est intègre et couvre tout le run verrouillé", {
+  # #1128 : depuis le relock complet (#1105), le lockfile ne contient plus
+  # « exactement trois » empreintes mais TOUTES les sources digérées du run.
+  # Le contrat porte désormais sur l'intégrité de chaque entrée et sur la
+  # conservation des trois empreintes fondatrices (#1105 les laisse telles
+  # quelles), jamais sur un nombre figé de trois ni sur une date d'acquisition
+  # uniforme : les sources ont été acquises à des jours différents du run.
   l <- lire_lock()
-  expect_setequal(names(l), c("osm_reseaux", "korrigo", "bornes-recharges"))
+  expect_gte(length(l), 60L)
+  expect_true(all(c("osm_reseaux", "korrigo", "bornes-recharges") %in% names(l)))
+
+  # les trois enregistrements fondateurs gardent leur empreinte d'origine
   expect_equal(l$osm_reseaux$sha256,
                "fb8e00775d77f39f4c68ad5ac4b20d5589383734308ba5579d286c9f3e010704")
   expect_equal(l$osm_reseaux$bytes, 330755575)
@@ -278,10 +287,24 @@ test_that("le lockfile commité garde exactement les trois empreintes d'origine"
                "321ded4dba4292b64ca35f1b73f9d820938b189ebc6e07165f79ca58aace2be0")
   expect_equal(l$korrigo$date_reference, "2026-11-18")
   expect_equal(l$korrigo$acquired_at, "2026-11-18")
-  for (e in l) {
-    expect_equal(e$acquired_at, "2026-11-18")
-    expect_equal(e$vintage, "2026-11")
-    expect_true(grepl("^[0-9a-f]{64}$", e$sha256))
+
+  # intégrité de CHAQUE entrée verrouillée : identifiant, empreinte, octets,
+  # horloge d'acquisition et base de vintage déclarée — aucune entrée ne peut
+  # être un littéral ou un enregistrement tronqué.
+  for (id in names(l)) {
+    e <- l[[id]]
+    expect_identical(as.character(e$source_id), id, info = id)
+    expect_true(grepl("^[0-9a-f]{64}$", as.character(e$sha256)), info = id)
+    expect_true(is.numeric(e$bytes) && e$bytes > 0, info = id)
+    expect_true(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", as.character(e$acquired_at)),
+                info = id)
+    expect_true(e$vintage_basis %in% BASIS_VINTAGE, info = id)
+    expect_true(is.character(e$vintage) && nzchar(e$vintage), info = id)
+    # une base dérivée atteste un mois YYYY-MM ; une base declaree garde son
+    # millésime déclaré (qui peut être une année ou une étiquette éditoriale).
+    if (e$vintage_basis %in% BASIS_VINTAGE_DERIVES) {
+      expect_true(grepl("^[0-9]{4}-[0-9]{2}$", as.character(e$vintage)), info = id)
+    }
   }
 })
 
