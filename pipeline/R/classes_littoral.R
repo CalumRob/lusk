@@ -15,6 +15,11 @@ CLASSES_LITTORAL_FICHIER <- "communes_littorales_dreal_bretagne_2023-04-21.csv"
 
 CLASSES_LITTORAL_DOMAINE <- c("C", "NC")
 CLASSES_LITTORAL_CLASSEMENTS <- c("Mer", "Estuaire")
+# The single declaration of construire_crosswalk_littoral()'s output contract.
+# Consumers bind to THIS, never to a second local list of names: a rename at
+# the builder seam must fail closed instead of drifting into a consumer (#1150).
+CROSSWALK_LITTORAL_COLUMNS <- c("code_commune", "littoral_code",
+                                "littoral_classement_source")
 
 CLASSES_LITTORAL_URL <- paste0(
   "https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs?",
@@ -181,11 +186,14 @@ construire_crosswalk_littoral <- function(source, communes,
   }
 
   classement_par_code <- stats::setNames(classements, codes)
-  tibble::tibble(
+  crosswalk <- tibble::tibble(
     code_commune = communes,
     littoral_code = ifelse(communes %in% codes, "C", "NC"),
     littoral_classement_source = unname(classement_par_code[communes])
   )[order(communes), , drop = FALSE]
+  # Project onto the declared contract: an accidental rename here fails loudly
+  # instead of producing a crosswalk no consumer can bind to.
+  crosswalk[CROSSWALK_LITTORAL_COLUMNS]
 }
 
 # publier_classes_littoral ------------------------------------------------------

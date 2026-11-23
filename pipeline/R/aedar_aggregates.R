@@ -929,8 +929,20 @@ read_aedar_littoral_reference <- function(path=file.path("data","raw",MANIFEST_C
     communes<-as.character(population[[if("code_insee"%in%names(population)) "code_insee" else names(population)[[1L]]]])
   }
   crosswalk<-construire_crosswalk_littoral(source,communes)
-  crosswalk$littoral_label<-ifelse(crosswalk$littoral_code=="C","Littoral","Non littoral")
-  list(crosswalk=crosswalk[c("code_insee","littoral_code","littoral_label")],
+  # Bind to the builder's declared output contract (#1150), never to a second
+  # hardcoded list: a rename at the builder seam fails here. The served C/NC
+  # contract (code_insee / littoral_code / littoral_label) is derived from the
+  # builder's columns; the label is presentation, not a source classification.
+  if(!is.data.frame(crosswalk)||!all(CROSSWALK_LITTORAL_COLUMNS%in%names(crosswalk)))
+    stop("Commune-to-littoral builder returned an unexpected crosswalk contract",call.=FALSE)
+  codes<-as.character(crosswalk[[CROSSWALK_LITTORAL_COLUMNS[[1L]]]])
+  statuts<-as.character(crosswalk[[CROSSWALK_LITTORAL_COLUMNS[[2L]]]])
+  if(anyNA(codes)||anyNA(statuts)||anyDuplicated(codes)||
+     any(!statuts%in%CLASSES_LITTORAL_DOMAINE))
+    stop("Commune-to-littoral crosswalk has an invalid C/NC classification",call.=FALSE)
+  served<-data.frame(code_insee=codes,littoral_code=statuts,
+    littoral_label=ifelse(statuts=="C","Littoral","Non littoral"),stringsAsFactors=FALSE)
+  list(crosswalk=served,
     identity=manifest[["id"]][[1L]],sha256=tolower(actual_hash),
     vintage=manifest[["vintage"]][[1L]],path=normalizePath(path,winslash="/",mustWork=TRUE))
 }

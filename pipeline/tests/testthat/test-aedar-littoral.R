@@ -290,6 +290,107 @@ test_that("littoral publication is a sibling that leaves density counters intact
     littoral_source=aedar_littoral_test_source_artifact()),"membership|disagrees")
 })
 
+# #1150: the AEDAR reader must consume the builder's ACTUAL crosswalk output.
+# The pinned DREAL positive-list fixture and the 1202-commune canonical universe
+# are both committed, so the membership proof below needs no DB and no network.
+aedar_littoral_fixture_chemin <- function() {
+  testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv")
+}
+
+aedar_littoral_univers_canonique <- function() {
+  readr::read_csv(
+    testthat::test_path("..", "..", "inst", "extdata", "population_communes_2023.csv"),
+    col_types = readr::cols(code_commune = readr::col_character()),
+    show_col_types = FALSE, progress = FALSE
+  )$code_commune
+}
+
+test_that("littoral reference binds to the builder crosswalk and the pinned DREAL positive list", {
+  path <- aedar_littoral_fixture_chemin()
+  communes <- aedar_littoral_univers_canonique()
+  source <- lire_classes_littoral(path)
+  # On the pre-#1150 code this call is the immediate failure: the reader selects
+  # code_insee from a builder that now returns code_commune.
+  ref <- read_aedar_littoral_reference(path, communes = communes)
+  built <- construire_crosswalk_littoral(source, communes)
+
+  # The expectation is bound to the builder's declared output contract, not to
+  # a second literal list: renaming a builder column without moving the
+  # declaration fails HERE instead of drifting silently downstream (#1150).
+  expect_setequal(names(built), CROSSWALK_LITTORAL_COLUMNS)
+  code_column <- CROSSWALK_LITTORAL_COLUMNS[[1L]]
+  statut_column <- CROSSWALK_LITTORAL_COLUMNS[[2L]]
+
+  cw <- ref$crosswalk
+  expect_setequal(names(cw), c("code_insee", "littoral_code", "littoral_label"))
+  expect_identical(cw$code_insee, as.character(built[[code_column]]))
+  expect_identical(cw$littoral_code, as.character(built[[statut_column]]))
+  expect_identical(cw$littoral_label,
+    ifelse(cw$littoral_code == "C", "Littoral", "Non littoral"))
+
+  # The served C/NC membership IS the DREAL positive list joined to the canon.
+  positifs <- intersect(source$Code_insee, communes)
+  expect_length(communes, 1202L)
+  expect_equal(nrow(cw), 1202L)
+  expect_setequal(cw$code_insee[cw$littoral_code == "C"], positifs)
+  expect_setequal(cw$code_insee[cw$littoral_code == "NC"], setdiff(communes, positifs))
+  expect_equal(cw$littoral_code[match(c("29083", "29084"), cw$code_insee)], c("C", "C"))
+  expect_identical(ref$sha256, tolower(sha256_aedar_file(path)))
+})
+
+test_that("littoral reference fails closed when the builder crosswalk columns are renamed", {
+  path <- aedar_littoral_fixture_chemin()
+  communes <- aedar_littoral_univers_canonique()
+  original <- construire_crosswalk_littoral
+  local_mocked_bindings(construire_crosswalk_littoral = function(source, communes, ...) {
+    x <- original(source, communes, ...)
+    names(x) <- c("commune", "statut", "classement_source")
+    x
+  })
+  expect_error(read_aedar_littoral_reference(path, communes = communes),
+    "crosswalk|contract|inattendu|unexpected")
+})
+
+test_that("the built littoral artifact pools the fixture crosswalk's C/NC membership", {
+  skip_if_not_installed("nanoparquet")
+  skip_if_not_installed("arrow")
+  path <- aedar_littoral_fixture_chemin()
+  communes <- aedar_littoral_univers_canonique()
+  ref <- read_aedar_littoral_reference(path, communes = communes)
+  cw <- ref$crosswalk
+
+  dir <- tempfile("aedar-littoral-fixture-"); dir.create(dir)
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+  # Two real canonical communes from the pinned fixture: 29083 is C, 29209 NC.
+  origins_path <- file.path(dir, "origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id = c("a", "b", "c"),
+    code_insee = c("29083", "29083", "29209"), lon = 1:3, lat = 1:3), origins_path)
+  mode_paths <- stats::setNames(vapply(AEDAR_ADDRESS_SOURCE_MODES, function(mode)
+    file.path(dir, paste0(mode, ".parquet")), character(1)), AEDAR_ADDRESS_SOURCE_MODES)
+  keys <- list(walk = data.frame(code_insee = c("29083", "29083", "29209"),
+    cle_interop_adr = c("a", "b", "c"), TYPEQU = "A104"))
+  for (mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    x <- keys[[mode]]
+    if (is.null(x)) x <- data.frame(code_insee = character(), cle_interop_adr = character(), TYPEQU = character())
+    for (column in AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]) x[[column]] <- rep(0, nrow(x))
+    if (mode == "walk" && nrow(x)) x$count_5_walk <- c(1, 3, 9)
+    nanoparquet::write_parquet(x, mode_paths[[mode]])
+  }
+  output_path <- file.path(dir, "littoral.parquet")
+  result <- build_aedar_littoral_aggregate(mode_paths, origins_path, cw,
+    ref$identity, ref$sha256, ref$vintage, output_path, verify_hashes = FALSE)
+  expect_setequal(unique(result$littoral_code), c("C", "NC"))
+  expect_setequal(unique(result[c("littoral_code", "littoral_label")])$littoral_label,
+    c("Littoral", "Non littoral"))
+  expect_silent(validate_aedar_littoral_aggregate(result, ref))
+  served <- data.frame(territory_type = "commune", territory_id = cw$code_insee,
+    littoral_code = cw$littoral_code, stringsAsFactors = FALSE)
+  expect_silent(validate_aedar_littoral_membership(ref, served))
+  stale <- served
+  stale$littoral_code[stale$territory_id == "29083"] <- "NC"
+  expect_error(validate_aedar_littoral_membership(ref, stale), "disagrees")
+})
+
 test_that("comparison input identity pins the littoral classification and reference", {
   hashes <- c(`mode:walk`=paste(rep("a",64),collapse=""),
     `mode:transit_gain`=paste(rep("b",64),collapse=""),
