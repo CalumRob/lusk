@@ -20,9 +20,33 @@
         }
       ],
       "caveat": "La classe de densité communale est une classification officielle fondée sur le nombre et la concentration spatiale des habitants."
+    },
+    "classe_littorale_communale": {
+      "dataset": "Communes littorales en Bretagne au titre de la loi",
+      "publisher": "DREAL Bretagne",
+      "url": "https://www.data.gouv.fr/datasets/communes-littorales-en-bretagne-au-titre-de-la-loi",
+      "acquisition_url": "https://geobretagne.fr/geoserver/dreal_b/l_communes_littorales/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=dreal_b:l_communes_littorales&OUTPUTFORMAT=csv&propertyName=Code_insee,Commune,Dpt,Classement&SRSNAME=EPSG:4326",
+      "licence": "Licence Ouverte 2.0 (lov2)",
+      "sha256": "d68f20e7ea2928ac36e104201fdd81327b610a384c1a3a6d6c33521fe61153cc",
+      "vintage": "Liste positive DREAL Bretagne — métadonnées de diffusion du 2023-04-21",
+      "freshness": "Dernière modification déclarée par data.gouv.fr le 21 avril 2023 — ce n'est pas une date de relevé du périmètre juridique",
+      "definition": "Communes définies par la loi Littoral de 1986, complétées par le décret 2004-311.",
+      "coverage": "Liste positive exhaustive pour les quatre départements bretons ; le complément de l'univers communal canonique est Non littoral (NC). La DREAL exclut Plouvien (29209), que le zonage Cerema/ANCT antérieur classait encore littoral après la modification communale de 2015.",
+      "classements": ["Mer", "Estuaire"],
+      "caveat": "Instantané daté de la liste DREAL : ce n'est pas une garantie juridique en vigueur ni un relevé de périmètre à une date certaine. Les limites communales et la liste peuvent évoluer ; la liste positive DREAL est la seule source de C, le complément validé est NC. Plouvien (29209) est exclue par la DREAL depuis la modification communale de 2015, alors que le zonage Cerema/ANCT antérieur la classait encore littorale : ce n'est pas une divergence d'interprétation mais une différence de périmètre datée.",
+      "vintages": [
+        {
+          "id": "classe_littorale_communale",
+          "label": "Communes littorales en Bretagne au titre de la loi",
+          "version": "Liste positive DREAL Bretagne — diffusion 2023-04-21",
+          "licence": "Licence Ouverte 2.0 (lov2)",
+          "dateReference": null,
+          "datePublication": "2023-04-21"
+        }
+      ]
     }
   },
-  "territory_reference_label": "Référentiel territorial — classes de densité communale",
+  "territory_reference_label": "Référentiel territorial — classifications communales",
   "density_classes": {
     "1": {
       "code": "1",

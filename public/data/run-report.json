@@ -1,130 +1,36 @@
 {
   "mode": "full",
-  "timestamp": "2026-09-15T02:11:39Z",
+  "timestamp": "2026-11-23T11:32:09Z",
   "statuts": [
     {
-      "id": "mobilite_snapshot",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "rp_logement_princ",
+      "id": "acv",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "osm_reseaux",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_reseaux_22_2025",
+      "id": "pvd",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_reseaux_29_2024",
+      "id": "crte",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_reseaux_35_2023",
+      "id": "territoires_industrie",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_reseaux_56_2024",
+      "id": "ort",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "amenagements_cyclables",
+      "id": "subventions_scdl",
       "mode": "cron",
       "status": "frais"
-    },
-    {
-      "id": "communes_limites",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "korrigo",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "batiments_residentiels",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "accessibilite_batiments",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "bornes-recharges",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "stationnement-velo",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "bpe_b316",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "cog_passage",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "sncf_voyageurs",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "dila_bdl",
-      "mode": "manuel",
-      "status": "frais"
-    }
-  ],
-  "couverture": [
-    {
-      "departement": "22",
-      "lignes_actuel": 3651,
-      "km_actuel": 798.99909668954933,
-      "lignes_precedent": 3651,
-      "km_precedent": 798.99909668954933,
-      "regression": false
-    },
-    {
-      "departement": "29",
-      "lignes_actuel": 7408,
-      "km_actuel": 1297.963829307557,
-      "lignes_precedent": 7408,
-      "km_precedent": 1297.963829307557,
-      "regression": false
-    },
-    {
-      "departement": "35",
-      "lignes_actuel": 9699,
-      "km_actuel": 1420.8862050937166,
-      "lignes_precedent": 9699,
-      "km_precedent": 1420.8862050937166,
-      "regression": false
-    },
-    {
-      "departement": "56",
-      "lignes_actuel": 7039,
-      "km_actuel": 1395.3838890008069,
-      "lignes_precedent": 7039,
-      "km_precedent": 1395.3838890008069,
-      "regression": false
     }
   ]
 }
