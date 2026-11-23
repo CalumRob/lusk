@@ -73,7 +73,9 @@ describe('contrats des artefacts statiques descriptifs committés', () => {
 
     // Pin committed source identity, licence and vintage dates without comparing
     // against the wall clock or any numerical observation payload.
-    expect(vintages).toHaveLength(68)
+    // 67 vintages in the 2026-11-23 payload: the Mobilité snapshot vintage was
+    // retired with #1048, so the previous 68 is no longer published truth.
+    expect(vintages).toHaveLength(67)
     expect(vintages.find((vintage) => vintage.id === 'consoenaf')).toMatchObject({
       source: "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
       version: '2025',
