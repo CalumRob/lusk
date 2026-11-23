@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { TransformStream } from 'node:stream/web'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 
 import { flushPromises, mount } from '@vue/test-utils'
@@ -16,12 +17,38 @@ import AtelierView from '../views/AtelierView.vue'
 /**
  * La page Atelier (#1080), testée au ras de ce que lit le lecteur : une page
  * blanche, des blocs de texte, un titre inline et un lien qui restaure tout.
- * Le codec injecté garde l'encodage déterministe (happy-dom n'a pas besoin de
- * CompressionStream pour ces assertions).
+ *
+ * La vue utilise le codec par défaut (CompressionStream/DecompressionStream via
+ * Blob.stream et Response.arrayBuffer) : c'est une IO réelle qui peut se régler
+ * APRÈS les assertions sous charge CI. On remplace donc ces deux classes par
+ * des TransformStream en mémoire branchés sur le même codec zlib que celui qui
+ * construit les liens ici. Le comportement par défaut reste couvert par
+ * atelier-link.spec.ts ; ici, montage, partage et sync d'URL ne dépendent plus
+ * que de microtâches, jamais d'un budget murale de 80 ms.
  */
 const codec: Codec = {
   async deflate(bytes) { return new Uint8Array(deflateRawSync(bytes)) },
   async inflate(bytes) { return new Uint8Array(inflateRawSync(bytes)) },
+}
+
+function fluxMemoire(transformer: (octets: Uint8Array) => Uint8Array): TransformStream {
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      controller.enqueue(transformer(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)))
+    },
+  })
+}
+
+class CompressionStreamMemoire {
+  private readonly flux = fluxMemoire((octets) => new Uint8Array(deflateRawSync(octets)))
+  get readable() { return this.flux.readable }
+  get writable() { return this.flux.writable }
+}
+
+class DecompressionStreamMemoire {
+  private readonly flux = fluxMemoire((octets) => new Uint8Array(inflateRawSync(octets)))
+  get readable() { return this.flux.readable }
+  get writable() { return this.flux.writable }
 }
 
 async function lienDe(etat: AtelierState): Promise<string> {
@@ -41,18 +68,19 @@ async function monter(chemin = '/atelier') {
   await router.push(chemin)
   await router.isReady()
   const wrapper = mount(AtelierView, { global: { plugins: [router] } })
+  // Le codec de la vue est désormais un flux en mémoire : flushPromises suffit,
+  // aucune avancée de timer (ni attente murale) ne peut cacher une restauration.
   await flushPromises()
-  // Le codec par défaut passe par CompressionStream/Blob.stream : on avance
-  // le temps simulé pour laisser le décodage se terminer, sans attente réelle.
-  await vi.advanceTimersByTimeAsync(80)
   montee = wrapper
   return { router, wrapper }
 }
 
 beforeEach(() => {
-  // Seuls les minuteries sont simulées : `flushPromises()` utilise setImmediate
+  // Seules les minuteries sont simulées : `flushPromises()` utilise setImmediate
   // et doit rester réelle, sinon elle attendrait une timer qu'on ne fait pas avancer.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  vi.stubGlobal('CompressionStream', CompressionStreamMemoire)
+  vi.stubGlobal('DecompressionStream', DecompressionStreamMemoire)
   ecrirePressePapier.mockClear()
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -64,6 +92,7 @@ afterEach(() => {
   montee?.unmount()
   montee = null
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 async function ajouterTexte(wrapper: ReturnType<typeof mount>, texte: string): Promise<void> {
@@ -188,7 +217,6 @@ describe('atelier — titre, partage et restauration', () => {
     await ajouterTexte(wrapper, 'Texte **partagé**')
     await wrapper.find('button.atelier-partager').trigger('click')
     await flushPromises()
-    await vi.advanceTimersByTimeAsync(80)
 
     expect(ecrirePressePapier).toHaveBeenCalledTimes(1)
     const url = ecrirePressePapier.mock.calls[0]![0] as string
@@ -210,7 +238,7 @@ describe('atelier — titre, partage et restauration', () => {
     expect(router.currentRoute.value.query[LINK_PARAM]).toBeUndefined()
 
     await vi.advanceTimersByTimeAsync(450)
-    // Le callback du débounce attend l'encodeur asynchrone avant router.replace.
+    // Le callback du débounce attend l'encodeur (flux mémoire) avant router.replace.
     await flushPromises()
     expect(typeof router.currentRoute.value.query[LINK_PARAM]).toBe('string')
   })
