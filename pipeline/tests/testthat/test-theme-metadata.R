@@ -1151,7 +1151,20 @@ test_that("verifier_parite_listes : les sorties producteur Mobilité et Programm
     pour_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "list"), logical(1L))]
     if (!length(pour_theme)) next
     faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
-    verifier_parite_listes(meta, faits)
+    if (theme == "programmes") {
+      # #1151 : la snapshot producteur retenue (vintage 2026-08-05) porte encore
+      # les 39 anciens domaines alors que la déclaration porte les 43 courants.
+      # On vérifie qu'aucun détail publié n'est inconnu de la déclaration ; la
+      # parité déclaration ↔ source est au test dédié et au garde de publish.
+      for (cle in pour_theme) {
+        publies <- faits$detail[faits$key == cle & !is.na(faits$detail)]
+        declarees <- names(meta$detail_labels[[cle]])
+        expect_true(all(details_scdl_snapshot(publies) %in% declarees), info = paste(
+          theme, cle, ": détail(s) de la snapshot inconnu(s) de la déclaration"))
+      }
+    } else {
+      verifier_parite_listes(meta, faits)
+    }
     for (page in pour_theme) {
       pages_listes[[paste(theme, page, sep = ":")]] <- page
     }
@@ -1165,12 +1178,13 @@ test_that("verifier_parite_listes : les sorties producteur Mobilité et Programm
 
 # La Page d'indicateur « profil/liste » de subventions_par_domaine (#462) :
 # le descripteur épinglé de Programmes et subventions publie la ventilation
-# par domaine comme page de famille « list » — le profil COMPLET des 39
-# domaines canoniques reste visible et la catégorie comparée pilote médiane,
+# par domaine comme page de famille « list » — le profil COMPLET des 43
+# domaines courants reste visible et la catégorie comparée pilote médiane,
 # extrêmes, tableau et carte par les seams partagés (#439). Le contrat est
-# prouvé ici contre le payload COMMITTÉ : la parité listes ↔ faits, le compte
-# des domaines verrouillé bruyamment, la facette déclarée dans l'axe, et la
-# publication RÉELLE du canon (le trait `metadata` du descripteur).
+# prouvé ici : aucun détail de la snapshot COMMITTÉE n'est inconnu de la
+# déclaration, le compte des domaines verrouillé bruyamment, la facette
+# déclarée dans l'axe, et la publication RÉELLE du canon (le trait `metadata`
+# du descripteur). La parité déclaration ↔ source est au test dédié #1151.
 
 test_that("la page liste subventions_par_domaine valide les faits reconstruits des Parquets producteurs (#462)", {
   meta <- lire_theme_metadata("programmes")
@@ -1185,16 +1199,19 @@ test_that("la page liste subventions_par_domaine valide les faits reconstruits d
   skip_if_not(dir.exists(racine_public), "public/data absent - la racine du dépôt est introuvable")
   faits <- lire_indicateurs_producteur_fixture("programmes", racine_public)
 
-  # la parité listes ↔ faits du producteur, reconstruits depuis ses artefacts
-  expect_error(verifier_parite_listes(meta, faits), NA)
-
-  # l'énumération LOUDE : les 39 domaines déclarés SONT les détails publiés,
-  # la catégorie comparée vit dans l'axe fermé qui couvre les catégories
+  # #1151 : la déclaration porte les 43 domaines courants du jeu source ; la
+  # snapshot producteur retenue (2026-08-05) porte encore les 39 anciens. Aucun
+  # détail publié par la snapshot ne peut être inconnu de la déclaration.
+  publies <- faits$detail[faits$key == "subventions_par_domaine" & !is.na(faits$detail)]
   declarees <- unlist(page$list$categories, use.names = FALSE)
-  details_publies <- unique(as.character(faits$detail[faits$key == "subventions_par_domaine" &
-                                                         !is.na(faits$detail)]))
-  expect_length(declarees, 39L)
-  expect_setequal(declarees, details_publies)
+  expect_true(all(details_scdl_snapshot(publies) %in% declarees), info =
+    paste("détail(s) de la snapshot inconnu(s) :",
+          paste(setdiff(details_scdl_snapshot(publies), declarees), collapse = ", ")))
+
+  # l'énumération LOUDE : les 43 domaines déclarés SONT la nomenclature courante
+  # (verrouillée par test-theme-programmes-domaines-scdl.R), la catégorie
+  # comparée vit dans l'axe fermé qui couvre les catégories
+  expect_length(declarees, 43L)
   expect_setequal(unlist(page$comparison$details, use.names = FALSE), declarees)
   expect_true(page$comparison$detail %in% declarees)
 
