@@ -1,7 +1,8 @@
 # ADR-0048: Unified source provenance — lockfile, derived vintages, attributed locks, release freeze
 
 - **Status:** accepted — decision 2026-11-21, issue #1103. **Supersedes ADR-0047** (opt-in source pins and derived vintage).
-- **Related:** ADR-0001, ADR-0004, ADR-0047 (superseded); CONTEXT.md « Version de table publiée »; issues #1105 (real-data relock), #1119 (stable WFS digests).
+- **Related:** ADR-0001, ADR-0004, ADR-0047 (superseded); CONTEXT.md « Version de ressource publiée » (formerly « Version de table publiée »); issues #1105 (real-data relock), #1119 (stable WFS digests).
+- **Amended (pending) by ADR-0049 (2026-11-23):** once ADR-0049 migration step 2 lands, the release freeze (decision 5) checks only the lineage sources of the resources being published, and lock-failure attribution (decision 4) uses the declaring resource's lineage. The lockfile, digests and vintage bases are unchanged.
 - **Amended 2026-11-22 (#1119):** decision 3 below now specifies canonical WFS feature hashing; this is a correction to how digests are computed, not a change to the lockfile/freeze contract.
 
 ## Context

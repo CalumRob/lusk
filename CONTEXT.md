@@ -74,13 +74,26 @@ For dual `prix_m2`, request `axis_comparisons` for the annual/series projection 
 
 _Avoid_: le flag (name the switch and its default), le préchargement bloquant (background warm-up must never delay the active theme's render), repli statique (the forbidden fallback), le registre (the registry is THE canonical list — extend it, never bypass it)
 
-**Version de table publiée**:
-The content identity of one complete Lusk serving table derived from canonical R facts. It changes only when that table's validated facts or meaning change; it is distinct from a source's observation date or vintage, a Parquet file's encoding, and a whole-site release.
-_Avoid_: version globale, vintage de la source, date de déploiement
+**Version de ressource publiée** (ADR-0049, anciennement « Version de table publiée »):
+The content identity of one **Ressource sémantique de service** as published: the hash of its Artefact de ressource (facts, descriptor, provenance, comparison). It changes only when that resource's validated facts or meaning change; it is distinct from a source's observation date or vintage, a Parquet file's encoding, and a whole-site release. What is live is the set of `(ressource, version)` pairs, whatever each resource's storage shape (scalar, declared profile, owned series, observed collection, AEDAR). The shape decides the typed table; the resource decides the version. **Transition (2026-11-23):** scalars and declared profiles are still published as one global snapshot each, typed readings per theme; those granularities are legacy until migration step 2 of ADR-0049 lands.
+_Avoid_: version de table (the pre-ADR-0049 unit), version globale, vintage de la source, date de déploiement
+
+**Artefact de ressource** (ADR-0049):
+The immutable, content-addressed build output of one resource version — `artifacts/<ressource>/<version>/` holding its facts, descriptor, provenance, comparison and the digests of its lineage sources. Never overwritten: identical content gives the same version and the same directory. Publication points a resource at one artefact; rollback republishes the previous one. Retention: every published version plus the most recent unpublished build; removal is a manual owner command, never automatic.
+_Avoid_: sortie (the pre-ADR-0049 whole-run directory), baseline, génération (for a single resource)
+
+**Intermédiaire partagé** (ADR-0049):
+An expensive computation read by several resources — the OSM network, OCS-GE surfaces, GTFS stops, the AEDAR address spine, the territory reference — declared once (`declarer_intermediaire`) as its own build target and reused from the `targets` cache. A resource depends only on the intermediates it actually reads; its lineage is derived from them.
+_Avoid_: brut du thème, payload (the theme-sized blocks it replaces)
+
+**Plan de publication** (ADR-0049):
+The read-only comparison, per resource, of the built version against the live version, with drift, check status and the dependency cascade. `apply` publishes an explicit list of resources from it (or `--all-changed`), adds the declared cascade, refuses on a code regression, requires `--confirm-definition <ressource>` when a descriptor's meaning changes, and writes an append-only receipt. Retiring a resource is an `apply` too. The only path that opens a serving-database connection.
+_Avoid_: publication complète, publication ciblée (both pre-ADR-0049 paths), pont (the #1072 one-off)
 
 **Matérialisation scalaire ciblée**:
 The registered, indicator-scoped materialization (#989, ADR-0044) that produces the missing facts of a few declared scalar indicators from their own light producer sources and merges them into the current canonical per-theme scalar artifact, leaving every unrelated descriptor, fact, provenance row, version and the shared territory reference unchanged. It is not a partial serving snapshot: the artifact stays complete for the theme, and the normal full-snapshot publisher remains the only database path. The full theme producer stays the oracle for the same facts; a semantic metadata change to an unrecomputed indicator fails closed instead of preserving it. **Status (2026-11-20, #1071):** for the one-off publication of the address-based `offre_tc` and the 29 retirements, the lost `LUSK_SCALAR_BASELINE_SORTIE` counterpart makes that path unusable, so a documented, operator-only bridge exception to ADR-0044 decision 8 exists: it rebuilds the projection from live serving rows + fresh `offre_tc` facts and writes it in one guarded transaction. It is not a second publication path and must be retired once a real baseline exists. A second one-off exception to ADR-0044 decision 4 publishes the re-defined address-based `offre_tc` descriptor with its new facts: the operator confirms the exact live-to-metadata transition with a printed token, the replacement is written in the same transaction, and it is retired once a real baseline exists.
-_Avoid_: publication partielle, rustine Mobilité, génération par indicateur (the artifact remains one per-theme generation), recalcul du thème
+**Superseded by ADR-0049 (2026-11-23):** the resource becomes the unit of build and publication, so a scoped merge into a per-theme artifact is no longer needed; this path and the #1071 bridge are retired once the Plan de publication has published at least once (ADR-0049 migration step 4). The former ban on « génération par indicateur » is lifted.
+_Avoid_: publication partielle, rustine Mobilité, recalcul du thème
 
 **ContentUnit**:
 A coherent semantic subject within ThemeContent, such as « Accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
@@ -741,7 +754,7 @@ The dataset identity a source is (DVF, DPE, OCS-GE…) — distinct from its **l
 _Avoid_: source (the whole concept, overloaded), ligne (the row, not the identity), dataset (English)
 
 **Alive**:
-The product promise: light themes refresh automatically on a schedule, the mobility rebuild runs semi-automated on a slow clock, and vintage is always visible. **The flagship is a snapshot, and says so** (decided 2026-08-06): the Mobilité analysis is a frozen computation on a slow clock — the fiche stamps it "Analyse calculée le [date] — se rafraîchit sur un rythme lent", distinct from the light themes' weekly vintage chips; it never mimics fresh-refresh language. Sources documents the slow clock as a first-class fact (the snapshot source's clocks and freshness).
+The product promise: **freshness is watched on a schedule, publication is deliberate**, and vintage is always visible (redefined 2026-11-23, ADR-0049 — the weekly cron never worked and an unattended publish would ship unreviewed drift). A scheduled local incremental build + Plan de publication reports which resources drifted; the owner applies what they choose. The mobility rebuild runs on a slow clock. **The flagship is a snapshot, and says so** (decided 2026-08-06): the Mobilité analysis is a frozen computation on a slow clock — the fiche stamps it "Analyse calculée le [date] — se rafraîchit sur un rythme lent", distinct from the light themes' weekly vintage chips; it never mimics fresh-refresh language. Sources documents the slow clock as a first-class fact (the snapshot source's clocks and freshness).
 _Avoid_: Live, temps réel (the product is not real-time)
 
 **Watchdog**:
