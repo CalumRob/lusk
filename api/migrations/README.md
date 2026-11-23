@@ -1,5 +1,23 @@
 # PostgreSQL migration history
 
+## Operator window — source nomenclature changes (issue #1151)
+
+A new SCDL domain nomenclature (`programme_libl`) is a **metadata** change, not
+an app rebuild or a database migration. Before `--programme-publish`, align the
+closed domain declaration in
+`pipeline/inst/extdata/theme-metadata/theme_programmes.json`:
+`indicator_pages$subventions_par_domaine$list$categories` and
+`detail_labels$subventions_par_domaine` must carry exactly the source's domain
+set, together with the `comparison$details` axis and its `comparison$detail`
+default; then regenerate the served `public/data/theme_programmes.json` through
+the `publier_theme_metadata()` seam. The publisher's guard is
+`project_programme_period_details()` (in `pipeline/R/publish_observed_collections.R`):
+when a source detail is not declared it fails the run with
+`Sparse period/detail observations differ from declared coordinates or metadata`
+— read that named mismatch before touching the producer pipeline. The retained
+producer snapshot is dated, so its fixture-parity tests normalise old domain
+names instead of treating the snapshot as the source of truth.
+
 ## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
 
 `045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication
