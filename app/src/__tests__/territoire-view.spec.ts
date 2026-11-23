@@ -2386,6 +2386,27 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 })
 
 describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison » dans le page-heading collant du Cahier', () => {
+  type WrapperFiche = Awaited<ReturnType<typeof monter>>['wrapper']
+
+  // Le menu est une liste de presets publiés, pas un tableau d'index : un
+  // nouveau preset (Littoral, #1053) doit être visible dans les attentes, jamais
+  // retargeter silencieusement un clic prévu pour un autre libellé.
+  function optionParLibelle(wrapper: WrapperFiche, libelle: string) {
+    const entree = wrapper.findAll('[role="menuitemradio"]')
+      .find((candidate) => candidate.find('.bouton-comparaison__option-label').text() === libelle)
+    if (!entree) throw new Error(`Preset « ${libelle} » absent du menu de comparaison`)
+    return entree
+  }
+
+  async function choisirPreset(wrapper: WrapperFiche, libelle: string): Promise<void> {
+    const declencheur = wrapper.get('.page-heading .bouton-comparaison__declencheur')
+    // Le menu peut déjà être ouvert par les assertions : un second clic le
+    // refermerait et le libellé deviendrait introuvable.
+    if (declencheur.attributes('aria-expanded') !== 'true') await declencheur.trigger('click')
+    await optionParLibelle(wrapper, libelle).trigger('click')
+    await flushPromises()
+  }
+
   it('nomme le membre refusé par le producteur, ferme le résumé du groupe et conserve les faits focaux (#861)', async () => {
     const servir = nativeSemanticFetch()
     let refuser = false
@@ -2491,7 +2512,9 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
     const menuTrigger = wrapper.get('.page-heading .bouton-comparaison__declencheur').element as HTMLButtonElement
     const focusMenuTrigger = vi.spyOn(menuTrigger, 'focus')
-    await wrapper.findAll('[role="menuitemradio"]')[3]!.trigger('click')
+    // Sélection par libellé : l'insertion de Littoral (#1053) ne doit pas
+    // faire atterrir ce clic sur un preset qui écrit ?comparaison=littoral.
+    await optionParLibelle(wrapper, 'Personnalisé').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBeUndefined()
     expect(wrapper.findAll('.constructeur-comparaison')).toHaveLength(1)
@@ -2532,52 +2555,66 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await bouton.trigger('click')
     const entrees = wrapper.findAll('[role="menuitemradio"]')
     const labels = entrees.map((e) => e.find('.bouton-comparaison__option-label').text())
+    // La référence publiée porte littoral_code (#1053) : le preset Littoral
+    // rejoint les entrées historiques, juste avant Personnalisé.
     expect(labels).toEqual([
-      'EPCI', 'Bretagne', 'Densité INSEE', 'Personnalisé', 'Aucune comparaison',
+      'EPCI', 'Bretagne', 'Densité INSEE', 'Littoral', 'Personnalisé', 'Aucune comparaison',
     ])
-    expect(entrees.slice(0, 3).map((entry) => entry.get('.bouton-comparaison__option-scope').text())).toEqual([
-      contextesReference('22001').epci!.scope.label,
-      contextesReference('22001').bretagne!.scope.label,
-      contextesReference('22001').densite!.scope.label,
-    ])
+    const contextes = contextesReference('22001')
+    for (const [libelle, scope] of [
+      ['EPCI', contextes.epci!.scope.label],
+      ['Bretagne', contextes.bretagne!.scope.label],
+      ['Densité INSEE', contextes.densite!.scope.label],
+      ['Littoral', contextes.littoral!.scope.label],
+    ] as const) {
+      expect(optionParLibelle(wrapper, libelle).get('.bouton-comparaison__option-scope').text(), libelle)
+        .toBe(scope)
+    }
     expect(wrapper.text()).not.toContain('Par défaut')
     // param absent → le preset niveau-natif (epci) est coché
-    expect(entrees.map((e) => e.attributes('aria-checked'))).toEqual(['true', 'false', 'false', 'false', 'false'])
+    expect(entrees.map((e) => e.attributes('aria-checked')))
+      .toEqual(['true', 'false', 'false', 'false', 'false', 'false'])
 
-    // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
-    // passe selected_comparison avec toutes les communes bretonnes.
-    const bretagneTyped = referenceReelle.filter((t) => t.type === 'commune')
-      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
-      .sort((a, b) => a.id.localeCompare(b.id))
     // La passe selected_comparison peut être découpée en plusieurs lots bornés
     // (≤12 lectures) — tous portent les mêmes membres tapés.
     const selectedBatchesWith = (members: unknown) => requests
       .filter((batch) => batch.some((item) => item.intent.kind === 'selected_comparison' &&
         JSON.stringify(item.intent.members) === JSON.stringify(members)))
-    await entrees[1]!.trigger('click')
-    await flushPromises()
+    const bretagneTyped = referenceReelle.filter((t) => t.type === 'commune')
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    const littoralTyped = referenceReelle
+      .filter((t) => t.type === 'commune' && t.littoral_code === cibleReference('22001').littoral_code)
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+
+    // Le preset nouvellement publié écrit son jeton et acquiert la cohorte de
+    // la classe littorale servie du focal (#1044/#1053).
+    await choisirPreset(wrapper, 'Littoral')
+    expect(router.currentRoute.value.query.comparaison).toBe('littoral')
+    expect(selectedBatchesWith(littoralTyped).length).toBeGreaterThan(0)
+
+    // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
+    // passe selected_comparison avec toutes les communes bretonnes.
+    await choisirPreset(wrapper, 'Bretagne')
     expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
     expect(selectedBatchesWith(bretagneTyped).length).toBeGreaterThan(0)
 
     // La sélection vide explicite écrit ?comparaison= et part avec [].
-    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]')[4]!.trigger('click')
-    await flushPromises()
+    await choisirPreset(wrapper, 'Aucune comparaison')
     expect(router.currentRoute.value.query.comparaison).toBe('')
     expect(selectedBatchesWith([]).length).toBeGreaterThan(0)
     expect(wrapper.get('.page-heading .bouton-comparaison__declencheur').attributes('aria-label'))
       .toBe('Comparaison : Aucune comparaison')
 
     // Choisir le preset niveau-natif écrit le preset explicite dans l'URL.
-    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
-    await wrapper.findAll('[role="menuitemradio"]')[0]!.trigger('click')
-    await flushPromises()
+    await choisirPreset(wrapper, 'EPCI')
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     wrapper.unmount()
-  // Integration de fiche montée : trois changements de portée acquièrent
-  // successivement Bretagne, la sélection vide puis l'EPCI via l'API sémantique.
-  // Le travail est borné et les assertions couvrent aussi les requêtes; le budget
-  // explicite est cohérent avec les tests d'intégration voisins (20 s).
+  // Integration de fiche montée : quatre changements de portée acquièrent
+  // successivement Littoral, Bretagne, la sélection vide puis l'EPCI via l'API
+  // sémantique. Le travail est borné et les assertions couvrent aussi les
+  // requêtes; le budget explicite est cohérent avec les tests voisins (20 s).
   }, 20_000)
 
   it('une URL de membres tapés résout et acquiert la sélection telle quelle et rend les références Mobilité (#981)', async () => {
