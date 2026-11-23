@@ -30,6 +30,34 @@
 # reading on private copies; it does not make the production evidence current.
 pkgload::load_all(".", quiet = TRUE)
 
+# TEST-ONLY release-freeze bypass (#1126). The canonical generations used as
+# fixtures below are read-only copies that predate (or intentionally differ
+# from) the committed sources.lock.json, so `verifier_gel_release(sortie)`
+# would refuse before the first write. This guarded fixture process replaces
+# the guard with an inert stub for its own lifetime and restores the real
+# binding in `finally`. It is NEVER a production branch: ADR-0048 requires
+# `verifier_gel_release()` at every serving-DB opening, and the structural
+# audit of `pipeline/R` and `pipeline/scripts` still sees the real call in
+# `publish_postgres_configuration.R`. Only this lusk_it_* fixture process
+# stubs it, explicitly and for the whole run.
+.freeze_ns <- asNamespace("lusk")
+.freeze_real <- get("verifier_gel_release", envir = .freeze_ns)
+.freeze_stub <- function(...) {
+  cat("TEST-ONLY: verifier_gel_release stubbed for fixture run\n")
+  invisible(TRUE)
+}
+stub_release_freeze <- function() {
+  unlockBinding("verifier_gel_release", .freeze_ns)
+  assign("verifier_gel_release", .freeze_stub, envir = .freeze_ns)
+  lockBinding("verifier_gel_release", .freeze_ns)
+}
+restore_real_freeze <- function() {
+  unlockBinding("verifier_gel_release", .freeze_ns)
+  assign("verifier_gel_release", .freeze_real, envir = .freeze_ns)
+  lockBinding("verifier_gel_release", .freeze_ns)
+}
+stub_release_freeze()
+
 config <- setNames(lapply(c("HOST", "PORT", "DATABASE", "USER"),
   function(suffix) Sys.getenv(paste0("LUSK_SCALAR_TEST_", suffix), unset = "")),
   c("HOST", "PORT", "DATABASE", "USER"))
@@ -90,8 +118,14 @@ rematerialize_demographic_fixture <- function(directory) {
   write_typed_reading_artifact(projection,
     file.path(directory, "typed-reading-serving", "demographie"), "demographie")
 }
-rematerialize_demographic_fixture(candidate_dir)
-rematerialize_demographic_fixture(baseline_dir)
+# The original retained fixture predated the current demographic reading clock
+# and shipped histoires_demographie.json so the artifact could be rematerialized
+# on private copies. Newer full generations already carry current typed-reading
+# artifacts and drop that browser JSON; leave those artifacts untouched.
+if (file.exists(file.path(candidate_dir, "histoires_demographie.json"))) {
+  rematerialize_demographic_fixture(candidate_dir)
+  rematerialize_demographic_fixture(baseline_dir)
+}
 
 # TEST-ONLY preparation (private copies): make the candidate start from the
 # prior profile binding so the normal metadata-only companion refresh and its
@@ -179,19 +213,22 @@ public_table_count <- function() DBI::dbGetQuery(connection, paste(
 residual_schemas <- function() DBI::dbGetQuery(connection, paste(
   "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'serving_it_%'",
   "ORDER BY nspname"))$nspname
-schema_digest <- function() {
-  tables <- DBI::dbGetQuery(connection, paste(
+schema_digest <- function(con = connection, schema_name = schema) {
+  tables <- DBI::dbGetQuery(con, paste(
     "SELECT table_name FROM information_schema.tables WHERE table_schema=$1",
-    "ORDER BY table_name"), params = list(schema))$table_name
-  quote_id <- function(name) as.character(DBI::dbQuoteIdentifier(connection, name))
+    "ORDER BY table_name"), params = list(schema_name))$table_name
+  quote_id <- function(name) as.character(DBI::dbQuoteIdentifier(con, name))
   hashes <- vapply(tables, function(table) {
-    DBI::dbGetQuery(connection, paste0(
+    DBI::dbGetQuery(con, paste0(
       "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) AS h ",
-      "FROM ", quote_id(schema), ".", quote_id(table), " t"))$h[[1L]]
+      "FROM ", quote_id(schema_name), ".", quote_id(table), " t"))$h[[1L]]
   }, character(1))
   names(hashes) <- tables
   hashes
 }
+user_schema_count <- function() DBI::dbGetQuery(connection, paste(
+  "SELECT count(*) AS n FROM pg_namespace",
+  "WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema'"))$n[[1L]]
 marker_version <- function(table, column = "content_version") {
   DBI::dbGetQuery(connection, paste0(
     "SELECT ", column, " AS v FROM table_publication WHERE table_name=$1"),
@@ -266,7 +303,8 @@ own_schema_cleanup <- function() {
 }
 
 receipt <- c(paste("schema:", schema), paste("db_bytes_before:", db_size()),
-             paste("public_tables_before:", public_table_count()))
+             paste("public_tables_before:", public_table_count()),
+             paste("user_schemas_before:", user_schema_count()))
 failure <- NULL
 cleanup_failure <- NULL
 tryCatch({
@@ -310,6 +348,13 @@ tryCatch({
   http_probe("before", marker_version("scalar_observation"))
   receipt <- c(receipt, "http_before: PASS (DPE + Habitat available; scalar 3 discovered)")
 
+  # The scoped #989 proofs require a candidate/baseline pair whose scalar delta
+  # is EXACTLY the three declared supply indicators. That retained pair is not
+  # always present on the workstation; -FullPathOnly skips those proofs and runs
+  # only the #1126 full-path atomicity scenario below on the two supplied dirs.
+  full_path_only <- identical(Sys.getenv("LUSK_FULL_PATH_PROOF_ONLY", unset = ""), "1")
+  receipt <- c(receipt, paste("full_path_only_mode:", full_path_only))
+  if (!full_path_only) {
   # Unrelated owners are advanced to newer publication markers, exactly as a
   # live serving database may legitimately be ahead of the local accepted pack.
   # A scoped publication must neither require nor rewrite them.
@@ -760,10 +805,209 @@ tryCatch({
     "republish_source_case: PASS (scope sources reinserted; unrelated reference intact)")
   receipt <- c(receipt,
     "republish_case: PASS (candidate published again through the normal wrapper)")
+  }  # end of scoped #989 proofs
+
+  # =========================================================================
+  # #1126 — FULL (unscoped) retained publication must be atomic.
+  # A release that moves BOTH the territory reference and the scalar version
+  # used to commit reference + scalar + comparison + demographie, then fail at
+  # Habitat against the stale DPE binding, leaving a partial database. The
+  # full path must now do what the scoped path does: refresh the profile
+  # binding metadata-only, then publish every owner (including declared
+  # profiles) in ONE outer transaction, restoring the artifacts on failure.
+  # Runs in its OWN random serving_it_* schema so the scoped proofs above stay
+  # untouched. The release freeze is stubbed for this fixture process only
+  # (see top of file); production keeps the ADR-0048 guard.
+  # =========================================================================
+  full_schema <- paste0("serving_it_", Sys.getpid(), "_",
+                        sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
+  full_quoted <- as.character(DBI::dbQuoteIdentifier(connection, full_schema))
+  full_created <- FALSE
+  full_con <- NULL
+  receipt <- c(receipt, paste("full_path_schema:", full_schema))
+  tryCatch({
+    DBI::dbExecute(connection, paste0("CREATE SCHEMA ", full_quoted))
+    full_created <- TRUE
+    # A second connection whose search_path is the fresh schema. The wrapper
+    # opens its own connection later and inherits the same PGOPTIONS.
+    Sys.setenv(PGOPTIONS = paste0("-c search_path=", full_schema,
+      " -c statement_timeout=180000 -c lock_timeout=5000",
+      " -c idle_in_transaction_session_timeout=300000"))
+    full_con <- DBI::dbConnect(RPostgres::Postgres(), host = config$HOST,
+      port = as.integer(config$PORT), dbname = config$DATABASE, user = config$USER)
+    schema_sql <- paste(readLines(file.path("..", "api", "schema.sql"), warn = FALSE),
+                        collapse = "\n")
+    for (statement in split_postgres_sql(schema_sql)) DBI::dbExecute(full_con, statement)
+    DBI::dbExecute(full_con, paste0("GRANT USAGE ON SCHEMA ", full_quoted,
+      " TO ", as.character(DBI::dbQuoteIdentifier(full_con, read_user))))
+    DBI::dbExecute(full_con, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
+      full_quoted, " TO ", as.character(DBI::dbQuoteIdentifier(full_con, read_user))))
+
+    # Seed the LIVE state with the normal full path from the baseline generation.
+    ref_b <- project_territory_reference(nanoparquet::read_parquet(
+      file.path(baseline_dir, "territoires.parquet")))
+    publish_territory_reference_projection(ref_b,
+      territory_reference_postgres_adapter(full_con))
+    snap_b <- project_retained_scalar_snapshot(baseline_dir, ref_b)
+    publish_retained_scalar_snapshot(full_con, snap_b, tempdir())
+    publier_declared_profiles_postgres(baseline_dir, profile_owners, con = full_con)
+    publish_retained_backend_snapshot(full_con, baseline_dir, conso_source_path = NULL)
+    baseline_scalar <- as.character(scalar_content_version(snap_b$scalar))[1L]
+    receipt <- c(receipt,
+      paste("full_path_baseline_reference:", as.character(ref_b$content_version)[1L]),
+      paste("full_path_baseline_scalar:", baseline_scalar))
+
+    # Build a candidate whose REFERENCE and SCALAR versions BOTH differ from
+    # the seeded live state. The two fixture generations already differ in the
+    # scalar version; change one commune's public name in a private copy to
+    # advance the reference version too (identity columns untouched, so every
+    # scalar/profile/typed join still holds). Its profile artifacts keep the
+    # PRIOR scalar binding, so the stale-DPE refusal is genuinely exercised.
+    full_candidate <- copy_sortie(candidate_dir, "full-candidate")
+    territories_path <- file.path(full_candidate, "territoires.parquet")
+    territories <- nanoparquet::read_parquet(territories_path)
+    name_field <- if ("nom" %in% names(territories)) "nom" else "name"
+    territories[[name_field]][[1L]] <- paste0(
+      as.character(territories[[name_field]][[1L]]), " (releve 1126)")
+    nanoparquet::write_parquet(territories, territories_path)
+    ref_c <- project_territory_reference(nanoparquet::read_parquet(territories_path))
+    snap_c <- project_retained_scalar_snapshot(full_candidate, ref_c)
+    candidate_scalar <- as.character(scalar_content_version(snap_c$scalar))[1L]
+    stopifnot(!identical(as.character(ref_c$content_version)[1L],
+                         as.character(ref_b$content_version)[1L]),
+              !identical(candidate_scalar, baseline_scalar))
+    unlink(file.path(full_candidate, "profile-serving"), recursive = TRUE)
+    stopifnot(file.copy(file.path(baseline_dir, "profile-serving"), full_candidate,
+                        recursive = TRUE))
+    stopifnot(file.copy(file.path(baseline_dir, "scalar-serving", "binding.json"),
+                        file.path(full_candidate, "scalar-serving", "binding.json"),
+                        overwrite = TRUE))
+    for (p in list.files(full_candidate, recursive = TRUE, full.names = TRUE,
+                         all.files = TRUE)) Sys.chmod(p, mode = "0666")
+    stopifnot(identical(as.character(read_profile_scalar_binding(full_candidate)),
+                        baseline_scalar))
+    receipt <- c(receipt,
+      paste("full_path_candidate_reference:", as.character(ref_c$content_version)[1L]),
+      paste("full_path_candidate_scalar:", candidate_scalar))
+
+    # The wrapper reads its scope/publish targets from the environment.
+    Sys.unsetenv("LUSK_SCALAR_SCOPE")
+    Sys.unsetenv("LUSK_SCALAR_BASELINE_SORTIE")
+    Sys.setenv(LUSK_PUBLISH_HOST = config$HOST, LUSK_PUBLISH_PORT = config$PORT,
+      LUSK_PUBLISH_DATABASE = config$DATABASE, LUSK_PUBLISH_USER = config$USER)
+
+    # --- injected failure: after source reads, before the last owner --------
+    # The linked Habitat reading re-inserts its facts because the DPE/scalar/
+    # reference clocks all moved. A BEFORE INSERT trigger makes it the failing
+    # owner; the whole schema must roll back and the artifact be restored.
+    DBI::dbExecute(full_con, paste(
+      "CREATE FUNCTION reject_habitat_1126() RETURNS trigger LANGUAGE plpgsql AS $$",
+      "BEGIN RAISE EXCEPTION 'injected habitat failure 1126'; END $$"))
+    DBI::dbExecute(full_con, paste(
+      "CREATE TRIGGER reject_habitat_1126 BEFORE INSERT ON habitat_typed_reading",
+      " FOR EACH ROW EXECUTE FUNCTION reject_habitat_1126()"))
+    before_injected <- schema_digest(full_con, full_schema)
+    before_binding <- as.character(read_profile_scalar_binding(full_candidate))
+    injected <- tryCatch({ publish_retained_backend_from_parquet(full_candidate); NULL },
+                         error = function(e) e)
+    after_injected <- schema_digest(full_con, full_schema)
+    receipt <- c(receipt,
+      paste("full_path_injected_error:",
+            if (is.null(injected)) "none" else conditionMessage(injected)),
+      paste("full_path_injected_digest_changed:",
+            !identical(before_injected, after_injected)))
+    stopifnot(inherits(injected, "error"),
+      grepl("injected habitat failure 1126", conditionMessage(injected), fixed = TRUE))
+    stopifnot(identical(before_injected, after_injected),
+              identical(as.character(read_profile_scalar_binding(full_candidate)),
+                        before_binding))
+    DBI::dbExecute(full_con, "DROP TRIGGER reject_habitat_1126 ON habitat_typed_reading")
+    DBI::dbExecute(full_con, "DROP FUNCTION reject_habitat_1126()")
+    receipt <- c(receipt,
+      "full_path_injected_failure_case: PASS (whole-schema digest unchanged; profile artifact restored)")
+
+    # --- atomic success: every owner commits in one outer transaction -------
+    before_full <- schema_digest(full_con, full_schema)
+    full_error <- tryCatch({ publish_retained_backend_from_parquet(full_candidate); NULL },
+                           error = function(e) e)
+    after_full <- schema_digest(full_con, full_schema)
+    receipt <- c(receipt,
+      paste("full_path_success_error:",
+            if (is.null(full_error)) "none" else conditionMessage(full_error)),
+      paste("full_path_success_digest_changed:",
+            !identical(before_full, after_full)))
+    stopifnot(is.null(full_error))
+    # The fix refreshes the profile binding metadata-only before publishing, so
+    # the artifact now carries the candidate scalar binding; derive the whole
+    # artifact-only expectation from the published generation.
+    prof_c <- retained_profile_publication(full_candidate, candidate_scalar,
+                                           ref_c$content_version)
+    typed_c <- retained_typed_versions(full_candidate)
+    series_c <- retained_series_expected(full_candidate)
+    full_expected <- list(
+      reference = ref_c$content_version,
+      scalar = candidate_scalar,
+      comparison = snap_c$comparison$content_version,
+      comparison_scalar = snap_c$comparison$scalar_content_version,
+      profile_version = prof_c$version,
+      profile_comparison_version = prof_c$comparison_version,
+      profile_descriptor_version = prof_c$dpe_descriptor_version,
+      profile_required_scalar = candidate_scalar,
+      typed = typed_c,
+      series = series_c,
+      habitat_version = typed_c[["habitat"]],
+      selected_linked = retained_selected_linked_version(
+        read_typed_reading_publication_from(full_candidate, "habitat"),
+        prof_c$version, candidate_scalar, ref_c$content_version))
+    full_markers <- retained_backend_markers(full_con)
+    full_mm <- verifier_retained_backend_baseline(full_markers, full_expected)
+    stopifnot(nrow(full_mm) == 0L)
+    stopifnot(identical(
+      as.character(DBI::dbGetQuery(full_con, paste(
+        "SELECT required_scalar_version FROM profile_descriptor",
+        "WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]]),
+      candidate_scalar))
+    receipt <- c(receipt,
+      "full_path_atomic_case: PASS (both versions changed; every owner committed; baseline verifier clean)")
+
+    # --- no behavioural change when the scalar version does NOT change ------
+    before_nochange <- schema_digest(full_con, full_schema)
+    nochange_error <- tryCatch({ publish_retained_backend_from_parquet(full_candidate); NULL },
+                               error = function(e) e)
+    after_nochange <- schema_digest(full_con, full_schema)
+    receipt <- c(receipt,
+      paste("full_path_nochange_error:",
+            if (is.null(nochange_error)) "none" else conditionMessage(nochange_error)),
+      paste("full_path_nochange_digest_changed:",
+            !identical(before_nochange, after_nochange)))
+    stopifnot(is.null(nochange_error),
+              identical(before_nochange, after_nochange))
+    receipt <- c(receipt,
+      "full_path_nochange_case: PASS (replay on an unchanged scalar version is a no-op)")
+  }, error = function(e) {
+    receipt <<- c(receipt, paste("full_path_block_error:", conditionMessage(e)))
+    stop(e)
+  }, finally = {
+    if (!is.null(full_con)) try(DBI::dbDisconnect(full_con), silent = TRUE)
+    if (full_created) {
+      check <- DBI::dbGetQuery(connection, paste(
+        "SELECT current_database() AS database, EXISTS (",
+        "SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner",
+        "WHERE n.nspname=$1 AND r.rolname=current_user) AS owned"),
+        params = list(full_schema))
+      if (identical(check$database[[1L]], "lusk_it_contract") &&
+          isTRUE(check$owned[[1L]]) &&
+          grepl("^serving_it_[A-Za-z0-9_]+$", full_schema))
+        DBI::dbExecute(connection, paste0("DROP SCHEMA ", full_quoted, " CASCADE"))
+      else
+        receipt <<- c(receipt, "full_path_cleanup: REFUSED (identity guard failed)")
+    }
+  })
 }, error = function(e) {
   failure <<- conditionMessage(e)
   stop(e)
 }, finally = {
+  restore_real_freeze()
   restore <- previous_env[!is.na(previous_env)]
   if (length(restore)) do.call(Sys.setenv, as.list(restore))
   cleanup_failure <- tryCatch({ own_schema_cleanup(); NULL },
@@ -773,6 +1017,7 @@ tryCatch({
     paste("residual_serving_schemas:",
           if (length(residual)) paste(residual, collapse = ",") else "none"),
     paste("public_tables_after:", public_table_count()),
+    paste("user_schemas_after:", user_schema_count()),
     paste("db_bytes_after:", db_size()),
     paste("cleanup:", if (is.null(cleanup_failure)) "ok" else cleanup_failure),
     paste("status:", if (is.null(failure) && is.null(cleanup_failure)) "PASS" else "FAIL"))
