@@ -24,7 +24,7 @@ import AtelierView from '../views/AtelierView.vue'
  * des TransformStream en mémoire branchés sur le même codec zlib que celui qui
  * construit les liens ici. Le comportement par défaut reste couvert par
  * atelier-link.spec.ts ; ici, montage, partage et sync d'URL ne dépendent plus
- * que de microtâches, jamais d'un budget murale de 80 ms.
+ * que de microtâches, jamais d'une attente murale de 80 ms.
  */
 const codec: Codec = {
   async deflate(bytes) { return new Uint8Array(deflateRawSync(bytes)) },
