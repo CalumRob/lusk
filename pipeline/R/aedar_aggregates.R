@@ -1425,6 +1425,15 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
     input_identity=input_identity,content_version=content_version)
 }
 
+# #1154: the littoral classification version is a version token carried by the
+# canonical territory reference (a 32-hex published content version), NOT a
+# file digest. The producer writes this helper's value into the input identity
+# and the manifest validator checks the field back against the manifest's own
+# reference_content_version through the same helper, so the two cannot drift.
+aedar_littoral_classification_content_version <- function(reference_content_version) {
+  reference_content_version
+}
+
 project_aedar_comparison_publication_fixture <- function(aggregate_projection,density_source,
     territory_reference,aedar_content_version=aedar_aggregate_content_version(aggregate_projection),
     reference_content_version,littoral_source=NULL) {
@@ -1469,7 +1478,7 @@ project_aedar_comparison_publication_fixture <- function(aggregate_projection,de
       littoral_reference_identity=littoral_source$littoral_reference$identity,
       littoral_reference_sha256=littoral_source$littoral_reference$sha256,
       littoral_reference_vintage=littoral_source$littoral_reference$vintage,
-      littoral_classification_content_version=reference_content_version)
+      littoral_classification_content_version=aedar_littoral_classification_content_version(reference_content_version))
     littoral_facts<-littoral_source$facts
   }
   input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
@@ -1527,7 +1536,7 @@ project_aedar_comparison_publication <- function(aggregate_projection,density_so
       littoral_reference_identity=littoral_source$littoral_reference$identity,
       littoral_reference_sha256=littoral_source$littoral_reference$sha256,
       littoral_reference_vintage=littoral_source$littoral_reference$vintage,
-      littoral_classification_content_version=reference_content_version)
+      littoral_classification_content_version=aedar_littoral_classification_content_version(reference_content_version))
     littoral_facts<-littoral_source$facts[
       littoral_source$facts$littoral_code%in%comparison_statuses,,drop=FALSE]
     littoral_class_summaries<-project_aedar_littoral_summary(littoral_facts,
@@ -1755,7 +1764,7 @@ aedar_comparison_manifest_version <- function(manifest) {
 
 install_aedar_comparison_manifest <- function(staged,target) fs::file_move(staged,target)
 
-validate_aedar_comparison_input_identity <- function(identity,input_content_version,require_littoral=FALSE) {
+validate_aedar_comparison_input_identity <- function(identity,input_content_version,reference_content_version=NULL,require_littoral=FALSE) {
   base_names<-c(paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES),"address_origins","density_reference",
     "density_artifact","density_aggregate_content_version","density_reference_identity",
     "density_reference_sha256","density_reference_vintage")
@@ -1776,8 +1785,14 @@ validate_aedar_comparison_input_identity <- function(identity,input_content_vers
      !identical(tolower(as.character(values[["density_reference_sha256"]])),tolower(as.character(manifest[["sha256"]][[1L]])))||
      !identical(as.character(values[["density_reference_vintage"]]),as.character(manifest[["vintage"]][[1L]]))||
      (isTRUE(require_littoral)&&(
+        # The first three are genuine file/aggregate digests and stay strict
+        # 64-hex. The classification version is a token: check it SEMANTICALLY
+        # against the manifest reference through the producer's own helper
+        # (#1154) rather than imposing a false digest format on it.
        any(!grepl("^[0-9a-fA-F]{64}$",as.character(values[c("littoral_artifact","littoral_aggregate_content_version",
-         "littoral_reference_sha256","littoral_classification_content_version")])) )||
+         "littoral_reference_sha256")])) )||
+       !identical(as.character(values[["littoral_classification_content_version"]]),
+         as.character(aedar_littoral_classification_content_version(reference_content_version)))||
        !identical(as.character(values[["littoral_reference_identity"]]),as.character(littoral_manifest[["id"]][[1L]]))||
        !identical(tolower(as.character(values[["littoral_reference_sha256"]])),tolower(as.character(littoral_manifest[["sha256"]][[1L]])))||
        !identical(as.character(values[["littoral_reference_vintage"]]),as.character(littoral_manifest[["vintage"]][[1L]])))))
@@ -1895,6 +1910,7 @@ validate_aedar_comparison_manifest <- function(manifest,directory,verify_parts=T
      !is.character(manifest$input_content_version)||length(manifest$input_content_version)!=1L||
      !is.character(manifest$input_identity)||length(manifest$input_identity)!=1L||
      !isTRUE(tryCatch({validate_aedar_comparison_input_identity(manifest$input_identity,manifest$input_content_version,
+        reference_content_version=manifest$reference_content_version,
         require_littoral=is.list(manifest$littoral_summaries)&&isTRUE(manifest$littoral_summaries$row_count>0L));TRUE},error=function(e) FALSE))||
      !identical(aedar_comparison_manifest_version(manifest),manifest$content_version)||
      length(manifest$parts)!=length(manifest$typequ_axis))
