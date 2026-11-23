@@ -75,6 +75,9 @@ test_that("les publications millésimées gardent leur base declaree", {
   # sa vintage, pas le mois d'acquisition. Le relock #1105 l'avait dérivée en
   # "2026-11", publiant une vintage fausse (test-manifest-economie-sirene).
   expect_equal(b[["sirene_snapshot"]], "declaree")
+  # idem pour la SCDL : manifeste et métadonnée producteur déclarent la même
+  # vintage (2026-08-05) ; la dérivation #1105 la faisait diverger des faits.
+  expect_equal(b[["subventions_scdl"]], "declaree")
 })
 
 test_that("les exports roulants ont une base telechargement honnête", {
@@ -82,7 +85,7 @@ test_that("les exports roulants ont une base telechargement honnête", {
   pour_telechargement <- c(
     "korrigo", "sncf_voyageurs", "dila_bdl",
     "dpe_22", "dpe_29", "dpe_35", "dpe_56",
-    "territoires_industrie", "subventions_scdl", "communes_limites"
+    "territoires_industrie", "communes_limites"
   )
   for (id in pour_telechargement) {
     expect_equal(b[[id]], "telechargement", info = id)

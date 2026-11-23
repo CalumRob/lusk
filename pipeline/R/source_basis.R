@@ -69,7 +69,12 @@ VINTAGE_BASIS_PAR_ID <- c(
   # Programmes
   territoires_industrie = "telechargement",
   ort = "contenu_date",
-  subventions_scdl = "telechargement"
+  # #1128 : la source SCDL porte une vintage DÉCLARÉE explicite (2026-08-05,
+  # référence et publication 2026-08-05) que le manifeste ET la métadonnée du
+  # producteur partagent. La dérivation #1105 l'avait remplacée par le mois
+  # d'acquisition (2026-11), faisant échouer la garde de cohérence des subventions
+  # annuelles en production. Le millésime déclaré est l'identité de la coupe.
+  subventions_scdl = "declaree"
 )
 # DVF: twenty year/département releases, vintage = the year in the URL/filename.
 VINTAGE_BASIS_PAR_ID <- c(VINTAGE_BASIS_PAR_ID, stats::setNames(

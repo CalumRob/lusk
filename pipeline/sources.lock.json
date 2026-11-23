@@ -715,8 +715,8 @@
     "sha256": "fa969e6f5d6cbf163a91b466ffead97f7fde355fd596d5c14997ea81501c79e2",
     "bytes": 48523416,
     "acquired_at": "2026-11-18",
-    "vintage_basis": "telechargement",
-    "vintage": "2026-11",
-    "date_reference": "2026-11-18"
+    "vintage_basis": "declaree",
+    "vintage": "2026-08-05",
+    "date_reference": "2026-08-05"
   }
 ]
