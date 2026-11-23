@@ -2594,16 +2594,6 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const bretagneTyped = referenceReelle.filter((t) => t.type === 'commune')
       .map((t) => ({ type: 'commune' as const, id: t.territoire }))
       .sort((a, b) => a.id.localeCompare(b.id))
-    const littoralTyped = referenceReelle
-      .filter((t) => t.type === 'commune' && t.littoral_code === cibleReference('22001').littoral_code)
-      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
-      .sort((a, b) => a.id.localeCompare(b.id))
-
-    // Le preset nouvellement publié écrit son jeton et acquiert la cohorte de
-    // la classe littorale servie du focal (#1044/#1053).
-    await choisirPreset(wrapper, 'Littoral')
-    expect(router.currentRoute.value.query.comparaison).toBe('littoral')
-    expect(selectedBatchesWith(littoralTyped).length).toBeGreaterThan(0)
 
     // Choisir le preset Bretagne écrit ?comparaison=bretagne et lance une
     // passe selected_comparison avec toutes les communes bretonnes.
@@ -2622,10 +2612,40 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     await choisirPreset(wrapper, 'EPCI')
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     wrapper.unmount()
-  // Integration de fiche montée : quatre changements de portée acquièrent
-  // successivement Littoral, Bretagne, la sélection vide puis l'EPCI via l'API
-  // sémantique. Le travail est borné et les assertions couvrent aussi les
-  // requêtes; le budget explicite est cohérent avec les tests voisins (20 s).
+  // Integration de fiche montée : trois changements de portée (Bretagne,
+  // sélection vide, EPCI) après le contrôle de l'ordre du menu. Le preset
+  // Littoral et sa cohorte de 939 communes ont leur propre cas ci-dessous.
+  // 4 869 ms measured alone with one fork after that split (#1158); the CI
+  // runner still hit 20 s before it, so this case keeps a 30 s budget.
+  }, 30_000)
+
+  it('le preset Littoral écrit son jeton et acquiert la cohorte NC du focal (#1044/#1053)', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', chargerReferenceReelle)
+    await flushPromises()
+
+    // Même portée publiée que dans le menu : elle est bien proposée au focal.
+    await wrapper.get('.page-heading .bouton-comparaison__declencheur').trigger('click')
+    expect(optionParLibelle(wrapper, 'Littoral').get('.bouton-comparaison__option-scope').text())
+      .toBe(contextesReference('22001').littoral!.scope.label)
+
+    // La passe selected_comparison peut être découpée en plusieurs lots bornés
+    // (≤12 lectures) — tous portent les mêmes 939 membres tapés.
+    const littoralTyped = referenceReelle
+      .filter((t) => t.type === 'commune' && t.littoral_code === cibleReference('22001').littoral_code)
+      .map((t) => ({ type: 'commune' as const, id: t.territoire }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    const selectedBatchesWith = (members: unknown) => requests
+      .filter((batch) => batch.some((item) => item.intent.kind === 'selected_comparison' &&
+        JSON.stringify(item.intent.members) === JSON.stringify(members)))
+
+    await choisirPreset(wrapper, 'Littoral')
+    expect(router.currentRoute.value.query.comparaison).toBe('littoral')
+    expect(selectedBatchesWith(littoralTyped).length).toBeGreaterThan(0)
+    wrapper.unmount()
+  // 3 099 ms measured alone with one fork on the published 939-member NC cohort
+  // (#1158); 20 s covers a slower CI runner without touching the suite default.
   }, 20_000)
 
   it('une URL de membres tapés résout et acquiert la sélection telle quelle et rend les références Mobilité (#981)', async () => {
