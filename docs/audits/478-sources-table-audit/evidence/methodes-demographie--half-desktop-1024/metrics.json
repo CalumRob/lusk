@@ -1,0 +1,146 @@
+{
+  "page": "/methodologie?onglet=sources&section=demographie",
+  "largeur": 1024,
+  "viewport": {
+    "innerWidth": 1024,
+    "innerHeight": 768
+  },
+  "scrollLargeurDoc": 1024,
+  "clientLargeurDoc": 1024,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1024,
+  "maxDroiteContenu": 1155,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 131,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "table.sources-tableau",
+      "left": 16,
+      "right": 1155
+    },
+    {
+      "sel": "thead",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "tr",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "th",
+      "left": 1005,
+      "right": 1090
+    },
+    {
+      "sel": "th.colonne-lien",
+      "left": 1090,
+      "right": 1154
+    },
+    {
+      "sel": "span.visuellement-cache",
+      "left": 1105,
+      "right": 1106
+    },
+    {
+      "sel": "tbody",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "tr.source-jeu",
+      "left": 17,
+      "right": 1154
+    },
+    {
+      "sel": "td.cellule-licence",
+      "left": 1005,
+      "right": 1090
+    },
+    {
+      "sel": "td.colonne-lien",
+      "left": 1090,
+      "right": 1154
+    },
+    {
+      "sel": "a.lien-donnees",
+      "left": 1106,
+      "right": 1138
+    },
+    {
+      "sel": "svg.lucide.lucide-external-link-icon.lucide-external-link",
+      "left": 1114,
+      "right": 1130
+    },
+    {
+      "sel": "path",
+      "left": 1124,
+      "right": 1128
+    }
+  ],
+  "hauteurPagePx": 1408,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 4,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Densité de population",
+        "Évolution de la population depuis 1968"
+      ],
+      "hauteurLignePx": 176,
+      "hauteurCelluleIndicateurs": 151
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Ménages (dossier complet)",
+      "nomLen": 33,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Taille moyenne des ménages"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 84
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "nomLen": 42,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [
+        "Structure par âge"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "nomLen": 54,
+      "themes": [
+        "Démographie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 1139,
+  "conteneurLargeurPx": 992,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=demographie"
+}

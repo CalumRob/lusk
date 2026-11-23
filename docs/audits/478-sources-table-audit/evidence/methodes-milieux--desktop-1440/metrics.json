@@ -1,0 +1,165 @@
+{
+  "page": "/methodologie?onglet=sources&section=milieux",
+  "largeur": 1440,
+  "viewport": {
+    "innerWidth": 1440,
+    "innerHeight": 900
+  },
+  "scrollLargeurDoc": 1440,
+  "clientLargeurDoc": 1440,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1320,
+  "maxDroiteContenu": 1304,
+  "pireContenu": "h1.methodologie__titre",
+  "debordementCoquille": -16,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 2323,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 14,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Série historique du recensement",
+      "nomLen": 39,
+      "themes": [
+        "Démographie",
+        "Milieux"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) — le dictionnaire Cerema annonce les consommations «en hectares », le fichier les distribue en mètres carrés : le pipeline convertit explicitement (÷ 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)",
+      "nomLen": 355,
+      "themes": [
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Consommation d’ENAF — série annuelle"
+      ],
+      "hauteurLignePx": 277,
+      "hauteurCelluleIndicateurs": 63
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)",
+      "nomLen": 68,
+      "themes": [
+        "Milieux"
+      ],
+      "indicateurs": [
+        "Intensité état"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2021 · Côtes-d’Armor (22)",
+      "nomLen": 35,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2025 · Côtes-d’Armor (22)",
+      "nomLen": 35,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2021 · Finistère (29)",
+      "nomLen": 31,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2024 · Finistère (29)",
+      "nomLen": 31,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2020 · Ille-et-Vilaine (35)",
+      "nomLen": 37,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2023 · Ille-et-Vilaine (35)",
+      "nomLen": 37,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2022 · Morbihan (56)",
+      "nomLen": 30,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Millésime 2024 · Morbihan (56)",
+      "nomLen": 30,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Côtes-d’Armor (22), millésime corrigé 2021",
+      "nomLen": 60,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Finistère (29), millésime corrigé 2021",
+      "nomLen": 56,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-vintage",
+      "nom": "Patch correctif — Morbihan (56), millésime corrigé 2022",
+      "nomLen": 55,
+      "themes": [],
+      "indicateurs": [],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": null
+    }
+  ],
+  "tableLargeurPx": 1168,
+  "conteneurLargeurPx": 1168,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=milieux"
+}

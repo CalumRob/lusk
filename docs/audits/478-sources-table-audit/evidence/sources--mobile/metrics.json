@@ -1,0 +1,582 @@
+{
+  "page": "/sources",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 375,
+  "maxDroiteContenu": 374,
+  "pireContenu": "article.source-record",
+  "debordementCoquille": -1,
+  "sectionsMilimesVides": 20,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    }
+  ],
+  "hauteurPagePx": 31693,
+  "nbCartesSource": 21,
+  "cartes": [
+    {
+      "ancre": "source-serie-historique",
+      "jeu": "INSEE — Série historique du recensement",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Densité de population",
+          "theme": "demographie",
+          "href": "/indicateurs/demographie/densite"
+        },
+        {
+          "label": "Évolution de la population depuis 1968",
+          "theme": "demographie",
+          "href": "/indicateurs/demographie/evolution_1968"
+        }
+      ],
+      "hauteurPx": 863,
+      "libelleConsommateurMax": 38
+    },
+    {
+      "ancre": "source-menages",
+      "jeu": "INSEE — Ménages (dossier complet)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Taille moyenne des ménages",
+          "theme": "demographie",
+          "href": "/indicateurs/demographie/taille_menages"
+        }
+      ],
+      "hauteurPx": 558,
+      "libelleConsommateurMax": 26
+    },
+    {
+      "ancre": "source-age-detail",
+      "jeu": "INSEE — Population par sexe et âge (PRINC)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Structure par âge",
+          "theme": "demographie",
+          "href": "/indicateurs/demographie/structure_age"
+        }
+      ],
+      "hauteurPx": 507,
+      "libelleConsommateurMax": 17
+    },
+    {
+      "ancre": "source-logements",
+      "jeu": "INSEE — Logements (dossier complet)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Mix de logements",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/mix_logements"
+        },
+        {
+          "label": "Statut d’occupation",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/statut"
+        },
+        {
+          "label": "Âge du bâti",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/age_du_bati"
+        },
+        {
+          "label": "Type de logement",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/type"
+        }
+      ],
+      "hauteurPx": 659,
+      "libelleConsommateurMax": 19
+    },
+    {
+      "ancre": "source-dvf",
+      "jeu": "Étalab — DVF géolocalisées",
+      "editeur": "Éditeur : Étalab · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Médiane prix au m²",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/prix_m2"
+        }
+      ],
+      "hauteurPx": 553,
+      "libelleConsommateurMax": 18
+    },
+    {
+      "ancre": "source-dpe",
+      "jeu": "ADEME — Observatoire DPE, logements existants",
+      "editeur": "Éditeur : ADEME · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Part de passoires thermiques",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/part_passoires"
+        },
+        {
+          "label": "Distribution des étiquettes DPE (A à G)",
+          "theme": "habitat",
+          "href": "/indicateurs/habitat/distribution_dpe"
+        }
+      ],
+      "hauteurPx": 720,
+      "libelleConsommateurMax": 39
+    },
+    {
+      "ancre": "source-sirene-snapshot",
+      "jeu": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Part des éco-activités",
+          "theme": "economie",
+          "href": "/indicateurs/economie/eco_activites"
+        }
+      ],
+      "hauteurPx": 584,
+      "libelleConsommateurMax": 22
+    },
+    {
+      "ancre": "source-flores-a88",
+      "jeu": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Effectifs salariés (lieu de travail)",
+          "theme": "economie",
+          "href": "/indicateurs/economie/effectifs_salaries"
+        }
+      ],
+      "hauteurPx": 621,
+      "libelleConsommateurMax": 36
+    },
+    {
+      "ancre": "source-rp-chomage",
+      "jeu": "INSEE — Population active et chômage (dossier complet)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 0,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Chômage (population active)",
+          "theme": "economie",
+          "href": "/indicateurs/economie/chomage"
+        }
+      ],
+      "hauteurPx": 615,
+      "libelleConsommateurMax": 27
+    },
+    {
+      "ancre": "source-mobilite-snapshot",
+      "jeu": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "editeur": "Éditeur : Lusk · Licence : ODbL — © OpenStreetMap contributors",
+      "caveat": null,
+      "horloges": 2,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Perte totale d’accès — à pied ou en transports en commun",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/tot_loss_t"
+        },
+        {
+          "label": "Perte totale d’accès — à vélo",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/tot_loss_b"
+        },
+        {
+          "label": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/iso_alimentation"
+        },
+        {
+          "label": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/iso_sante"
+        },
+        {
+          "label": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/iso_administration"
+        },
+        {
+          "label": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/iso_ecole"
+        },
+        {
+          "label": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/iso_banque"
+        }
+      ],
+      "hauteurPx": 2521,
+      "libelleConsommateurMax": 93
+    },
+    {
+      "ancre": "source-rp-logement-princ",
+      "jeu": "INSEE — Recensement de la population, logements (LOG T12)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 5,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Voitures par ménage",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/voitures_menage"
+        }
+      ],
+      "hauteurPx": 2857,
+      "libelleConsommateurMax": 19
+    },
+    {
+      "ancre": "source-osm-reseaux",
+      "jeu": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)",
+      "editeur": "Éditeur : OpenStreetMap · Licence : ODbL — © OpenStreetMap contributors",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Places de stationnement voiture pour 1 000 hab.",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/places_stationnement_voiture_1000"
+        },
+        {
+          "label": "Places de stationnement vélo pour 1 place voiture",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/stationnement_velo_par_voiture"
+        },
+        {
+          "label": "L’offre cyclable",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/offre_cyclable"
+        }
+      ],
+      "hauteurPx": 1164,
+      "libelleConsommateurMax": 49
+    },
+    {
+      "ancre": "source-amenagements-cyclables",
+      "jeu": "Geovelo — Aménagements cyclables France Métropolitaine",
+      "editeur": "Éditeur : Geovelo · Licence : ODbL — © OpenStreetMap contributors",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Réseaux à pied / vélo / voiture",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/reseaux"
+        }
+      ],
+      "hauteurPx": 886,
+      "libelleConsommateurMax": 31
+    },
+    {
+      "ancre": "source-korrigo",
+      "jeu": "Bretagne Mobilité — Korrigo",
+      "editeur": "Éditeur : Bretagne Mobilité · Licence : ODbL — © OpenStreetMap contributors",
+      "caveat": null,
+      "horloges": 5,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Part des bâtiments près d’un arrêt (à 500 m)",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/offre_tc"
+        }
+      ],
+      "hauteurPx": 2903,
+      "libelleConsommateurMax": 44
+    },
+    {
+      "ancre": "source-bornes-recharges",
+      "jeu": "Etalab — Bornes de recharge pour véhicules électriques",
+      "editeur": "Éditeur : Etalab · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 5,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Bornes de recharge pour véhicules électriques",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/bornes_recharge"
+        },
+        {
+          "label": "Bornes de recharge par station-service",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/bornes_ev_par_station_service"
+        }
+      ],
+      "hauteurPx": 3147,
+      "libelleConsommateurMax": 45
+    },
+    {
+      "ancre": "source-stationnement-velo",
+      "jeu": "Ecolab — Stationnement vélo",
+      "editeur": "Éditeur : Ecolab · Licence : ODbL — © OpenStreetMap contributors",
+      "caveat": null,
+      "horloges": 5,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Places de stationnement vélo pour 1 000 hab.",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/places_stationnement_velo_1000"
+        },
+        {
+          "label": "Places de stationnement vélo pour 1 place voiture",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/stationnement_velo_par_voiture"
+        }
+      ],
+      "hauteurPx": 3115,
+      "libelleConsommateurMax": 49
+    },
+    {
+      "ancre": "source-bpe-b316",
+      "jeu": "INSEE — Base permanente des équipements (B316)",
+      "editeur": "Éditeur : INSEE · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 5,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Bornes de recharge par station-service",
+          "theme": "mobilite",
+          "href": "/indicateurs/mobilite/bornes_ev_par_station_service"
+        }
+      ],
+      "hauteurPx": 2928,
+      "libelleConsommateurMax": 38
+    },
+    {
+      "ancre": "source-consoenaf",
+      "jeu": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025",
+      "editeur": "Éditeur : Cerema · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Consommation d’ENAF — série annuelle",
+          "theme": "milieux",
+          "href": "/indicateurs/milieux/conso_enaf_annuel"
+        }
+      ],
+      "hauteurPx": 841,
+      "libelleConsommateurMax": 36
+    },
+    {
+      "ancre": "source-ocsge-artificialisation",
+      "jeu": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)",
+      "editeur": "Éditeur : IGN · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 11,
+      "replie": false,
+      "consommateurs": [
+        {
+          "label": "Intensité état",
+          "theme": "milieux",
+          "href": "/indicateurs/milieux/artif_par_habitant"
+        }
+      ],
+      "hauteurPx": 2409,
+      "libelleConsommateurMax": 14
+    },
+    {
+      "ancre": "source-acv",
+      "jeu": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+      "editeur": "Éditeur : ANCT · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Couverture programmatique",
+          "theme": "programmes",
+          "href": "/indicateurs/programmes/couverture_programmes"
+        }
+      ],
+      "hauteurPx": 815,
+      "libelleConsommateurMax": 25
+    },
+    {
+      "ancre": "source-subventions-scdl",
+      "jeu": "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh",
+      "editeur": "Éditeur : Région Bretagne · Licence : Licence Ouverte 2.0",
+      "caveat": null,
+      "horloges": 1,
+      "millésimesRendus": 0,
+      "replie": true,
+      "consommateurs": [
+        {
+          "label": "Subventions régionales attribuées (année de référence)",
+          "theme": "programmes",
+          "href": "/indicateurs/programmes/subventions_annuelles"
+        },
+        {
+          "label": "Subventions régionales par domaine",
+          "theme": "programmes",
+          "href": "/indicateurs/programmes/subventions_par_domaine"
+        }
+      ],
+      "hauteurPx": 1176,
+      "libelleConsommateurMax": 54
+    }
+  ],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [],
+  "titrePage": "Sources",
+  "url": "/sources"
+}
