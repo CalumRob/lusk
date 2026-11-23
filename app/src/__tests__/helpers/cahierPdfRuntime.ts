@@ -10,7 +10,11 @@ import { vi } from 'vitest'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 // Only specs that use this PDF runtime need the longer browser-mount budget.
-vi.setConfig({ testTimeout: 60000, hookTimeout: 120000 })
+// #1158: on the 16-core local runner (15 Vitest workers, each able to spawn a
+// headless Chromium), the nine-section matrix measured 40 965 ms in one full
+// suite run and hit this 60 s budget in two others. Double it for this runtime
+// only — the suite-wide default stays untouched and every assertion remains.
+vi.setConfig({ testTimeout: 120000, hookTimeout: 180000 })
 import { resolve } from 'node:path'
 import { inflateSync } from 'node:zlib'
 

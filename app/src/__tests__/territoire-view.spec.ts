@@ -1764,7 +1764,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(false)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
-  })
+  // Mounted Cahier with AEDAR detail: 3201 ms in the measured local full-suite
+  // run and a 5 s timeout under heavier parallel load (#1158). Per-test budget.
+  }, 15_000)
 
   it('shows the loading state while the production AEDAR read is pending (#627)', async () => {
     const fetchApi = vi.fn(async (url: string) => {
@@ -2030,7 +2032,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       item.resource === 'aedar_territorial_aggregate' && item.intent.kind === 'facts').length)
       .toBeGreaterThan(detailReadsBefore)
     mounted.wrapper.unmount()
-  })
+  // Two mounted fiches plus an explicit typed-detail retry: 3319 ms in the
+  // measured local full-suite run, past the 5 s default under load (#1158).
+  }, 15_000)
 
   it('keeps summary clocks, singleton rank, focal reset, and the EPCI → density → EPCI → density → custom sequence coherent', async () => {
     const requests: Array<Array<Record<string, any>>> = []
