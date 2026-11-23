@@ -13,7 +13,7 @@ from qgis.core import (QgsApplication, QgsFeature, QgsGeometry, QgsPointXY,
     QgsProject, QgsVectorFileWriter, QgsVectorLayer)
 
 PRODUCTION = Path(__file__).parents[1]
-QGIS = Path(r"E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat")
+QGIS = Path(r"E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat")
 sys.path.insert(0, str(PRODUCTION))
 from approval import approval_payload
 from mainland_context import acquire_context

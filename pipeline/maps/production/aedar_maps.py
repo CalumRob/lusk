@@ -6,6 +6,7 @@ owning its address symbols, legend, title and artifacts here.
 """
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from hashlib import sha256
 import json
 import os
@@ -23,7 +24,7 @@ import pyarrow as pa
 import numpy as np
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
-from qgis.PyQt.QtCore import QPointF, QRect, QVariant, Qt
+from qgis.PyQt.QtCore import QMetaType, QPointF, QRect, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QFontDatabase, QImage, QPainter, QPolygonF
 from qgis.core import (
     Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsFeature,
@@ -715,7 +716,7 @@ class AedarMapAdapter:
         inside = QgsVectorLayer("Point?crs=EPSG:2154", "AEDAR · territoire", "memory")
         outside = QgsVectorLayer("Point?crs=EPSG:2154", "AEDAR · hors territoire", "memory")
         for layer in (inside, outside):
-            layer.dataProvider().addAttributes([QgsField(field, QVariant.Double) for field, _ in metric_specs])
+            layer.dataProvider().addAttributes([QgsField(field, QMetaType.Type.Double) for field, _ in metric_specs])
             layer.updateFields()
 
         def add_points(layer, point_positions):
@@ -784,11 +785,11 @@ class AedarMapAdapter:
         palette = _feature_palette(feature, MODE_PALETTES[source_mode], len(breaks) - 1)
         colours = _range_colours(len(breaks), palette)
         classes = np.clip(np.searchsorted(breaks[1:], values, side="left"), 0, len(colours) - 1)
-        image = QImage(*profile.size, QImage.Format_RGBA8888)
-        image.fill(Qt.transparent)
+        image = QImage(*profile.size, QImage.Format.Format_RGBA8888)
+        image.fill(Qt.GlobalColor.transparent)
         painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setPen(Qt.NoPen)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setOpacity(0.84)
         for polygon, colour in zip(polygons, classes):
             painter.setBrush(QColor(colours[int(colour)]))
@@ -896,7 +897,7 @@ class AedarMapAdapter:
         if profile.name == "inline":
             from map_ground import apply_inline_mask, apply_inline_shadow
             hex_image = self._inline_hex_image(feature, prepared, recipe, profile)
-            image = prepared.ground.copy().convertToFormat(QImage.Format_RGBA8888)
+            image = prepared.ground.copy().convertToFormat(QImage.Format.Format_RGBA8888)
             painter = QPainter(image)
             painter.drawImage(0, 0, hex_image)
             painter.end()
@@ -981,7 +982,7 @@ class AedarMapAdapter:
         palette = _feature_palette(feature, palette, len(breaks) - 1)
         painter = QPainter(image)
         painter.setPen(MAP_FURNITURE_GREEN)
-        painter.setFont(self._map_font(14, QFont.DemiBold))
+        painter.setFont(self._map_font(14, QFont.Weight.DemiBold))
         painter.drawText(84, 2200, feature.get(
             "legend_label", "Types d’équipements* accessibles en 15 minutes"))
         bar_left, bar_top, bar_width, bar_height = 84, 2218, 680, 20
@@ -992,7 +993,7 @@ class AedarMapAdapter:
                              round(segment_width + 1), bar_height, QColor(colour))
         # Tick labels sit immediately above the white source strip.
         painter.setPen(MAP_FURNITURE_GREEN)
-        painter.setFont(self._map_font(12, QFont.DemiBold))
+        painter.setFont(self._map_font(12, QFont.Weight.DemiBold))
         metrics = painter.fontMetrics()
         if feature.get("comparison") == "car-only-typequ":
             tick_values = _legend_tick_labels(feature, breaks)

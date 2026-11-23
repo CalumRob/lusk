@@ -1,6 +1,7 @@
 """Prepare source-derived territory plans and bindings for selected AEDAR maps."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import hashlib
 import json
 from pathlib import Path

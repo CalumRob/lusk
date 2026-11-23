@@ -4,6 +4,7 @@ Frame queries retain the OGR source provider's rectangle-intersection contract,
 but never reopen or rescan the national GeoJSON for each territory. Bounding-box
 candidates alone would include irregular communes the provider excludes.
 """
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from pathlib import Path
 
 from qgis.core import (QgsCoordinateReferenceSystem, QgsCoordinateTransform,

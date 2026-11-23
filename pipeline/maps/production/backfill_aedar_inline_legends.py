@@ -1,6 +1,7 @@
 """Create JSON-only AEDAR inline legends from a preserved approved package."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 import json
 import sys

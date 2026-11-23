@@ -1,4 +1,5 @@
 """Explicit inspection-heading registration composed from family owners."""
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 
 
 def registered_inspection_headings(network_config):

@@ -4,6 +4,8 @@ import argparse
 import json
 import sys
 
+sys.path.insert(0, str(Path(__file__).parents[1]))
+import qgis_runtime  # noqa: E402,F401 - must precede any qgis/pyarrow import
 from qgis.core import QgsApplication
 
 root = Path(__file__).resolve().parents[4]

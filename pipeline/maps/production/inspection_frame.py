@@ -1,4 +1,5 @@
 """Shared inspection-only framing around production furniture safe bands."""
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from functools import lru_cache
 import json
 from pathlib import Path

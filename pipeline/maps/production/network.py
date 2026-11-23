@@ -1,6 +1,7 @@
 """Authoritative mobility-network preparation and family adapter."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import json
 from hashlib import sha256
 import platform
@@ -1673,7 +1674,7 @@ class NetworkAdapter:
             project, prepared.extent, network_layers, QColor(0, 0, 0, 0), profile.size[0]
         )
         if profile.name == "inline":
-            image = prepared.ground.copy().convertToFormat(QImage.Format_RGBA8888)
+            image = prepared.ground.copy().convertToFormat(QImage.Format.Format_RGBA8888)
             painter = QPainter(image)
             painter.drawImage(0, 0, networks)
             painter.end()
@@ -1877,8 +1878,8 @@ class NetworkAdapter:
             if image.pixelColor(0, 0).alpha() != 255 or image.pixelColor(100, 170).alpha() != 255:
                 raise ValueError("Inspection plate must have an opaque ground and title region")
             return
-        if decoded.mode != "RGBA" or image.format() not in (QImage.Format_RGBA8888, QImage.Format_ARGB32,
-                                  QImage.Format_ARGB32_Premultiplied):
+        if decoded.mode != "RGBA" or image.format() not in (QImage.Format.Format_RGBA8888, QImage.Format.Format_ARGB32,
+                                  QImage.Format.Format_ARGB32_Premultiplied):
             raise ValueError("Inline profile must retain RGBA alpha")
         geometry = feature["analytical_geometry"]
         extent = QgsRectangle(feature["extent"])

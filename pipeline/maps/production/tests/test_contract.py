@@ -76,7 +76,7 @@ class WebPFixtureAdapter(FixtureAdapter):
         self.render_calls += 1
         if self.fail_encoding:
             raise RuntimeError("injected conversion failure")
-        image = QImage(*profile.size, QImage.Format_RGBA8888)
+        image = QImage(*profile.size, QImage.Format.Format_RGBA8888)
         image.fill(QColor(36, 80, 120, 255))
         if profile.transparent_outside:
             image.setPixelColor(0, 0, QColor(0, 0, 0, 0))

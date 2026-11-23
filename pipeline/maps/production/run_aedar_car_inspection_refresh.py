@@ -1,6 +1,7 @@
 """Render affected AEDAR car inspection maps and prepare a guarded R2 plan."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 import json
 from pathlib import Path
@@ -121,10 +122,10 @@ def _make_spot_check_sheet(review_set, path):
     columns, cell, label_height, gap = 3, 800, 64, 16
     rows = (len(review_set) + columns - 1) // columns
     sheet = QImage(columns * cell + (columns + 1) * gap,
-                   rows * (cell + label_height) + (rows + 1) * gap, QImage.Format_RGB32)
+                   rows * (cell + label_height) + (rows + 1) * gap, QImage.Format.Format_RGB32)
     sheet.fill(QColor("#eef1ef"))
     painter = QPainter(sheet)
-    painter.setFont(QFont("Arial", 22, QFont.Bold))
+    painter.setFont(QFont("Arial", 22, QFont.Weight.Bold))
     for index, item in enumerate(review_set):
         x, y = gap + (index % columns) * (cell + gap), gap + (index // columns) * (cell + label_height + gap)
         image = QImage(item["path"])
@@ -133,10 +134,10 @@ def _make_spot_check_sheet(review_set, path):
             raise RuntimeError(f"could not decode AEDAR car spot-check output: {item['path']}")
         painter.fillRect(x, y, cell, label_height, QColor("#ffffff"))
         painter.setPen(QColor("#25352f"))
-        painter.drawText(x + 12, y, cell - 24, label_height, Qt.AlignVCenter,
+        painter.drawText(x + 12, y, cell - 24, label_height, Qt.AlignmentFlag.AlignVCenter,
                          item["territory"]["name"])
         painter.drawImage(x, y + label_height,
-                          image.scaled(cell, cell, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                          image.scaled(cell, cell, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
     painter.end()
     if not sheet.save(str(path), "PNG"):
         raise RuntimeError(f"could not save AEDAR car spot-check sheet: {path}")

@@ -1,6 +1,7 @@
 """Pinned, pipeline-local WebP RGB quality 80 encoder and decoded QA."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import os
 from pathlib import Path
 import sys
@@ -95,7 +96,7 @@ def encode_qimage(image, destination: str | Path, *, preserve_alpha: bool) -> Pa
     Image = _pillow()
     from qgis.PyQt.QtGui import QImage
 
-    rgba = image.convertToFormat(QImage.Format_RGBA8888)
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
     pointer = rgba.bits()
     pointer.setsize(rgba.sizeInBytes())
     data = bytes(pointer)

@@ -1,6 +1,7 @@
 """Run the approved full network batch using shared bounded workers."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 from dataclasses import asdict
 import gc

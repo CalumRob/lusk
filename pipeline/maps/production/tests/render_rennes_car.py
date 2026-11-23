@@ -1,5 +1,7 @@
 from pathlib import Path
 import sys
+sys.path.insert(0, str(Path(__file__).parents[1]))
+import qgis_runtime  # noqa: E402,F401 - must precede any qgis/pyarrow import
 from qgis.core import QgsApplication
 from qgis.PyQt.QtGui import QImage
 from qgis.core import QgsGeometry, QgsPointXY, QgsRectangle

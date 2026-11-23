@@ -31,7 +31,7 @@ class WebPEncodingTests(unittest.TestCase):
         })
 
     def test_webp_round_trip_preserves_exact_alpha_with_lossy_rgb(self):
-        image = QImage(32, 24, QImage.Format_RGBA8888)
+        image = QImage(32, 24, QImage.Format.Format_RGBA8888)
         for y in range(image.height()):
             for x in range(image.width()):
                 image.setPixelColor(x, y, __import__("qgis.PyQt.QtGui", fromlist=["QColor"]).QColor(
@@ -50,7 +50,7 @@ class WebPEncodingTests(unittest.TestCase):
         from qgis.PyQt.QtGui import QColor
         from webp_encoding import _pillow
         Image = _pillow()
-        image = QImage(8, 8, QImage.Format_RGBA8888)
+        image = QImage(8, 8, QImage.Format.Format_RGBA8888)
         image.fill(QColor(50, 80, 100, 255))
         observed = {}
         original_save = Image.Image.save
@@ -78,7 +78,7 @@ class WebPEncodingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing or unreadable"):
                 validate_webp(Path(directory) / "missing.webp",
                     Profile("fixture", (2, 2), False, False, False))
-            image = QImage(4, 4, QImage.Format_RGBA8888)
+            image = QImage(4, 4, QImage.Format.Format_RGBA8888)
             image.fill(QColor(10, 20, 30, 255))
             valid = Path(directory) / "valid.webp"
             encode_qimage(image, valid, preserve_alpha=False)
@@ -88,7 +88,7 @@ class WebPEncodingTests(unittest.TestCase):
     def test_encoder_failure_does_not_leave_success_looking_file(self):
         from webp_encoding import _pillow
         Image = _pillow()
-        image = QImage(2, 2, QImage.Format_RGBA8888)
+        image = QImage(2, 2, QImage.Format.Format_RGBA8888)
         with TemporaryDirectory() as directory:
             path = Path(directory) / "failure.webp"
             with __import__("unittest.mock", fromlist=["patch"]).patch.object(

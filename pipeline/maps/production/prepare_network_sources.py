@@ -1,4 +1,5 @@
 """Prepare or verify persistent network-source caches without rendering maps."""
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 from pathlib import Path
 
