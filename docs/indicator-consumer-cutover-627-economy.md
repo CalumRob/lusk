@@ -1,4 +1,4 @@
-﻿# #627 — Economy scalar page cohort consumer
+# #627 — Economy scalar page cohort consumer
 
 This batch switches the existing Economy `IndicateurPage.vue` facts seam for producer-registered scalar pages to one bounded cohort read. Repères and the page's existing Carte view consume the same snapshot. The browser continues to use the current exploration/read-model helpers for presentation and does not recompute source indicators.
 

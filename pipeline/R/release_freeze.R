@@ -1,4 +1,4 @@
-﻿# Release freeze (issue #1103) --------------------------------------------------
+# Release freeze (issue #1103) --------------------------------------------------
 # ONE guard, called before ANY connection or write by EVERY DB-publication
 # entry point (LUSK_PUBLISH_DB target, publish-serving-tables modes,
 # publish-aedar-aggregates, retained/scoped publishers, declared profiles,

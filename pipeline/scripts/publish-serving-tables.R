@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env Rscript
+#!/usr/bin/env Rscript
 # Desktop-only publication of retained canonical resources to PostgreSQL.
 # The operator's libpq password file is private. No Parquet is copied to the Pi.
 if (!requireNamespace("pkgload", quietly = TRUE)) {
