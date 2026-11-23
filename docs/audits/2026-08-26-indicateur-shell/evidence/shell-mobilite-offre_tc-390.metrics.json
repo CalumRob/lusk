@@ -1,0 +1,89 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/mobilite/offre_tc",
+  "viewport": {
+    "nom": "mobile",
+    "width": 390,
+    "height": 844
+  },
+  "famille": "scalar",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Part des bâtiments près d’un arrêt (à 500 m)",
+    "h1FontSize": "28px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Mobilité",
+    "surTitreCouleur": "oklab(0.502599 -0.0384263 -0.0263984)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(107, 163, 181)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": true,
+    "medianFontFamily": "\"Newsreader Variable\"",
+    "medianFontSizePx": "48px",
+    "densitySvgPresente": true,
+    "extremesLiens": [],
+    "tableLignes": 1200,
+    "tableLigneSelection": null,
+    "tableScrollW": 362,
+    "tableClientW": 362,
+    "tableParentOverflowX": "visible",
+    "controlsFlexWrap": "wrap",
+    "paddingGaucheSection": "16px",
+    "paddingDroiteSection": "16px",
+    "contentMaxWidth": 390,
+    "innerW": 390,
+    "docScrollW": 390,
+    "accentVar": "#6BA3B5",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [
+      "commune",
+      "epci",
+      "departement"
+    ],
+    "heroColonnes": "358px",
+    "heroColonneUnique": true
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}

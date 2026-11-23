@@ -1,0 +1,92 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/economie/chomage",
+  "viewport": {
+    "nom": "grand-bureau",
+    "width": 1920,
+    "height": 1080
+  },
+  "famille": "generique",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Chômage (population active)",
+    "h1FontSize": "32px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Économie/Emploi",
+    "surTitreCouleur": "oklab(0.54439 0.00618791 0.0783567)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(217, 164, 65)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": true,
+    "medianFontFamily": "\"Newsreader Variable\"",
+    "medianFontSizePx": "112px",
+    "densitySvgPresente": true,
+    "extremesLiens": [
+      "/territoire/commune/22373?theme=economie",
+      "/territoire/commune/29070?theme=economie"
+    ],
+    "tableLignes": 1202,
+    "tableLigneSelection": null,
+    "tableScrollW": 1200,
+    "tableClientW": 1200,
+    "tableParentOverflowX": "visible",
+    "controlsFlexWrap": "wrap",
+    "paddingGaucheSection": "360px",
+    "paddingDroiteSection": "360px",
+    "contentMaxWidth": 1920,
+    "innerW": 1920,
+    "docScrollW": 1920,
+    "accentVar": "#D9A441",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [
+      "commune",
+      "epci",
+      "departement"
+    ],
+    "heroColonnes": "592px 592px",
+    "heroColonneUnique": false
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}
