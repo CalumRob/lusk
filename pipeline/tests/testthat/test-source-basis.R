@@ -71,12 +71,16 @@ test_that("les publications millésimées gardent leur base declaree", {
   expect_equal(b[["ocsge_artificialisation_22_2025"]], "declaree")
   expect_equal(b[["ocsge_patch_correctif_29"]], "declaree")
   expect_equal(b[["ocsge_reseaux_35_2023"]], "declaree")
+  # #1128 : SIRENE est un snapshot MENSUEL — la coupe déclarée (2026-10) est
+  # sa vintage, pas le mois d'acquisition. Le relock #1105 l'avait dérivée en
+  # "2026-11", publiant une vintage fausse (test-manifest-economie-sirene).
+  expect_equal(b[["sirene_snapshot"]], "declaree")
 })
 
 test_that("les exports roulants ont une base telechargement honnête", {
   b <- VINTAGE_BASIS_PAR_ID
   pour_telechargement <- c(
-    "sirene_snapshot", "korrigo", "sncf_voyageurs", "dila_bdl",
+    "korrigo", "sncf_voyageurs", "dila_bdl",
     "dpe_22", "dpe_29", "dpe_35", "dpe_56",
     "territoires_industrie", "subventions_scdl", "communes_limites"
   )

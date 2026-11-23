@@ -39,7 +39,13 @@ VINTAGE_BASIS_PAR_ID <- c(
   age_detail = "declaree",
   epci = "declaree",
   # Économie
-  sirene_snapshot = "telechargement",
+  # SIRENE est un snapshot MENSUEL dont la coupe est portée par la donnée
+  # elle-même (VINTAGE_SIRENE_SNAPSHOT = "2026-10", fichier
+  # sirene_snapshot_2026-10.csv, référence 2026-09-30) : le millésime de la
+  # coupe EST la vintage, pas le mois du téléchargement (#1128). Le relock
+  # d'octobre avait dérivé "2026-11" (date d'acquisition) et publié une vintage
+  # fausse ; la base `declaree` republie la coupe déclarée.
+  sirene_snapshot = "declaree",
   flores_a38 = "declaree",
   flores_a88 = "declaree",
   rp_emploi = "declaree",
