@@ -51,6 +51,29 @@ release: profiles are published by the full path itself. The separate
 standalone republish lever; in the normal sequence it is a harmless no-op
 because the artifacts and binding already match the published generation.
 
+**Milieux CONSOENAF source for the full publication (#1148).** In the same
+coordinated operator window, publish the full backend with the producer source
+snapshot at hand; a database that already holds Milieux absence declarations
+(production) cannot replace them without re-deriving source coverage. Set
+`LUSK_MILIEUX_CONSO_SOURCE` next to `LUSK_SORTIE`, for example:
+
+```powershell
+$env:LUSK_SORTIE = 'E:\Lusk\public\data'
+$env:LUSK_MILIEUX_CONSO_SOURCE = 'E:\Lusk\pipeline\data\raw\conso-com.csv'
+Rscript scripts/publish-serving-tables.R --publish
+```
+
+Both documented full-publication entry points — the `--publish` branch and the
+`publie_backend_retained` target — resolve this variable through the same
+resolver into `conso_source_path`. When the live `milieux_reading_absence`
+marker is non-empty and the source is missing or unreadable, the publisher
+refuses **before** the advisory lock and the outer write transaction, naming
+`LUSK_MILIEUX_CONSO_SOURCE`; an empty marker needs no source and behaves as
+before. Supplying the source does not weaken Milieux validation: a wrong
+basename, missing commune identity or unregistered vintage still fails with its
+named error, and an all-NA/partial crosswalk never becomes an invented fact.
+No worker applies this publication to a serving database.
+
 ## Migration 044 (#1042) — littoral comparison contexts (additive)
 
 `044_littoral_comparison_contexts.sql` widens the closed `comparison_context`
