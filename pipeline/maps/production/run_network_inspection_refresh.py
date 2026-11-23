@@ -1,6 +1,7 @@
 """Render only affected network inspection maps and prepare a guarded R2 plan."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 import json
 from pathlib import Path
@@ -161,10 +162,10 @@ def make_spot_check_sheet(review_set, path: Path) -> None:
     rows = (len(review_set) + columns - 1) // columns
     sheet = QImage(columns * cell + (columns + 1) * gap,
                    rows * (cell + label_height) + (rows + 1) * gap,
-                   QImage.Format_RGB32)
+                   QImage.Format.Format_RGB32)
     sheet.fill(QColor("#eef1ef"))
     painter = QPainter(sheet)
-    painter.setFont(QFont("Arial", 22, QFont.Bold))
+    painter.setFont(QFont("Arial", 22, QFont.Weight.Bold))
     for index, item in enumerate(review_set):
         x = gap + (index % columns) * (cell + gap)
         y = gap + (index // columns) * (cell + label_height + gap)
@@ -175,9 +176,9 @@ def make_spot_check_sheet(review_set, path: Path) -> None:
         painter.fillRect(x, y, cell, label_height, QColor("#ffffff"))
         painter.setPen(QColor("#25352f"))
         label = f"{item['territory']['name']} · {item['mode']}"
-        painter.drawText(x + 12, y, cell - 24, label_height, Qt.AlignVCenter, label)
+        painter.drawText(x + 12, y, cell - 24, label_height, Qt.AlignmentFlag.AlignVCenter, label)
         painter.drawImage(x, y + label_height,
-                          source.scaled(cell, cell, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                          source.scaled(cell, cell, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
     painter.end()
     path.parent.mkdir(parents=True, exist_ok=True)
     if not sheet.save(str(path), "PNG"):

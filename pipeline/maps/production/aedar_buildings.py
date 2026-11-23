@@ -7,6 +7,7 @@ addresses absent from the sparse source remain explicit zero-valued points.
 """
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from pathlib import Path
 from typing import Iterable
 

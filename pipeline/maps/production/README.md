@@ -51,7 +51,7 @@ marks, scales and semantic content.
 ### Future generation (do not rerender just to stage the completed export)
 
 ```powershell
-$qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
+$qgis = 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat'
 $maps = (Resolve-Path .\pipeline\maps\production).Path
 # Inspect the source-derived inventory and validate a completed export; neither renders.
 & $qgis -B "$maps\run_aedar_static_maps.py" --plan-only --workers 4
@@ -128,7 +128,7 @@ For a preserved approved package, run the metadata-only backfill in the QGIS Pyt
 (it reads Parquet metrics only; it does not load geometry, render, or rewrite package evidence):
 
 ```powershell
-$qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
+$qgis = 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat'
 $maps = (Resolve-Path .\pipeline\maps\production).Path
 $pipeline = (Resolve-Path (Join-Path $maps '..\..')).Path
 & $qgis -B "$maps\backfill_aedar_inline_legends.py" `
@@ -409,17 +409,28 @@ successful paths retained their hashes and modification times and were marked
 Run QGIS-owning test modules in separate Python processes: some older fixtures
 call `exitQgis()` in teardown, so one combined discovery process is not safe.
 
+The production code targets **QGIS 4.2.3** (Qt 6 / PyQt6;
+`E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat`). Qt enums are written in their
+scoped form (`QImage.Format.Format_RGBA8888`, `Qt.GlobalColor.transparent`, …).
+
 Network map products use a pipeline-local, pinned Pillow WebP encoder rather
-than QGIS's bundled Pillow. Install it with the QGIS Python launcher before
-running production renders:
+than QGIS's bundled Pillow, and a pipeline-local pinned pyarrow: the pyarrow
+25.0.1 bundled with QGIS 4.2.3 fails to write any Parquet file wider than about
+four columns (`Couldn't serialize thrift: Internal buffer size overflow`). Install
+both with the QGIS Python launcher before running tests or production renders:
 
 ```powershell
 & .\pipeline\maps\production\install_webp_encoder.ps1
 ```
 
-The setup pins Pillow 12.3.0 and installs only under
-`pipeline/maps/production/.runtime/site-packages`; it does not modify QGIS,
-global Python, or other pipeline runtimes. The network artifact contract is
+The setup pins Pillow 12.3.0 and pyarrow 25.0.1 (`runtime-requirements.txt`) and
+installs only under `pipeline/maps/production/.runtime/site-packages`; it does not
+modify QGIS, global Python, or other pipeline runtimes. The pinned pyarrow only
+works if it is loaded before QGIS: importing `qgis.core` loads GDAL's own
+`arrow.dll`, which a later pyarrow binds to. `qgis_runtime.py` enforces the order —
+every module that uses QGIS or pyarrow imports it first, `tests/__init__.py` does
+the same for the suites, and it raises if QGIS or another pyarrow was already loaded.
+New entrypoints must import `qgis_runtime` before any `qgis`/`osgeo`/`pyarrow` import. The network artifact contract is
 WebP RGB quality 80, method 4, exact transparent RGB preservation, lossless
 alpha quality 100, native 2400×2400 inspection and 900×900 inline. Contract
 settings and dimensions participate in renderer, effective-output and approval
@@ -449,7 +460,7 @@ $repo = (Resolve-Path .).Path
 $raw = Join-Path $repo 'pipeline\data\raw'
 $networkCache = Join-Path $repo 'pipeline\maps\.cache\network-sources'
 $contextCache = Join-Path $repo 'pipeline\maps\production\output\.stage-cache\official-context'
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/tests/render_representative.py `
   --output-dir pipeline/maps/production/output/webp-native-review `
   --raw-dir $raw `
@@ -557,7 +568,7 @@ Run from a QGIS-enabled Python environment only after the new approval record
 exists; this command neither creates approval nor acquires inputs:
 
 ```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/repair_department_titles.py `
   --approval pipeline/maps/production/output/human-approval.json
 ```
@@ -579,7 +590,7 @@ selected-frame official context there and reads the prepared network-source
 cache read-only. It does not write canonical map files or contact R2.
 
 ```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/run_network_inspection_refresh.py
 ```
 
@@ -591,7 +602,7 @@ selects only affected network inspection keys. QA remains pending until the
 spot-check is explicitly recorded:
 
 ```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/record_spot_check.py `
   --qa pipeline/maps/production/output/network-inspection-refresh/qa.json `
   --reviewer NAME --outcome approved `
@@ -618,7 +629,7 @@ cache; it does not assume the older car-full cache covers the enlarged frames. O
 isolated at `output/aedar-car-inspection-refresh/` by default.
 
 ```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/run_aedar_car_inspection_refresh.py `
   --previous-manifest "$maps\output\aedar-static-publish\full-manifest.json"
 ```
@@ -636,7 +647,7 @@ whose old object hashes the replacement plan verifies; publication's `-Publicati
 must be that package's corresponding `upload-manifest.json`.
 
 ```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+& 'E:\Program Files\QGIS 4.2.3\bin\python-qgis.bat' `
   pipeline/maps/production/record_spot_check.py `
   --qa pipeline/maps/production/output/aedar-car-inspection-refresh/qa.json `
   --reviewer NAME --outcome approved `

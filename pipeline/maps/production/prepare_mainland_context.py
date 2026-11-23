@@ -1,6 +1,7 @@
 """Acquire the dated official mainland context before running map rendering."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 from pathlib import Path
 import sys

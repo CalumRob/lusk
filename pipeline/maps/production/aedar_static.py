@@ -1,6 +1,7 @@
 """Durable selected AEDAR static-map adapter and native preparation caches."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from hashlib import sha256
 import json
 import inspect
@@ -11,7 +12,7 @@ import numpy as np
 import pyarrow.parquet as pq
 import pyarrow as pa
 import pyproj
-from qgis.PyQt.QtCore import Qt, QPointF, QRect, QVariant
+from qgis.PyQt.QtCore import QMetaType, Qt, QPointF, QRect
 from qgis.PyQt.QtGui import QColor, QImage, QPainter, QPolygonF
 
 from aedar_car import AedarCarAdapter
@@ -215,11 +216,11 @@ class AedarStaticAdapter(AedarCarAdapter):
         field = feature["value_field"]
         values = pack.medians[field]
         classes = np.clip(np.searchsorted(feature["scale_breaks"][1:], values, side="left"), 0, len(PALETTE) - 1)
-        image = QImage(*profile.size, QImage.Format_RGBA8888)
-        image.fill(Qt.transparent)
+        image = QImage(*profile.size, QImage.Format.Format_RGBA8888)
+        image.fill(Qt.GlobalColor.transparent)
         painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setPen(Qt.NoPen)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setOpacity(0.84)
         brushes = tuple(QColor(color) for color in PALETTE)
         for polygon, category in zip(pack.polygons, classes):
@@ -246,7 +247,7 @@ class AedarStaticAdapter(AedarCarAdapter):
         inside = QgsVectorLayer("Point?crs=EPSG:2154", "AEDAR · territoire", "memory")
         outside = QgsVectorLayer("Point?crs=EPSG:2154", "AEDAR · hors territoire", "memory")
         for layer in (inside, outside):
-            layer.dataProvider().addAttributes([QgsField(field, QVariant.Double) for field, _ in metric_specs])
+            layer.dataProvider().addAttributes([QgsField(field, QMetaType.Type.Double) for field, _ in metric_specs])
             layer.updateFields()
         outside_positions = positions[~territory_mask[positions]]
         provider = outside.dataProvider()
@@ -293,7 +294,7 @@ class AedarStaticAdapter(AedarCarAdapter):
             self._ground_cache[key] = prepared
         if profile.name == "inline":
             hex_image = self._inline_hex_image(feature, prepared, recipe, profile)
-            image = prepared.ground.copy().convertToFormat(QImage.Format_RGBA8888)
+            image = prepared.ground.copy().convertToFormat(QImage.Format.Format_RGBA8888)
             painter = QPainter(image)
             painter.drawImage(0, 0, hex_image)
             painter.end()

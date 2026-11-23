@@ -3,6 +3,7 @@
 This command never acquires source data and never records human approval. It
 stages and decodes every replacement before preserving/promoting any product.
 """
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import argparse
 from datetime import datetime, timezone
 from hashlib import sha256

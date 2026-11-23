@@ -7,6 +7,7 @@ typography.
 """
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import re
 import json
 import os
@@ -262,7 +263,7 @@ def render_layers(
     job = QgsMapRendererSequentialJob(settings)
     job.start()
     job.waitForFinished()
-    image = job.renderedImage().convertToFormat(QImage.Format_RGBA8888)
+    image = job.renderedImage().convertToFormat(QImage.Format.Format_RGBA8888)
     if image.isNull():
         raise RuntimeError("QGIS did not render the requested map-ground layers")
     layer_names = ", ".join(layer.name() for layer in layers)
@@ -281,14 +282,14 @@ def paper_texture(ground: QImage, texture: QImage, geometry: QgsGeometry, extent
         (texture.height() - edge) // 2,
         edge,
         edge,
-    ).scaled(ground.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-    gray = scaled.convertToFormat(QImage.Format_Grayscale8).convertToFormat(
-        QImage.Format_RGBA8888
+    ).scaled(ground.size(), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    gray = scaled.convertToFormat(QImage.Format.Format_Grayscale8).convertToFormat(
+        QImage.Format.Format_RGBA8888
     )
     painter = QPainter(ground)
-    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setClipPath(geometry_pixel_path(geometry, extent, ground.width(), ground.height()))
-    painter.setCompositionMode(QPainter.CompositionMode_Multiply)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Multiply)
     painter.setOpacity(TEXTURE_OPACITY)
     painter.drawImage(0, 0, gray)
     painter.end()
@@ -303,7 +304,7 @@ def geometry_pixel_path(
     """Port of the builder's hole-aware EPSG:2154-to-pixel path conversion."""
     geometry = QgsGeometry(geometry)
     path = QPainterPath()
-    path.setFillRule(Qt.OddEvenFill)
+    path.setFillRule(Qt.FillRule.OddEvenFill)
 
     def pixel_x(x: float) -> float:
         return (x - extent.xMinimum()) / extent.width() * width_px
@@ -347,11 +348,11 @@ def geometry_mask(geometry: QgsGeometry, extent: QgsRectangle, size: int) -> np.
     if geometry.disjoint(coverage_geometry):
         return np.zeros((size, size), dtype=np.float32)
     # Partial coverage (coasts, islands, holes) retains the exact rasterizer.
-    mask = QImage(size, size, QImage.Format_RGBA8888)
-    mask.fill(Qt.transparent)
+    mask = QImage(size, size, QImage.Format.Format_RGBA8888)
+    mask.fill(Qt.GlobalColor.transparent)
     painter = QPainter(mask)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setPen(Qt.NoPen)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor("white"))
     painter.drawPath(geometry_pixel_path(geometry, extent, size, size))
     painter.end()
@@ -368,11 +369,11 @@ def desaturate_outside_image(
     """Apply the prototype's contextual grayscale pass to outside land only."""
     if image.isNull():
         raise RuntimeError("Could not read map image for contextual desaturation")
-    grayscale = image.convertToFormat(QImage.Format_Grayscale8).convertToFormat(
-        QImage.Format_ARGB32
+    grayscale = image.convertToFormat(QImage.Format.Format_Grayscale8).convertToFormat(
+        QImage.Format.Format_ARGB32
     )
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setClipPath(geometry_pixel_path(outside_geometry, extent, width_px, height_px))
     painter.drawImage(0, 0, grayscale)
     painter.end()
@@ -800,25 +801,25 @@ def apply_inline_mask(
     from qgis.PyQt.QtGui import QPainter
 
     size = ground.width()
-    mask = QImage(size, size, QImage.Format_RGBA8888)
-    mask.fill(Qt.transparent)
+    mask = QImage(size, size, QImage.Format.Format_RGBA8888)
+    mask.fill(Qt.GlobalColor.transparent)
     painter = QPainter(mask)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setPen(Qt.NoPen)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor("white"))
     painter.drawPath(geometry_pixel_path(analytical_geometry, extent, size, size))
     painter.end()
-    result = ground.copy().convertToFormat(QImage.Format_RGBA8888)
+    result = ground.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     painter = QPainter(result)
-    painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     painter.drawImage(0, 0, mask)
-    painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
     painter.drawImage(0, 0, border)
     painter.end()
     # Reapply the analytic mask after adding the border so no antialiased stroke
     # can leak beyond the approved inline cutout.
     painter = QPainter(result)
-    painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     painter.drawImage(0, 0, mask)
     painter.end()
     return result
@@ -826,7 +827,7 @@ def apply_inline_mask(
 
 def apply_inline_shadow(image: QImage, settings: Mapping | None = None) -> QImage:
     """Add the approved low-opacity paper-cutout shadow without filling its exterior."""
-    rgba = image.convertToFormat(QImage.Format_RGBA8888)
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
     alpha = pixels(rgba)[:, :, 3].astype(np.float32) / 255.0
     settings = settings or {"blur_radius_px": INLINE_SHADOW_BLUR_RADIUS_PX,
         "sigma_px": INLINE_SHADOW_SIGMA_PX, "offset_px": {"y": INLINE_SHADOW_OFFSET_Y_PX},
@@ -848,8 +849,8 @@ def apply_inline_shadow(image: QImage, settings: Mapping | None = None) -> QImag
     else:
         shifted[:] = blurred
 
-    result = QImage(rgba.size(), QImage.Format_RGBA8888)
-    result.fill(Qt.transparent)
+    result = QImage(rgba.size(), QImage.Format.Format_RGBA8888)
+    result.fill(Qt.GlobalColor.transparent)
     pixels(result)[:, :, 3] = np.rint(shifted * opacity * 255).astype(np.uint8)
     painter = QPainter(result)
     painter.drawImage(0, 0, rgba)

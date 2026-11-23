@@ -1,6 +1,7 @@
 """Validated acquisition contract for the distinct official mainland context."""
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import hashlib
 import json
 import math

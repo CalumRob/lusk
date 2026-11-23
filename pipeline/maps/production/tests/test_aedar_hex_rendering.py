@@ -196,7 +196,7 @@ class AedarHexRenderingTests(unittest.TestCase):
         context = QgsGeometry.fromRect(QgsRectangle(0, 0, 100, 100))
         layer = make_memory_layer("fixture context", fill=True)
         replace_memory_geometry(layer, context)
-        texture = QImage(16, 16, QImage.Format_RGBA8888)
+        texture = QImage(16, 16, QImage.Format.Format_RGBA8888)
         texture.fill(QColor("#EEEEEE"))
         shared = SharedGround(layer, context, (), texture)
         analytical = QgsGeometry.fromRect(QgsRectangle(20, 20, 80, 80))
@@ -256,11 +256,11 @@ class AedarHexRenderingTests(unittest.TestCase):
                                 "((-10 -10,20 -10,20 20,-10 20,-10 -10)))"),
         ]
         for geometry in geometries:
-            image = QImage(100, 100, QImage.Format_RGBA8888)
-            image.fill(Qt.transparent)
+            image = QImage(100, 100, QImage.Format.Format_RGBA8888)
+            image.fill(Qt.GlobalColor.transparent)
             painter = QPainter(image)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(Qt.NoPen)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("white"))
             painter.drawPath(geometry_pixel_path(geometry, frame, 100, 100))
             painter.end()
@@ -277,10 +277,10 @@ class AedarHexRenderingTests(unittest.TestCase):
         frame = QgsRectangle(-10, -10, 10, 10)
         outside = QgsGeometry.fromWkt("POLYGON ((-10 -10,0 -10,0 10,-10 10,-10 -10),"
                                      "(-8 -2,-8 2,-6 2,-6 -2,-8 -2))")
-        ground = QImage(2400, 2400, QImage.Format_RGBA8888)
+        ground = QImage(2400, 2400, QImage.Format.Format_RGBA8888)
         ground.fill(QColor("#92B0A2"))
-        boundaries = QImage(2400, 2400, QImage.Format_RGBA8888)
-        boundaries.fill(Qt.transparent)
+        boundaries = QImage(2400, 2400, QImage.Format.Format_RGBA8888)
+        boundaries.fill(Qt.GlobalColor.transparent)
         marks = boundaries.copy()
         painter = QPainter(marks)
         painter.fillRect(120, 90, 1800, 400, QColor("#BC3278"))

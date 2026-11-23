@@ -33,11 +33,11 @@ class GroundMaskCostTests(unittest.TestCase):
                                 "((-10 -10,20 -10,20 20,-10 20,-10 -10)))"),
         ]
         for shape in shapes:
-            image = QImage(100, 100, QImage.Format_RGBA8888)
-            image.fill(Qt.transparent)
+            image = QImage(100, 100, QImage.Format.Format_RGBA8888)
+            image.fill(Qt.GlobalColor.transparent)
             painter = QPainter(image)
-            painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(Qt.NoPen)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor("white"))
             painter.drawPath(ground.geometry_pixel_path(shape, frame, 100, 100))
             painter.end()
@@ -57,7 +57,7 @@ class GroundMaskCostTests(unittest.TestCase):
         context = QgsGeometry.fromRect(QgsRectangle(0, 0, 100, 100))
         layer = ground.make_memory_layer("fixture context", fill=True)
         ground.replace_memory_geometry(layer, context)
-        texture = QImage(16, 16, QImage.Format_RGBA8888)
+        texture = QImage(16, 16, QImage.Format.Format_RGBA8888)
         texture.fill(QColor("#EEEEEE"))
         shared = ground.SharedGround(layer, context, (), texture)
         analytical = QgsGeometry.fromRect(QgsRectangle(20, 20, 80, 80))

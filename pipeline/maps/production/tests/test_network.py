@@ -679,11 +679,11 @@ class NetworkPreparationTests(unittest.TestCase):
         feature = {"extent": extent, "territory": {"kind": "commune", "code": "1", "name": "One"},
             "mode": "car", "analytical_geometry": QgsGeometry.fromRect(extent)}
         second_mode = {**feature, "mode": "walk"}
-        prepared = PreparedGround(QImage(4, 4, QImage.Format_ARGB32), QImage(4, 4, QImage.Format_ARGB32),
-            QImage(4, 4, QImage.Format_ARGB32), QgsGeometry(), __import__("numpy").zeros((4, 4)), extent)
+        prepared = PreparedGround(QImage(4, 4, QImage.Format.Format_ARGB32), QImage(4, 4, QImage.Format.Format_ARGB32),
+            QImage(4, 4, QImage.Format.Format_ARGB32), QgsGeometry(), __import__("numpy").zeros((4, 4)), extent)
         profile = type("TinyInspection", (), {"name": "inspection", "size": (4, 4),
             "transparent_outside": False})()
-        opaque = QImage(4, 4, QImage.Format_RGBA8888)
+        opaque = QImage(4, 4, QImage.Format.Format_RGBA8888)
         opaque.fill(QColor(20, 30, 40, 255))
         with TemporaryDirectory() as folder:
             with (patch("network.NetworkAdapter._ground_id", return_value="ground-identity"),
@@ -869,7 +869,7 @@ class NetworkPreparationTests(unittest.TestCase):
         region = QgsGeometry.fromRect(QgsRectangle(0, 0, 50, 100))
         context_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:2154", "land fixture", "memory")
         map_ground.replace_memory_geometry(context_layer, land)
-        texture = QImage(10, 10, QImage.Format_RGBA8888)
+        texture = QImage(10, 10, QImage.Format.Format_RGBA8888)
         texture.fill(QColor("white"))
         shared = map_ground.SharedGround(context_layer, land, (), texture)
         expected = map_ground._frontier_geometry(region, land)
@@ -909,10 +909,10 @@ class NetworkPreparationTests(unittest.TestCase):
         )
         extent = QgsRectangle(0, 0, 100, 100)
         feature = {"analytical_geometry": geometry, "extent": extent}
-        ground = QImage(900, 900, QImage.Format_RGBA8888)
+        ground = QImage(900, 900, QImage.Format.Format_RGBA8888)
         ground.fill(QColor("white"))
-        border = QImage(900, 900, QImage.Format_RGBA8888)
-        border.fill(Qt.transparent)
+        border = QImage(900, 900, QImage.Format.Format_RGBA8888)
+        border.fill(Qt.GlobalColor.transparent)
         image = apply_inline_mask(ground, border, geometry, extent)
         adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
 

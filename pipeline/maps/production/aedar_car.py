@@ -1,4 +1,5 @@
 """Production car-diversity contracts on the reviewed shared AEDAR renderer."""
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4

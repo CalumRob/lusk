@@ -14,7 +14,7 @@ from pipeline.maps.production.tests.qgis_fixture import qgis_application
 
 def full_frame_ink(image, texture, mask, colour, opacity, treatment):
     """The pre-optimisation full-frame algorithm, retained as a pixel oracle."""
-    image = image.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = image.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     rgba = plate._pixels(image)
     rgb = rgba[:, :, :3].astype(np.float32)
     grain = 1.0 - plate.TEXTURE_OPACITY * (1.0 - texture)
@@ -35,7 +35,7 @@ def full_frame_ink(image, texture, mask, colour, opacity, treatment):
 
 
 def full_frame_desaturation(image, mask, land):
-    image = image.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = image.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     rgba = plate._pixels(image)
     rgb = rgba[:, :, :3].astype(np.float32)
     gray = np.sum(rgb * np.array([0.2126, 0.7152, 0.0722]), axis=2)
@@ -51,7 +51,7 @@ class InspectionPixelCostTests(unittest.TestCase):
 
     def fixture(self):
         rng = np.random.default_rng(748)
-        image = QImage(96, 64, QImage.Format_RGBA8888)
+        image = QImage(96, 64, QImage.Format.Format_RGBA8888)
         plate._pixels(image)[:] = rng.integers(0, 256, (64, 96, 4), dtype=np.uint8)
         texture = rng.random((64, 96), dtype=np.float32)
         return image, texture

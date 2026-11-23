@@ -6,6 +6,7 @@ Network selection and map-ground construction remain outside this module.
 """
 from __future__ import annotations
 
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 import json
 import tempfile
 from dataclasses import dataclass
@@ -176,16 +177,16 @@ def _load_static_face(slug: str, weight: int, assets: Path, temporary: Path) -> 
 
 def _font(family: str, size: int, weight: int = 400, tracking_em: float = 0) -> QFont:
     weights = {
-        100: QFont.Thin, 200: QFont.ExtraLight, 300: QFont.Light,
-        400: QFont.Normal, 500: QFont.Medium, 600: QFont.DemiBold,
-        700: QFont.Bold, 800: QFont.ExtraBold, 900: QFont.Black,
+        100: QFont.Weight.Thin, 200: QFont.Weight.ExtraLight, 300: QFont.Weight.Light,
+        400: QFont.Weight.Normal, 500: QFont.Weight.Medium, 600: QFont.Weight.DemiBold,
+        700: QFont.Weight.Bold, 800: QFont.Weight.ExtraBold, 900: QFont.Weight.Black,
     }
     if weight not in weights:
         raise ValueError(f"Unsupported CSS font weight: {weight}")
     result = QFont(family)
     result.setPixelSize(size)
     result.setWeight(weights[weight])
-    result.setLetterSpacing(QFont.AbsoluteSpacing, tracking_em * size)
+    result.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, tracking_em * size)
     if QFontInfo(result).family() != family:
         raise RuntimeError(f"Qt substituted {QFontInfo(result).family()} for {family}")
     return result
@@ -195,16 +196,16 @@ def _text_path(text: str, font: QFont) -> QPainterPath:
     path = QPainterPath()
     metrics = QFontMetricsF(font)
     path.addText(QPointF(0, metrics.ascent()), font, text)
-    path.setFillRule(Qt.WindingFill)
+    path.setFillRule(Qt.FillRule.WindingFill)
     return path
 
 
 def _glyph_coverage(path: QPainterPath) -> np.ndarray:
-    mask = QImage(OUTPUT_SIZE, OUTPUT_SIZE, QImage.Format_RGBA8888)
-    mask.fill(Qt.transparent)
+    mask = QImage(OUTPUT_SIZE, OUTPUT_SIZE, QImage.Format.Format_RGBA8888)
+    mask.fill(Qt.GlobalColor.transparent)
     painter = QPainter(mask)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setPen(Qt.NoPen)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor("white"))
     painter.drawPath(path)
     painter.end()
@@ -239,8 +240,8 @@ def _paper_texture_luminance(texture_path: str, mtime_ns: int) -> np.ndarray:
     edge = min(texture.width(), texture.height())
     square = texture.copy(
         (texture.width() - edge) // 2, (texture.height() - edge) // 2, edge, edge
-    ).scaled(OUTPUT_SIZE, OUTPUT_SIZE, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-    gray = square.convertToFormat(QImage.Format_Grayscale8).convertToFormat(QImage.Format_RGBA8888)
+    ).scaled(OUTPUT_SIZE, OUTPUT_SIZE, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    gray = square.convertToFormat(QImage.Format.Format_Grayscale8).convertToFormat(QImage.Format.Format_RGBA8888)
     return _pixels(gray)[:, :, 0].astype(np.float32) / 255.0
 
 
@@ -262,7 +263,7 @@ def apply_engraved_ink(
     treatment: Engraving | None,
 ) -> QImage:
     """Prototype's texture-multiplied ink with carved, inset edge relief."""
-    image = image.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = image.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     window = _mask_window(glyph_mask)
     if window is None:
         return image
@@ -291,7 +292,7 @@ def apply_engraved_ink(
 
 
 def _desaturate_masked_area(image: QImage, mask: np.ndarray, land_mask: np.ndarray) -> QImage:
-    image = image.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = image.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     window = _mask_window(mask)
     if window is None:
         return image
@@ -307,10 +308,10 @@ def _desaturate_masked_area(image: QImage, mask: np.ndarray, land_mask: np.ndarr
 
 def _draw_flat_glyphs(image: QImage, path: QPainterPath, colour: QColor, opacity: float) -> QImage:
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setRenderHint(QPainter.TextAntialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     painter.setOpacity(opacity)
-    painter.setPen(Qt.NoPen)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(colour)
     painter.drawPath(path)
     painter.end()
@@ -323,7 +324,7 @@ def _draw_paper_backings(image: QImage, rectangles: tuple[QRect, ...], texture_l
         return backing_mask
     paper = QColor("#F8FBFB")
     painter = QPainter(image)
-    painter.setPen(Qt.NoPen)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(paper)
     for rectangle in rectangles:
         painter.drawRect(rectangle)
@@ -351,7 +352,7 @@ def _keep_original_network_color_over_text(
     outside_land_mask: np.ndarray,
     excluded_mask: np.ndarray,
 ) -> QImage:
-    image = networks.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = networks.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     rgba = _pixels(image)
     rgb = rgba[:, :, :3].astype(np.float32)
     line_alpha = rgba[:, :, 3].astype(np.float32) / 255.0
@@ -474,19 +475,19 @@ def _draw_map_furniture(image: QImage, extent: QgsRectangle, scale_spec: tuple[s
     if not renderer.isValid():
         raise RuntimeError(f"Approved NorthArrow_11.svg did not render: {svg_path}")
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setRenderHint(QPainter.TextAntialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
     painter.setOpacity(0.78)
-    painter.setPen(QPen(MAP_FURNITURE_GREEN, _pixel(3), Qt.SolidLine, Qt.FlatCap))
+    painter.setPen(QPen(MAP_FURNITURE_GREEN, _pixel(3), Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
     painter.drawLine(left, baseline, right, baseline)
     for position in (left, (left + right) // 2, right):
         painter.drawLine(position, baseline - _pixel(8), position, baseline + _pixel(8))
     painter.setPen(MAP_FURNITURE_GREEN)
     painter.setFont(_font(text_family, _pixel(26), 400))
     painter.drawText(QRect(left - _pixel(2), baseline + _pixel(10), _pixel(48), _pixel(30)),
-                     Qt.AlignLeft | Qt.AlignVCenter, "0")
+                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "0")
     painter.drawText(QRect(right - _pixel(150), baseline + _pixel(10), _pixel(150), _pixel(30)),
-                     Qt.AlignRight | Qt.AlignVCenter, label)
+                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label)
     renderer.render(painter, QRectF(arrow))
     painter.end()
     return clear
@@ -506,7 +507,7 @@ def prepare_inspection_context(ground, boundaries, outside_land, extent,
     if any(image.width() != OUTPUT_SIZE or image.height() != OUTPUT_SIZE
            for image in (ground, boundaries)):
         raise ValueError("Inspection context requires 2400×2400 ground and boundary renders")
-    image = ground.copy().convertToFormat(QImage.Format_RGBA8888)
+    image = ground.copy().convertToFormat(QImage.Format.Format_RGBA8888)
     painter = QPainter(image)
     painter.drawImage(0, 0, boundaries)
     painter.end()
@@ -612,8 +613,8 @@ def _draw_footer(image: QImage, mode: str, family_regular: str, family_semibold:
         raise RuntimeError(f"{mode} citation is too wide for the approved footer")
     strip = QRect(0, OUTPUT_SIZE - FOOTER_HEIGHT, OUTPUT_SIZE, FOOTER_HEIGHT)
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    painter.setPen(Qt.NoPen)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor("#FFFFFF"))
     painter.drawRect(strip)
     painter.setPen(QPen(QColor("#D4DEDB"), _pixel(2)))

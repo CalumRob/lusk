@@ -1,4 +1,5 @@
 """Native selected AEDAR legends; tick rounding never changes classification."""
+import qgis_runtime  # noqa: F401 - must precede any qgis/pyarrow import (see qgis_runtime.py)
 
 
 def tick_label(value, boundaries):
@@ -38,9 +39,9 @@ def draw_legend(adapter, image, feature):
     scale, colors = feature["_scale"], feature["palette"]
     lo, hi = scale["min"], scale["max"]
     painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setPen(MAP_FURNITURE_GREEN)
-    painter.setFont(adapter._map_font(14, QFont.DemiBold))
+    painter.setFont(adapter._map_font(14, QFont.Weight.DemiBold))
     painter.drawText(84, 2150, feature["legend_label"])
     left, width, top, height = 84, 680, 2178, 20
     segment = width / len(colors)
@@ -50,7 +51,7 @@ def draw_legend(adapter, image, feature):
         segment_width = round(segment) if feature["mode"] == "car" else round(segment) + 1
         painter.fillRect(round(left + index * segment), top, segment_width, height, QColor(color))
     painter.setPen(MAP_FURNITURE_GREEN)
-    painter.setFont(adapter._map_font(12, QFont.DemiBold))
+    painter.setFont(adapter._map_font(12, QFont.Weight.DemiBold))
     metrics = painter.fontMetrics()
     for value in scale["breaks"]:
         x = round(left + width * (value - lo) / (hi - lo))
