@@ -1483,8 +1483,12 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
     list(as.name("digests_run"), as.name("fusion_vintages"),
       as.name("scalar_serving_artifacts"),
       as.name("typed_reading_serving_artifacts")))
+  # #1148 — the full-publication leaf resolves the producer CONSOENAF source
+  # from the operator variable through the SAME resolver as the --publish CLI.
   publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
-    list(as.call(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
+    list(as.call(c(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN),
+      list(conso_source_path =
+        as.call(list(as.name("resolve_milieux_conso_source")))))))))
   publication_retained_backend <- list(tar_target_raw(
     "publie_backend_retained", publication_command,
     cue = tar_cue(mode = "always")
