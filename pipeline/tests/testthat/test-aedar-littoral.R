@@ -272,9 +272,16 @@ test_that("littoral publication is a sibling that leaves density counters intact
     epci_id=c("200000001","200000001",NA,NA,NA),density_class_code=c("1","1",NA,NA,NA),
     littoral_code=c("C","NC",NA,NA,NA),stringsAsFactors=FALSE)
   dir <- tempfile("aedar-littoral-publication-"); on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  # #1154: a real reference content version is a 32-hex token (the published
+  # classification content version), not a 64-hex digest. The producer's
+  # littoral identity field must carry exactly this value and the manifest
+  # validator must accept it.
+  reference_content_version <- "ec2d980c88a9401441cd1e934fde0411"
   result <- project_aedar_comparison_publication(projection,density_source,refs,
-    reference_content_version=paste(rep("d",64),collapse=""),directory=dir,
+    reference_content_version=reference_content_version,directory=dir,
     littoral_source=aedar_littoral_test_source_artifact())
+  identity_values <- jsonlite::fromJSON(result$input_identity)
+  expect_identical(as.character(identity_values$littoral_classification_content_version),reference_content_version)
   expect_identical(result$density_class_summaries$class_count,1L)
   expect_false("C"%in%unique(as.character(nanoparquet::read_parquet(file.path(dir,result$density_class_summaries$path))$group_id)))
   expect_identical(result$littoral_summaries$row_count,2L*nrow(aedar_aggregate_reading_bindings()))
@@ -286,7 +293,7 @@ test_that("littoral publication is a sibling that leaves density counters intact
   # fails closed instead of silently borrowing another group.
   stale <- refs; stale$littoral_code[stale$territory_id=="22001"] <- "NC"
   expect_error(project_aedar_comparison_publication(projection,density_source,stale,
-    reference_content_version=paste(rep("d",64),collapse=""),directory=tempfile("x"),
+    reference_content_version=reference_content_version,directory=tempfile("x"),
     littoral_source=aedar_littoral_test_source_artifact()),"membership|disagrees")
 })
 
@@ -391,8 +398,12 @@ test_that("the built littoral artifact pools the fixture crosswalk's C/NC member
   expect_error(validate_aedar_littoral_membership(ref, stale), "disagrees")
 })
 
-test_that("comparison input identity pins the littoral classification and reference", {
-  hashes <- c(`mode:walk`=paste(rep("a",64),collapse=""),
+test_that("comparison input identity validates the classification version against the manifest reference", {
+  # #1154: the littoral classification version is a 32-hex version TOKEN that
+  # travels with the canonical territory reference, not a 64-hex file digest.
+  # It must equal the manifest's reference_content_version (single source).
+  reference_content_version <- "ec2d980c88a9401441cd1e934fde0411"
+  make_hashes <- function() c(`mode:walk`=paste(rep("a",64),collapse=""),
     `mode:transit_gain`=paste(rep("b",64),collapse=""),
     `mode:transit`=paste(rep("c",64),collapse=""),
     `mode:car`=paste(rep("d",64),collapse=""),
@@ -407,22 +418,63 @@ test_that("comparison input identity pins the littoral classification and refere
     density_reference_vintage=MANIFEST_CLASSES_DENSITE$vintage[[1L]],
     littoral_artifact=paste(rep("7",64),collapse=""),
     littoral_aggregate_content_version=paste(rep("8",64),collapse=""),
-    littoral_reference_identity="classe_littorale_communale",
+    littoral_reference_identity=MANIFEST_CLASSES_LITTORAL$id[[1L]],
     littoral_reference_sha256=MANIFEST_CLASSES_LITTORAL$sha256[[1L]],
-    littoral_classification_content_version=paste(rep("6",64),collapse=""),
+    littoral_classification_content_version=aedar_littoral_classification_content_version(reference_content_version),
     littoral_reference_vintage=MANIFEST_CLASSES_LITTORAL$vintage[[1L]])
-  identity <- as.character(jsonlite::toJSON(as.list(hashes),auto_unbox=TRUE))
-  version <- paste(as.character(openssl::sha256(charToRaw(identity))),collapse="")
-  expect_silent(validate_aedar_comparison_input_identity(identity,version,require_littoral=TRUE))
-  stale <- hashes
-  stale["littoral_reference_sha256"] <- paste(rep("0",64),collapse="")
-  stale_identity <- as.character(jsonlite::toJSON(as.list(stale),auto_unbox=TRUE))
-  stale_version <- paste(as.character(openssl::sha256(charToRaw(stale_identity))),collapse="")
-  expect_error(validate_aedar_comparison_input_identity(stale_identity,stale_version,require_littoral=TRUE),
-    "pinned source/reference")
-  missing <- hashes[setdiff(names(hashes),"littoral_classification_content_version")]
-  missing_identity <- as.character(jsonlite::toJSON(as.list(missing),auto_unbox=TRUE))
-  missing_version <- paste(as.character(openssl::sha256(charToRaw(missing_identity))),collapse="")
-  expect_error(validate_aedar_comparison_input_identity(missing_identity,missing_version,require_littoral=TRUE),
-    "pinned source/reference")
+  validate <- function(hashes,reference=reference_content_version) {
+    identity <- as.character(jsonlite::toJSON(as.list(hashes),auto_unbox=TRUE))
+    version <- paste(as.character(openssl::sha256(charToRaw(identity))),collapse="")
+    validate_aedar_comparison_input_identity(identity,version,
+      reference_content_version=reference,require_littoral=TRUE)
+  }
+
+  # A legitimate 32-hex classification version equal to the manifest reference passes.
+  expect_silent(validate(make_hashes()))
+
+  # A classification version that disagrees with the manifest fails, named.
+  divergent <- make_hashes()
+  divergent["littoral_classification_content_version"] <- "00112233445566778899aabbccddeeff"
+  expect_error(validate(divergent),"pinned source/reference")
+
+  # The three genuine digests stay strict 64-hex: short/malformed values still fail.
+  for (field in c("littoral_artifact","littoral_aggregate_content_version","littoral_reference_sha256")) {
+    malformed <- make_hashes()
+    malformed[field] <- "deadbeef"
+    expect_error(validate(malformed),"pinned source/reference",info=field)
+  }
+
+  # Omitting the classification version still breaks the required-name set.
+  incomplete <- make_hashes()[setdiff(names(make_hashes()),"littoral_classification_content_version")]
+  expect_error(validate(incomplete),"pinned source/reference")
+})
+
+test_that("base comparison input identity path is unchanged without littoral", {
+  hashes <- c(`mode:walk`=paste(rep("a",64),collapse=""),
+    `mode:transit_gain`=paste(rep("b",64),collapse=""),
+    `mode:transit`=paste(rep("c",64),collapse=""),
+    `mode:car`=paste(rep("d",64),collapse=""),
+    `mode:bike_lts4`=paste(rep("e",64),collapse=""),
+    `mode:bike_lts2`=paste(rep("f",64),collapse=""),
+    address_origins=paste(rep("1",64),collapse=""),
+    density_reference=paste(rep("2",64),collapse=""),
+    density_artifact=paste(rep("3",64),collapse=""),
+    density_aggregate_content_version=paste(rep("4",64),collapse=""),
+    density_reference_identity=MANIFEST_CLASSES_DENSITE$id[[1L]],
+    density_reference_sha256=MANIFEST_CLASSES_DENSITE$sha256[[1L]],
+    density_reference_vintage=MANIFEST_CLASSES_DENSITE$vintage[[1L]])
+  pin_identity <- function(h) {
+    identity <- as.character(jsonlite::toJSON(as.list(h),auto_unbox=TRUE))
+    list(identity=identity,
+      version=paste(as.character(openssl::sha256(charToRaw(identity))),collapse=""))
+  }
+  valid <- pin_identity(hashes)
+  # No reference_content_version argument and require_littoral=FALSE: the old path.
+  expect_silent(validate_aedar_comparison_input_identity(valid$identity,valid$version,
+    require_littoral=FALSE))
+  # A tampered base digest still fails exactly as before.
+  tampered <- hashes; tampered["density_artifact"] <- "deadbeef"
+  bad <- pin_identity(tampered)
+  expect_error(validate_aedar_comparison_input_identity(bad$identity,bad$version,
+    require_littoral=FALSE),"pinned source/reference")
 })
