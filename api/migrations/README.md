@@ -36,6 +36,21 @@ A partial rollout leaves comparison/AEDAR markers stale; the API fails closed
 with a named reason rather than borrowing a density or Bretagne cohort. No
 worker applied serving DDL, publication or deployment.
 
+**Full retained publication is atomic (#1126).** The full backend publication
+(`publish-serving-tables.R --publish` / the `publie_backend_retained` target,
+i.e. `publish_retained_backend_from_parquet`) now refreshes the declared-profile
+scalar binding metadata-only, then publishes the territory reference, scalar
+snapshot and comparison, declared profiles and their comparison, and the four
+typed readings in ONE outer transaction. Any failure rolls the whole publication
+back and restores the profile artifacts, so a release that moves both the
+reference and scalar versions can no longer leave a partial database (Habitat
+used to refuse against the stale DPE binding after earlier owners had committed).
+Consequently `LUSK_PUBLISH_PROFILE=1` is **no longer required** for a complete
+release: profiles are published by the full path itself. The separate
+`publie_profiles_declares` target is deliberately **kept** as an explicit
+standalone republish lever; in the normal sequence it is a harmless no-op
+because the artifacts and binding already match the published generation.
+
 ## Migration 044 (#1042) — littoral comparison contexts (additive)
 
 `044_littoral_comparison_contexts.sql` widens the closed `comparison_context`
