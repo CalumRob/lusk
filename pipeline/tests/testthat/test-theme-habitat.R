@@ -113,7 +113,7 @@ test_that("vintages_habitat : les DPE (base roulante) portent l'horloge du run s
   for (id in MANIFEST_HABITAT_DPE$id) {
     # Issue #1114 : la version suit le format dérivé YYYY-MM ; l'horloge complète
     # reste dans date_publication (jamais un jour dans `version`).
-    expect_equal(v$version[v$id == id], format(Sys.Date(), "%Y-%m"), info = id)
-    expect_equal(v$date_publication[v$id == id], as.character(Sys.Date()), info = id)
+    expect_equal(v$version[v$id == id], lire_lock()[[id]]$vintage, info = id)
+    expect_equal(v$date_publication[v$id == id], lire_lock()[[id]]$acquired_at, info = id)
   }
 })

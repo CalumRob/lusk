@@ -220,29 +220,30 @@ ecrire_projet_vintages <- function(projet, horloge, payload, pipe) {
   invisible(projet)
 }
 
-test_that("vintages_economie : le cache atteint la projection pour sirene_snapshot (base dérivée)", {
+test_that("le cache atteint la projection d'une source dérivée (base telechargement)", {
   # Issue #1114 : thread `cache` jusqu'au builder — sans lui, une source
   # `telechargement` publierait le littéral du manifeste au lieu du sidecar.
-  cache <- tempfile("cache-sirene-")
+  # #1128 : on utilise une fixture synthétique plutôt que SIRENE, devenue une
+  # source `declaree` (le millésime de sa coupe mensuelle est sa vintage).
+  cache <- tempfile("cache-derivee-")
   dir.create(cache, recursive = TRUE)
   on.exit(unlink(cache, recursive = TRUE))
-  f <- MANIFEST_ECONOMIE_SIRENE$fichier[[1L]]
+  m <- manifest_telechargement_fixture()
+  f <- m$fichier[[1L]]
   cible <- file.path(cache, f)
-  writeBin(charToRaw("sirene-fixture\n"), cible)
+  writeBin(charToRaw("flux-fixture\n"), cible)
   Sys.setFileTime(cible, as.POSIXct("2026-11-18T12:00:00", tz = "UTC"))
   ecrire_digest_cache(list(
-    source_id = "sirene_snapshot", url = "https://example.invalid/sirene",
+    source_id = m$id[[1L]], url = m$url[[1L]],
     sha256 = "abc", bytes = file.size(cible), fichier = f,
     mtime = as.numeric(file.mtime(cible)), acquired_at = "2026-11-18",
     vintage_basis = "telechargement", vintage = "2026-11",
     date_reference = "2026-11-18"
   ), cache)
 
-  v <- vintages_economie(cache = cache)
-  expect_equal(v$version[v$id == "sirene_snapshot"], "2026-11")
-  expect_equal(v$date_publication[v$id == "sirene_snapshot"], "2026-11-18")
-  # les sources declaree ne bougent pas
-  expect_equal(v$version[v$id == "rp_emploi"], "2023")
+  v <- vintages_depuis_manifest(m, cache = cache, lock = tempfile("lock-vide-"))
+  expect_equal(v$version, "2026-11")
+  expect_equal(v$date_publication, "2026-11-18")
 })
 
 test_that("absences délibérées de vintages.json (ADR-0048 §3bis) — aucun ajout silencieux", {

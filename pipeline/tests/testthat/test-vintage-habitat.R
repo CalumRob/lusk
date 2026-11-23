@@ -35,12 +35,18 @@ test_that("les vintages Habitat sont par source : RP annuel, DVF semestriel, DPE
   # Issue #1114 : la version est au format dérivé YYYY-MM, la date complète
   # reste dans date_publication (plus jamais un jour dans `version`).
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
+  lock <- lire_lock()
   expect_true(all(is.na(dpe$date_reference)))
-  expect_true(all(dpe$version == format(Sys.Date(), "%Y-%m")))
-  expect_true(all(dpe$date_publication == as.character(Sys.Date())))
+  # #1118/#1128 : l'horloge des DPE est l'acquisition ATTESTÉE par le lockfile,
+  # pas la date courante de la suite (qui changeait le résultat d'un jour à
+  # l'autre). La version est le mois de cette acquisition, au format YYYY-MM.
+  expect_true(all(dpe$version ==
+    vapply(dpe$id, function(id) lock[[id]]$vintage, character(1))))
+  expect_true(all(dpe$date_publication ==
+    vapply(dpe$id, function(id) lock[[id]]$acquired_at, character(1))))
 })
 
-test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée", {
+test_that("la date de pull attestée des DPE vient du lockfile, pas du mtime du cache", {
   cache <- tempfile("cache-dpe-")
   dir.create(cache)
   on.exit(unlink(cache, recursive = TRUE))
@@ -56,10 +62,14 @@ test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée"
   v <- vintages_habitat(cache = cache)
 
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
-  # Issue #1114 : la version suit le format dérivé (YYYY-MM), la date complète
-  # du pull reste dans date_publication — jamais un jour dans `version`.
-  expect_true(all(dpe$version == "2026-07"))
-  expect_true(all(dpe$date_publication == "2026-07-01"))
+  # #1103/#1128 : avec un lockfile qui atteste déjà les DPE, un cache sans
+  # sidecar reprend l'acquisition verrouillée — le mtime du .rds ne pilote plus
+  # la vintage publiée. Version YYYY-MM, horloge complète dans date_publication.
+  lock <- lire_lock()
+  expect_true(all(dpe$version ==
+    vapply(dpe$id, function(id) lock[[id]]$vintage, character(1))))
+  expect_true(all(dpe$date_publication ==
+    vapply(dpe$id, function(id) lock[[id]]$acquired_at, character(1))))
   # la base roulante garde sa sémantique : pas de date de référence
   expect_true(all(is.na(dpe$date_reference)))
   # RP et DVF ne bougent pas : leurs dates restent celles du manifeste

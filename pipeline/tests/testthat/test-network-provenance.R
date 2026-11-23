@@ -80,7 +80,10 @@ test_that("publier_geometrie enregistre une empreinte par couche WFS", {
   expect_true(isTRUE(verifier_digests_couvrent_lectures_reseau(digests)))
 })
 
-test_that("le gel refuse une empreinte de géométrie sans référence au lock", {
+test_that("le gel refuse une empreinte de géométrie qui dérive du lock (#1119/#1122)", {
+  # #1128 : les trois couches WFS sont DÉSORMAIS verrouillées dans
+  # sources.lock.json. Une publication dont les octets ne sont pas ceux du
+  # lock est donc une dérive (`derive`), plus une absence de référence.
   sortie <- tempfile("sortie-geom-gel-")
   dir.create(sortie)
   on.exit(unlink(sortie, recursive = TRUE))
@@ -88,6 +91,21 @@ test_that("le gel refuse une empreinte de géométrie sans référence au lock",
   publier_geometrie(sortie, fetch = function(niveau) sain[[niveau]],
                     horloge = as.Date("2026-11-18"))
   erreur <- tryCatch(verifier_gel_release(sortie), error = function(e) e)
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "derive")
+})
+
+test_that("le gel refuse toujours une géométrie sans référence quand le lock est vide", {
+  # La branche `sans_reference` existe encore : elle porte sur une source que
+  # le lock ne connaît pas, pas sur les couches WFS désormais verrouillées.
+  sortie <- tempfile("sortie-geom-sans-ref-")
+  dir.create(sortie)
+  on.exit(unlink(sortie, recursive = TRUE))
+  sain <- fixture_geometrie_octets()
+  publier_geometrie(sortie, fetch = function(niveau) sain[[niveau]],
+                    horloge = as.Date("2026-11-18"))
+  erreur <- tryCatch(verifier_gel_release(sortie, lock = tempfile("lock-vide-geom-")),
+                     error = function(e) e)
   expect_s3_class(erreur, "erreur_gel_release")
   expect_identical(erreur$raison, "sans_reference")
 })

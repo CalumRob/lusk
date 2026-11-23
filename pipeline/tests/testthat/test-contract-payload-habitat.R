@@ -125,10 +125,12 @@ test_that("chaque indicateur est estampillé depuis sa source de référence", {
       "ADEME — Observatoire DPE, logements existants",
       info = cle
     )
+    # #1118/#1128 : base roulante DPE — l'horloge de publication est
+    # l'acquisition ATTESTÉE (lockfile), pas la date du jour de la suite.
     expect_equal(
       unique(p$indicateurs$vintage_date_publication[
         p$indicateurs$key == cle]),
-      as.character(Sys.Date()),
+      lire_lock()[["dpe_22"]]$acquired_at,
       info = cle
     )
     expect_true(all(is.na(p$indicateurs$vintage_date_reference[

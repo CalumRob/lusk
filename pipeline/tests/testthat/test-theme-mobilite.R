@@ -131,7 +131,9 @@ test_that("vintages_mobilite : quinze sources publiques incluent la production n
   lim <- v[v$id == "communes_limites", ]
   # Sans run (pas de digest), le vintage déclaré reste publié tel quel ; dès
   # qu'un run a acquis les octets, la base `telechargement` publie sa date.
-  expect_equal(lim$date_reference, "2025-01-01")
+  # #1128 : communes_limites est une lecture WFS roulante verrouillée (#1119) —
+  # sa référence est la date d'acquisition attestée, pas le littéral du manifeste.
+  expect_equal(lim$date_reference, lire_lock()[["communes_limites"]]$date_reference)
   expect_true(is.na(lim$date_publication))
   expect_equal(v$licence[v$id == "korrigo"], "odbl")
   expect_equal(v$licence[v$id == "bornes-recharges"], "lov2")

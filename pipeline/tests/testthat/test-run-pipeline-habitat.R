@@ -280,13 +280,13 @@ test_that("le run Habitat estampille les DPE depuis le cache (base roulante)", {
     expect_equal(
       unique(payload$indicateurs$vintage_date_publication[
         payload$indicateurs$key == cle]),
-      "2026-07-01",
+      lire_lock()[["dpe_22"]]$acquired_at,  # horloge DPE attestée (#1118/#1128)
       info = cle
     )
     expect_equal(
       unique(payload$indicateurs$vintage_version[
         payload$indicateurs$key == cle]),
-      "2026-07",  # issue #1114 : version dérivée YYYY-MM, pas la date complète
+      lire_lock()[["dpe_22"]]$vintage,  # version dérivée YYYY-MM, pas la date complète
       info = cle
     )
   }

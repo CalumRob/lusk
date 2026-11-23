@@ -497,13 +497,15 @@ test_that("vintages_programmes : six sources (les cinq ANCT/DGALN + la SCDL), ch
                   c("acv", "pvd", "crte", "territoires_industrie", "ort",
                     "subventions_scdl"))
 
-  # l'ORT : aucun vintage DÉCLARÉ (#1113) — la version est dérivée au run de
-  # l'actualisation maximale des lignes lues (voir test-source-lock.R) ; la
-  # référence et la publication source restent NA (la métadonnée de page,
-  # périmée d'environ 15 mois, n'est JAMAIS citée). La fraîcheur est PAR LIGNE.
+  # l'ORT : base `contenu_date` (#1113) — la version est DÉRIVÉE de
+  # l'actualisation maximale des lignes, attestée par le lockfile (#1105).
+  # La publication source reste NA (la métadonnée de page, périmée, n'est
+  # JAMAIS citée). La fraîcheur est PAR LIGNE. #1128 : le lockfile porte désormais
+  # cette attestation, donc version/référience ne sont plus NA.
   ort <- v[v$id == "ort", ]
-  expect_true(is.na(ort$version))
-  expect_true(is.na(ort$date_reference))
+  lock_ort <- lire_lock()[["ort"]]
+  expect_equal(ort$version, lock_ort$vintage)
+  expect_equal(ort$date_reference, lock_ort$date_reference)
   expect_true(is.na(ort$date_publication))
   expect_equal(ort$licence, "lov2")
 

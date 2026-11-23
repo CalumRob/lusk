@@ -335,9 +335,9 @@
     "sha256": "d1d22f4c4e7e2260eb75e60cc938b783125abb988496a1f2b31d5819a0850e0d",
     "bytes": 99341490,
     "acquired_at": "2026-11-18",
-    "vintage_basis": "telechargement",
-    "vintage": "2026-11",
-    "date_reference": "2026-11-18"
+    "vintage_basis": "declaree",
+    "vintage": "2026-10",
+    "date_reference": "2026-09-30"
   },
   {
     "source_id": "flores_a38",
@@ -715,8 +715,8 @@
     "sha256": "fa969e6f5d6cbf163a91b466ffead97f7fde355fd596d5c14997ea81501c79e2",
     "bytes": 48523416,
     "acquired_at": "2026-11-18",
-    "vintage_basis": "telechargement",
-    "vintage": "2026-11",
-    "date_reference": "2026-11-18"
+    "vintage_basis": "declaree",
+    "vintage": "2026-08-05",
+    "date_reference": "2026-08-05"
   }
 ]
