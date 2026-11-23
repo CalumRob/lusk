@@ -6,7 +6,9 @@
 param(
   [Parameter(Mandatory = $true)][string]$CandidateDir,
   [Parameter(Mandatory = $true)][string]$BaselineDir,
-  [string]$Scope = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000'
+  [string]$Scope = 'mobilite:stations_service,stations_service_1000,bornes_recharge_1000',
+  [string]$ReceiptPath = (Join-Path $env:TEMP 'lusk-full-publish-atomic-receipt.txt'),
+  [switch]$FullPathOnly
 )
 $ErrorActionPreference = 'Stop'
 foreach ($required in @('PGPASSFILE', 'LUSK_SCALAR_TEST_DATABASE', 'LUSK_SCALAR_TEST_USER')) {
@@ -29,7 +31,9 @@ $env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432
 $env:LUSK_SCALAR_SCOPE = $Scope
 $env:LUSK_RETAINED_BASELINE_TEST_CANDIDATE_DIR = (Resolve-Path -LiteralPath $CandidateDir).Path
 $env:LUSK_RETAINED_BASELINE_TEST_BASELINE_DIR = (Resolve-Path -LiteralPath $BaselineDir).Path
+$env:LUSK_RETAINED_BASELINE_RECEIPT = $ReceiptPath
 $env:LUSK_RETAINED_BASELINE_MUTEX_HELD = '1'
+if ($FullPathOnly) { $env:LUSK_FULL_PATH_PROOF_ONLY = '1' } else { Remove-Item Env:LUSK_FULL_PATH_PROOF_ONLY -ErrorAction SilentlyContinue }
 
 $mutex = New-Object System.Threading.Mutex($false, 'Local\LuskIntegrationContractDb')
 $acquired = $false
