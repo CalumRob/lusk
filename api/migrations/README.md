@@ -36,6 +36,24 @@ A partial rollout leaves comparison/AEDAR markers stale; the API fails closed
 with a named reason rather than borrowing a density or Bretagne cohort. No
 worker applied serving DDL, publication or deployment.
 
+**AEDAR pooled artifacts first (#1150).** The `publish-aedar-aggregates.R
+--check` step above *reads* the two already-pooled Parquet artifacts; it never
+builds them. In the same operator window, with the pinned DREAL and density
+sources present in the raw cache, rebuild both from `pipeline/` in this order:
+
+```powershell
+Rscript scripts/build-aedar-density-aggregate.R
+Rscript scripts/build-aedar-littoral-aggregate.R
+Rscript scripts/publish-aedar-aggregates.R --check
+```
+
+The littoral builder obtains its crosswalk through
+`read_aedar_littoral_reference()`, which binds to the
+`code_commune / littoral_code / littoral_classement_source` output contract of
+`construire_crosswalk_littoral()` and derives the served C/NC membership from
+it. A stale or renamed crosswalk fails closed; the publisher never invents an
+NC classification for a commune absent from the pinned DREAL positive list.
+
 **Full retained publication is atomic (#1126).** The full backend publication
 (`publish-serving-tables.R --publish` / the `publie_backend_retained` target,
 i.e. `publish_retained_backend_from_parquet`) now refreshes the declared-profile
@@ -757,6 +775,11 @@ from `pipeline/` after the approved code/schema rollout:
 ```powershell
 Rscript scripts/publish-aedar-aggregates.R --check
 ```
+
+Before that check, rebuild both pooled artifacts from `pipeline/`
+(`Rscript scripts/build-aedar-density-aggregate.R` and
+`Rscript scripts/build-aedar-littoral-aggregate.R`): `--check` reads their
+Parquets and does not build them (#1150).
 
 This reacquires/validates the official source aggregates and producer-owned
 pooled-density artifact, then atomically writes a versioned reference-only
