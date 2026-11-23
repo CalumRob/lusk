@@ -18,6 +18,9 @@ test_that("le leaf SQL attend les faits, la référence finale et les vintages",
   expect_match(command, "scalar_serving_artifacts", fixed = TRUE)
   expect_match(command, "typed_reading_serving_artifacts", fixed = TRUE)
   expect_match(command, "publish_retained_backend_from_parquet", fixed = TRUE)
+  # #1148 — the other documented full-publication entry point resolves the
+  # producer CONSOENAF source through the same resolver as the --publish CLI.
+  expect_match(command, "resolve_milieux_conso_source", fixed = TRUE)
   expect_false(grepl("service_registry|building_ramp|essential_service_access|bpe_profile", command))
 })
 
