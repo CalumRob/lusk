@@ -1,5 +1,8 @@
 # ADR-0044: Indicator-scoped canonical scalar materialization
 
+- **Superseded (pending) by ADR-0049** (2026-11-23): the resource becomes the
+  unit of build and publication. This ADR stays in force until ADR-0049
+  migration step 4 retires the scoped path and closure guard.
 - **Status:** Accepted — implementation decision for #989, 2026-11-12. The
   serving database publication remains the separately gated operator step.
   Amended by #995 (2026-11-12): the pre-write guard and the write are scoped to
