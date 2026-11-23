@@ -277,10 +277,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   // #1035: the route-change identity check used to share this test's body. It
-  // mounts a second (commune) fiche and returns to the region, so it is its own
-  // 5 s-budgeted case: bundling it with the region-fact lock above pushed that
-  // case past vitest's default timeout under a full-suite CI load (6127 ms in
-  // run 44068143211; 5411 ms locally under the same command).
+  // mounts a second (commune) fiche and returns to the region, so it keeps its
+  // own budget. It really exceeds vitest's 5 s default under load: 6127 ms in
+  // CI run 44068143211, and 5295 ms in the measured local full-suite run on the
+  // published payload (2026-11-23). The 15 s budget is per-test, not global.
   it('gains the Cahier comparison eligibility when a route change reaches a comparable native identity', async () => {
     const requests: Array<Array<Record<string, any>>> = []
     const nativeFetch = nativeSemanticFetch(requests)
@@ -296,7 +296,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     expect(wrapper.get('.aedar-access-mode-selector').text()).toContain('Groupe comparé')
     wrapper.unmount()
-  })
+  // Same mounted double-navigation as above: 5448 ms measured in the local
+  // full-suite run, past the 5 s default, so it needs its own explicit budget.
+  }, 15_000)
 
   it('drops the Cahier comparison eligibility when a route change reaches the ineligible region', async () => {
     const requests: Array<Array<Record<string, any>>> = []
@@ -312,7 +314,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text().toLowerCase()).not.toContain('groupe comparé')
     expect(requests.flat().filter(item => item.target.type === 'region' && item.intent.kind !== 'facts')).toEqual([])
     wrapper.unmount()
-  })
+  // 5448 ms measured in the local full-suite run (#1158); 15 s covers CI load
+  // without raising vitest's default for every short test in the suite.
+  }, 15_000)
 
   it.each([['commune', '35238'], ['epci', '243500725'], ['departement', '35']])(
     'renders the served %s page-3 default after extending page 2, then retains both on revisit', async (type, id) => {
@@ -2645,7 +2649,10 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     const parking = wrapper.get('.mobilite-section--stationnement-ravitaillement')
     expect(parking.find('.cahier-comparison-value__reference').exists()).toBe(true)
     wrapper.unmount()
-  })
+  // Mounted fiche + real reference + area acquisition: 1189 ms in the local
+  // full-suite run, but the 2026-11-23 release run timed out this case at the
+  // 5 s default under CI load. A per-test 15 s budget keeps the assertion set.
+  }, 15_000)
 
   it('garde le rang servi d’un groupe tapé à travers preset → custom → autre custom → vide, y compris face à une réponse tardive (#981)', async () => {
     const territoryId = '22001'
@@ -2762,7 +2769,10 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     expect(wrapper.find('.figure-indicateur-comparaison [role="img"]').exists()).toBe(false)
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
     wrapper.unmount()
-  }, 20_000)
+  // Longest case in this file: 11 054 ms measured locally on the published
+  // payload (#1158); the release run also hit its 20 s budget in CI. Raise only
+  // this case to 30 s, never the suite-wide default.
+  }, 30_000)
 
   it('nomme la portée custom dans le nom accessible de la puce d’un thème générique (#981)', async () => {
     const requests: Array<Array<Record<string, any>>> = []
