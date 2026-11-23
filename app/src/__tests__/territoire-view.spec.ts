@@ -2177,7 +2177,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(singleton?.intent.members).toEqual([{ type: 'commune', id: '22001' }])
     expect(fetchBloque).not.toHaveBeenCalled()
     wrapper.unmount()
-  }, 20_000)
+  // Longest case in this file: 11 054 ms measured locally on the published
+  // payload (#1158); the release run also hit its 20 s budget in CI. Raise only
+  // this case to 30 s, never the suite-wide default.
+  }, 30_000)
 
   it.skipIf(!process.env.LUSK_AEDAR_BRIDGE_ARTIFACT)(
     'replays guarded R publisher API responses through the mounted production route, with typed detail failing independently',
@@ -2769,10 +2772,7 @@ describe('TerritoireView — #860 (ruling 2026-11-03) : le bouton « Comparaison
     expect(wrapper.find('.figure-indicateur-comparaison [role="img"]').exists()).toBe(false)
     expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
     wrapper.unmount()
-  // Longest case in this file: 11 054 ms measured locally on the published
-  // payload (#1158); the release run also hit its 20 s budget in CI. Raise only
-  // this case to 30 s, never the suite-wide default.
-  }, 30_000)
+  }, 20_000)
 
   it('nomme la portée custom dans le nom accessible de la puce d’un thème générique (#981)', async () => {
     const requests: Array<Array<Record<string, any>>> = []
