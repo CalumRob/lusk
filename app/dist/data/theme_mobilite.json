@@ -3,84 +3,6 @@
   "label": "Mobilité",
   "subgroups": [
     {
-      "key": "acces-aux-services",
-      "label": "L’accès aux services",
-      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.",
-      "indicators": [
-        "tot_loss_t",
-        "tot_loss_b",
-        "iso_alimentation",
-        "iso_sante",
-        "iso_administration",
-        "iso_ecole",
-        "iso_banque",
-        "share_food_t",
-        "share_food_b",
-        "share_food_c",
-        "share_health_t",
-        "share_health_b",
-        "share_health_c",
-        "share_admin_t",
-        "share_admin_b",
-        "share_admin_c",
-        "share_school_t",
-        "share_school_b",
-        "share_school_c",
-        "share_bank_t",
-        "share_bank_b",
-        "share_bank_c",
-        "avg_tot_car",
-        "avg_tot_b",
-        "avg_tot_t",
-        "avg_div_car",
-        "avg_div_b",
-        "avg_div_t",
-        "nb_buildings"
-      ],
-      "reading": {
-        "story_key": "vingt-minutes-sans-voiture",
-        "params": [
-          "div_loss_t",
-          "div_loss_b",
-          "tot_loss_t",
-          "tot_loss_b",
-          "pct_iso_full_t",
-          "classification_saillance"
-        ],
-        "template": [
-          {
-            "type": "text",
-            "content": "Sans voiture, "
-          },
-          {
-            "type": "param",
-            "key": "div_loss_t"
-          },
-          {
-            "type": "text",
-            "content": " types de services disparaissent de l’accès quotidien de "
-          },
-          {
-            "type": "territoire"
-          },
-          {
-            "type": "text",
-            "content": ". "
-          },
-          {
-            "type": "link",
-            "href": "/sources",
-            "children": [
-              {
-                "type": "text",
-                "content": "Sources"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "key": "partage-de-lespace-public",
       "label": "Le partage de l’espace public",
       "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
@@ -110,7 +32,7 @@
     {
       "key": "offre-transports-commun",
       "label": "L’offre de transports en commun",
-      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
+      "framing": "La part des adresses à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
       "indicators": [
         "offre_tc",
         "raccordement_tc",
@@ -133,36 +55,7 @@
     "stations_service",
     "stations_service_1000",
     "bornes_recharge_1000",
-    "tot_loss_t",
-    "tot_loss_b",
     "offre_cyclable",
-    "iso_alimentation",
-    "iso_sante",
-    "iso_administration",
-    "iso_ecole",
-    "iso_banque",
-    "share_food_t",
-    "share_food_b",
-    "share_food_c",
-    "share_health_t",
-    "share_health_b",
-    "share_health_c",
-    "share_admin_t",
-    "share_admin_b",
-    "share_admin_c",
-    "share_school_t",
-    "share_school_b",
-    "share_school_c",
-    "share_bank_t",
-    "share_bank_b",
-    "share_bank_c",
-    "avg_tot_car",
-    "avg_tot_b",
-    "avg_tot_t",
-    "avg_div_car",
-    "avg_div_b",
-    "avg_div_t",
-    "nb_buildings",
     "raccordement_tc",
     "raccordement_courbe",
     "raccordement_reference"
@@ -181,73 +74,17 @@
     "stations_service": "bpe_b316",
     "stations_service_1000": "bpe_b316",
     "bornes_recharge_1000": "bornes-recharges",
-    "tot_loss_t": "mobilite_snapshot",
-    "tot_loss_b": "mobilite_snapshot",
     "offre_cyclable": "osm_reseaux",
-    "iso_alimentation": "mobilite_snapshot",
-    "iso_sante": "mobilite_snapshot",
-    "iso_administration": "mobilite_snapshot",
-    "iso_ecole": "mobilite_snapshot",
-    "iso_banque": "mobilite_snapshot",
-    "share_food_t": "mobilite_snapshot",
-    "share_food_b": "mobilite_snapshot",
-    "share_food_c": "mobilite_snapshot",
-    "share_health_t": "mobilite_snapshot",
-    "share_health_b": "mobilite_snapshot",
-    "share_health_c": "mobilite_snapshot",
-    "share_admin_t": "mobilite_snapshot",
-    "share_admin_b": "mobilite_snapshot",
-    "share_admin_c": "mobilite_snapshot",
-    "share_school_t": "mobilite_snapshot",
-    "share_school_b": "mobilite_snapshot",
-    "share_school_c": "mobilite_snapshot",
-    "share_bank_t": "mobilite_snapshot",
-    "share_bank_b": "mobilite_snapshot",
-    "share_bank_c": "mobilite_snapshot",
-    "avg_tot_car": "mobilite_snapshot",
-    "avg_tot_b": "mobilite_snapshot",
-    "avg_tot_t": "mobilite_snapshot",
-    "avg_div_car": "mobilite_snapshot",
-    "avg_div_b": "mobilite_snapshot",
-    "avg_div_t": "mobilite_snapshot",
-    "nb_buildings": "mobilite_snapshot",
     "raccordement_tc": "raccordement_gtfs_national",
     "raccordement_courbe": "raccordement_gtfs_national",
     "raccordement_reference": "raccordement_gtfs_national"
   },
   "indicator_labels": {
-    "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
-    "iso_sante": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
-    "iso_administration": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
-    "iso_ecole": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
-    "iso_banque": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
-    "share_food_t": "Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun",
-    "share_food_b": "Part des bâtiments avec accès à l’alimentation — à vélo",
-    "share_food_c": "Part des bâtiments avec accès à l’alimentation — en voiture",
-    "share_health_t": "Part des bâtiments avec accès à la santé — à pied ou en transports en commun",
-    "share_health_b": "Part des bâtiments avec accès à la santé — à vélo",
-    "share_health_c": "Part des bâtiments avec accès à la santé — en voiture",
-    "share_admin_t": "Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun",
-    "share_admin_b": "Part des bâtiments avec accès aux services administratifs — à vélo",
-    "share_admin_c": "Part des bâtiments avec accès aux services administratifs — en voiture",
-    "share_school_t": "Part des bâtiments avec accès à l’école — à pied ou en transports en commun",
-    "share_school_b": "Part des bâtiments avec accès à l’école — à vélo",
-    "share_school_c": "Part des bâtiments avec accès à l’école — en voiture",
-    "share_bank_t": "Part des bâtiments avec accès à la banque — à pied ou en transports en commun",
-    "share_bank_b": "Part des bâtiments avec accès à la banque — à vélo",
-    "share_bank_c": "Part des bâtiments avec accès à la banque — en voiture",
-    "avg_tot_car": "Nombre moyen d’équipements accessibles — en voiture",
-    "avg_tot_b": "Nombre moyen d’équipements accessibles — à vélo",
-    "avg_tot_t": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
-    "avg_div_car": "Nombre moyen de types d’équipements accessibles — en voiture",
-    "avg_div_b": "Nombre moyen de types d’équipements accessibles — à vélo",
-    "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
-    "nb_buildings": "Bâtiments résidentiels analysés",
     "voitures_menage": "Voitures par ménage",
     "reseaux": "Réseaux à pied / vélo / voiture",
     "reseaux_par_habitant": "Longueur du réseau par habitant",
     "surface_reseaux_routiers": "Part du territoire consacré aux réseaux routiers",
-    "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
+    "offre_tc": "Part des adresses près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
     "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
     "places_stationnement_voiture_1000": "Places de stationnement voiture pour 1 000 hab.",
@@ -256,8 +93,6 @@
     "stations_service": "Stations-service",
     "stations_service_1000": "Stations-service pour 1 000 hab.",
     "bornes_recharge_1000": "Bornes de recharge pour 1 000 hab.",
-    "tot_loss_t": "Perte totale d’accès — à pied ou en transports en commun",
-    "tot_loss_b": "Perte totale d’accès — à vélo",
     "offre_cyclable": "L’offre cyclable",
     "raccordement_tc": "Population bretonne jointe en 90 minutes en transports en commun",
     "raccordement_courbe": "Courbe de population bretonne jointe selon le temps de trajet",
@@ -437,38 +272,13 @@
       "t0355": "355"
     }
   },
-  "param_labels": {
-    "div_loss_t": "Types de services perdus à pied ou en transports en commun",
-    "div_loss_b": "Types de services perdus à vélo",
-    "tot_loss_t": "Nombre d'accès perdus à pied ou en transports en commun",
-    "tot_loss_b": "Nombre d'accès perdus à vélo",
-    "pct_iso_full_t": "Part des bâtiments perdant tout accès",
-    "classification_saillance": "Classification de saillance"
-  },
+  "param_labels": {},
   "indicator_caveats": {
     "raccordement_tc": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel.",
     "raccordement_courbe": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel.",
     "raccordement_reference": "Trajets GTFS planifiés entre arrêts, mesurés le 21 octobre 2026. Les agrégats sont des moyennes égales incluant les zéros du modéle ; ces zéros ne disent pas qu’il n’existe aucun transport réel."
   },
   "indicator_pages": {
-    "nb_buildings": {
-      "indicator": "nb_buildings",
-      "label": "Bâtiments résidentiels analysés",
-      "definition": "Nombre de bâtiments résidentiels analysés dans le snapshot Mobilité pour le territoire.",
-      "unit": "bâtiments",
-      "calculation": "Dénombrement publié par le pipeline à partir du snapshot Mobilité.",
-      "direction": "high",
-      "caveats": "Ce total appartient au snapshot Mobilité et peut différer des dénominateurs propres aux rampes et grilles bâtimentières.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
     "voitures_menage": {
       "indicator": "voitures_menage",
       "label": "Voitures par ménage",
@@ -653,12 +463,12 @@
     },
     "offre_tc": {
       "indicator": "offre_tc",
-      "label": "Part des bâtiments près d’un arrêt (à 500 m)",
-      "definition": "Part des bâtiments du territoire situés à moins de 500 mètres d’un arrêt de transports en commun.",
+      "label": "Part des adresses près d’un arrêt (à 500 m)",
+      "definition": "Part des adresses résidentielles du territoire situées à moins de 500 mètres d’un arrêt de transports en commun.",
       "unit": "%",
-      "calculation": "Part des bâtiments à moins de 500 mètres d’un arrêt référencé dans les réseaux de transports publics bretons, publiée par le pipeline.",
+      "calculation": "Part des adresses du spine résidentiel AEDAR à moins de 500 mètres d’un arrêt référencé dans les réseaux de transports publics bretons : le dénominateur est le nombre d’adresses (n_adresses), jamais un nombre de bâtiments ; publiée par le pipeline.",
       "direction": "high",
-      "caveats": "Seuls comptent les arrêts référencés par la base Korrigo : un réseau absent de la base reste invisible.",
+      "caveats": "Seuls comptent les arrêts référencés par la base Korrigo : un réseau absent de la base reste invisible. Le dénominateur est le décompte d’adresses du spine AEDAR (n_adresses), pas le bâti.",
       "levels": [
         "commune",
         "epci",
@@ -816,240 +626,6 @@
       ],
       "family": "scalar"
     },
-    "tot_loss_t": {
-      "indicator": "tot_loss_t",
-      "label": "Perte totale d’accès — à pied ou en transports en commun",
-      "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à pied ou en transports en commun en vingt minutes.",
-      "unit": "accès perdus",
-      "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste sans voiture ; agrégée du niveau communal vers les niveaux supérieurs.",
-      "direction": "low",
-      "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "tot_loss_b": {
-      "indicator": "tot_loss_b",
-      "label": "Perte totale d’accès — à vélo",
-      "definition": "Volume d’accès aux services que le territoire perd sans voiture : les services atteignables en voiture depuis ses bâtiments qui ne le sont plus à vélo en vingt minutes.",
-      "unit": "accès perdus",
-      "calculation": "Médiane pondérée sur les bâtiments du territoire du nombre d’accès perdus par bâtiment — la différence entre l’accès en voiture et l’accès qui reste à vélo ; agrégée du niveau communal vers les niveaux supérieurs.",
-      "direction": "low",
-      "caveats": "La valeur se lit comme une différence d’accès, en accès perdus — jamais un taux ni un ratio : les écarts entre territoires se comparent en accès, pas en pourcentage. La lecture à vélo est ramenée pour ne jamais être plus défavorable que la lecture à pied ou en transports en commun. L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_tot_car": {
-      "indicator": "avg_tot_car",
-      "label": "Nombre moyen d’équipements accessibles — en voiture",
-      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.",
-      "unit": "équipements / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_tot_b": {
-      "indicator": "avg_tot_b",
-      "label": "Nombre moyen d’équipements accessibles — à vélo",
-      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.",
-      "unit": "équipements / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_tot_t": {
-      "indicator": "avg_tot_t",
-      "label": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
-      "definition": "Nombre moyen d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.",
-      "unit": "équipements / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_div_car": {
-      "indicator": "avg_div_car",
-      "label": "Nombre moyen de types d’équipements accessibles — en voiture",
-      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel en voiture en vingt minutes.",
-      "unit": "types d’équipement / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_div_b": {
-      "indicator": "avg_div_b",
-      "label": "Nombre moyen de types d’équipements accessibles — à vélo",
-      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à vélo en vingt minutes.",
-      "unit": "types d’équipement / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "avg_div_t": {
-      "indicator": "avg_div_t",
-      "label": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
-      "definition": "Nombre moyen de types d’équipements accessibles par bâtiment résidentiel à pied ou en transports en commun en vingt minutes.",
-      "unit": "types d’équipement / bâtiment",
-      "calculation": "Moyenne publiée par le snapshot d’accessibilité.",
-      "direction": "high",
-      "caveats": "L’analyse est calculée à une date figée et se rafraîchit sur un rythme lent.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "iso_alimentation": {
-      "indicator": "iso_alimentation",
-      "label": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
-      "definition": "Part des bâtiments du territoire sans aucun accès à l’alimentation à pied ou en transports en commun en vingt minutes.",
-      "unit": "%",
-      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
-      "direction": "low",
-      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "iso_sante": {
-      "indicator": "iso_sante",
-      "label": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
-      "definition": "Part des bâtiments du territoire sans aucun accès à la santé à pied ou en transports en commun en vingt minutes.",
-      "unit": "%",
-      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
-      "direction": "low",
-      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "iso_administration": {
-      "indicator": "iso_administration",
-      "label": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
-      "definition": "Part des bâtiments du territoire sans aucun accès aux services administratifs à pied ou en transports en commun en vingt minutes.",
-      "unit": "%",
-      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
-      "direction": "low",
-      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "iso_ecole": {
-      "indicator": "iso_ecole",
-      "label": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
-      "definition": "Part des bâtiments du territoire sans aucun accès à l’école à pied ou en transports en commun en vingt minutes.",
-      "unit": "%",
-      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
-      "direction": "low",
-      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
-    "iso_banque": {
-      "indicator": "iso_banque",
-      "label": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
-      "definition": "Part des bâtiments du territoire sans aucun accès à la banque à pied ou en transports en commun en vingt minutes.",
-      "unit": "%",
-      "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.",
-      "direction": "low",
-      "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "mobilite_snapshot"
-      ],
-      "family": "scalar"
-    },
     "raccordement_tc": {
       "indicator": "raccordement_tc",
       "label": "Population bretonne jointe en 90 minutes en transports en commun",
@@ -1070,6 +646,9 @@
       "family": "scalar"
     },
     "raccordement_courbe": {
+      "cellule": {
+        "declare": false
+      },
       "indicator": "raccordement_courbe",
       "label": "Courbe de population bretonne jointe selon le temps de trajet",
       "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arrêts de transports en commun de ce territoire, selon la durée du trajet planifié aller simple.",
@@ -1462,39 +1041,6 @@
         }
       ],
       "caveat": "Les quatre archives départementales les plus récentes disponibles alimentent une clé unique. Les polygones US4.1.1 sont comptés quelle que soit leur valeur artificialisé/non artificialisé ; l’OCS-GE ne distingue pas les modes de déplacement."
-    },
-    "mobilite_snapshot": {
-      "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
-      "publisher": "Lusk",
-      "url": "https://github.com/CalumRob/lusk",
-      "licence": "ODbL — © OpenStreetMap contributors",
-      "vintage": "Snapshot 2026-02",
-      "freshness": "6 août 2026",
-      "serving_disposition": "excluded_legacy_accessibility",
-      "vintages": [
-        {
-          "id": "mobilite_snapshot",
-          "label": "Snapshot 2026-02",
-          "version": "2026-02",
-          "licence": "ODbL — © OpenStreetMap contributors",
-          "dateReference": "2026-02-28",
-          "datePublication": "2026-08-06"
-        }
-      ],
-      "clocks": [
-        {
-          "name": "Équipements de proximité",
-          "frequency": "annuelle — un nouveau millésime publié chaque année",
-          "reference": "BPE 2024",
-          "trigger": "Recalcul manuel sur décision après un nouveau millésime significatif."
-        },
-        {
-          "name": "Bâtiments résidentiels",
-          "frequency": "par campagnes espacées",
-          "reference": "BDNB juillet 2025",
-          "trigger": "Recalcul manuel sur décision après une actualisation majeure."
-        }
-      ]
     },
     "bpe_b316": {
       "dataset": "INSEE — Base permanente des équipements (B316)",
