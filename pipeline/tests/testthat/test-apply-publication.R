@@ -78,6 +78,125 @@ test_that("apply refuses an adapter-less closure member BEFORE any connection", 
   expect_identical(connexions, 0L)
 })
 
+# Two versions of one scalar artefact differing only by label (a definition
+# change). `dep` optionally declares a comparison_scalar dependency so another
+# resource joins the closure.
+fixture_magasin_definition <- function(root, id, label_v1, label_v2, dep = NULL) {
+  projection <- artefacts_fixture_scalar_indicator(id, paste0("src_", id),
+    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  reference <- artefacts_fixture_reference()
+  handler <- REGISTRE_FORMES_RESSOURCE[["scalar"]]
+  digests <- digests_lignage_ressource(paste0("src_", id),
+    artefacts_fixture_digests(paste0("src_", id)))
+  versions <- character()
+  for (label in c(label_v1, label_v2)) {
+    p <- projection
+    p$descriptors$label <- label
+    p$descriptors$descriptor_version <- paste0(id, "-", substr(label, 1L, 6L))
+    comparaison <- comparaison_scalaire_ressource(p, id, reference)
+    desc <- p$descriptors
+    # Dependency is a DECLARATION carried by the artefact descriptor only;
+    # the producer projection keeps its exact validated field set.
+    if (!is.null(dep)) desc$comparison_scalar <- dep
+    contenu <- contenu_artefact(faits_forme(handler, p), desc,
+                                p$provenance, comparaison)
+    versions <- c(versions, ecrire_artefact_ressource(id, "scalar", contenu,
+      digests_lignage = digests, root = root)$version)
+  }
+  stats::setNames(versions, c("v1", "v2"))
+}
+
+fixture_apply_definition_run <- function(root, ids, builds, live, registre,
+                                         confirm = character()) {
+  ecritures <- 0L; recettes <- 0L
+  registry <- REGISTRE_FORMES_RESSOURCE
+  registry$scalar$remplacer <- function(...) { ecritures <<- ecritures + 1L; invisible(NULL) }
+  local_mocked_bindings(
+    construites_depuis_magasin = function(root = NULL) builds,
+    lire_listing_live_registre = function(con) live,
+    ecrire_recette_ressource = function(...) { recettes <<- recettes + 1L; invisible(TRUE) },
+    ecrire_recette_locale = function(...) "x.json",
+    REGISTRE_FORMES_RESSOURCE = registry)
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) force(expr),
+    dbGetQuery = fixture_dbget_reference(),
+    .package = "DBI")
+  err <- NULL
+  tryCatch(apply_publication(ids, confirm_definition = confirm, root = root,
+    registre = registre, con = structure(list(), class = "mock")),
+    error = function(e) err <<- e)
+  list(err = err, ecritures = ecritures, recettes = recettes)
+}
+
+test_that("confirmed definition change: unconfirmed refuses, confirmed proceeds", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  v <- fixture_magasin_definition(root, "a", "Anchor", "Redefined Anchor")
+  builds <- data.frame(ressource = "a", forme = "scalar", version = v[["v2"]])
+  live <- data.frame(ressource = "a", version = v[["v1"]])
+  lock <- stats::setNames(list(list(sha256 = "sha256-src_a",
+                                    acquired_at = "2026-01-01")), "src_a")
+
+  # (a) unconfirmed -> refused, zero writes.
+  a <- fixture_apply_definition_run(root, "a", builds, live, lock)
+  expect_s3_class(a$err, "erreur_apply")
+  expect_identical(a$err$refus, "definition")
+  expect_match(conditionMessage(a$err), "--confirm-definition <id>", fixed = TRUE)
+  expect_identical(a$ecritures, 0L)
+  expect_identical(a$recettes, 0L)
+
+  # (b) confirmed -> proceeds.
+  b <- fixture_apply_definition_run(root, "a", builds, live, lock, confirm = "a")
+  expect_null(b$err)
+  expect_identical(b$ecritures, 1L)
+  expect_identical(b$recettes, 1L)
+})
+
+test_that("confirming one resource does not lift another's definition block", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  va <- fixture_magasin_definition(root, "a", "Anchor", "Redefined Anchor")
+  vb <- fixture_magasin_definition(root, "b", "Anchor B", "Redefined B", dep = "a")
+  builds <- data.frame(ressource = c("a", "b"), forme = c("scalar", "scalar"),
+                       version = c(va[["v2"]], vb[["v2"]]))
+  live <- data.frame(ressource = c("a", "b"), version = c(va[["v1"]], vb[["v1"]]))
+  lock <- stats::setNames(lapply(c("src_a", "src_b"), function(s)
+    list(sha256 = paste0("sha256-", s), acquired_at = "2026-01-01")),
+    c("src_a", "src_b"))
+
+  r <- fixture_apply_definition_run(root, "a", builds, live, lock, confirm = "a")
+  expect_s3_class(r$err, "erreur_apply")
+  expect_identical(r$err$refus, "definition")
+  expect_match(conditionMessage(r$err), "b \\(definition: label\\)")
+  expect_identical(r$ecritures, 0L)
+})
+
+test_that("confirming a definition does not lift a freeze drift in the closure", {
+  # Preflight freeze first; confirmation cannot lift an empreinte dérivée.
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  v <- fixture_magasin_definition(root, "a", "Anchor", "Redefined Anchor")
+  builds <- data.frame(ressource = "a", forme = "scalar", version = v[["v2"]])
+  live <- data.frame(ressource = "a", version = v[["v1"]])
+  lock_derive <- stats::setNames(list(list(sha256 = "sha256-DERIVE",
+                                           acquired_at = "2026-01-01")), "src_a")
+  r <- fixture_apply_definition_run(root, "a", builds, live, lock_derive, confirm = "a")
+  expect_true(inherits(r$err, "error"))
+  expect_true(grepl("dérive|gel", conditionMessage(r$err)))
+  expect_identical(r$ecritures, 0L)
+  expect_identical(r$recettes, 0L)
+
+  # Direct verdict level: a gel cause survives confirmation of the definition.
+  plan <- fixture_plan_minimal(data.frame(
+    ressource = "a", gel = "refused", gel_raison = "derive", gel_detail = "",
+    bloque = TRUE, bloque_par = "a", check = "none", definition = TRUE,
+    definition_champs = I(list("label")), stringsAsFactors = FALSE))
+  err <- tryCatch(verifier_refus_apply(plan, "a", confirm_definition = "a"),
+                  error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "gel")
+})
+
 test_that("analyser_ids_apply parses plain and @version ids", {
   a <- analyser_ids_apply(c("densite", "offre_tc@v1"))
   expect_identical(a$ressource, c("densite", "offre_tc"))
@@ -104,8 +223,13 @@ test_that("verifier_refus_apply refuses freeze, regression, definition and block
   reg <- base; reg$check[1] <- "regression"
   expect_error(verifier_refus_apply(fixture_plan_minimal(reg), "a"), "régression")
 
-  blk <- base; blk$bloque[1] <- TRUE; blk$bloque_par[1] <- "b (gel: derive)"
-  expect_error(verifier_refus_apply(fixture_plan_minimal(blk), "a"), "fermeture bloquée")
+  # A blocker on another member of the closure blocks a too.
+  blk <- base; blk$gel[2] <- "refused"; blk$gel_raison[2] <- "derive"
+  err_blk <- tryCatch(verifier_refus_apply(fixture_plan_minimal(blk), c("a", "b")),
+                      error = identity)
+  expect_s3_class(err_blk, "erreur_apply")
+  expect_match(conditionMessage(err_blk), "b \\(derive\\)")
+  expect_match(conditionMessage(err_blk), "zéro écriture", fixed = TRUE)
 
   definition <- base; definition$definition[1] <- TRUE
   definition$definition_champs[[1]] <- c("label", "unit")

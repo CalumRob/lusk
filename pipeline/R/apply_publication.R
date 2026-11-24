@@ -27,8 +27,13 @@ analyser_ids_apply <- function(ids) {
   data.frame(ressource = ressources, version = versions, stringsAsFactors = FALSE)
 }
 
-# Refus PUR : aucun accès à la base, aucun write. `plan` est celui que `apply`
-# vient de calculer. Un refus dans une composante bloque TOUTE la fermeture.
+# Refus PUR : aucun accès à la base, aucun write. Le verdict est recomposé à
+# partir des CAUSES du plan (gel, régression, définition), puis propagé à toute
+# la composante de fermeture. Une confirmation ne lève QUE la cause « définition
+# modifiée » de la ressource nommée : gel / empreinte absente / régression /
+# autre membre non confirmé continuent de bloquer. Le champ `bloque` du plan
+# reste le verdict d'affichage (sans confirmation) — on ne le contourne pas, on
+# réévalue ses causes avec la confirmation fournie.
 verifier_refus_apply <- function(plan, cibles, confirm_definition = character()) {
   lignes <- plan$ressources
   indices <- match(cibles, as.character(lignes$ressource))
@@ -36,39 +41,53 @@ verifier_refus_apply <- function(plan, cibles, confirm_definition = character())
     stop(erreur_apply("artefact_absent",
       paste0("apply : ressource sans artefact construit : ",
              paste(cibles[is.na(indices)], collapse = ","), " — zéro écriture.")))
-  cibles_lignes <- lignes[indices, , drop = FALSE]
+  confirmes <- as.character(confirm_definition)
 
-  gel_refuse <- cibles_lignes[identical_or_false(cibles_lignes$gel, "refused"), , drop = FALSE]
-  if (nrow(gel_refuse))
-    stop(erreur_apply("gel", paste0(
-      "apply : gel de lignage refusé pour ",
-      paste(gel_refuse$ressource, gel_refuse$gel_raison, sep = "(", collapse = "), "),
-      ") — zéro écriture.")))
+  cause_ligne <- function(i) {
+    ressource <- as.character(lignes$ressource[[i]])
+    causes <- list()
+    if (isTRUE(identical_or_false(lignes$gel[[i]], "refused"))) {
+      detail <- if ("gel_detail" %in% names(lignes) &&
+                    !is.na(lignes$gel_detail[[i]]) && nzchar(lignes$gel_detail[[i]]))
+        paste0(": ", lignes$gel_detail[[i]]) else ""
+      causes[[length(causes) + 1L]] <- list(
+        type = "gel", ressource = ressource,
+        motif = paste0(ressource, " (", lignes$gel_raison[[i]], detail, ")"))
+    }
+    if (isTRUE(identical_or_false(lignes$check[[i]], "regression")))
+      causes[[length(causes) + 1L]] <- list(
+        type = "regression", ressource = ressource,
+        motif = paste0(ressource, " (régression)"))
+    if (isTRUE(lignes$definition[[i]]) && !ressource %in% confirmes) {
+      champs <- lignes$definition_champs[[i]]
+      causes[[length(causes) + 1L]] <- list(
+        type = "definition", ressource = ressource,
+        motif = paste0(ressource, " (definition: ",
+                       paste(as.character(champs), collapse = "+"), ")"))
+    }
+    causes
+  }
 
-  bloquees <- cibles_lignes[isTRUE(cibles_lignes$bloque), , drop = FALSE]
-  if (nrow(bloquees))
-    stop(erreur_apply("fermeture_bloquee", paste0(
-      "apply : fermeture bloquée pour ",
-      paste(bloquees$ressource, "(", bloquees$bloque_par, ")", collapse = "; "),
-      " — zéro écriture.")))
-
-  regressions <- cibles_lignes[identical_or_false(cibles_lignes$check, "regression"), ,
-                               drop = FALSE]
-  if (nrow(regressions))
-    stop(erreur_apply("regression", paste0(
-      "apply : régression de code pour ", paste(regressions$ressource, collapse = ","),
-      " — zéro écriture.")))
-
-  changees <- cibles_lignes[isTRUE(cibles_lignes$definition) &
-                              !cibles_lignes$ressource %in% as.character(confirm_definition), ,
-                            drop = FALSE]
-  if (nrow(changees))
-    stop(erreur_apply("definition", paste0(
-      "apply : définition modifiée non confirmée pour ",
-      paste(changees$ressource, "(", vapply(changees$definition_champs,
-        function(x) paste(as.character(x), collapse = "+"), character(1)), ")",
-        collapse = "; "),
-      " — passer --confirm-definition <id> — zéro écriture.")))
+  # Propagation au sein de la fermeture : une cause sur un membre bloque TOUTE
+  # sa composante, car les ressources sont publiées dans la même transaction.
+  groupes <- if (!is.null(plan$artefacts) && length(plan$artefacts))
+    composantes_cascade(cibles, plan$artefacts) else list(cibles)
+  for (groupe in groupes) {
+    causes <- unlist(lapply(groupe, function(id)
+      cause_ligne(match(id, as.character(lignes$ressource)))), recursive = FALSE)
+    if (!length(causes)) next
+    types <- unique(vapply(causes, `[[`, character(1), "type"))
+    refus <- if (length(types) == 1L) types[[1L]] else "fermeture_bloquee"
+    prefix <- switch(refus,
+      gel = "gel de lignage refusé pour ",
+      regression = "régression de code pour ",
+      definition = "définition modifiée non confirmée pour ",
+      "fermeture bloquée pour ")
+    suffix <- if (identical(refus, "definition"))
+      " — passer --confirm-definition <id> — zéro écriture." else " — zéro écriture."
+    stop(erreur_apply(refus, paste0("apply : ", prefix,
+      paste(vapply(causes, `[[`, character(1), "motif"), collapse = "; "), suffix)))
+  }
   invisible(TRUE)
 }
 
