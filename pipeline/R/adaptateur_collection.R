@@ -97,11 +97,11 @@ remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,
                            conflict = "nothing")
     .ecrire_collection_base(con, projection, rows$version, reference)
     if (identical(as.character(d$kind), "period_detail")) {
-      comparisons <- project_observed_collection_comparisons(
-        projection, reference_rows, rows$version, reference)
-      comparison_version <- scalar_content_version(comparisons)
-      .ecrire_collection_comparaison(con, ressource, comparisons, comparison_version,
-                                     rows$version, reference)
+      if (is.null(rows$comparison) || !nrow(rows$comparison$groups))
+        stop("Period/detail artefact must carry its persisted comparison", call. = FALSE)
+      comparison_version <- scalar_content_version(rows$comparison)
+      .ecrire_collection_comparaison(con, ressource, rows$comparison, comparison_version,
+                                      rows$version, reference)
     }
     ecrire_registre_ressource(con, ressource, "observed_collection", rows$version,
       reference_content_version = reference, retired = FALSE)

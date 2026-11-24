@@ -74,10 +74,16 @@ adaptateur_series_projection <- function(dataset_id = "artif_par_habitant",
 adaptateur_series_artefact <- function(root, dataset_id = "artif_par_habitant",
                                        value = 10, reference_version = "reference-v1") {
   projection <- adaptateur_series_projection(dataset_id, value)
+  projection$descriptor$direction <- "high"
+  projection$descriptor$comparison_point <- "M3"
+  projection$descriptor$comparison_statistic <- "median"
+  projection$descriptor$comparison_levels <- "commune"
+  projection$descriptor$comparison_axis_values <- c("M2", "M3")
+  reference <- artefacts_fixture_reference(reference_version)
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["owned_series"]], projection),
     projection$descriptor, projection$provenance,
-    list(reference_content_version = reference_version, kind = "owned_series"))
+    comparaison_series_ressource(projection, dataset_id, reference))
   ecrit <- ecrire_artefact_ressource(dataset_id, "owned_series", contenu,
     digests_lignage = digests_lignage_ressource("ocsge", artefacts_fixture_digests("ocsge")),
     root = root)
@@ -282,7 +288,7 @@ adaptateur_collection_artefact <- function(root, indicator = "acv", value = 5) {
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["observed_collection"]], projection),
     projection$descriptor, projection$provenance,
-    list(reference_content_version = "reference-v1", kind = "observed_collection"))
+    comparaison_collection_ressource(projection, indicator, artefacts_fixture_reference()))
   ecrit <- ecrire_artefact_ressource(indicator, "observed_collection", contenu,
     digests_lignage = digests_lignage_ressource("programme_source",
       artefacts_fixture_digests("programme_source")), root = root)

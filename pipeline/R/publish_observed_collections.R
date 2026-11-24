@@ -281,8 +281,10 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
   groups <- as.data.frame(comparison$groups, stringsAsFactors = FALSE)
   territories <- as.data.frame(comparison$territories, stringsAsFactors = FALSE)
   lineage <- as.data.frame(comparison$lineage, stringsAsFactors = FALSE)
-  groups$indicator_id <- id; territories$indicator_id <- id; lineage$indicator_id <- id
-  lineage$comparison_content_version <- version
+  groups$indicator_id <- rep(id, nrow(groups))
+  territories$indicator_id <- rep(id, nrow(territories))
+  lineage$indicator_id <- rep(id, nrow(lineage))
+  lineage$comparison_content_version <- rep(version, nrow(lineage))
   list(observed_collection_comparison_group = groups,
     observed_collection_comparison_territory = territories,
     observed_collection_comparison_lineage = lineage)

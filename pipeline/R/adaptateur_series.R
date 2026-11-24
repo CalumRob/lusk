@@ -42,15 +42,11 @@ projeter_artefact_series <- function(artefact) {
     projection[[champ]] <- value
   }
   if (is.list(projection$descriptor)) projection$descriptor$dataset_id <- id
-  for (champ in c("state_role", "missing_reason"))
-    if (is.data.frame(projection$points) && champ %in% names(projection$points) &&
-        all(is.na(projection$points[[champ]])))
-      projection$points[[champ]] <- NULL
   comparison <- contenu$comparison
   reference <- if (is.list(comparison) && !is.null(comparison$reference_content_version))
     as.character(comparison$reference_content_version)[[1L]] else NULL
   list(ressource = id, forme = "owned_series", version = artefact$version,
-       dataset_id = id, projection = projection,
+       dataset_id = id, projection = projection, comparison = comparison,
        reference_content_version = reference, declarations = declarations,
        digests_lignage = artefact$digests_lignage)
 }
@@ -87,7 +83,7 @@ remplacer_series <- function(con, ressource, rows = NULL, version = NULL,
     # L'écrivain de l'owner fait TOUTE l'écriture de ce dataset ; l'adaptateur
     # ne fait que lui transmettre la référence lue une fois par apply.
     owned_series_postgres_adapter(con)$replace_dataset(
-      rows$projection, rows$version,
+      rows$projection, rows$version, comparison = rows$comparison,
       reference_version = reference, reference_rows = reference_rows)
     ecrire_registre_ressource(con, ressource, "owned_series", rows$version,
       reference_content_version = reference, retired = FALSE)

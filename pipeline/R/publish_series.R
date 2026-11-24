@@ -825,22 +825,22 @@ register_owned_series_publishers <- function(registry, metadata, habitat_metadat
   groups <- if (is.null(comparison$groups)) .serie_vide(group_fields,
     c(rep("character", 7L), "numeric", rep("integer", 4L))) else {
     x <- as.data.frame(comparison$groups, stringsAsFactors = FALSE)
-    x$dataset_id <- id; x$indicator_id <- indicator; x[group_fields]
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[group_fields]
   }
   territories <- if (is.null(comparison$territories)) .serie_vide(territory_fields,
     c(rep("character", 8L), "numeric", "character", rep("integer", 3L))) else {
     x <- as.data.frame(comparison$territories, stringsAsFactors = FALSE)
-    x$dataset_id <- id; x$indicator_id <- indicator; x[territory_fields]
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[territory_fields]
   }
   lineage <- if (is.null(comparison$lineage)) .serie_vide(lineage_fields) else {
     x <- as.data.frame(comparison$lineage, stringsAsFactors = FALSE)
-    x$dataset_id <- id; x$indicator_id <- indicator; x[lineage_fields]
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[lineage_fields]
   }
   zero <- if (is.null(comparison$zero_reasons)) .serie_vide(zero_fields,
     c(rep("character", 7L), "integer")) else {
     x <- as.data.frame(comparison$zero_reasons, stringsAsFactors = FALSE)
-    x$dataset_id <- id; x$indicator_id <- indicator
-    x$axis_value <- as.character(comparison$axis_values[[1L]]); x[zero_fields]
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x))
+    x$axis_value <- rep(as.character(comparison$axis_values[[1L]]), nrow(x)); x[zero_fields]
   }
   named <- function(champ, fields) if (is.null(p[[champ]])) .serie_vide(fields) else
     as.data.frame(p[[champ]][fields], stringsAsFactors = FALSE)
@@ -893,12 +893,14 @@ owned_series_postgres_adapter <- function(con) {
       params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
+    reference_rows=function() DBI::dbGetQuery(con,
+      "SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference"),
     # ADR-0049 step 2 (#1139): `replace_dataset` is the ONE writer of this
     # dataset's serving tables. The owned-series shape adapter calls it with an
     # injected reference (already validated by `apply`) instead of reading the
     # live reference again; there is no second copy of this SQL anywhere.
     replace_dataset=function(projection, version, reference_version=NULL,
-                             reference_rows=NULL) {
+                             reference_rows=NULL, comparison=NULL) {
       validate_owned_series_projection(projection)
       d <- projection$descriptor; dataset_id <- d$dataset_id
       reference <- if (is.null(reference_version)) DBI::dbGetQuery(con,
@@ -926,13 +928,9 @@ owned_series_postgres_adapter <- function(con) {
           stop("Dense-complete duration publication contains unregistered territory/territories: ",
             describe(unexpected),call.=FALSE)
       }
-      comparison <- NULL
-      if (!is.null(d$comparison_levels)) {
-        territory_rows <- if (is.null(reference_rows)) DBI::dbGetQuery(con,
-          "SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference") else reference_rows
-        comparison <- project_ordered_series_comparisons(projection, territory_rows, version,
-          as.character(reference$content_version[[1L]]))
-      }
+      if (!is.null(d$comparison_levels) &&
+          (is.null(comparison) || !nrow(comparison$groups)))
+        stop("Owned-series writer requires the publisher's persisted comparison", call. = FALSE)
       lignes <- .lignes_series_projection(list(projection = projection, comparison = comparison))
        # source_dataset.name is a mutable current label, updated only here after
        # the owner no-op decision. Vintage clocks remain strict below, and each
@@ -1032,9 +1030,18 @@ owned_series_postgres_adapter <- function(con) {
 publish_owned_series_projection <- function(projection, db) {
   validate_owned_series_projection(projection)
   if (!is.function(db$transaction) || !is.function(db$lock) ||
-      !is.function(db$dataset_marker) || !is.function(db$reference_marker) || !is.function(db$replace_dataset))
+      !is.function(db$dataset_marker) || !is.function(db$reference_marker) ||
+      !is.function(db$reference_rows) || !is.function(db$replace_dataset))
     stop("Invalid owned series database adapter",call.=FALSE)
   version <- scalar_content_version(projection); dataset <- projection$descriptor$dataset_id
+  publier_avec_comparaison <- function(dependency_arg) {
+    territory_rows <- db$reference_rows()
+    comparison <- if (is.null(projection$descriptor$comparison_levels)) NULL else
+      project_ordered_series_comparisons(projection, territory_rows, version,
+        as.character(dependency_arg$content_version[[1L]]))
+    db$replace_dataset(projection, version, comparison = comparison,
+      reference_version = dependency_arg$content_version[[1L]], reference_rows = territory_rows)
+  }
   protocol_db <- list(transaction = db$transaction, lock = db$lock,
                       marker = function(owner) db$dataset_marker(owner))
   result <- publish_owner_snapshot(
@@ -1046,8 +1053,10 @@ publish_owned_series_projection <- function(projection, db) {
           !nzchar(as.character(ref$content_version[[1L]])))
         stop("Territory reference publication is unavailable", call.=FALSE)
     },
-    publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
-    rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
+    publish_content = function(version_arg, dependency_arg) publier_avec_comparaison(dependency_arg),
+    rebind_dependency = function(reference_version)
+      publier_avec_comparaison(data.frame(content_version = reference_version,
+        stringsAsFactors = FALSE)),
     requires_republish = function(marker, ref) {
       if (!is.data.frame(marker) || !nrow(marker) ||
           !"reference_content_version" %in% names(marker)) return(TRUE)

@@ -77,6 +77,8 @@ test_that("remplacer writes only this dataset and the registry row", {
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   artefact <- adaptateur_series_artefact(root)
   rows <- projeter_artefact_series(artefact)
+  local_mocked_bindings(project_ordered_series_comparisons = function(...)
+    stop("series writer must persist the artefact comparison, not recompute it"))
   capture <- adaptateur_series_con(function(con)
     remplacer_series(con, "artif_par_habitant", rows, rows$version,
                      reference_content_version = rows$reference_content_version,

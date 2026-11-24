@@ -60,6 +60,8 @@ test_that("remplacer writes only this collection and the registry row", {
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   artefact <- adaptateur_collection_artefact(root)
   rows <- projeter_artefact_collection(artefact)
+  local_mocked_bindings(project_observed_collection_comparisons = function(...)
+    stop("collection writer must persist the artefact comparison, not recompute it"))
   capture <- adaptateur_collection_con(function(con)
     remplacer_collection(con, "acv", rows, rows$version,
                          reference_content_version = rows$reference_content_version,
