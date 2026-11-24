@@ -195,6 +195,62 @@ test_that("apply --retire removes rows via the adapter and leaves a receipt", {
   expect_identical(recettes_db[[1]]$operation, "retire")
 })
 
+test_that("apply of a NEW scalar emits the full insert set; existing is scoped", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  fixture_apply_magasin(root)
+  listing <- lister_artefacts_ressource(root)
+  version_densite <- listing$version[listing$ressource == "densite"]
+  version_offre <- listing$version[listing$ressource == "offre_tc"]
+  live <- data.frame(ressource = character(), version = character())  # changed per case
+  appels <- list()
+  enregistrer <- function(sql, params = list()) {
+    appels[[length(appels) + 1L]] <<- list(sql = sql, params = params)
+  }
+  local_mocked_bindings(
+    lire_listing_live_registre = function(con) live,
+    ecrire_recette_locale = function(...) "x.json")
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) { enregistrer(sql, params); 0L },
+    dbGetQuery = function(con, sql, params = list()) data.frame(),
+    dbWriteTable = function(con, name, value, ...) {
+      enregistrer(paste0("WRITETABLE ", name)); nrow(value)
+    },
+    dbQuoteString = function(con, x) paste0("'", gsub("'", "''", as.character(x)), "'"),
+    .package = "DBI")
+
+  sqls <- function() vapply(appels, `[[`, character(1), "sql")
+
+  # Case A — resource absent live: full insert set, no reliance on a prior row.
+  appels <<- list()
+  apply_publication("densite", root = root, registre = fixture_apply_registre_lock(),
+                    con = structure(list(), class = "mock"))
+  for (attendu in c("INSERT INTO source_dataset", "INSERT INTO source_vintage",
+                    "INSERT INTO scalar_descriptor\\(", "INSERT INTO scalar_descriptor_source",
+                    "WRITETABLE scalar_observation$", "WRITETABLE scalar_observation_source",
+                    "WRITETABLE scalar_comparison_group", "WRITETABLE scalar_comparison_territory",
+                    "WRITETABLE comparison_source_lineage",
+                    "INSERT INTO scalar_resource_comparison_publication",
+                    "INSERT INTO resource_publication\\(", "INSERT INTO resource_publication_event"))
+    expect_true(any(grepl(attendu, sqls())), attendu)
+
+  # Case B — both resources live: every delete/param is scoped to densite and
+  # offre_tc is never named in any SQL or bound parameter.
+  appels <<- list()
+  live <- data.frame(ressource = c("densite", "offre_tc"),
+                     version = c(version_densite, version_offre))
+  apply_publication("densite", root = root, registre = fixture_apply_registre_lock(),
+                    con = structure(list(), class = "mock"))
+  deletes <- appels[grepl("^DELETE", vapply(appels, `[[`, character(1), "sql"))]
+  expect_true(length(deletes) >= 6L)
+  expect_true(all(vapply(deletes, function(a)
+    identical(as.character(a$params), "densite"), logical(1))))
+  expect_false(any(grepl("offre_tc", sqls(), fixed = TRUE)))
+  expect_false(any(vapply(appels, function(a)
+    any(grepl("offre_tc", as.character(a$params), fixed = TRUE)), logical(1))))
+})
+
 test_that("apply @version selects that artefact for rollback", {
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
