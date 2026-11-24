@@ -33,6 +33,93 @@ test_that("adoption compares the real projected artefact rows and names each dif
                                       "comparison.territories"))
 })
 
+fixture_adoption_run <- function(values_a = 1, values_b = 2, live_b = 2,
+                                 dry_run = FALSE) {
+  artefacts <- list(
+    a = list(version = "va", forme = "scalar", digests_lignage = list(),
+             rows = list(facts = data.frame(territory_id = "c1", value = values_a))),
+    b = list(version = "vb", forme = "scalar", digests_lignage = list(),
+             rows = list(facts = data.frame(territory_id = "c1", value = values_b))))
+  builds <- data.frame(ressource = c("a", "b"), forme = "scalar",
+                       version = c("va", "vb"), stringsAsFactors = FALSE)
+  handler <- list(projeter = function(a) a$rows,
+    lire_live = function(con, ressource, reference)
+      list(facts = data.frame(territory_id = "c1",
+                              value = if (ressource == "a") values_a else live_b)),
+    champs_live = "facts", colonnes_stockage = list(), champs_comparaison = character(),
+    remplacer = function(...) stop("adoption must never replace serving rows"))
+  ecritures <- 0L; recettes <- 0L; locales <- 0L
+  local_mocked_bindings(
+    REGISTRE_FORMES_RESSOURCE = list(scalar = handler),
+    verifier_gel_lignage_ressource = function(...) TRUE,
+    lire_reference_live_apply = function(con)
+      list(version = "reference-v1", rows = data.frame()),
+    verifier_reference_live_apply = function(...) TRUE,
+    ecrire_registre_ressource = function(...) { ecritures <<- ecritures + 1L },
+    ecrire_recette_ressource = function(...) { recettes <<- recettes + 1L },
+    ecrire_recette_locale = function(...) { locales <<- locales + 1L })
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(...) 1L,
+    dbGetQuery = function(...) data.frame(), .package = "DBI")
+  resultat <- tryCatch(adopter_artefacts(builds, artefacts, dry_run = dry_run,
+    con = structure(list(), class = "mock")), error = identity)
+  list(resultat = resultat, ecritures = ecritures, recettes = recettes,
+       locales = locales)
+}
+
+test_that("adoption refuses every mismatching resource before any registry or receipt write", {
+  run <- fixture_adoption_run(live_b = 99)
+  expect_s3_class(run$resultat, "erreur_adoption")
+  expect_identical(run$resultat$refus, "ressource_divergente")
+  expect_match(conditionMessage(run$resultat), "b", fixed = TRUE)
+  expect_match(conditionMessage(run$resultat), "facts", fixed = TRUE)
+  expect_identical(run$ecritures, 0L)
+  expect_identical(run$recettes, 0L)
+  expect_identical(run$locales, 0L)
+})
+
+test_that("adoption writes only registry rows and adopted receipts, and dry-run writes nothing", {
+  run <- fixture_adoption_run()
+  expect_identical(run$resultat$adopted, c("a", "b"))
+  expect_identical(run$ecritures, 2L)
+  expect_identical(run$recettes, 2L)
+  expect_identical(run$locales, 2L)
+  expect_identical(vapply(run$resultat$receipts, `[[`, character(1), "operation"),
+                   c("adopted", "adopted"))
+
+  sec <- fixture_adoption_run(dry_run = TRUE)
+  expect_identical(sec$resultat$adopted, character())
+  expect_identical(sec$ecritures, 0L)
+  expect_identical(sec$recettes, 0L)
+  expect_identical(sec$locales, 0L)
+})
+
+test_that("splitter binds profile, series and collection comparisons to their resource facts", {
+  reference <- artefacts_fixture_reference()
+  profile <- artefacts_fixture_profile_artefact()$artefact$contenu
+  projection <- list(descriptor = profile$descriptor, facts = profile$faits$facts,
+    axes = profile$faits$axes, provenance = profile$provenance,
+    datasets = profile$faits$datasets, vintages = profile$faits$vintages)
+  cmp <- comparaison_profil_ressource(projection, "distribution_dpe", reference)
+  expect_identical(cmp$reference_content_version, reference$content_version)
+
+  serie <- adaptateur_series_projection()
+  serie$descriptor$comparison_levels <- c("commune")
+  serie$descriptor$comparison_axis_values <- c("M2", "M3")
+  serie$descriptor$direction <- "high"
+  serie$descriptor$comparison_point <- "M3"
+  serie$descriptor$comparison_statistic <- "median"
+  cmp <- comparaison_series_ressource(serie, "artif_par_habitant", reference)
+  expect_identical(cmp$reference_content_version, reference$content_version)
+  expect_true(nrow(cmp$groups) > 0L)
+
+  collection <- adaptateur_collection_projection()
+  cmp <- comparaison_collection_ressource(collection, "acv", reference)
+  expect_identical(cmp$reference_content_version, reference$content_version)
+  expect_true(nrow(cmp$groups) > 0L)
+})
+
 test_that("every shape's adoption reader contract compares its real adapter projection", {
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)

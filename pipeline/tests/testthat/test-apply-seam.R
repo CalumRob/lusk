@@ -28,6 +28,27 @@ test_that("real repo passes both seam audits (apply guarded, not allowlisted)", 
   expect_false(any(grepl("apply_publication", ecritures$fichier)))
 })
 
+test_that("adopt uses the shared serving-session seam and writes no serving table", {
+  racine <- racine_pipeline()
+  connexions <- verifier_structure_gel(racine)
+  nouveaux <- connexions[grepl("/(apply_publication|adoption_publication)\\.R$",
+                               connexions$fichier), , drop = FALSE]
+  expect_equal(nrow(nouveaux), 1L)
+  expect_match(nouveaux$fichier, "apply_publication\\.R$")
+  expect_true(nouveaux$garde)
+  expect_false(nouveaux$autorise)
+
+  for (fichier in c("R/apply_publication.R", "R/adoption_publication.R")) {
+    source <- paste(readLines(file.path(racine, fichier), warn = FALSE), collapse = "\n")
+    expect_true(grepl("avec_session_service_publication\\(", source), info = fichier)
+    expect_false(grepl("dbConnect\\(", source) && !identical(fichier, "R/apply_publication.R"),
+                 info = fichier)
+  }
+  adopt <- readLines(file.path(racine, "R", "adoption_publication.R"), warn = FALSE)
+  expect_false(any(grepl(MOTIF_ECRITURE_SERVEUR, adopt, ignore.case = TRUE)))
+  expect_false(any(grepl("\\$remplacer\\s*\\(", adopt)))
+})
+
 test_that("allowlists name exact files — no broad regex can admit a new file", {
   motifs <- c(vapply(AUTORISATIONS_DB, function(a) a$fichier, character(1)),
               vapply(AUTORISATIONS_ECRITURE_SERVEUR, function(a) a$fichier, character(1)))

@@ -157,8 +157,48 @@ verifier_jetons_comparaison <- function(handler, projection, ressource, referenc
   invisible(TRUE)
 }
 
-# Comparaison déjà portée par la projection du producteur (profil, série,
-# collection, AEDAR) — aucune forme ne la recalcule localement.
+# Les producteurs écrivent aujourd'hui les comparaisons après leur artefact de
+# forme. Le splitter doit donc les matérialiser dans l'Artefact de ressource avec
+# les MÊMES projecteurs, jamais les laisser absentes (#1142).
+comparaison_profil_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  dependance <- champ_descripteur(projection$descriptor, "comparison_scalar")
+  if (!is.null(dependance) && length(dependance) && !is.na(dependance) &&
+      nzchar(as.character(dependance)[[1L]]))
+    # La comparaison DPE EST celle du scalaire déclaré : elle est prouvée une
+    # seule fois sous cette ressource, pas recopiée dans les tables du profil.
+    return(list(reference_content_version = reference$content_version,
+                kind = "declared_profile", comparison_scalar = dependance[[1L]]))
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["declared_profile"]],
+                                     projection)
+  project_declared_profile_comparisons(list(projection), reference$rows,
+    profile_content_version = version, reference_content_version = reference$content_version)
+}
+
+comparaison_series_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  levels <- champ_descripteur(projection$descriptor, "comparison_levels")
+  if (is.null(levels) || !length(levels))
+    return(list(reference_content_version = reference$content_version,
+                kind = "owned_series"))
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["owned_series"]], projection)
+  project_ordered_series_comparisons(projection, reference$rows, version,
+    reference$content_version)
+}
+
+comparaison_collection_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  kind <- champ_descripteur(projection$descriptor, "kind")
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["observed_collection"]],
+                                     projection)
+  if (identical(as.character(kind), "period_detail"))
+    return(project_observed_collection_comparisons(projection, reference$rows,
+      version, reference$content_version))
+  list(reference_content_version = reference$content_version, kind = "observed_collection")
+}
+
+# Comparaison déjà portée par la projection AEDAR — aucune forme ne la recalcule
+# localement lorsque le producteur l'a immuablement matérialisée.
 comparaison_persistee <- function(champ) {
   force(champ)
   function(projection, ressource, reference) projection[[champ]] %||% NULL
@@ -276,7 +316,14 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champs_live = c("descriptor", "eligible_territories", "observations", "provenance",
                     "comparison"),
     colonnes_stockage = list(observations = "published_at"),
-    champs_comparaison = c("groups", "territories", "lineage")),
+    champs_comparaison = c("groups", "territories", "lineage"),
+    # Today's normal publisher stamps the WHOLE scalar snapshot token. The
+    # per-resource artefact deliberately rebinds those two storage tokens to
+    # this resource; comparison facts and the reference clock remain exact.
+    colonnes_comparaison = list(
+      groups = c("scalar_content_version", "content_version"),
+      territories = c("scalar_content_version", "content_version"),
+      lineage = "comparison_content_version")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -284,7 +331,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_profil_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL,
     # Shape adapter (ADR-0049 seam, #1138): the ONLY writer of this shape's
@@ -294,9 +341,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     projeter = projeter_artefact_profil_declare,
     remplacer = remplacer_profil_declare,
     lire_live = lire_live_profil_declare,
+    normaliser_live = normaliser_live_profil,
     champs_live = c("descriptor", "axes", "facts", "provenance", "comparison"),
     colonnes_stockage = list(),
-    champs_comparaison = c("groups", "territories", "lineage")),
+    champs_comparaison = c("groups", "territories", "lineage"),
+    colonnes_comparaison = list(
+      groups = "profile_content_version", territories = "profile_content_version")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -304,7 +354,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_series_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per dataset. The OCS-GE
@@ -325,7 +375,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_collection_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per collection.

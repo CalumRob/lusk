@@ -62,6 +62,7 @@ projeter_artefact_profil_declare <- function(artefact) {
   # used to perform this rename privately; adoption must compare the same rows.
   names(facts)[names(facts) == "detail"] <- "detail_key"
   names(facts)[names(facts) == "sex"] <- "sex_key"
+  facts$indicator_id <- rep(id, nrow(facts))
   facts$sex_axis_name <- if (length(descriptor$sexes)) "sex" else NA_character_
   datasets <- extraire("datasets") %||% vides$datasets
   vintages <- extraire("vintages") %||% vides$vintages

@@ -24,6 +24,19 @@ projeter_artefact_collection <- function(artefact) {
   projection$descriptor <- contenu$descriptor
   projection$provenance <- contenu$provenance
   declarations <- extraire_declaration_ressource(contenu$descriptor)
+  # Categories have nullable/defaulted storage coordinates. Materialise their
+  # persisted shape here so adoption compares the same rows the writer sends.
+  categories <- projection$categories
+  if (!is.null(categories)) {
+    if (!"anchor_levels" %in% names(categories)) {
+      categories$anchor_levels <- I(rep(list(character()), nrow(categories)))
+    } else {
+      categories$anchor_levels <- I(lapply(categories$anchor_levels, bridge_parse_text_array))
+    }
+    if (!"rider_label" %in% names(categories)) categories$rider_label <- NA_character_
+    if (!"clock_policy" %in% names(categories)) categories$clock_policy <- "dataset"
+    projection$categories <- categories
+  }
   if (is.list(projection$descriptor)) projection$descriptor$indicator_id <- id
   for (champ in names(projection)) {
     value <- projection[[champ]]

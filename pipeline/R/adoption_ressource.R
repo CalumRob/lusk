@@ -5,6 +5,7 @@
 # PostgreSQL dates, integer64 counts and numeric SQL values must compare by
 # value, not by an R storage class chosen by the driver. Row order is not data.
 normaliser_valeur_adoption <- function(x) {
+  if (length(x) && !is.list(x) && all(is.na(x))) return(rep(NA_character_, length(x)))
   if (inherits(x, "integer64")) x <- as.integer(as.character(x))
   if (inherits(x, "Date")) x <- as.character(x)
   if (inherits(x, "POSIXt")) x <- format(x, "%Y-%m-%dT%H:%M:%OS6", tz = "UTC")
@@ -26,13 +27,16 @@ normaliser_adoption <- function(x) {
     return(x)
   }
   if (is.list(x)) {
-    x <- x[!vapply(x, is.null, logical(1))]
+    absent <- vapply(x, function(v) is.null(v) ||
+      (length(v) == 1L && !is.list(v) && is.na(v)), logical(1))
+    x <- x[!absent]
     return(lapply(x, normaliser_adoption))
   }
   normaliser_valeur_adoption(x)
 }
 
 comparer_valeur_adoption <- function(attendu, live, ignore = character()) {
+  if (absence_comparaison(attendu) && absence_comparaison(live)) return(TRUE)
   if (is.data.frame(attendu) || is.data.frame(live)) {
     if (!is.data.frame(attendu) || !is.data.frame(live)) return(FALSE)
     if (length(setdiff(names(live), c(names(attendu), ignore)))) return(FALSE)
@@ -69,7 +73,8 @@ comparer_ressource_adoptation <- function(attendu, live, handler) {
         next
       }
       for (partie in handler$champs_comparaison) {
-        if (!comparer_valeur_adoption(a[[partie]], b[[partie]]))
+        ignore <- as.character(handler$colonnes_comparaison[[partie]] %||% character())
+        if (!comparer_valeur_adoption(a[[partie]], b[[partie]], ignore))
           parties <- c(parties, paste0("comparison.", partie))
       }
       next

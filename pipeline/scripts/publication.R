@@ -4,12 +4,17 @@
 #   plan [sortie]             -> READ-ONLY plan. Never opens a serving connection.
 #                                Live source = explicit offline LUSK_LIVE_LISTING
 #                                file; the live registry is used by `apply`.
+#   adopt <sortie> [--dry-run] -> split the kept sortie, prove EVERY resource's
+#                                live rows equal its artefact, then write only
+#                                registry rows and adopted receipts in one
+#                                transaction. Any mismatch refuses with zero
+#                                writes. Typed readings are ignored.
 #   apply <ids...> [--confirm-definition <id>] [--retire <id>]
-#                             -> the ONLY new code that opens a serving
-#                                connection. Refuses before any write on
-#                                lineage freeze, code regression or unconfirmed
-#                                definition change. One transaction; append-only
-#                                DB receipt; local JSON receipt after commit.
+#                             -> publishes explicit resources through the SAME
+#                                serving-session seam as adopt. Refuses before
+#                                any write on lineage freeze, code regression or
+#                                unconfirmed definition change. One transaction;
+#                                append-only DB receipt; local JSON after commit.
 #                                `<id>@<version>` applies that artefact version
 #                                (rollback). Run from pipeline/.
 if (!requireNamespace("pkgload", quietly = TRUE)) {
@@ -40,6 +45,16 @@ if (identical(commande, "split")) {
     live = Sys.getenv("LUSK_LIVE_LISTING", unset = ""),
     attributions = if (nzchar(sortie)) sortie else NULL)
   imprimer_plan_publication(plan)
+} else if (identical(commande, "adopt")) {
+  if (!length(args) %in% 2:3 || any(!args %in% c(args[[2L]], "--dry-run")))
+    stop("Usage: Rscript scripts/publication.R adopt <sortie> [--dry-run] (from pipeline/)",
+         call. = FALSE)
+  if (length(args) == 3L && !identical(args[[3L]], "--dry-run"))
+    stop("Usage: Rscript scripts/publication.R adopt <sortie> [--dry-run] (from pipeline/)",
+         call. = FALSE)
+  resultat <- adopter_ressources(args[[2L]], dry_run = "--dry-run" %in% args,
+    commit_sha = Sys.getenv("GITHUB_SHA", unset = ""))
+  imprimer_adoption(resultat)
 } else if (identical(commande, "apply")) {
   if (length(args) < 2L) {
     stop(paste0("Usage: Rscript scripts/publication.R apply <ids...> ",
@@ -76,6 +91,7 @@ if (identical(commande, "split")) {
   }
 } else {
   stop(paste0("Usage: Rscript scripts/publication.R split <sortie> | ",
-       "plan [sortie] | apply <ids...> [--confirm-definition <id>] [--retire <id>]"),
+       "plan [sortie] | adopt <sortie> [--dry-run] | ",
+       "apply <ids...> [--confirm-definition <id>] [--retire <id>]"),
        call. = FALSE)
 }

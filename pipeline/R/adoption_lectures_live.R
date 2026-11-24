@@ -89,9 +89,30 @@ lire_live_profil_declare <- function(con, ressource, reference) {
     lineage = .adoption_query(con, paste0(
       "SELECT comparison_context,group_id,territory_type,facet_id,source_id,vintage_id ",
       "FROM comparison_source_lineage WHERE comparison_family='profile' AND facet_id=$1"), params))
+  scalar_marker <- .adoption_query(con, paste0(
+    "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"))
+  global_scalar_token <- if (nrow(scalar_marker)) as.character(scalar_marker$content_version[[1L]]) else NA_character_
   list(descriptor = descriptor, axes = axes, facts = facts, provenance = provenance,
        datasets = data.frame(source_id = sources, name = sources, stringsAsFactors = FALSE),
-       vintages = data.frame(), comparison = comparison)
+       vintages = data.frame(), comparison = comparison,
+       global_scalar_token = global_scalar_token)
+}
+
+# Today's full profile publisher binds required_scalar_version to the GLOBAL
+# scalar snapshot; the Artefact de ressource binds the same proven dependency to
+# its FACTS version. Accept only that exact live chain, never an arbitrary token.
+normaliser_live_profil <- function(rows, artefacts, lectures) {
+  dependance <- rows$descriptor$comparison_scalar
+  if (is.null(dependance) || !length(dependance) || is.na(dependance)) return(rows)
+  dependance <- as.character(dependance)[[1L]]
+  if (is.null(artefacts[[dependance]])) return(rows)
+  attendu <- version_faits_artefact(artefacts[[dependance]])
+  live <- as.character(rows$descriptor$required_scalar_version[[1L]])
+  global <- as.character(rows$global_scalar_token[[1L]])
+  if (!is.na(live) && !is.na(global) && identical(live, global))
+    rows$descriptor$required_scalar_version <- attendu
+  rows$global_scalar_token <- NULL
+  rows
 }
 
 lire_live_series <- function(con, ressource, reference) {

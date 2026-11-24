@@ -142,9 +142,25 @@ verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NU
   invisible(TRUE)
 }
 
+# SEAM PARTAGÉE apply/adopt (#1142) : le gel de lignage est évalué ici,
+# immédiatement avant l'unique dbConnect du nouveau chemin. Les deux opérations
+# passent par cette fonction; aucun allowlist ne doit être ajouté pour adopt.
+# `con` injecté sert uniquement les tests et conserve le même préflight.
+avec_session_service_publication <- function(artefacts, cibles, lock = NULL,
+                                             registre = NULL, code, con = NULL) {
+  for (ressource in cibles)
+    verifier_gel_lignage_ressource(artefacts[[ressource]], registre = registre, lock = lock)
+  owns_con <- is.null(con)
+  if (owns_con) {
+    config <- configuration_service_postgres()
+    con <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
+  }
+  on.exit(if (owns_con) try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
+  code(con)
+}
+
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de
-# connexion de service du nouveau chemin a lieu ici, avec la configuration
-# privée (passfile hors dépôt). Les refus sont évalués avant toute écriture.
+# connexion de service du nouveau chemin a lieu dans le seam partagé ci-dessus.
 apply_publication <- function(ids, confirm_definition = character(), retire = FALSE,
                               root = NULL, lock = NULL, registre = NULL,
                               attributions = NULL, con = NULL,
@@ -171,23 +187,10 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   }
   verifier_adaptateurs_apply(cibles, artefacts_pre, retire = retire)
 
-  # Gel de lignage (noyau partagé) AU SEUIL DE LA CONNEXION (ADR-0048 §5
-  # amendée) : le garde est évalué ici, avant le dbConnect ci-dessous, et avant
-  # toute écriture. Le plan porte le même verdict pour l'affichage ; c'est ce
-  # garde-ci que l'audit structurel reconnaît sur le site d'ouverture.
-  for (ressource in cibles) {
-    verifier_gel_lignage_ressource(artefacts_pre[[ressource]],
-                                   registre = registre, lock = lock)
-  }
-
-  owns_con <- FALSE
-  if (is.null(con)) {
-    config <- configuration_service_postgres()
-    con <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
-    owns_con <- TRUE
-  }
-  on.exit(if (owns_con) try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
-
+  # Le seam partagé porte le gel AVANT la connexion, puis rend la session au
+  # callback. apply et adopt ne peuvent pas dériver ce garde.
+  avec_session_service_publication(artefacts_pre, cibles, lock = lock,
+    registre = registre, con = con, code = function(con) {
   # Le registre vivant est la source du plan (remplace LUSK_LIVE_LISTING).
   live <- lire_listing_live_registre(con)
   plan <- plan_publication(builds = builds, live = live, lock = lock,
@@ -245,4 +248,5 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   for (recette in recettes) ecrire_recette_locale(recette, receipts_dir)
   invisible(list(applied = vapply(recettes, `[[`, character(1), "ressource"),
                  receipts = recettes, cascade = cibles))
+  })
 }
