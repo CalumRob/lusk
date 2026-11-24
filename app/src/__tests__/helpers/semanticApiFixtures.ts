@@ -216,7 +216,7 @@ function buildSourcesFor(resource: Resource, fact?: Record<string, any>, target?
   })
 }
 
-function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
+function sourceFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false): Record<string, any> {
   const sources = sourcesFor(resource, fact, target, ownedSeries)
   if (sources.length !== 1) {
     throw new Error(`Expected one producer vintage for ${resource.resource_id}, got ${sources.length}; ` +
@@ -896,7 +896,7 @@ function syntheticMilieuxSourceBindings(target: Record<string, any>,
     const clockFact = { ...fact }
     delete clockFact.vintage_source
     const resolved = sourceFor(stateResource, clockFact, target)
-    const source = { ...resolved, name: fact.vintage_source ?? resolved.name }
+    const source: Record<string, any> = { ...resolved, name: fact.vintage_source ?? resolved.name }
     const role = index === 0 ? 'M2' : 'M3'
     const fieldKey = role === 'M2' ? 'artif_m2_par_habitant' : 'artif_m3_par_habitant'
     const revisionHash = createHash('sha256').update(JSON.stringify({
