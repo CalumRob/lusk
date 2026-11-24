@@ -2037,8 +2037,15 @@ validate_aedar_comparison_manifest_file <- function(path,directory,verify_parts=
 # ADR-0049 step 2 (#1139) : matérialiser la comparaison canonique en mémoire
 # dans l'Artefact de ressource `aedar`. Le producteur garde ses Parquets ; le
 # splitter attache cette structure immuable, liée à la référence territoriale
-# de la sortie. L'adaptateur n'a ensuite JAMAIS besoin de relire
-# `territory_reference` vivant pour écrire la comparaison.
+# de la sortie. Les chemins de génération (`tempfile()` du producteur) sont
+# des données d'exécution volatiles : ils servent à LIRE les Parquets ici mais
+# ne font JAMAIS partie du contenu haché de l'Artefact, sinon un rebuild identique
+# changerait la version publiée.
+descripteurs_artefact_aedar <- function(descripteur) {
+  if (is.null(descripteur)) return(NULL)
+  descripteur[setdiff(names(descripteur), "path")]
+}
+
 comparaison_aedar_pour_artefact <- function(directory, reference) {
   manifest <- read_aedar_comparison_canonical(directory, verify_parts = FALSE)
   if (!identical(as.character(manifest$reference_content_version),
@@ -2067,8 +2074,9 @@ comparaison_aedar_pour_artefact <- function(directory, reference) {
     group_row_count = manifest$group_row_count,
     territory_row_count = manifest$territory_row_count,
     groups = groups, density_rows = density, littoral_rows = littoral,
-    density_class_summaries = manifest$density_class_summaries,
-    littoral_summaries = manifest$littoral_summaries,
+    density_class_summaries = descripteurs_artefact_aedar(
+      manifest$density_class_summaries),
+    littoral_summaries = descripteurs_artefact_aedar(manifest$littoral_summaries),
     membership = manifest$membership)
 }
 
@@ -2131,17 +2139,28 @@ ecrire_aedar_comparaison_rows <- function(con, x, groups, density_rows,
     for (nom in names(tokens)) littoral_payload[[nom]] <- unname(tokens[[nom]])
     DBI::dbWriteTable(con,"aedar_littoral_summary",littoral_payload,append=TRUE,row.names=FALSE)
   }
+  # Aucun fait figé ici : mode, snapshot et nombre de territoires viennent du
+  # contrat du producteur / de l'Artefact, pas d'un littéral du writer partagé.
+  contrat <- function(champ) {
+    v <- x[[champ]]
+    if (is.null(v) || length(v) != 1L || is.na(v)) stop("AEDAR comparison contract is missing ", champ, call.=FALSE)
+    v
+  }
+  mode <- as.character(contrat("publication_mode"))
+  snapshot <- as.character(contrat("source_snapshot_id"))
+  territoires <- contrat("territory_row_count")
   DBI::dbExecute(con,paste0("INSERT INTO aedar_comparison_publication(singleton,content_version,",
     "publication_mode,source_snapshot_id,aedar_content_version,reference_content_version,",
     "input_content_version,input_identity,group_row_count,territory_row_count,",
     "density_summary_class_count,density_summary_measure_count,density_summary_typequ_count,",
     "density_summary_row_count,littoral_summary_status_count,littoral_summary_measure_count,",
-    "littoral_summary_row_count,published_at) VALUES(true,$1,'reference_only','2026-v1',$2,$3,$4,",
-    "$5::jsonb,$6,0,$7,$8,$9,$10,$11,$12,$13,now()) ON CONFLICT(singleton) DO UPDATE SET ",
+    "littoral_summary_row_count,published_at) VALUES(true,$1,$2,$3,$4,$5,$6,$7::jsonb,",
+    "$8,$9,$10,$11,$12,$13,$14,$15,$16,now()) ON CONFLICT(singleton) DO UPDATE SET ",
     "content_version=EXCLUDED.content_version,publication_mode=EXCLUDED.publication_mode,",
     "source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,",
     "reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,",
-    "input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=0,",
+    "input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,",
+    "territory_row_count=EXCLUDED.territory_row_count,",
     "density_summary_class_count=EXCLUDED.density_summary_class_count,",
     "density_summary_measure_count=EXCLUDED.density_summary_measure_count,",
     "density_summary_typequ_count=EXCLUDED.density_summary_typequ_count,",
@@ -2149,8 +2168,9 @@ ecrire_aedar_comparaison_rows <- function(con, x, groups, density_rows,
     "littoral_summary_status_count=EXCLUDED.littoral_summary_status_count,",
     "littoral_summary_measure_count=EXCLUDED.littoral_summary_measure_count,",
     "littoral_summary_row_count=EXCLUDED.littoral_summary_row_count,published_at=EXCLUDED.published_at"),
-    params=list(x$content_version,x$aedar_content_version,x$reference_content_version,
-      x$input_content_version,as.character(x$input_identity),x$group_row_count,
+    params=list(x$content_version,mode,snapshot,x$aedar_content_version,
+      x$reference_content_version,x$input_content_version,as.character(x$input_identity),
+      x$group_row_count,territoires,
       x$density_class_summaries$class_count,x$density_class_summaries$measure_count,
       x$density_class_summaries$typequ_count,x$density_class_summaries$row_count,
       x$littoral_summaries$status_count,x$littoral_summaries$measure_count,
@@ -2414,8 +2434,15 @@ publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
       deleted_rows <- DBI::dbExecute(db,delete_sql,params=list(expected_json))
       progress("obsolete-key-delete-complete",deleted=deleted_rows,elapsed=sprintf("%.3fs",proc.time()[[3L]]-delete_started))
       progress("fact-reconciliation-complete",attempted=attempted_rows,affected=affected_rows,deleted=deleted_rows)
-      DBI::dbExecute(db,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",params=list(projection$source$source_id,projection$source$name))
-      DBI::dbExecute(db,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",params=list(projection$source$source_id,projection$source$vintage,projection$source$vintage,as.Date(projection$source$reference_date),as.Date(projection$source$publication_date)))
+      .ecrire_sources_serveur(db,
+        data.frame(source_id=projection$source$source_id,name=projection$source$name,
+          stringsAsFactors=FALSE), vintages=NULL, conflict="update")
+      .ecrire_sources_serveur(db, datasets=NULL,
+        data.frame(source_id=projection$source$source_id,vintage_id=projection$source$vintage,
+          version=projection$source$vintage,
+          reference_date=as.Date(projection$source$reference_date),
+          publication_date=as.Date(projection$source$publication_date),
+          stringsAsFactors=FALSE), conflict="nothing")
       stored_source <- DBI::dbGetQuery(db,"SELECT version,reference_date,publication_date FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",params=list(projection$source$source_id,projection$source$vintage))
       if (nrow(stored_source)!=1L || stored_source$version[[1L]]!=projection$source$vintage ||
           !identical(as.character(stored_source$reference_date[[1L]]),projection$source$reference_date) ||

@@ -2,6 +2,31 @@
 # They follow the producers' own contracts (validate_*), never a second copy of
 # production SQL. Nothing here is called by production code.
 
+# Lignes de référence telles qu'`apply` les lit une fois et les transmet aux
+# adaptateurs (lire_reference_live_apply).
+adaptateur_reference_rows <- function() {
+  reference <- artefacts_fixture_reference()$rows
+  cbind(reference,
+    littoral_code = rep(NA_character_, nrow(reference)),
+    littoral_classement_source = rep(NA_character_, nrow(reference)),
+    stringsAsFactors = FALSE)
+}
+
+adaptateur_aedar_reference_rows <- function(with_littoral = FALSE) {
+  classe <- as.character(registre_classes_densite()[["classe_densite_code"]])[[1L]]
+  reference <- data.frame(
+    territory_id = c("22001", "200000001", "22", "53"),
+    territory_type = c("commune", "epci", "departement", "region"),
+    epci_id = c("200000001", NA_character_, NA_character_, NA_character_),
+    density_class_code = c(classe, NA_character_, NA_character_, NA_character_),
+    stringsAsFactors = FALSE)
+  if (with_littoral) {
+    reference$littoral_code <- c("C", NA_character_, NA_character_, NA_character_)
+    reference$littoral_classement_source <- c("fixture", NA_character_, NA_character_, NA_character_)
+  }
+  reference
+}
+
 adaptateur_revision <- function(source_id = "ocsge", vintage_id = "v1") {
   fields <- list(source_id, vintage_id, "OCS GE", "ocsge_dataset", "v1",
                  "2020-01-01", "2021-01-01")
@@ -122,22 +147,61 @@ adaptateur_aedar_projection <- function() {
   project_aedar_aggregates(inputs, adaptateur_aedar_metadata())
 }
 
+# Materialized density aggregate for a REAL canonical comparison manifest
+# (including its tempfile generation paths), following the producer's contract.
+adaptateur_aedar_density_source <- function() {
+  axis <- read_aedar_typequ_registry()
+  registry <- registre_classes_densite()
+  codes <- as.character(registry[["classe_densite_code"]])
+  ref <- list(crosswalk = data.frame(code_insee = c("22001", paste0("unused", 2:7)),
+    density_class_code = codes,
+    density_class_label = as.character(registry[["classe_densite_libelle_public"]]),
+    stringsAsFactors = FALSE),
+    identity = MANIFEST_CLASSES_DENSITE[["id"]][[1L]],
+    sha256 = MANIFEST_CLASSES_DENSITE[["sha256"]][[1L]],
+    vintage = MANIFEST_CLASSES_DENSITE[["vintage"]][[1L]])
+  grid <- expand.grid(density_class_code = codes, TYPEQU = axis$TYPEQU, stringsAsFactors = FALSE)
+  density <- data.frame(territory_type = "density_class",
+    territory_id = grid$density_class_code, density_class_code = grid$density_class_code,
+    density_class_label = ref$crosswalk$density_class_label[
+      match(grid$density_class_code, codes)],
+    TYPEQU = grid$TYPEQU, LIB_TYPEQU = axis$LIB_TYPEQU[match(grid$TYPEQU, axis$TYPEQU)],
+    n_addresses = 1L, n_observed = 1L, coverage_status = "covered",
+    source_snapshot_id = AEDAR_AGGREGATE_VINTAGE,
+    density_reference_identity = ref$identity,
+    density_reference_sha256 = ref$sha256,
+    density_reference_vintage = ref$vintage,
+    input_content_version = "", input_identity = "",
+    content_version = paste(rep("b", 64), collapse = ""), stringsAsFactors = FALSE)
+  for (measure in AEDAR_AGGREGATE_MEASURES) density[[measure]] <- 1
+  hashes <- c(stats::setNames(rep(paste(rep("1", 64), collapse = ""),
+    length(AEDAR_ADDRESS_SOURCE_MODES)), paste0("mode:", AEDAR_ADDRESS_SOURCE_MODES)),
+    address_origins = paste(rep("2", 64), collapse = ""), density_reference = ref$sha256)
+  density$input_identity <- as.character(jsonlite::toJSON(as.list(hashes), auto_unbox = TRUE))
+  density$input_content_version <- paste(as.character(openssl::sha256(
+    charToRaw(density$input_identity[[1L]]))), collapse = "")
+  colonnes <- c("territory_type", "territory_id", "density_class_code",
+    "density_class_label", "TYPEQU", "LIB_TYPEQU", "n_addresses", "n_observed",
+    "coverage_status", AEDAR_AGGREGATE_MEASURES, "source_snapshot_id",
+    "density_reference_identity", "density_reference_sha256",
+    "density_reference_vintage", "input_content_version", "input_identity")
+  density$content_version <- paste(as.character(openssl::sha256(
+    serialize(density[colonnes], NULL))), collapse = "")
+  list(facts = density, density_reference = ref, input_hashes = hashes,
+    crosswalk = ref$crosswalk,
+    input_content_version = density$input_content_version[[1L]],
+    content_version = density$content_version[[1L]],
+    artifact_sha256 = paste(rep("c", 64), collapse = ""),
+    source_snapshot_id = AEDAR_AGGREGATE_VINTAGE)
+}
+
 # An artefact-bound comparison structure. Built in memory from the aggregate
 # projection and a versioned territory reference — never from a live DB read.
 adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
                                           reference_version = "reference-v1") {
   # La référence porte exactement les identités de la projection agrégate
   # (commune / epci / departement / region), comme le producteur l'exige.
-  reference <- data.frame(
-    territory_id = c("22001", "200000001", "22", "53"),
-    territory_type = c("commune", "epci", "departement", "region"),
-    epci_id = c("200000001", NA_character_, NA_character_, NA_character_),
-    density_class_code = c("A", NA_character_, NA_character_, NA_character_),
-    stringsAsFactors = FALSE)
-  if (with_littoral) {
-    reference$littoral_code <- c("C", NA_character_, NA_character_, NA_character_)
-    reference$littoral_classement_source <- c("fixture", NA_character_, NA_character_, NA_character_)
-  }
+  reference <- adaptateur_aedar_reference_rows(with_littoral)
   axes <- read_aedar_typequ_registry()$TYPEQU
   littoral_facts <- if (with_littoral) {
     grouped <- data.frame(territory_id = "C", TYPEQU = axes, n_addresses = 2,
@@ -177,6 +241,7 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
     measure_count = if (with_littoral) 1L else 0L,
     row_count = if (with_littoral) nrow(littoral) else 0L)
   x$publication_mode <- "reference_only"
+  x$source_snapshot_id <- AEDAR_AGGREGATE_VINTAGE
   x$group_row_count <- nrow(x$groups)
   x$territory_row_count <- 0L
   x

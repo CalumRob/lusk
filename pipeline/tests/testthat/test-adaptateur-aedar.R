@@ -62,7 +62,9 @@ test_that("remplacer writes aggregate, comparison, summaries and registry in one
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   artefact <- adaptateur_aedar_artefact(root)
   rows <- projeter_artefact_aedar(artefact)
-  capture <- adaptateur_aedar_con(function(con) remplacer_aedar(con, "aedar", rows, rows$version))
+  capture <- adaptateur_aedar_con(function(con) remplacer_aedar(con, "aedar", rows, rows$version,
+    reference_content_version = "reference-v1",
+    reference_rows = adaptateur_aedar_reference_rows(FALSE)))
 
   expect_true(any(grepl("INSERT INTO aedar_territorial_aggregate", capture$executes)))
   expect_true(any(grepl("INSERT INTO aedar_comparison_publication", capture$executes)))
@@ -79,9 +81,40 @@ test_that("remplacer publishes C/NC summaries when the artefact carries them", {
   artefact <- adaptateur_aedar_artefact(root, with_littoral = TRUE)
   rows <- projeter_artefact_aedar(artefact)
   expect_true(nrow(rows$comparison$littoral_rows) > 0L)
-  capture <- adaptateur_aedar_con(function(con) remplacer_aedar(con, "aedar", rows, rows$version))
+  capture <- adaptateur_aedar_con(function(con) remplacer_aedar(con, "aedar", rows, rows$version,
+    reference_content_version = "reference-v1",
+    reference_rows = adaptateur_aedar_reference_rows(TRUE)))
   expect_true("aedar_littoral_summary" %in% capture$writes)
   expect_false(any(grepl("FROM territory_reference", capture$queries)))
+})
+
+test_that("two splits of identical AEDAR inputs give one artefact version despite generation paths", {
+  dir1 <- tempfile("aedar-split-a-"); dir2 <- tempfile("aedar-split-b-")
+  on.exit(unlink(c(dir1, dir2), recursive = TRUE), add = TRUE)
+  projection <- adaptateur_aedar_projection()
+  source <- adaptateur_aedar_density_source()
+  refs <- adaptateur_aedar_reference_rows(FALSE)
+  reference <- list(rows = refs, content_version = "reference-v1")
+  m1 <- project_aedar_comparison_publication(projection, source, refs,
+    reference_content_version = "reference-v1", directory = dir1)
+  m2 <- project_aedar_comparison_publication(projection, source, refs,
+    reference_content_version = "reference-v1", directory = dir2)
+  # The realistic manifest carries tempfile() generation paths, and they differ
+  # between two independent splits of the SAME inputs.
+  manifeste1 <- read_aedar_comparison_canonical(dir1, verify_parts = FALSE)
+  manifeste2 <- read_aedar_comparison_canonical(dir2, verify_parts = FALSE)
+  expect_true(grepl("generations/", manifeste1$density_class_summaries$path))
+  expect_false(identical(manifeste1$density_class_summaries$path,
+                         manifeste2$density_class_summaries$path))
+  # The paths are read to find the Parquets but never stored in the artefact.
+  c1 <- comparaison_aedar_pour_artefact(dir1, reference)
+  c2 <- comparaison_aedar_pour_artefact(dir2, reference)
+  expect_false("path" %in% names(c1$density_class_summaries))
+  expect_false("path" %in% names(c1$littoral_summaries %||% list()))
+  contenu <- function(comparaison) contenu_artefact(
+    faits_forme(REGISTRE_FORMES_RESSOURCE[["aedar"]], projection),
+    list(indicator_id = "aedar", theme_id = "mobilite"), projection$source, comparaison)
+  expect_identical(version_artefact(contenu(c1)), version_artefact(contenu(c2)))
 })
 
 test_that("remplacer --retire removes AEDAR rows and marks the registry retired", {
