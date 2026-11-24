@@ -72,19 +72,24 @@ changement_definition_ressource <- function(live, built, forme = "scalar") {
 
 # -- Cascade à partir des dépendances déclarées --------------------------------
 
+# La dépendance est une DÉCLARATION du descripteur producteur. Le plan ne
+# connaît aucun identifiant de ressource en dur et ne lit pas le jeton scalaire
+# global historique (relié à la version globale, #1137/#1138).
+dependance_scalaire_ressource <- function(artefact) {
+  dep <- champ_descripteur(artefact$contenu$descriptor, "comparison_scalar")
+  if (is.null(dep) || !length(dep)) return(NA_character_)
+  dep <- as.character(unlist(dep, use.names = FALSE))[[1L]]
+  if (is.na(dep) || !nzchar(dep)) NA_character_ else dep
+}
+
 fermeture_cascade_publication <- function(changees, artefacts) {
   retenus <- unique(as.character(changees))
   repeat {
     ajoutes <- character()
     for (id in names(artefacts)) {
       if (id %in% retenus) next
-      # La dépendance est une DÉCLARATION du descripteur producteur. Le plan ne
-      # connaît aucun identifiant de ressource en dur et ne lit pas le jeton
-      # scalaire global historique (relié à la version globale, #1137/#1138).
-      dep <- champ_descripteur(artefacts[[id]]$contenu$descriptor, "comparison_scalar")
-      if (is.null(dep) || !length(dep)) next
-      dep <- as.character(unlist(dep, use.names = FALSE))[[1L]]
-      if (!is.na(dep) && nzchar(dep) && dep %in% retenus) ajoutes <- c(ajoutes, id)
+      dep <- dependance_scalaire_ressource(artefacts[[id]])
+      if (!is.na(dep) && dep %in% retenus) ajoutes <- c(ajoutes, id)
     }
     if (!length(ajoutes)) break
     retenus <- c(retenus, setdiff(ajoutes, retenus))
@@ -92,6 +97,48 @@ fermeture_cascade_publication <- function(changees, artefacts) {
   ordre <- names(artefacts)
   retenus_ordonnes <- ordre[ordre %in% retenus]
   c(retenus_ordonnes, setdiff(retenus, retenus_ordonnes))
+}
+
+# Fermetures au sens applicatif : composantes connexes du graphe de dépendances
+# restreint aux membres de la cascade. Un refus (ou un changement de définition
+# non confirmé) dans une composante bloque TOUS ses membres, pas seulement la
+# ressource fautive : `apply` publie une fermeture dans une seule transaction.
+composantes_cascade <- function(membres, artefacts) {
+  restants <- unique(as.character(membres))
+  composantes <- list()
+  while (length(restants)) {
+    file <- restants[[1L]]
+    visites <- character()
+    while (length(file)) {
+      courant <- file[[1L]]
+      file <- file[-1L]
+      if (courant %in% visites) next
+      visites <- c(visites, courant)
+      voisins <- character()
+      for (id in restants) {
+        dep <- dependance_scalaire_ressource(artefacts[[id]])
+        if (!is.na(dep) && identical(dep, courant)) voisins <- c(voisins, id)
+      }
+      dep <- dependance_scalaire_ressource(artefacts[[courant]])
+      if (!is.na(dep) && dep %in% restants) voisins <- c(voisins, dep)
+      file <- c(file, setdiff(voisins, visites))
+    }
+    composantes[[length(composantes) + 1L]] <- restants[restants %in% visites]
+    restants <- setdiff(restants, visites)
+  }
+  composantes
+}
+
+source_blocage <- function(detail, raison) {
+  if (identical(raison, "empreinte_absente")) {
+    extrait <- regmatches(detail, regexpr("empreinte absente pour [^ ]+", detail))
+    if (length(extrait))
+      return(sub("^empreinte absente pour ", "", extrait))
+    return("")
+  }
+  extrait <- regmatches(detail, regexpr("'[^']+'", detail))
+  if (length(extrait)) return(gsub("'", "", extrait))
+  ""
 }
 
 # -- Version de référence : une classification territoriale marque tout --------
@@ -278,6 +325,30 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     }
   }
 
+  # Un refus dans une fermeture bloque ses autres membres, même si leur propre
+  # gel est conforme : ils seraient publiés dans la même transaction.
+  bloque <- rep(FALSE, length(ids))
+  bloque_par <- rep("", length(ids))
+  for (composante in composantes_cascade(cascade, artefacts)) {
+    indices <- which(ids %in% composante)
+    motifs <- character()
+    for (i in indices) {
+      if (identical(gel_etat[[i]], "refused")) {
+        source <- source_blocage(gel_detail[[i]], gel_raison[[i]])
+        motif_raison <- if (nzchar(source))
+          paste0(gel_raison[[i]], ": ", source) else gel_raison[[i]]
+        motifs <- c(motifs, paste0(ids[[i]], " (", motif_raison, ")"))
+      } else if (isTRUE(definition[[i]])) {
+        motifs <- c(motifs, paste0(ids[[i]], " (definition: ",
+                                   paste(definition_champs[[i]], collapse = ","), ")"))
+      }
+    }
+    if (length(motifs)) {
+      bloque[indices] <- TRUE
+      bloque_par[indices] <- paste(motifs, collapse = "; ")
+    }
+  }
+
   ressources <- data.frame(
     ressource = ids,
     forme = vapply(ids, function(id) as.character(artefacts[[id]]$forme), character(1)),
@@ -286,6 +357,8 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     statut_adoption = ifelse(is.na(lives), "not adopted", "adopted"),
     change = ids %in% changees,
     cascade = ids %in% cascade,
+    bloque = bloque,
+    bloque_par = bloque_par,
     gel = gel_etat,
     gel_raison = gel_raison,
     gel_detail = gel_detail,
@@ -308,6 +381,7 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     cascade = cascade,
     reference_changee = reference_basculee,
     gel = list(ok = nrow(refuses) == 0L, refuses = refuses),
+    blocage = list(bloque = any(bloque), motifs = unique(bloque_par[nzchar(bloque_par)])),
     verifications = verifs
   )
 }
@@ -355,14 +429,17 @@ imprimer_plan_publication <- function(plan, con = stdout()) {
     drift <- if (ligne$drift_disponible) as.character(ligne$drift_nb) else "unknown"
     cat(sprintf(paste0(
       "ressource=%s forme=%s live=%s built=%s adoption=%s status=%s cascade=%s ",
-      "freeze=%s definition=%s drift=%s check=%s\n"),
+      "blocked=%s blocked_by=%s freeze=%s definition=%s drift=%s check=%s\n"),
       ligne$ressource, ligne$forme, vis_live, ligne$version_built,
       ligne$statut_adoption, ifelse(ligne$change, "changed", "unchanged"),
-      ifelse(ligne$cascade, "yes", "no"), gel, definition, drift, ligne$check),
+      ifelse(ligne$cascade, "yes", "no"),
+      ifelse(ligne$bloque, "yes", "no"), ligne$bloque_par,
+      gel, definition, drift, ligne$check),
       file = con)
   }
   cat(paste0("changed=", paste(plan$changees, collapse = ","), "\n"), file = con)
   cat(paste0("cascade=", paste(plan$cascade, collapse = ","), "\n"), file = con)
   cat(paste0("freeze=", if (plan$gel$ok) "ok" else "refused", "\n"), file = con)
+  cat(paste0("blocked=", if (plan$blocage$bloque) "yes" else "no", "\n"), file = con)
   invisible(plan)
 }

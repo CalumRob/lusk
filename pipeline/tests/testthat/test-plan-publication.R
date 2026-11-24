@@ -237,6 +237,9 @@ test_that("le plan signale le changement de définition entre deux versions live
 
   expect_identical(plan$ressources$definition, TRUE)
   expect_true("unit" %in% plan$ressources$definition_champs[[1L]])
+  # Une définition non confirmée bloque sa fermeture (aucun apply ne l'a acceptée).
+  expect_true(plan$ressources$bloque)
+  expect_match(plan$ressources$bloque_par, "definition: unit", fixed = TRUE)
 })
 
 # -- Lineage freeze ------------------------------------------------------------
@@ -302,6 +305,30 @@ test_that("une empreinte absente du lignage refuse avec la raison empreinte_abse
   expect_identical(ligne$gel_raison, "empreinte_absente")
 })
 
+test_that("un refus dans une fermeture bloque tous ses membres et nomme le bloquant", {
+  p <- plan_preparer()
+  on.exit(p$nettoyer(), add = TRUE)
+  initial <- plan_fixture_build(p$root)
+  registre <- p$verrou$registre
+  registre$dpe_energy$sha256 <- "sha256-derive-dans-lignage"
+
+  plan <- plan_publication(root = p$root, builds = plan_fixture_builds(initial),
+                           live = NULL, registre = registre)
+  part <- plan$ressources[plan$ressources$ressource == "part_passoires", ]
+  dpe <- plan$ressources[plan$ressources$ressource == "distribution_dpe", ]
+  offre <- plan$ressources[plan$ressources$ressource == "offre_tc", ]
+  expect_identical(part$gel, "refused")
+  expect_identical(part$gel_raison, "derive")
+  # Le profil a un lignage conforme, mais il est dans la même fermeture.
+  expect_identical(dpe$gel, "ok")
+  expect_true(part$bloque)
+  expect_true(dpe$bloque)
+  expect_match(dpe$bloque_par, "part_passoires \\(derive: dpe_energy\\)")
+  expect_true(plan$blocage$bloque)
+  # Une fermeture indépendante n'est pas bloquée par ce refus.
+  expect_false(offre$bloque)
+})
+
 # -- Real-data check status ----------------------------------------------------
 
 test_that("le statut de vérification est attribué par lignage", {
@@ -362,6 +389,8 @@ test_that("la commande plan imprime live, built, cascadance, gel et vérificatio
   expect_true(any(grepl("^changed=", sortie)))
   expect_true(any(grepl("^cascade=", sortie)))
   expect_true(any(grepl("^freeze=ok", sortie)))
+  expect_true(any(grepl("^blocked=no$", sortie)))
+  expect_true(any(grepl("blocked=no", sortie, fixed = TRUE)))
   expect_identical(sort(list.files(p$root, recursive = TRUE, all.files = TRUE)), avant)
 })
 
