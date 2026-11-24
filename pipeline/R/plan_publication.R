@@ -86,9 +86,25 @@ fermeture_cascade_publication <- function(changees, artefacts) {
     if (!length(ajoutes)) break
     retenus <- c(retenus, setdiff(ajoutes, retenus))
   }
-  ordre <- names(artefacts)
-  retenus_ordonnes <- ordre[ordre %in% retenus]
-  c(retenus_ordonnes, setdiff(retenus, retenus_ordonnes))
+  # Dépendances d'abord : une ressource dont le descripteur déclare une
+  # dépendance scalaire n'est publiée qu'APRÈS cette ressource. Ainsi `apply`
+  # rend la version de ressource du scalaire visible dans le registre avant
+  # d'écrire le profil qui la lie (cascade déclarée, #1138), les deux restant
+  # dans la MÊME transaction. L'ordre de `retenus` reste le départage
+  # déterministe à l'intérieur d'un même niveau.
+  ordonne <- character()
+  restants <- retenus
+  while (length(restants)) {
+    prets <- restants[vapply(restants, function(id) {
+      artefact <- artefacts[[id]]
+      dep <- if (is.null(artefact)) NA_character_ else dependance_scalaire_ressource(artefact)
+      is.na(dep) || !(dep %in% restants)
+    }, logical(1))]
+    if (!length(prets)) prets <- restants[[1L]]  # cycle : départage sans boucle
+    ordonne <- c(ordonne, prets)
+    restants <- setdiff(restants, prets)
+  }
+  ordonne
 }
 
 # Fermetures au sens applicatif : composantes connexes du graphe de dépendances

@@ -62,9 +62,9 @@ test_that("apply part_passoires cascades to the DPE profile in ONE transaction",
   magasin <- fixture_cascade_magasin(root)
   r <- fixture_cascade_apply(root, "part_passoires", magasin)
   expect_identical(r$transactions, 1L)
-  expect_setequal(vapply(r$appels, `[[`, character(1), "ressource"),
-                  c("part_passoires", "distribution_dpe"))
-  expect_setequal(r$resultat$cascade, c("part_passoires", "distribution_dpe"))
+  expect_identical(vapply(r$appels, `[[`, character(1), "ressource"),
+                   c("part_passoires", "distribution_dpe"))
+  expect_identical(r$resultat$cascade, c("part_passoires", "distribution_dpe"))
   # The profile adapter receives the dependency's RESOURCE version in the
   # closure; the adapter's real rebind is proven in test-adaptateur-profil.R.
   profil <- Filter(function(a) identical(a$forme, "declared_profile"), r$appels)[[1L]]
