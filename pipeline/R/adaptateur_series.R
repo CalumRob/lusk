@@ -9,23 +9,8 @@
 #
 # UN SEUL écrivain par table : `owned_series_postgres_adapter(con)$replace_dataset`
 # (publish_series.R) contient tout le SQL de ce dataset. L'adaptateur ne le
-# recopie pas, il l'appelle avec une référence territoriale déjà validée par
-# `apply` (aucune seconde ouverture de connexion, aucun SQL dupliqué).
-
-# Lire la référence territoriale vivante (LECTURE SEULE). `apply` détient le
-# verrou du producteur de référence et a déjà refusé une référence absente ;
-# cet appel ne fait que récupérer la version et les lignes d'appartenance.
-.reference_series_live <- function(con) {
-  version <- DBI::dbGetQuery(con,
-    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
-  if (nrow(version) != 1L || is.na(version$content_version[[1L]]) ||
-      !nzchar(as.character(version$content_version[[1L]])))
-    stop("Owned-series adapter requires one published territory reference", call. = FALSE)
-  rows <- DBI::dbGetQuery(con, paste0(
-    "SELECT territory_id,territory_type,epci_id,density_class_code,",
-    "littoral_code,littoral_classement_source FROM territory_reference"))
-  list(version = as.character(version$content_version[[1L]]), rows = rows)
-}
+# recopie pas, il lui transmet la référence lue UNE fois par `apply` sous le
+# verrou du producteur (lire_reference_live_apply) — aucune seconde lecture.
 
 # Projeter un Artefact de ressource owned-series vers la projection attendue par
 # l'écrivain (les champs de table de l'artefact + descripteur + provenance). Pur :
@@ -69,39 +54,38 @@ projeter_artefact_series <- function(artefact) {
 # supprime ses lignes (les révisions de provenance immuables restent) et marque
 # la ligne de registre retirée — c'est `apply --retire`, pas un chemin spécial.
 remplacer_series <- function(con, ressource, rows = NULL, version = NULL,
-                             retire = FALSE, reference_content_version = NULL, ...) {
+                             retire = FALSE, reference_content_version = NULL,
+                             reference_rows = NULL, ...) {
   valider_identite_ressource(ressource)
   publication_transaction(con, {
     if (isTRUE(retire)) {
-      for (table in c("ordered_series_comparison_publication",
-                      "ordered_series_comparison_zero_reason",
-                      "ordered_series_comparison_group",
-                      "series_dataset_publication"))
-        DBI::dbExecute(con, paste0("DELETE FROM ", table, " WHERE dataset_id=$1"),
-                       params = list(ressource))
+      DBI::dbExecute(con, "DELETE FROM ordered_series_comparison_publication WHERE dataset_id=$1",
+                     params = list(ressource))
+      DBI::dbExecute(con, "DELETE FROM ordered_series_comparison_zero_reason WHERE dataset_id=$1",
+                     params = list(ressource))
+      DBI::dbExecute(con, "DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1",
+                     params = list(ressource))
+      DBI::dbExecute(con, "DELETE FROM series_dataset_publication WHERE dataset_id=$1",
+                     params = list(ressource))
       ecrire_registre_ressource(con, ressource, "owned_series", version,
         reference_content_version = reference_content_version, retired = TRUE)
       return(invisible(list(ressource = ressource, operation = "retire")))
     }
     if (is.null(rows) || !identical(as.character(rows$ressource), as.character(ressource)))
       stop("Owned-series adapter rows do not match the requested resource", call. = FALSE)
-    reference <- if (is.null(rows$reference_content_version)) NULL else
+    reference <- if (!is.null(reference_content_version)) reference_content_version else
       rows$reference_content_version
-    if (is.null(reference)) reference <- reference_content_version
-    ref <- if (is.null(reference)) .reference_series_live(con) else {
-      rows_ref <- rows$projection$reference_rows
-      if (is.null(rows_ref)) rows_ref <- DBI::dbGetQuery(con, paste0(
-        "SELECT territory_id,territory_type,epci_id,density_class_code,",
-        "littoral_code,littoral_classement_source FROM territory_reference"))
-      list(version = as.character(reference)[[1L]], rows = rows_ref)
-    }
+    if (is.null(reference) || length(reference) != 1L || is.na(reference) ||
+        !nzchar(as.character(reference)) || !is.data.frame(reference_rows))
+      stop("Owned-series adapter requires the live reference read by apply", call. = FALSE)
+    reference <- as.character(reference)[[1L]]
     # L'écrivain de l'owner fait TOUTE l'écriture de ce dataset ; l'adaptateur
-    # ne fait que lui transmettre la référence déjà validée.
+    # ne fait que lui transmettre la référence lue une fois par apply.
     owned_series_postgres_adapter(con)$replace_dataset(
       rows$projection, rows$version,
-      reference_version = ref$version, reference_rows = ref$rows)
+      reference_version = reference, reference_rows = reference_rows)
     ecrire_registre_ressource(con, ressource, "owned_series", rows$version,
-      reference_content_version = ref$version, retired = FALSE)
+      reference_content_version = reference, retired = FALSE)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

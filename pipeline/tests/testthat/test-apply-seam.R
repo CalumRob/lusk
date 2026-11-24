@@ -21,8 +21,10 @@ test_that("real repo passes both seam audits (apply guarded, not allowlisted)", 
   ecritures <- verifier_structure_ecritures_serveur(racine)
   expect_true(nrow(ecritures) > 0L)
   expect_equal(nrow(ecritures[!ecritures$autorise, , drop = FALSE]), 0L)
-  # The scalar adapter is an allowlisted writer; apply itself writes none.
-  expect_true(any(grepl("adaptateur_scalaire", ecritures$fichier)))
+  # Every shape adapter is an allowlisted writer; apply itself writes none.
+  for (adaptateur in c("adaptateur_scalaire", "adaptateur_profil_declare",
+                       "adaptateur_series", "adaptateur_collection", "adaptateur_aedar"))
+    expect_true(any(grepl(adaptateur, ecritures$fichier)), info = adaptateur)
   expect_false(any(grepl("apply_publication", ecritures$fichier)))
 })
 
@@ -75,6 +77,25 @@ test_that("a new unallowlisted serving-table write fails the audit (proof)", {
   sites <- auditer_ecritures_serveur(d)
   expect_true(any(grepl("parallel_path\\.R", sites$fichier)))
   expect_true(any(!sites$autorise))
+  expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
+})
+
+test_that("a planted write to any new shape's serving table fails (proof)", {
+  d <- tempfile("seam-shapes-write-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  ecritures <- c("series_dataset_observation", "ordered_series_comparison_group",
+                 "observed_collection_publication", "period_detail_observation",
+                 "aedar_comparison_publication", "aedar_littoral_summary",
+                 "resource_publication")
+  writeLines(c("foo <- function(con) {",
+    vapply(ecritures, function(t) paste0("  DBI::dbExecute(con, 'DELETE FROM ", t, "')"),
+           character(1)),
+    "}"), file.path(d, "R", "parallel_new_shape.R"))
+  sites <- auditer_ecritures_serveur(d)
+  expect_true(all(vapply(ecritures, function(t)
+    any(grepl(paste0("DELETE FROM ", t), sites$source, fixed = TRUE)), logical(1))))
+  expect_true(all(!sites$autorise))
   expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
 })
 
@@ -132,6 +153,12 @@ test_that("one neutral writer owns source_dataset/source_vintage SQL (#1138 revi
   expect_length(citations, 1L)
   expect_match(citations, "\\.quoter_sql_serveur")
   expect_match(citations, "ecriture_sources_serveur\\.R")
+  # No caller reimplements the INSERT SQL: only the shared module owns it.
+  sql_sites <- unlist(lapply(fichiers, function(f) {
+    l <- readLines(f, warn = FALSE)
+    if (any(grepl("INSERT INTO source_(dataset|vintage)", l))) basename(f) else character()
+  }), use.names = FALSE)
+  expect_identical(sql_sites, "ecriture_sources_serveur.R")
 })
 
 test_that("apply delegates every serving write to the shape adapter", {

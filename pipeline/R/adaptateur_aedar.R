@@ -5,10 +5,12 @@
 # `resource_publication`.
 #
 # La comparaison vient de l'Artefact de ressource (liée à sa version de
-# référence territoriale, déjà vérifiée par le préflight de `apply`). L'adaptateur
-# ne lit JAMAIS `territory_reference` vivant — contrairement au `--check` de
-# publish-aedar-aggregates.R. Tout le SQL d'écriture est partagé avec les
-# producteurs (`publish_aedar_aggregates`, `ecrire_aedar_comparaison_rows`).
+# référence territoriale). `apply` lit UNE fois les lignes de
+# territory_reference sous le verrou du producteur et les transmet à tous les
+# adaptateurs : l'adaptateur ne rouvre jamais cette lecture, mais il valide
+# bien la couverture dense territory × TYPEQU avec ces lignes. Tout le SQL
+# d'écriture est partagé avec les producteurs (`publish_aedar_aggregates`,
+# `ecrire_aedar_comparaison_rows`).
 
 projeter_artefact_aedar <- function(artefact) {
   if (!is.list(artefact) || !identical(as.character(artefact$forme), "aedar") ||
@@ -34,18 +36,21 @@ projeter_artefact_aedar <- function(artefact) {
 }
 
 remplacer_aedar <- function(con, ressource, rows = NULL, version = NULL,
-                            retire = FALSE, reference_content_version = NULL, ...) {
+                            retire = FALSE, reference_content_version = NULL,
+                            reference_rows = NULL, ...) {
   valider_identite_ressource(ressource)
   if (!identical(as.character(ressource), "aedar"))
     stop("AEDAR is a single resource named aedar", call. = FALSE)
   publication_transaction(con, {
     if (isTRUE(retire)) {
       # AEDAR est une ressource unique : retirer = vider ses tables de service.
-      for (table in c("aedar_comparison_territory", "aedar_density_class_summary",
-                      "aedar_littoral_summary", "aedar_comparison_group",
-                      "aedar_comparison_publication", "aedar_territorial_aggregate",
-                      "aedar_territory_summary"))
-        DBI::dbExecute(con, paste0("DELETE FROM ", table))
+      DBI::dbExecute(con, "DELETE FROM aedar_comparison_territory")
+      DBI::dbExecute(con, "DELETE FROM aedar_density_class_summary")
+      DBI::dbExecute(con, "DELETE FROM aedar_littoral_summary")
+      DBI::dbExecute(con, "DELETE FROM aedar_comparison_group")
+      DBI::dbExecute(con, "DELETE FROM aedar_comparison_publication")
+      DBI::dbExecute(con, "DELETE FROM aedar_territorial_aggregate")
+      DBI::dbExecute(con, "DELETE FROM aedar_territory_summary")
       for (table in c("aedar_territorial_aggregate", "aedar_territory_summary"))
         DBI::dbExecute(con, paste0("DELETE FROM table_publication WHERE table_name='", table, "'"))
       ecrire_registre_ressource(con, ressource, "aedar", version,
@@ -60,10 +65,14 @@ remplacer_aedar <- function(con, ressource, rows = NULL, version = NULL,
         !identical(reference, as.character(reference_content_version)[[1L]]))
       stop("AEDAR artefact comparison reference differs from the applied reference",
            call. = FALSE)
-    # Les deux écrivains existants écrivent TOUTES les tables de service AEDAR ;
-    # la référence injectée vient de l'artefact, aucune lecture de
-    # territory_reference vivant ici (le préflight de apply l'a déjà vérifiée).
+    if (!is.data.frame(reference_rows) ||
+        !all(c("territory_id", "territory_type") %in% names(reference_rows)))
+      stop("AEDAR adapter requires the live reference rows read by apply", call. = FALSE)
+    # Les deux écrivains existants écrivent TOUTES les tables de service AEDAR.
+    # La version live a été épinglée au préflight ; les lignes lues une fois par
+    # apply sont passées au validateur de couverture dense.
     publish_aedar_aggregates(rows$projection, con, reference_version = reference,
+                             reference_pairs = reference_rows,
                              version = comparison$aedar_content_version)
     ecrire_aedar_comparaison_rows(con, comparison, comparison$groups,
                                   comparison$density_rows, comparison$littoral_rows)
