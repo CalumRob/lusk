@@ -7,19 +7,24 @@
 BLOCS_OUVRANTS <- "function\\s*\\(|\\bif\\s*\\(|\\bfor\\s*\\(|\\bwhile\\s*\\("
 
 # autorisations : liste de listes (fichier, raison) — fichier peut être un regex.
+# Les chemins historiques sont autorisés EN ATTENDANT l'étape 4 (ADR-0049) :
+# ils sont explicitement marqués « retire in ADR-0049 step 4 ». Le SEUL nouveau
+# chemin autorisé est `apply`, la couture de publication (step 2, #1137).
 AUTORISATIONS_DB <- list(
+  list(fichier = "^R/apply_publication\\.R$",
+       raison = "ADR-0049 step 2 (#1137) : apply est la SEULE couture de connexion de service ; refus avant toute écriture"),
   list(fichier = "^R/publish_serving_bridge\\.R$",
-       raison = "pont offre_tc #1072 — outil de recovery, hors périmètre #1103"),
+       raison = "pont offre_tc #1072 — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/smoke-.*\\.R$",
-       raison = "tests de fumée ciblent exclusivement des schémas lusk_it_* jetables"),
+       raison = "tests de fumée ciblent des schémas lusk_it_* jetables — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/publish-aedar-aggregates\\.R$",
        motif = "reference_connection",
-       raison = "branche --check : connexion READ ONLY de référence territoriale, aucune écriture"),
+       raison = "branche --check READ ONLY — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/publish-serving-tables\\.R$",
        motif = "configuration_service_postgres\\(\\) # fail before any upstream compute",
-       raison = "branche --targets : validation de configuration seulement, le garde est dans le target du graphe"),
+       raison = "branche --targets : validation de configuration seulement — retire in ADR-0049 step 4"),
   list(fichier = "^R/publish_postgres_configuration\\.R$",
-       raison = "configuration_service_postgres() ne ouvre aucune connexion ; le garde précède dbConnect")
+       raison = "configuration_service_postgres() n'ouvre aucune connexion — retire in ADR-0049 step 4")
 )
 
 relatif_sous <- function(chemin, racine) {
@@ -252,6 +257,75 @@ verifier_structure_hachages_wfs <- function(racine) {
       "Structural WFS-hash audit — ", nrow(fautes),
       " raw GetFeature envelope(s) hashed outside the canonical helper:\n",
       paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", trimws(fautes$source),
+             collapse = "\n"),
+      call. = FALSE
+    )
+  }
+  invisible(sites)
+}
+
+# Écriture des tables de service (ADR-0049 décision 8 / #1137) -----------------
+# SEUL un adaptateur de forme peut écrire les tables de service d'une forme.
+# Le scanner repère toute écriture (DELETE/INSERT/UPDATE/TRUNCATE/dbWriteTable)
+# sur une table de service scalaire ; un site non autorisé fait échouer la
+# suite. Les producteurs historiques sont autorisés « retire in ADR-0049 step 4 »
+# ; `apply` n'écrit AUCUNE table de service directement — il délègue à l'adaptateur.
+TABLES_SERVICE_SCALAIRE <- paste0(
+  "scalar_observation|scalar_descriptor|scalar_comparison_",
+  "|comparison_source_lineage|scalar_resource_comparison_publication")
+MOTIF_ECRITURE_SERVEUR <- paste0(
+  "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE_SCALAIRE, ")",
+  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE_SCALAIRE, ")")
+
+AUTORISATIONS_ECRITURE_SERVEUR <- list(
+  list(fichier = "^R/adaptateur_.*\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/publish.*\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^R/aedar_aggregates\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/.*\\.R$",
+       raison = "smoke/producteur historique — retire in ADR-0049 step 4")
+)
+
+auditer_ecritures_serveur <- function(racine,
+                                      autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
+  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  trousses <- list()
+  for (f in fichiers) {
+    rel <- relatif_sous(f, racine)
+    lignes <- readLines(f, warn = FALSE)
+    for (i in seq_along(lignes)) {
+      l <- sub("#.*$", "", lignes[[i]])
+      if (!grepl(MOTIF_ECRITURE_SERVEUR, l, ignore.case = TRUE)) next
+      raison <- NA_character_
+      for (a in autorisations) {
+        if (grepl(a$fichier, rel)) { raison <- a$raison; break }
+      }
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = rel, ligne = i, autorise = !is.na(raison),
+        raison = if (is.na(raison)) "" else raison,
+        source = trimws(l), stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(trousses)) {
+    return(data.frame(fichier = character(), ligne = integer(),
+                      autorise = logical(), raison = character(), source = character()))
+  }
+  do.call(rbind, trousses)
+}
+
+verifier_structure_ecritures_serveur <- function(racine,
+                                                 autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
+  sites <- auditer_ecritures_serveur(racine, autorisations)
+  fautes <- sites[!sites$autorise, , drop = FALSE]
+  if (nrow(fautes)) {
+    stop(
+      "Structural serving-table write audit — ", nrow(fautes),
+      " write(s) to a serving table outside a shape adapter:\n",
+      paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", fautes$source,
              collapse = "\n"),
       call. = FALSE
     )
