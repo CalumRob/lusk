@@ -100,6 +100,13 @@ test_that("adoption writes only registry rows and adopted receipts, and dry-run 
   expect_identical(sec$locales, 0L)
 })
 
+test_that("AEDAR adoption reads only persisted tables and never invents a theme identity", {
+  handler <- REGISTRE_FORMES_RESSOURCE[["aedar"]]
+  expect_identical(handler$lignes_persistees, lignes_aedar_persistees)
+  expect_false(grepl("lire_theme_metadata", paste(deparse(lire_live_aedar), collapse = "")))
+  expect_false(grepl("descriptor", paste(deparse(lire_live_aedar), collapse = "")))
+})
+
 test_that("persisted-row comparison names every mismatching table and ignores declared storage columns", {
   attendu <- list(
     facts = data.frame(territory_id = c("c1", "c2"), value = c(1, 2),
