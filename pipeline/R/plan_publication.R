@@ -158,23 +158,28 @@ reference_changee <- function(artefacts, artefacts_live, live_reference = NULL) 
 
 # -- Dérive entre les deux artefacts -------------------------------------------
 
-tableau_faits_ressource <- function(faits) {
-  if (is.data.frame(faits) && all(c("territory_id", "value") %in% names(faits)))
-    return(faits)
-  # Les artefacts scalaires portent des faits groupés (`facts`,
-  # `eligible_territories`) : la dérive porte sur le tableau `facts`, pas sur
-  # l'univers d'éligibilité (qui appartient à la référence territoriale).
-  if (is.list(faits) && is.data.frame(faits$facts) &&
-      all(c("territory_id", "value") %in% names(faits$facts)))
-    return(faits$facts)
-  NULL
+# Le chemin vers le tableau territory_id/value appartient au handler de forme
+# (`champ_faits_drift`) : le plan n'a aucune connaissance par forme. Par exemple
+# le scalaire déclare "facts" (son grain groupe aussi `eligible_territories`,
+# qui appartient à la référence et ne doit pas entrer dans la dérive).
+faits_drift_ressource <- function(grain, handler) {
+  chemin <- handler$champ_faits_drift
+  if (!is.null(chemin)) {
+    for (champ in as.character(chemin)) {
+      if (!is.list(grain) || is.null(grain[[champ]])) return(NULL)
+      grain <- grain[[champ]]
+    }
+  }
+  if (is.data.frame(grain) && all(c("territory_id", "value") %in% names(grain)))
+    grain else NULL
 }
 
-resume_derive_ressource <- function(artefact_live, artefact_built) {
+resume_derive_ressource <- function(artefact_live, artefact_built, forme = "scalar") {
   inconnue <- list(disponible = FALSE, nombre = NA_integer_,
                    territoires = character())
-  faits_live <- tableau_faits_ressource(artefact_live$contenu$faits)
-  faits_built <- tableau_faits_ressource(artefact_built$contenu$faits)
+  handler <- REGISTRE_FORMES_RESSOURCE[[forme]]
+  faits_live <- faits_drift_ressource(artefact_live$contenu$faits, handler)
+  faits_built <- faits_drift_ressource(artefact_built$contenu$faits, handler)
   if (is.null(faits_live) || is.null(faits_built)) return(inconnue)
   scinder <- function(faits) split(as.character(faits$value),
                                    as.character(faits$territory_id))
@@ -276,7 +281,7 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
 
     drift <- if (is.null(precedent)) {
       list(disponible = FALSE, nombre = NA_integer_, territoires = character())
-    } else resume_derive_ressource(precedent, artefact)
+    } else resume_derive_ressource(precedent, artefact, as.character(artefact$forme))
     drift_disponible[[i]] <- drift$disponible
     drift_nb[[i]] <- drift$nombre
     drift_territoires[[i]] <- paste(drift$territoires, collapse = ",")

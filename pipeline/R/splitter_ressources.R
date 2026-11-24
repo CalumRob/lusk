@@ -174,9 +174,11 @@ faits_forme <- function(handler, projection) {
 #   lire(sortie, reference, metadata_directory) -> liste nommée de projections ;
 #   champs_faits / champ_descripteur / champ_provenance / champ_comparaison
 #   désignent les grains de l'Artefact de ressource ;
-#   comparaison(projection, ressource, reference) -> comparaison de la ressource.
-# Ajouter une forme = ajouter UNE entrée ici ; le splitter n'a aucune branche
-# conditionnelle par forme.
+#   comparaison(projection, ressource, reference) -> comparaison de la ressource ;
+#   comparer_definition(live, built) -> garde canonique composé pour cette forme ;
+#   champ_faits_drift -> chemin vers le tableau territory_id/value de l'artefact.
+# Ajouter une forme = ajouter UNE entrée ici ; ni le splitter ni le plan n'ont
+# de branche conditionnelle par forme.
 # Definition semantique d'un descripteur — UNE seule source : les constantes et
 # identical_scalar_descriptor() de publish_scalar_scope.R (deja partagees avec
 # publish_serving_bridge.R). Aucun champ n'est repertorie ici : on projette le
@@ -230,7 +232,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_provenance = "provenance",
     champ_comparaison = NULL,
     comparaison = comparaison_scalaire_ressource,
-    comparer_definition = comparer_definition_canonique()),
+    comparer_definition = comparer_definition_canonique(),
+    champ_faits_drift = "facts"),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -239,7 +242,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
-    comparer_definition = comparer_definition_canonique()),
+    comparer_definition = comparer_definition_canonique(),
+    champ_faits_drift = NULL),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -248,7 +252,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
-    comparer_definition = comparer_definition_canonique()),
+    comparer_definition = comparer_definition_canonique(),
+    champ_faits_drift = NULL),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -257,7 +262,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
-    comparer_definition = comparer_definition_canonique()),
+    comparer_definition = comparer_definition_canonique(),
+    champ_faits_drift = NULL),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie)
@@ -268,7 +274,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_provenance = "source",
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
-    comparer_definition = comparer_definition_canonique())
+    comparer_definition = comparer_definition_canonique(),
+    champ_faits_drift = NULL)
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

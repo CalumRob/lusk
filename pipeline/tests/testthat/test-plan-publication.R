@@ -107,6 +107,19 @@ test_that("la cascadance vient de comparison_scalar, jamais d'un littéral ni de
   expect_false(grepl("required_scalar_version", code, fixed = TRUE))
 })
 
+test_that("le regroupement des faits pour la dérive appartient au registre des formes", {
+  registre <- REGISTRE_FORMES_RESSOURCE
+  expect_true(all(vapply(registre, function(h)
+    "champ_faits_drift" %in% names(h), logical(1))))
+  expect_identical(registre$scalar$champ_faits_drift, "facts")
+  expect_true(all(vapply(registre[setdiff(names(registre), "scalar")], function(h)
+    is.null(h$champ_faits_drift), logical(1))))
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "plan_publication.R"),
+                          warn = FALSE), collapse = "\n")
+  expect_false(grepl("tableau_faits_ressource", code, fixed = TRUE))
+  expect_true(grepl("champ_faits_drift", code, fixed = TRUE))
+})
+
 # -- Drift summary (from the two artefacts) -----------------------------------
 
 test_that("la dérive nomme les territoires dont la valeur a changé", {
