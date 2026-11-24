@@ -83,7 +83,7 @@ executer_tests_lents <- function(fichiers) {
     cat("No slow tests declare the changed paths.\n")
     return(invisible(NULL))
   }
-  cat("Running", length(fichiers), "slow test file(s):\n",
+  cat(sprintf("Running %d slow test file(s):\n", length(fichiers)),
       paste(" ", fichiers, collapse = "\n"), "\n", sep = "")
   resultats <- lapply(fichiers, function(fichier) {
     tryCatch(
