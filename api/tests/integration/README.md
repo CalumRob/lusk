@@ -462,6 +462,40 @@ $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='apply-scalar-db', stop_on_failure=TRUE)"
 ```
 
+### Declared-profile cascade and migration 047 (#1138)
+
+`test_profile_resource_comparison_migration.py` is the guarded, non-retained
+populated-upgrade rehearsal of migration 047 (per-resource profile comparison
+marker). It uses the same documented `lusk_it_contract` DSNs, dedicated roles,
+private `PGPASSFILE`, mutex, cleanup opt-in and runtime identity checks, owns
+only its two random schemas, and drops them in `finally`. It proves the global
+`table_publication['declared_profile']` marker and the
+`profile_comparison_publication` singleton survive, the new relation matches a
+fresh `schema.sql`, and its CHECK/PK behaviour rejects a negative count and a
+duplicate indicator. Without the `LUSK_TEST_*` variables it skips before any
+connection.
+
+```powershell
+python -m pytest api/tests/integration/test_profile_resource_comparison_migration.py -q
+```
+
+The end-to-end cascade proof lives with the R code
+(`pipeline/tests/testthat/test-apply-profile-db.R`). It uses the
+`LUSK_SCALAR_TEST_*` variables plus `LUSK_SCALAR_TEST_CLEANUP=1`, one random
+schema and fresh `api/schema.sql` (migrations 046/047 parity). It proves
+`apply part_passoires` republishes `part_passoires` and `distribution_dpe` in
+one transaction while every other resource stays byte-identical; that the DPE
+profile's `required_scalar_version` is rebound to the scalar's RESOURCE version
+and the global markers remain untouched (expand phase); that a forced failure
+while publishing the profile rolls the scalar back; and that applying an
+unrelated scalar or a profile with no scalar dependency does not touch the DPE
+profile. It never connects to `lusk` and skips without the guarded variables.
+
+```powershell
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter='apply-profile-db', stop_on_failure=TRUE)"
+```
+
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration

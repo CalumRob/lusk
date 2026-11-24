@@ -91,7 +91,8 @@ artefacts_fixture_profile_artefact <- function(root = artefacts_fixture_root(),
                                                comparison_scalar = "part_passoires",
                                                required_scalar_version = "part-passoires-v1",
                                                reference_version = "reference-v1",
-                                               label = "DPE distribution") {
+                                               label = "DPE distribution",
+                                               source_id = "profile_source") {
   descriptor <- list(indicator_id = owner, theme_id = "habitat", label = label,
     unit = "kWh", direction = "none", comparison_direction = "high",
     levels = c("commune"), completeness = "dense_complete",
@@ -101,7 +102,7 @@ artefacts_fixture_profile_artefact <- function(root = artefacts_fixture_root(),
     comparison_scalar = comparison_scalar,
     required_scalar_version = required_scalar_version,
     denominator_semantics = "count", detail_units_required = FALSE,
-    sexes = character(), source = "profile_source")
+    sexes = character(), source = source_id)
   axes <- data.frame(axis_name = c("detail", "detail"), axis_key = c("d1", "d2"),
     label = c("D1", "D2"), ordinal = c(0L, 1L), unit = c("kWh", "kWh"),
     stringsAsFactors = FALSE)
@@ -111,11 +112,11 @@ artefacts_fixture_profile_artefact <- function(root = artefacts_fixture_root(),
     stringsAsFactors = FALSE)
   provenance <- data.frame(indicator_id = rep(owner, nrow(facts)),
     territory_id = facts$territory_id, detail_key = facts$detail,
-    sex_key = facts$sex, source_id = rep("profile_source", nrow(facts)),
+    sex_key = facts$sex, source_id = rep(source_id, nrow(facts)),
     vintage_id = rep("v1", nrow(facts)), stringsAsFactors = FALSE)
-  datasets <- data.frame(source_id = "profile_source", name = "Profile source",
+  datasets <- data.frame(source_id = source_id, name = "Profile source",
     stringsAsFactors = FALSE)
-  vintages <- data.frame(source_id = "profile_source", vintage_id = "v1",
+  vintages <- data.frame(source_id = source_id, vintage_id = "v1",
     version = "2020", reference_date = NA_character_,
     publication_date = NA_character_, stringsAsFactors = FALSE)
   faits <- list(facts = facts, axes = axes, datasets = datasets, vintages = vintages,
@@ -135,19 +136,19 @@ artefacts_fixture_profile_artefact <- function(root = artefacts_fixture_root(),
     profile_content_version = cmp_facts,
     reference_content_version = reference_version, stringsAsFactors = FALSE)
   lineage <- data.frame(comparison_context = "same_level", group_id = "g1",
-    territory_type = "commune", facet_id = owner, source_id = "profile_source",
+    territory_type = "commune", facet_id = owner, source_id = source_id,
     vintage_id = "v1", stringsAsFactors = FALSE)
   comparison <- list(content_version = cmp_content,
     profile_content_version = cmp_facts,
     reference_content_version = reference_version,
     groups = groups, territories = territories, lineage = lineage)
   contenu <- contenu_artefact(faits, descriptor, provenance, comparison)
-  digests <- artefacts_fixture_digests("profile_source")
+  digests <- artefacts_fixture_digests(source_id)
   ecrit <- ecrire_artefact_ressource(owner, "declared_profile", contenu,
-    digests_lignage = digests_lignage_ressource("profile_source", digests), root = root)
+    digests_lignage = digests_lignage_ressource(source_id, digests), root = root)
   artefact <- lire_artefact_ressource(owner, ecrit$version, root = root)
-  lock <- stats::setNames(list(list(sha256 = "sha256-profile_source",
-    acquired_at = "2026-01-01")), "profile_source")
+  lock <- stats::setNames(list(list(sha256 = paste0("sha256-", source_id),
+    acquired_at = "2026-01-01")), source_id)
   list(root = root, ressource = owner, version = ecrit$version,
        artefact = artefact, lock = lock)
 }
