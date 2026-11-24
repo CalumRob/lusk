@@ -32,7 +32,8 @@
 # Project an Artefact de ressource into the rows the shared writers consume.
 # Pure: no connection, no write. The descriptor keeps ALL producer fields —
 # including the declared `comparison_scalar` dependency and the build-time
-# `required_scalar_version`, which `remplacer` rebinds at apply time.
+# `required_scalar_version` (the dependency's FACTS version), which `remplacer`
+# only VERIFIES at apply time.
 projeter_artefact_profil_declare <- function(artefact) {
   if (!is.list(artefact) || !identical(as.character(artefact$forme), "declared_profile") ||
       !is.list(artefact$contenu))
@@ -59,7 +60,6 @@ projeter_artefact_profil_declare <- function(artefact) {
   provenance <- contenu$provenance %||% vides$provenance
   if (!is.data.frame(provenance))
     stop("Declared-profile artefact provenance is invalid", call. = FALSE)
-  if (!"indicator_id" %in% names(provenance)) provenance$indicator_id <- rep(id, nrow(provenance))
   provenance$indicator_id <- rep(id, nrow(provenance))
   for (col in c("detail_key", "sex_key", "source_id", "vintage_id"))
     if (!col %in% names(provenance)) provenance[[col]] <- rep(NA_character_, nrow(provenance))
@@ -70,28 +70,42 @@ projeter_artefact_profil_declare <- function(artefact) {
        digests_lignage = artefact$digests_lignage)
 }
 
-# Version de ressource publiée of the declared scalar dependency. When `apply`
-# publishes the closure it passes every artefact's version explicitly — that is
-# the authoritative binding (the dependency is in the same transaction). When
-# the profile is applied on its own we read the live registry inside the same
-# transaction. A missing dependency fails closed with a NAMED reason.
-.version_ressource_dependance_profil <- function(con, dependance, artefacts = NULL) {
+# Vérification STRICTE de la dépendance déclarée (#1138 review) : le profil a
+# enregistré À LA CONSTRUCTION la version des FAITS sur laquelle il a été
+# calculé (`required_scalar_version`, jeton #1135). En cascade on compare aux
+# faits de l'artefact de la dépendance ; sinon au marqueur vivant par ressource.
+# Toute divergence (`dependance_divergente`) ou absence (`dependance_absente`)
+# refuse AVANT la première écriture, avec une raison nommée. Jamais de rebind
+# silencieux : le jeton enregistré est VÉRIFIÉ, pas remplacé.
+.verifier_dependance_faits_profil <- function(con, descriptor, artefacts = NULL) {
+  dependance <- descriptor[["comparison_scalar"]]
+  if (is.null(dependance) || !length(dependance) || is.na(dependance) ||
+      !nzchar(as.character(dependance)[[1L]]))
+    return(invisible(NULL))
   dependance <- as.character(dependance)[[1L]]
-  version <- NULL
-  if (is.list(artefacts) && !is.null(artefacts[[dependance]]))
-    version <- artefacts[[dependance]]$version
-  if (!is.null(version)) version <- as.character(version)[[1L]]
-  if (is.null(version) || is.na(version) || !nzchar(version)) {
-    ligne <- DBI::dbGetQuery(con, paste0(
-      "SELECT content_version FROM resource_publication ",
-      "WHERE resource_id=$1 AND retired=false"), params = list(dependance))
-    if (!is.data.frame(ligne) || !nrow(ligne) || is.na(ligne$content_version[[1L]]) ||
-        !nzchar(as.character(ligne$content_version[[1L]])))
-      stop("Declared-profile scalar dependency has no published resource version: ",
-           dependance, call. = FALSE)
-    version <- as.character(ligne$content_version[[1L]])[[1L]]
+  construit_sur <- descriptor[["required_scalar_version"]]
+  if (is.null(construit_sur) || !length(construit_sur) || is.na(construit_sur) ||
+      !nzchar(as.character(construit_sur)[[1L]]))
+    stop(erreur_apply("dependance_absente", paste0(
+      "apply : dependance_absente: ", dependance,
+      " n'a aucune version de faits enregistrée sur le profil — zéro écriture.")))
+  construit_sur <- as.character(construit_sur)[[1L]]
+  if (is.list(artefacts) && !is.null(artefacts[[dependance]])) {
+    vivant <- version_faits_artefact(artefacts[[dependance]])
+    origine <- "built"
+  } else {
+    vivant <- version_faits_live_ressource(con, dependance)
+    origine <- "live"
   }
-  version
+  if (is.na(vivant) || !nzchar(vivant))
+    stop(erreur_apply("dependance_absente", paste0(
+      "apply : dependance_absente: ", dependance,
+      " n'a pas de version de faits publiée — zéro écriture.")))
+  if (!identical(vivant, construit_sur))
+    stop(erreur_apply("dependance_divergente", paste0(
+      "apply : dependance_divergente: ", dependance, " ", origine, " ", vivant,
+      ", profil construit sur ", construit_sur, " — zéro écriture.")))
+  invisible(vivant)
 }
 
 # Replace this ONE profile's rows inside the caller's publication transaction.
@@ -103,18 +117,13 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
   if (!isTRUE(retire) && (is.null(rows) || !identical(as.character(rows$ressource), ressource)))
     stop("Declared-profile adapter rows do not match the requested resource", call. = FALSE)
   publication_transaction(con, {
-    # Resolve the declared dependency BEFORE the first write. A missing scalar
-    # resource version fails closed with a named reason; the transaction has
-    # issued no statement at that point.
+    # Verify the recorded dependency facts version BEFORE the first write.
+    # No silent rebinding: a divergent or absent dependency refuses the whole
+    # apply with a named reason; the transaction issued no statement yet.
     descriptor <- NULL
     if (!isTRUE(retire)) {
       descriptor <- rows$descriptor
-      dependance <- descriptor[["comparison_scalar"]]
-      if (!is.null(dependance) && length(dependance) && !is.na(dependance) &&
-          nzchar(as.character(dependance)[[1L]])) {
-        descriptor$required_scalar_version <-
-          .version_ressource_dependance_profil(con, dependance, artefacts = artefacts)
-      }
+      .verifier_dependance_faits_profil(con, descriptor, artefacts = artefacts)
     }
 
     # FK-safe, indicator-scoped deletes. EVERY statement carries an unnamed

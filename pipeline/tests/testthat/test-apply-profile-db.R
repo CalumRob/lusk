@@ -59,6 +59,13 @@
   schema
 }
 
+# Version des FAITS d'une ressource scalaire (#1135), telle que le profil la
+# construit et l'enregistre à la construction.
+.gp_faits <- function(id, source_id, values) {
+  projection <- artefacts_fixture_scalar_indicator(id, source_id, values)
+  version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection)
+}
+
 # Build a scalar resource artefact with a per-resource comparison bound to the
 # fixture reference, plus its lock entry.
 .gp_scalaire <- function(root, id, source_id, values) {
@@ -142,10 +149,11 @@ test_that("guarded: apply part_passoires publishes both resources, spares every 
   avant_densite <- .gp_scalaire_lignes(con, "densite")
   avant_global <- .gp_global(con)
 
-  scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22",
-    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  valeurs_part <- c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30)
+  scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22", valeurs_part)
+  faits_attendus <- .gp_faits("part_passoires", "dpe_22", valeurs_part)
   profil <- artefacts_fixture_profile_artefact(root = root,
-    comparison_scalar = "part_passoires", required_scalar_version = "part-passoires-build-token")
+    comparison_scalar = "part_passoires", required_scalar_version = faits_attendus)
   registre <- c(densite$lock, scalaire$lock, profil$lock)
 
   resultat <- apply_publication("part_passoires", root = root, registre = registre, con = con)
@@ -163,12 +171,17 @@ test_that("guarded: apply part_passoires publishes both resources, spares every 
   expect_equal(nrow(DBI::dbGetQuery(con,
     "SELECT * FROM profile_observation WHERE indicator_id='distribution_dpe'")), 4L)
 
-  # required_scalar_version binds the SCALAR RESOURCE version, not the build token.
-  version_scalaire <- pub$content_version[pub$resource_id == "part_passoires"]
+  # required_scalar_version binds the SCALAR FACTS version (#1135): the token
+  # recorded at build time and the per-resource comparison marker agree, while
+  # the whole-artefact version in the registry is a different value.
   reel <- DBI::dbGetQuery(con, paste0(
     "SELECT required_scalar_version FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))$required_scalar_version[[1L]]
-  expect_identical(reel, version_scalaire)
-  expect_false(identical(reel, "part-passoires-build-token"))
+  marqueur <- DBI::dbGetQuery(con, paste0(
+    "SELECT scalar_content_version FROM scalar_resource_comparison_publication ",
+    "WHERE indicator_id='part_passoires'"))$scalar_content_version[[1L]]
+  expect_identical(reel, faits_attendus)
+  expect_identical(reel, marqueur)
+  expect_false(identical(reel, pub$content_version[pub$resource_id == "part_passoires"]))
 
   # Per-resource markers written; the global markers are untouched (expand phase).
   expect_equal(DBI::dbGetQuery(con, paste0(
@@ -194,10 +207,11 @@ test_that("guarded: a failure while publishing the profile rolls back the scalar
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22",
-    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  valeurs_part <- c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30)
+  scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22", valeurs_part)
+  faits_attendus <- .gp_faits("part_passoires", "dpe_22", valeurs_part)
   profil <- artefacts_fixture_profile_artefact(root = root,
-    comparison_scalar = "part_passoires", required_scalar_version = "part-passoires-build-token")
+    comparison_scalar = "part_passoires", required_scalar_version = faits_attendus)
   registre <- c(scalaire$lock, profil$lock)
   avant <- .gp_tout(con, "distribution_dpe", "part_passoires")
 
@@ -217,7 +231,7 @@ test_that("guarded: a failure while publishing the profile rolls back the scalar
     "SELECT count(*) AS n FROM profile_descriptor WHERE indicator_id='distribution_dpe'")$n[[1L]], 0L)
 })
 
-test_that("guarded: applying another scalar never touches the DPE profile", {
+test_that("guarded: a divergent recorded dependency facts version refuses with zero writes", {
   con <- .gp_connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   schema <- .gp_schema(con)
@@ -228,8 +242,36 @@ test_that("guarded: applying another scalar never touches the DPE profile", {
 
   scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22",
     c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  # The profile was computed against another generation of the scalar's facts.
   profil <- artefacts_fixture_profile_artefact(root = root,
-    comparison_scalar = "part_passoires", required_scalar_version = "part-passoires-build-token")
+    comparison_scalar = "part_passoires",
+    required_scalar_version = "facts-d-une-autre-generation")
+  registre <- c(scalaire$lock, profil$lock)
+  avant <- .gp_tout(con, "distribution_dpe", "part_passoires")
+
+  err <- tryCatch(apply_publication("part_passoires", root = root,
+    registre = registre, con = con), error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "dependance_divergente")
+  expect_match(conditionMessage(err), "part_passoires built ", fixed = TRUE)
+  expect_match(conditionMessage(err), "facts-d-une-autre-generation", fixed = TRUE)
+  expect_identical(.gp_tout(con, "distribution_dpe", "part_passoires"), avant)
+})
+
+test_that("guarded: applying another scalar never touches the DPE profile", {
+  con <- .gp_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .gp_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
+
+  valeurs_part <- c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30)
+  scalaire <- .gp_scalaire(root, "part_passoires", "dpe_22", valeurs_part)
+  faits_attendus <- .gp_faits("part_passoires", "dpe_22", valeurs_part)
+  profil <- artefacts_fixture_profile_artefact(root = root,
+    comparison_scalar = "part_passoires", required_scalar_version = faits_attendus)
   densite <- .gp_scalaire(root, "densite", "census_densite", rep(1L, 10))
   registre <- c(scalaire$lock, profil$lock, densite$lock)
   apply_publication("part_passoires", root = root, registre = registre, con = con)
@@ -254,17 +296,25 @@ test_that("guarded: applying a profile with no scalar dependency touches only th
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  dpe <- artefacts_fixture_profile_artefact(root = root, comparison_scalar = "part_passoires",
-    required_scalar_version = "part-passoires-build-token")
   autre <- artefacts_fixture_profile_artefact(root = root, owner = "reseaux",
     comparison_scalar = NULL, required_scalar_version = NULL,
     source_id = "independent_profile_source")
+  # Publish DPE using an already-live scalar FACTS version (the per-resource
+  # comparison marker), then snapshot it.
+  faits_dpe <- .gp_faits("part_passoires", "dpe_energy",
+    c(20, 30, 40, 50, 60, 70, 80, 90, 100, 110))
+  # Rebuild DPE against the real facts version of the live scalar.
+  dpe <- artefacts_fixture_profile_artefact(root = root, comparison_scalar = "part_passoires",
+    required_scalar_version = faits_dpe, source_id = "profile_source_dpe")
   registre <- c(dpe$lock, autre$lock)
-  # Publish DPE using an already-live scalar resource row (apply alone would
-  # otherwise have no dependency to bind), then snapshot it.
   DBI::dbExecute(con, paste0(
     "INSERT INTO resource_publication(resource_id,shape,content_version,reference_content_version,published_at) ",
-    "VALUES('part_passoires','scalar','part-passoires-v-live','reference-v1',now())"))
+    "VALUES('part_passoires','scalar','part-passoires-artefact-live','reference-v1',now())"))
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
+    "scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) ",
+    "VALUES('part_passoires','cmp-live',$1,'reference-v1',0,0,0)"),
+    params = list(faits_dpe))
   apply_publication("distribution_dpe", root = root, registre = registre, con = con)
   avant_dpe <- .gp_profil(con, "distribution_dpe")
   avant_global <- .gp_global(con)
