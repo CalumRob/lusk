@@ -86,7 +86,8 @@ test_that("remplacer writes only this dataset and the registry row", {
   deletes <- executes[grepl("^DELETE", executes)]
   expect_true(length(deletes) >= 3L)
   # Every delete is scoped to the dataset (positional param), never wholesale.
-  expect_true(all(grepl("WHERE dataset_id=\\$1|WHERE indicator_id=\\$1", deletes)))
+  expect_true(all(grepl("WHERE dataset_id=\\$1|WHERE indicator_id=\\$1|WHERE publication_resource_id=\\$1",
+                       deletes)))
   expect_false(any(grepl("DELETE FROM series_dataset_publication$", deletes)))
   # Series storage marker + registry row, but no global table_publication write
   # from the adapter path (the owner writer owns that expand-phase marker).

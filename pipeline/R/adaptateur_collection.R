@@ -23,6 +23,7 @@ projeter_artefact_collection <- function(artefact) {
   if (!is.list(projection)) stop("Observed-collection artefact is missing its fact grain", call. = FALSE)
   projection$descriptor <- contenu$descriptor
   projection$provenance <- contenu$provenance
+  declarations <- extraire_declaration_ressource(contenu$descriptor)
   if (is.list(projection$descriptor)) projection$descriptor$indicator_id <- id
   for (champ in names(projection)) {
     value <- projection[[champ]]
@@ -35,7 +36,7 @@ projeter_artefact_collection <- function(artefact) {
     as.character(comparison$reference_content_version)[[1L]] else NULL
   list(ressource = id, forme = "observed_collection", version = artefact$version,
        projection = projection, reference_content_version = reference,
-       digests_lignage = artefact$digests_lignage)
+       declarations = declarations, digests_lignage = artefact$digests_lignage)
 }
 
 remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,
@@ -90,6 +91,7 @@ remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,
     }
     ecrire_registre_ressource(con, ressource, "observed_collection", rows$version,
       reference_content_version = reference, retired = FALSE)
+    ecrire_descripteurs_ressource(con, ressource, rows$version, rows$declarations)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

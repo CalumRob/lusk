@@ -3,6 +3,7 @@
   "resources": [
     {
       "resource_id": "aedar_territorial_aggregate",
+      "publication_resource_id": "aedar",
       "producer": "pipeline/R/aedar_aggregates.R",
       "kind": "aedar_source_grain",
       "label": "AEDAR territorial aggregates",
@@ -368,6 +369,7 @@
     },
     {
       "resource_id": "aedar_territory_summary",
+      "publication_resource_id": "aedar",
       "producer": "pipeline/R/aedar_aggregates.R",
       "kind": "aedar_territory_summary",
       "label": "AEDAR territory summaries",

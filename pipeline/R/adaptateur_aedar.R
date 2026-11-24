@@ -26,13 +26,14 @@ projeter_artefact_aedar <- function(artefact) {
     stop("AEDAR artefact is missing its territorial fact grain", call. = FALSE)
   projection$source <- contenu$provenance
   projection$descriptor <- contenu$descriptor
+  declarations <- extraire_declaration_ressource(contenu$descriptor)
   comparison <- contenu$comparison
   if (!is.list(comparison) || !is.data.frame(comparison$groups) ||
       is.null(comparison$reference_content_version))
     stop("AEDAR artefact must carry its artefact-bound comparison", call. = FALSE)
   list(ressource = id, forme = "aedar", version = artefact$version,
        projection = projection, comparison = comparison,
-       digests_lignage = artefact$digests_lignage)
+       declarations = declarations, digests_lignage = artefact$digests_lignage)
 }
 
 remplacer_aedar <- function(con, ressource, rows = NULL, version = NULL,
@@ -78,6 +79,7 @@ remplacer_aedar <- function(con, ressource, rows = NULL, version = NULL,
                                   comparison$density_rows, comparison$littoral_rows)
     ecrire_registre_ressource(con, ressource, "aedar", rows$version,
       reference_content_version = reference, retired = FALSE)
+    ecrire_descripteurs_ressource(con, ressource, rows$version, rows$declarations)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

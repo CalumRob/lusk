@@ -68,7 +68,7 @@ test_that("remplacer writes only this collection and the registry row", {
   executes <- capture$executes
   deletes <- executes[grepl("^DELETE", executes)]
   expect_true(length(deletes) >= 2L)
-  expect_true(all(grepl("WHERE indicator_id=\\$1", deletes)))
+  expect_true(all(grepl("WHERE indicator_id=\\$1|WHERE publication_resource_id=\\$1", deletes)))
   # Storage marker + comparison marker + registry row, all for this collection.
   expect_true(any(grepl("INSERT INTO observed_collection_publication", executes)))
   expect_true(any(grepl("INSERT INTO observed_collection_comparison_publication", executes)))

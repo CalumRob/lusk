@@ -27,6 +27,7 @@ projeter_artefact_series <- function(artefact) {
   if (!is.list(projection)) stop("Owned-series artefact is missing its fact grain", call. = FALSE)
   projection$descriptor <- contenu$descriptor
   projection$provenance <- contenu$provenance
+  declarations <- extraire_declaration_ressource(contenu$descriptor)
   dataset <- if (is.list(contenu$descriptor)) contenu$descriptor$dataset_id else NULL
   if (is.null(dataset)) dataset <- projection$descriptor$dataset_id[[1L]]
   if (is.null(dataset) || length(dataset) != 1L || !nzchar(as.character(dataset)) ||
@@ -46,7 +47,7 @@ projeter_artefact_series <- function(artefact) {
     as.character(comparison$reference_content_version)[[1L]] else NULL
   list(ressource = id, forme = "owned_series", version = artefact$version,
        dataset_id = id, projection = projection,
-       reference_content_version = reference,
+       reference_content_version = reference, declarations = declarations,
        digests_lignage = artefact$digests_lignage)
 }
 
@@ -86,6 +87,7 @@ remplacer_series <- function(con, ressource, rows = NULL, version = NULL,
       reference_version = reference, reference_rows = reference_rows)
     ecrire_registre_ressource(con, ressource, "owned_series", rows$version,
       reference_content_version = reference, retired = FALSE)
+    ecrire_descripteurs_ressource(con, ressource, rows$version, rows$declarations)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

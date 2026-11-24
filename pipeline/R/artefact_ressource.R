@@ -43,6 +43,18 @@ version_artefact <- function(contenu) {
   scalar_content_version(contenu)
 }
 
+# La déclaration de découverte (#1140) est publiée avec l'artefact, mais ne
+# change pas la version des FAITS : elle ne participe ni aux valeurs ni à la
+# comparaison. Seule la Version de ressource publiée complète la inclut.
+sans_declaration_decouverte <- function(descripteur) {
+  if (is.data.frame(descripteur)) {
+    descripteur$discovery <- NULL
+  } else if (is.list(descripteur)) {
+    descripteur$discovery <- NULL
+  }
+  descripteur
+}
+
 # Version des FAITS d'une ressource (#1135 token rule) : descripteur + faits +
 # provenance, comparaison exclue. UNE seule définition, partagée par le splitter
 # (`scalar_content_version` de la comparaison), par le liage déclaré du profil
@@ -51,8 +63,8 @@ version_faits_artefact <- function(artefact) {
   if (!is.list(artefact) || !is.list(artefact$contenu))
     stop("Facts version requires an Artefact de ressource", call. = FALSE)
   contenu <- artefact$contenu
-  version_artefact(contenu_artefact(contenu$faits, contenu$descriptor,
-                                    contenu$provenance, NULL))
+  version_artefact(contenu_artefact(contenu$faits,
+    sans_declaration_decouverte(contenu$descriptor), contenu$provenance, NULL))
 }
 
 contenu_artefact <- function(faits, descripteur, provenance, comparaison = NULL) {
