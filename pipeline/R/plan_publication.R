@@ -372,7 +372,10 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     reference_changee = reference_basculee,
     gel = list(ok = nrow(refuses) == 0L, refuses = refuses),
     blocage = list(bloque = any(bloque), motifs = unique(bloque_par[nzchar(bloque_par)])),
-    verifications = verifs
+    verifications = verifs,
+    # `apply` (#1137) consumes the same artefacts to compute the closure and to
+    # write one resource at a time. Exposing them keeps plan/apply on ONE source.
+    artefacts = artefacts, artefacts_live = artefacts_live
   )
 }
 
