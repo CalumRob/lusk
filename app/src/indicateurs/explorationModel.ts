@@ -237,10 +237,16 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   }).map(project)
   // #1165 : l'extrême est une INVARIANTE de la population — le recalculer
   // dans le prédicat de `filter` coûtait O(n²) (1202×1202 par re-render, soit
-  // ~2,7 s sur la seule spec contexte). Le hisser hors de la boucle est
-  // bit-à-bit identique : même valeur testée pour chaque ligne.
-  const valeurMax = Math.max(...all.map((item) => item.value))
-  const valeurMin = Math.min(...all.map((item) => item.value))
+  // ~2,7 s sur la seule spec contexte). Un seul passage sur les valeurs
+  // hisse les deux bornes, sans projection intermédiaire ni spread. Les
+  // accumulateurs reprennent la sémantique exacte de Math.min/max() à vide,
+  // NaN, Infinity et ±0 ; l'oracle du test compare ligne par ligne.
+  let valeurMax = -Infinity
+  let valeurMin = Infinity
+  for (const value of values) {
+    valeurMax = Math.max(valeurMax, value)
+    valeurMin = Math.min(valeurMin, value)
+  }
   const highRows = all.filter((row) => row.value === valeurMax).map(project)
   const lowRows = all.filter((row) => row.value === valeurMin).map(project)
   const density = estimerDensite(distribution)

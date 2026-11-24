@@ -87,6 +87,82 @@ describe('modèle pur de Page d’indicateur', () => {
     expect(modele.low.count).toBe(1)
     expect(modele.low.rows[0].territoire.territoire).toBe('a') // min = 10, dans le filtre
   })
+
+  it('extrêmes (#1165) : le hissage reste identique à l’oracle O(n²) sur les cas limites et les entrées aléatoires', () => {
+    type ValeurEssai = number | null | undefined
+    // Oracle ORIGINAL : le max/min est recomputé dans CHAQUE prédicat filter.
+    // La valeur null est exclue de la population par `avecValeur` ; undefined
+    // y entre et rend donc les deux extrêmes NaN, comme Math.max/min d’origine.
+    const oracle = (valeurs: readonly ValeurEssai[]) => {
+      const population = valeurs.flatMap((value, index) => value === null ? [] : [{ id: `t${index}`, value: value as number }])
+      const highRows = population.filter((row) => row.value === Math.max(...population.map((item) => item.value)))
+      const lowRows = population.filter((row) => row.value === Math.min(...population.map((item) => item.value)))
+      return { highRows, lowRows }
+    }
+    const verifie = (valeurs: ValeurEssai[]) => {
+      const faitsEssai = valeurs.map((value, index) => facts(`t${index}`, value as number | null))
+      const territoiresEssai: Territoire[] = valeurs.map((_, index) => ({
+        territoire: `t${index}`,
+        type: 'commune',
+        nom: `Territoire ${String(index).padStart(4, '0')}`,
+        departement: '22',
+        epci: 'e',
+      }))
+      const modele = modeleExploration(faitsEssai, facet(), territoiresEssai, { niveau: 'commune' })
+      const attendu = oracle(valeurs)
+      const verifieExtreme = (obtenu: ReturnType<typeof modeleExploration>['high'], lignes: Array<{ id: string; value: number }>) => {
+        expect(obtenu.count).toBe(lignes.length)
+        // Le contrat public ne expose la ligne que si l’extrême est unique ;
+        // pour une égalité, le compte reste entier et la liste reste vide.
+        expect(obtenu.rows.map((row) => row.territoire.territoire)).toEqual(lignes.length === 1 ? [lignes[0].id] : [])
+        if (lignes.length === 1) {
+          expect(Object.is(obtenu.rows[0].value, lignes[0].value)).toBe(true)
+          expect(obtenu.rows[0]).toEqual(modele.rows.find((row) => row.territoire.territoire === lignes[0].id))
+        }
+      }
+      verifieExtreme(modele.high, attendu.highRows)
+      verifieExtreme(modele.low, attendu.lowRows)
+    }
+
+    const cas: ValeurEssai[][] = [
+      [],
+      [5],
+      [7, 7, 7, 7],
+      [1, 2, 2, 3],
+      [1, 1, 2, 3],
+      [1, 2, 1, 2],
+      [NaN, 1, 2, 3],
+      [1, 2, 3, NaN],
+      [Infinity, 1, 2, 3],
+      [-Infinity, 0, Infinity],
+      [-0, -0],
+      [0, 0],
+      [0, -0],
+      [-0, 0],
+      [1, null, 2],
+      [null],
+      [1, undefined, 2],
+      [undefined],
+      [1, null, undefined, 2],
+    ]
+    cas.forEach(verifie)
+
+    let graine = 0x51f15e
+    const aleatoire = (): ValeurEssai => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      const cas = graine % 24
+      if (cas === 0) return NaN
+      if (cas === 1) return Infinity
+      if (cas === 2) return -Infinity
+      if (cas === 3) return 0
+      if (cas === 4) return -0
+      if (cas === 5) return null
+      if (cas === 6) return undefined
+      return ((graine >>> 8) / 0xffffff) * 2000 - 1000
+    }
+    for (let n = 0; n < 32; n++) verifie(Array.from({ length: n }, aleatoire))
+    verifie(Array.from({ length: 1202 }, () => ((graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0) / 0xffffffff) * 2000 - 1000))
+  })
 })
 
 describe('estimerDensite — exactitude bit-à-bit (#1165)', () => {
