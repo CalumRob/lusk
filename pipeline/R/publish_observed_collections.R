@@ -311,6 +311,8 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
       categories$anchor_levels <- vapply(categories$anchor_levels,
         litteral_tableau_postgres, character(1))
     }
+    if (!"rider_label" %in% names(categories)) categories$rider_label <- NA_character_
+    if (!"clock_policy" %in% names(categories)) categories$clock_policy <- "dataset"
   }
   out <- list(observed_collection_descriptor = descriptor,
     observed_collection_category = categories, facts = p$facts,

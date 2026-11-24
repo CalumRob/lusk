@@ -4,6 +4,7 @@ test_that("absent SQL arrays are NULL rather than an empty array literal", {
   expect_true(is.na(litteral_tableau_postgres(character())))
   expect_true(is.na(litteral_tableau_postgres(c("commune", NA_character_))))
   expect_identical(litteral_tableau_postgres(c("commune", "epci")), "{commune,epci}")
+  expect_identical(litteral_tableau_postgres("{commune}"), "{commune}")
 })
 
 test_that("every persisted SQL array column is a PostgreSQL array literal", {

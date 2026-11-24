@@ -189,8 +189,10 @@ comparaison_series_ressource <- function(projection, ressource, reference) {
 comparaison_collection_ressource <- function(projection, ressource, reference) {
   if (!is.null(projection$comparison)) return(projection$comparison)
   kind <- champ_descripteur(projection$descriptor, "kind")
-  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["observed_collection"]],
-                                     projection)
+  # The normal collection publisher binds comparison rows to the projection's
+  # content version (descriptor + facts + provenance), not the whole artefact
+  # version that also contains this comparison.
+  version <- scalar_content_version(projection)
   if (identical(as.character(kind), "period_detail"))
     return(project_observed_collection_comparisons(projection, reference$rows,
       version, reference$content_version))

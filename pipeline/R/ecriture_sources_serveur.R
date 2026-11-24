@@ -11,6 +11,8 @@
 # defensively so no list/raw column can reach COPY as bytea.
 litteral_tableau_postgres <- function(x) {
   if (is.null(x)) return(NA_character_)
+  if (length(x) == 1L && is.character(x) && !is.na(x) &&
+      startsWith(x, "{") && endsWith(x, "}")) return(x)
   x <- as.character(unlist(x, use.names = FALSE))
   if (!length(x) || anyNA(x)) return(NA_character_)
   besoin <- grepl('[^[:alnum:]_.:-]', x)
