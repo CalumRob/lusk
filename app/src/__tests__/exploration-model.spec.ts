@@ -74,6 +74,111 @@ describe('modèle pur de Page d’indicateur', () => {
   it('samples finite density coordinates', () => { const density = estimerDensite([10, 20, 30]); expect(density.every((point) => Number.isFinite(point.x) && Number.isFinite(point.density))).toBe(true); expect(positionDensite(density, 20)).toBeCloseTo(50); expect(hauteurDensite(density, 20)).not.toBeNull() })
   it('map filtering keeps BOTH sexes so fusion can aggregate F+M (a sex-filtered payload starves resoudreGroupeSexe and crashes the paint watcher)', () => { const resolved = { ...facet(), detail: 'F', sex: 'F' as const, dimension: 'women', labels: { F: 'Femmes' } }; const femmeA = { ...facts('a', 10), detail: 'F', sex: 'F', dimension: 'women' }; const hommeA = { ...facts('a', 12), detail: 'F', sex: 'M', dimension: 'women' }; const femmeB = { ...facts('b', 20), detail: 'F', sex: 'F', dimension: 'women' }; const source = { territoires, indicateurs: [femmeA, hommeA, femmeB] as unknown as Indicateur[], histoires: [], runReport: null, vintages: null, programmes: null }; const result = payloadPourCarte(source, resolved, { niveau: 'commune' }); expect(result.indicateurs).toEqual([femmeA, hommeA, femmeB]) })
   it('presents ties, null values and empty scopes honestly', () => { const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], facet(), territoires, { niveau: 'commune', territoire: 'c' }); expect(tied.high.count).toBe(2); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], facet(), territoires, { niveau: 'commune' }); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })
+  it('extrêmes (#1165) : le max/min du périmètre est calculé UNE fois sur TOUTE la population, pas une fois par ligne', () => {
+    // Le périmètre complet porte le max et le min ; le filtre de recherche ne
+    // réduit que les LIGNES affichées, jamais les extrêmes. Garder l'invariant
+    // verrouille le correctif O(n²) : l'ancien code recalculait
+    // `Math.max(...all.map(...))` DANS le prédicat de filter (n² appels).
+    const communes = ['a', 'b', 'c', 'd'].map((id, i) => facts(id, [10, 50, 20, 90][i]))
+    const modele = modeleExploration(communes, facet(), territoires, { niveau: 'commune', recherche: 'Alpha' })
+    expect(modele.rows.map((row) => row.territoire.territoire)).toEqual(['a'])
+    expect(modele.high.count).toBe(1)
+    expect(modele.high.rows[0].territoire.territoire).toBe('d') // max = 90, hors du filtre
+    expect(modele.low.count).toBe(1)
+    expect(modele.low.rows[0].territoire.territoire).toBe('a') // min = 10, dans le filtre
+  })
+})
+
+describe('estimerDensite — exactitude et mémoïsation (#1165)', () => {
+  // Oracle : l'implémentation KDE d'ORIGINE, conservée telle quelle dans le
+  // test. Aucune optimisation ne doit en modifier le moindre bit (x, density,
+  // y, y mappé 0..100, NaN/Infinity/span 0), y compris après la mémoïsation.
+  const oracle = (values: readonly number[], samples = 64): ReturnType<typeof estimerDensite> => {
+    if (!values.length) return []
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const span = max - min
+    const bandwidth = Math.max(span / 8, 1e-9)
+    const points = Array.from({ length: samples }, (_, index) => {
+      const x = span === 0 ? min : min + (span * index) / (samples - 1)
+      const density = values.reduce((sum, value) => sum + Math.exp(-0.5 * ((x - value) / bandwidth) ** 2), 0) / (values.length * bandwidth)
+      return { x, density: Number.isFinite(density) ? Math.max(0, density) : 0, y: 0 }
+    })
+    const maximum = Math.max(...points.map((point) => point.density), 0)
+    return points.map((point) => ({ ...point, y: maximum > 0 ? 100 - (point.density / maximum) * 100 : 50 }))
+  }
+  const attendMeme = (obtenu: ReturnType<typeof estimerDensite>, attendu: ReturnType<typeof estimerDensite>) => {
+    expect(obtenu).toHaveLength(attendu.length)
+    obtenu.forEach((point, i) => {
+      expect(Object.is(point.x, attendu[i].x), `x[${i}]`).toBe(true)
+      expect(Object.is(point.density, attendu[i].density), `density[${i}]`).toBe(true)
+      expect(Object.is(point.y, attendu[i].y), `y[${i}]`).toBe(true)
+    })
+  }
+  const pseudoAleatoire = (n: number): number[] => {
+    let graine = 0x2f6e2b1
+    return Array.from({ length: n }, () => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      return (graine / 0xffffffff) * 1000 - 500
+    })
+  }
+
+  it('reste bit-à-bit identique à l’oracle sur les cas limites, aléatoires et les échantillonnages non standards', () => {
+    const cas: Array<{ valeurs: number[]; samples?: number }> = [
+      { valeurs: [] },
+      { valeurs: [5] },
+      { valeurs: [7, 7, 7, 7] }, // span 0
+      { valeurs: [NaN, 1, 2, 3] },
+      { valeurs: [Infinity, 1, 2, 3] },
+      { valeurs: [-Infinity, 0, Infinity] },
+      { valeurs: [0, -0, 1, 2] },
+      { valeurs: [10, 20, 30], samples: 1 },
+      { valeurs: [10, 20, 30], samples: 2 },
+      { valeurs: [10, 20, 30], samples: 7 },
+      { valeurs: pseudoAleatoire(3000), samples: 128 }, // grand n
+    ]
+    for (const { valeurs, samples } of cas) {
+      attendMeme(estimerDensite(valeurs, samples), oracle(valeurs, samples))
+    }
+  })
+
+  it('mémorise par contenu : un tableau distinct de même contenu réutilise exactement le même résultat', () => {
+    const valeurs = pseudoAleatoire(400)
+    const premier = estimerDensite(valeurs)
+    const copie = estimerDensite([...valeurs])
+    expect(copie).toBe(premier)
+    // un contenu différent (ordre différent) ne doit PAS être confondu
+    const autre = estimerDensite([...valeurs].reverse())
+    expect(autre).not.toBe(premier)
+    attendMeme(autre, oracle([...valeurs].reverse()))
+  })
+
+  it('ne renvoie jamais un tableau mutable partagé', () => {
+    const valeurs = pseudoAleatoire(200)
+    const resultat = estimerDensite(valeurs)
+    expect(Object.isFrozen(resultat)).toBe(true)
+    expect(resultat.every((point) => Object.isFrozen(point))).toBe(true)
+    expect(() => { (resultat as unknown as Array<{ y: number }>)[0].y = -999 }).toThrow()
+    // une lecture ultérieure du même contenu reste intacte malgré la tentative d'écriture
+    attendMeme(estimerDensite([...valeurs]), oracle(valeurs))
+  })
+
+  it('le nombre d’échantillons fait partie de la clé de cache', () => {
+    const valeurs = pseudoAleatoire(100)
+    const a = estimerDensite(valeurs, 64)
+    const b = estimerDensite(valeurs, 16)
+    expect(b).not.toBe(a)
+    expect(b).toHaveLength(16)
+    attendMeme(b, oracle(valeurs, 16))
+  })
+
+  it('deux distributions distinctes ne partagent jamais un résultat', () => {
+    const a = estimerDensite([10, 20, 30])
+    const b = estimerDensite([1, 2, 3])
+    expect(b).not.toBe(a)
+    attendMeme(a, oracle([10, 20, 30]))
+    attendMeme(b, oracle([1, 2, 3]))
+  })
 })
 
 // Les helpers partagés du rang et de la médiane (issue #437) — LA seule
