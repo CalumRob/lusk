@@ -106,6 +106,30 @@ let milieuxAbsenceSnapshotHash: string | null = null
 const syntheticReadings = new Map<string, Record<string, any> | null>()
 const producerMetadata = new Map<string, Record<string, any>>()
 
+/**
+ * Mounted specs re-read the same semantic items on every reactive change and
+ * every re-mount. The fixture builders below are pure functions of the producer
+ * catalogue and their declared inputs, so they are memoised for the lifetime of
+ * one test file. Every caller receives a clone: several specs deliberately
+ * corrupt a response to assert that the consumer fails closed, and a cached
+ * object must never carry that mutation into the next read.
+ */
+const cloneFixture = <T,>(value: T): T => structuredClone(value)
+const fixtureInputs = new WeakMap<object, number>()
+let nextFixtureInput = 0
+function fixtureInputKey(value: object | undefined): number | null {
+  if (!value) return null
+  let key = fixtureInputs.get(value)
+  if (key === undefined) {
+    key = nextFixtureInput++
+    fixtureInputs.set(value, key)
+  }
+  return key
+}
+const sourcesForCache = new Map<string, Array<Record<string, any>>>()
+const syntheticIndicatorsCache = new Map<string, Array<Record<string, any>>>()
+const nativeReadFixtureCache = new Map<string, Record<string, any>>()
+
 function metadataFor(theme: string): Record<string, any> {
   let metadata = producerMetadata.get(theme)
   if (!metadata) {
@@ -118,6 +142,20 @@ function metadataFor(theme: string): Record<string, any> {
 }
 
 function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
+  const factKey = fact ? JSON.stringify([fact.source_id ?? null, fact.vintage_version ?? null,
+    'vintage_date_reference' in fact ? [true, fact.vintage_date_reference] : [false, null],
+    'vintage_date_publication' in fact ? [true, fact.vintage_date_publication] : [false, null],
+    fact.vintage_source ?? null]) : 'no-fact'
+  const key = JSON.stringify([resource.resource_id, resource.sources, resource.shapes, ownedSeries,
+    factKey, target?.type ?? null, target?.id ?? null])
+  const cached = sourcesForCache.get(key)
+  if (cached) return cloneFixture(cached)
+  const sources = buildSourcesFor(resource, fact, target, ownedSeries)
+  sourcesForCache.set(key, sources)
+  return cloneFixture(sources)
+}
+
+function buildSourcesFor(resource: Resource, fact?: Record<string, any>, target?: Record<string, any>, ownedSeries = false) {
   if (['raccordement_tc', 'raccordement_courbe', 'raccordement_reference'].includes(resource.resource_id)) {
     const record = mobiliteProducer.source_records[raccordementRoute.source_id]
     const clock = record.vintages.find((entry: Record<string, any>) => entry.id === raccordementRoute.source_id)
@@ -458,6 +496,17 @@ function syntheticSourceId(resource: Resource, territory: Record<string, any>, c
 }
 
 function syntheticIndicators(resource: Resource, target: Record<string, any>): Record<string, any>[] {
+  const identity = observationTarget(target)
+  if (!identity) return []
+  const key = JSON.stringify([resource.resource_id, resource.shapes, identity.type, identity.id])
+  const cached = syntheticIndicatorsCache.get(key)
+  if (cached) return cached.map(cloneFixture)
+  const facts = buildSyntheticIndicators(resource, target)
+  syntheticIndicatorsCache.set(key, facts)
+  return facts.map(cloneFixture)
+}
+
+function buildSyntheticIndicators(resource: Resource, target: Record<string, any>): Record<string, any>[] {
   const identity = observationTarget(target)
   if (!identity) return []
   if (resource.resource_id === 'raccordement_courbe') return [] // owner-specific fixture below
@@ -853,8 +902,27 @@ function syntheticMilieuxSourceBindings(target: Record<string, any>,
   return bindings
 }
 
-/** Return one response-shaped payload using only fields declared by the producer catalogue. */
+/**
+ * Return one response-shaped payload using only fields declared by the producer
+ * catalogue. The response is memoised by its semantic request identity (the
+ * client's per-request `id` is deliberately not part of it) and by the identity
+ * of any injected table context. Callers get a clone so test-side corruption of
+ * one response never leaks into a later read.
+ */
 export function nativeReadFixture(item: Record<string, any>, resource: Resource,
+  context: NativeFixtureContext = {}): Record<string, any> {
+  const key = JSON.stringify([resource, item.target, item.intent, item.coordinates ?? null,
+    item.fields ?? null, fixtureInputKey(context.territories), fixtureInputKey(context.metadata),
+    fixtureInputKey(context.facts), context.syntheticProfileComparisons === true,
+    context.pooledSeriesSuppression === true])
+  const cached = nativeReadFixtureCache.get(key)
+  if (cached) return cloneFixture(cached)
+  const data = buildNativeReadFixture(item, resource, context)
+  nativeReadFixtureCache.set(key, data)
+  return cloneFixture(data)
+}
+
+function buildNativeReadFixture(item: Record<string, any>, resource: Resource,
   context: NativeFixtureContext = {}): Record<string, any> {
   const target = item.target
   const territoryReference = context.territories ?? territories
