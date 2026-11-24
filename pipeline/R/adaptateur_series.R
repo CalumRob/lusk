@@ -81,9 +81,19 @@ remplacer_series <- function(con, ressource, rows = NULL, version = NULL,
       stop("Owned-series adapter requires the live reference read by apply", call. = FALSE)
     reference <- as.character(reference)[[1L]]
     # L'écrivain de l'owner fait TOUTE l'écriture de ce dataset ; l'adaptateur
-    # ne fait que lui transmettre la référence lue une fois par apply.
+    # ne fait que lui transmettre la référence lue une fois par apply. Le jeton
+    # de `series_dataset_publication.content_version` doit être EXACTEMENT
+    # celui que la comparaison de l'artefact porte dans `input_content_version`
+    # (le producteur écrit `ordered_series_comparison_publication.
+    # ordered_series_content_version` depuis le même `version`) : jamais la
+    # version entière de l'artefact, qui hache aussi la comparaison.
+    series_version <- if (is.list(rows$comparison) &&
+      length(rows$comparison$input_content_version) == 1L &&
+      !is.na(rows$comparison$input_content_version))
+      as.character(rows$comparison$input_content_version)[[1L]] else
+      as.character(rows$version)[[1L]]
     owned_series_postgres_adapter(con)$replace_dataset(
-      rows$projection, rows$version, comparison = rows$comparison,
+      rows$projection, series_version, comparison = rows$comparison,
       reference_version = reference, reference_rows = reference_rows)
     ecrire_registre_ressource(con, ressource, "owned_series", rows$version,
       reference_content_version = reference, retired = FALSE)

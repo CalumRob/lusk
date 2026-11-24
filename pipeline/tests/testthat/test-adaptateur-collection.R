@@ -82,6 +82,37 @@ test_that("remplacer writes only this collection and the registry row", {
     is.null(names(p)) || all(names(p) == ""), logical(1))))
 })
 
+test_that("remplacer binds collection storage markers to the artefact comparison token", {
+  # validate_observed_collection_comparison_publication() (api/schema.sql:996)
+  # requires the base marker's content_version, the comparison marker's
+  # collection_content_version and every comparison row's
+  # collection_content_version to be the SAME token. That token belongs to the
+  # artefact's comparison; the writer must not substitute the whole-artefact
+  # version (which also hashes the comparison) or recompute it.
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefact <- adaptateur_collection_artefact(root)
+  rows <- projeter_artefact_collection(artefact)
+  token <- rows$comparison$collection_content_version
+  expect_true(is.character(token) && length(token) == 1L && !is.na(token) && nzchar(token))
+  expect_false(identical(token, rows$version))
+  capture <- adaptateur_collection_con(function(con)
+    remplacer_collection(con, "acv", rows, rows$version,
+      reference_content_version = rows$reference_content_version,
+      reference_rows = adaptateur_reference_rows()))
+  base <- which(grepl("INSERT INTO observed_collection_publication", capture$executes))
+  comparison <- which(grepl("INSERT INTO observed_collection_comparison_publication",
+                            capture$executes))
+  expect_length(base, 1L)
+  expect_length(comparison, 1L)
+  expect_identical(capture$params[[base]][[2L]], token)
+  expect_identical(capture$params[[comparison]][[3L]], token)
+  lignes <- .lignes_collection_comparaison(rows$comparison, "acv")
+  for (table in c("observed_collection_comparison_group",
+                  "observed_collection_comparison_territory"))
+    expect_true(all(lignes[[table]]$collection_content_version == token), info = table)
+})
+
 test_that("remplacer --retire removes only this collection and marks registry retired", {
   capture <- adaptateur_collection_con(function(con)
     remplacer_collection(con, "acv", retire = TRUE, version = "v1"))

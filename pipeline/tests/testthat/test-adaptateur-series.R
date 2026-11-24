@@ -103,6 +103,32 @@ test_that("remplacer writes only this dataset and the registry row", {
     is.null(names(p)) || all(names(p) == ""), logical(1))))
 })
 
+test_that("remplacer binds both series storage markers to the artefact comparison token", {
+  # The producer writes series_dataset_publication.content_version and
+  # ordered_series_comparison_publication.ordered_series_content_version from
+  # the same `version` it passes to project_ordered_series_comparisons() as
+  # `input_content_version`. Apply must use that artefact field, never the
+  # whole-artefact version, so the two markers cannot drift apart.
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefact <- adaptateur_series_artefact(root)
+  rows <- projeter_artefact_series(artefact)
+  token <- rows$comparison$input_content_version
+  expect_true(is.character(token) && length(token) == 1L && !is.na(token) && nzchar(token))
+  expect_false(identical(token, rows$version))
+  capture <- adaptateur_series_con(function(con)
+    remplacer_series(con, "artif_par_habitant", rows, rows$version,
+      reference_content_version = rows$reference_content_version,
+      reference_rows = adaptateur_reference_rows()))
+  base <- which(grepl("INSERT INTO series_dataset_publication", capture$executes))
+  comparison <- which(grepl("INSERT INTO ordered_series_comparison_publication",
+                            capture$executes))
+  expect_length(base, 1L)
+  expect_length(comparison, 1L)
+  expect_identical(capture$params[[base]][[2L]], token)
+  expect_identical(capture$params[[comparison]][[4L]], token)
+})
+
 test_that("remplacer --retire removes only this dataset and marks registry retired", {
   capture <- adaptateur_series_con(function(con)
     remplacer_series(con, "artif_par_habitant", retire = TRUE, version = "v1"))
