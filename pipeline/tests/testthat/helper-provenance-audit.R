@@ -209,26 +209,23 @@ AUTORISATIONS_RESEAU <- list(
        couvert = FALSE)
 )
 
-MOTIF_RESEAU <- paste0(
-  "utils::download\\.file|download\\.file\\(", "|req_perform\\(", "|httr::GET\\(", "|httr2::request\\(",
-  "|curl_fetch|url\\(\"https?://|st_read\\([^)]*https?://",
-  "|read_csv\\([^)]*https?://|fromJSON\\([^)]*https?://"
+FONCTIONS_RESEAU <- c(
+  "download.file", "req_perform", "GET", "request", "curl_fetch",
+  "url", "st_read", "read_csv", "fromJSON"
 )
+FONCTIONS_RESEAU_URL <- c("url", "st_read", "read_csv", "fromJSON")
 
 auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) {
-  fichiers <- fichiers_structure(
-    racine, motif = "download\\.file|req_perform|httr::GET|curl_fetch|url\\(|st_read\\(|read_csv\\(|fromJSON\\(")
+  fichiers <- fichiers_structure(racine, motif = paste(FONCTIONS_RESEAU, collapse = "|"))
   trousses <- list()
-  fonctions_directes <- c("download.file", "req_perform", "GET", "curl_fetch")
-  fonctions_url <- c("url", "st_read", "read_csv", "fromJSON")
-  noms <- c(fonctions_directes, fonctions_url, "request")
+  noms <- FONCTIONS_RESEAU
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
     source <- source_structure(f)
     appels <- appels_structure(source)
     sites <- appels[appels$fonction %in% noms, , drop = FALSE]
     sites <- sites[vapply(seq_len(nrow(sites)), function(i) {
-      if (!sites$fonction[[i]] %in% fonctions_url) return(TRUE)
+      if (!sites$fonction[[i]] %in% FONCTIONS_RESEAU_URL) return(TRUE)
       grepl("https?://", appel_texte(sites[i, , drop = FALSE], source))
     }, logical(1)), , drop = FALSE]
 
