@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
+import { estimerDensite, extremes, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -162,6 +162,50 @@ describe('modèle pur de Page d’indicateur', () => {
     }
     for (let n = 0; n < 32; n++) verifie(Array.from({ length: n }, aleatoire))
     verifie(Array.from({ length: 1202 }, () => ((graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0) / 0xffffffff) * 2000 - 1000))
+  })
+})
+
+describe('extremes — sémantique Math.min/max et sécurité de pile (#1165)', () => {
+  const attendMeme = (valeurs: readonly number[]) => {
+    const obtenu = extremes(valeurs)
+    expect(Object.is(obtenu.min, Math.min(...valeurs)), 'min').toBe(true)
+    expect(Object.is(obtenu.max, Math.max(...valeurs)), 'max').toBe(true)
+  }
+
+  it('reste Object.is-identique au spread sur les cas limites et les séries aléatoires', () => {
+    const cas: number[][] = [
+      [],
+      [5],
+      [1, 2, 3],
+      [NaN],
+      [NaN, 1, 2],
+      [1, NaN, 2],
+      [1, 2, NaN],
+      [Infinity],
+      [-Infinity],
+      [-Infinity, Infinity],
+      [0, -0],
+      [-0, 0],
+      [0, -0, 0],
+      [-0, 0, -0],
+    ]
+    cas.forEach(attendMeme)
+
+    let graine = 0x6e2b1f5
+    const aleatoire = (n: number): number[] => Array.from({ length: n }, () => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      return (graine / 0xffffffff) * 2000 - 1000
+    })
+    for (let n = 0; n < 64; n++) attendMeme(aleatoire(n))
+    attendMeme(aleatoire(1202))
+  })
+
+  it('reste stack-safe sur 200000 valeurs', () => {
+    const valeurs = Array.from({ length: 200000 }, (_, index) => index - 100000)
+    expect(() => extremes(valeurs)).not.toThrow()
+    const obtenu = extremes(valeurs)
+    expect(Object.is(obtenu.min, -100000)).toBe(true)
+    expect(Object.is(obtenu.max, 99999)).toBe(true)
   })
 })
 

@@ -140,17 +140,30 @@ export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat:
   return { ...payload, indicateurs: filtrerFaits(payload.indicateurs, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, dimension: facet.dimension, niveau }, CORRESPONDANCE_CARTE).filter((fact) => ids.has(fact.territoire)) }
 }
 
-/** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
-export function estimerDensite(values: readonly number[], samples = 64): DensitePoint[] {
-  if (!values.length) return []
-  // Math.min/Math.max en boucle : sémantique IDENTIQUE au spread (NaN,
-  // Infinity, -0) sans risque de débordement de pile sur un grand tableau.
+/**
+ * Les extrêmes d'une série en UN passage, sans spread.
+ *
+ * Les accumulateurs partent de `Infinity` / `-Infinity`, puis utilisent
+ * `Math.min` / `Math.max` comme réducteurs : tout `NaN` empoisonne donc les
+ * deux bornes ; `Math.max(-0, +0) === +0` et `Math.min(+0, -0) === -0`.
+ * La séquence est identique à `Math.min(...values)` / `Math.max(...values)`
+ * pour les tableaux non susceptibles de déborder la pile, tout en restant
+ * stack-safe pour les grandes séries.
+ */
+export function extremes(values: readonly number[]): { min: number; max: number } {
   let min = Infinity
   let max = -Infinity
   for (const value of values) {
     min = Math.min(min, value)
     max = Math.max(max, value)
   }
+  return { min, max }
+}
+
+/** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
+export function estimerDensite(values: readonly number[], samples = 64): DensitePoint[] {
+  if (!values.length) return []
+  const { min, max } = extremes(values)
   const span = max - min
   const bandwidth = Math.max(span / 8, 1e-9)
   const points = Array.from({ length: samples }, (_, index) => {
@@ -237,16 +250,10 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   }).map(project)
   // #1165 : l'extrême est une INVARIANTE de la population — le recalculer
   // dans le prédicat de `filter` coûtait O(n²) (1202×1202 par re-render, soit
-  // ~2,7 s sur la seule spec contexte). Un seul passage sur les valeurs
-  // hisse les deux bornes, sans projection intermédiaire ni spread. Les
-  // accumulateurs reprennent la sémantique exacte de Math.min/max() à vide,
-  // NaN, Infinity et ±0 ; l'oracle du test compare ligne par ligne.
-  let valeurMax = -Infinity
-  let valeurMin = Infinity
-  for (const value of values) {
-    valeurMax = Math.max(valeurMax, value)
-    valeurMin = Math.min(valeurMin, value)
-  }
+  // ~2,7 s sur la seule spec contexte). Le helper partagé hisse les deux
+  // bornes en un passage, sans projection intermédiaire ni spread, et garde
+  // la sémantique exacte de Math.min/max() ; l'oracle compare ligne par ligne.
+  const { min: valeurMin, max: valeurMax } = extremes(values)
   const highRows = all.filter((row) => row.value === valeurMax).map(project)
   const lowRows = all.filter((row) => row.value === valeurMin).map(project)
   const density = estimerDensite(distribution)
