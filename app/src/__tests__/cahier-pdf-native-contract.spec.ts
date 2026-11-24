@@ -6,7 +6,16 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
+
+import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
+import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
+import { texteNatifPourPdf } from '@/fiche/prototype/cahierNativeDomPaint'
+import { routes } from '@/router'
+import type { Payload } from '@/payload/types'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import { enregistrerPolices, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
@@ -129,15 +138,55 @@ describe('Cahier PDF natif — contrats remplacés', () => {
   })
 
   it('conserve les accents et les glyphes embarqués', async () => {
+    const capture = capturePdfFixture('aedar-access')
+    if (!capture.nativeRender) throw new Error('capture native absente')
+    const content = capture.nativeRender.content
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: cahierPaginationFor({} as Payload, content, true),
+        showAllUnits: true,
+        presentation: 'plain',
+        layoutVariant: 'indexed-sections',
+        aedarAccessEnabled: true,
+        aedarChapterActive: true,
+        aedarStatus: 'ready',
+        comparisonStatus: 'ready',
+        nativeComparisonStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+    await nextTick()
+    const axis = wrapper.get('[data-section="aedar-access"] .cahier-figure-axis-title--y')
+    const label = axis.text().trim()
+    expect(label).toBe('Diversité de l’offre')
+    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
+    const labelRule = /\.type-figure-label,\s*\.type-figure-column\s*\{([^}]*)\}/u.exec(tokens)?.[1]
+    expect(labelRule).toContain('text-transform: uppercase')
+    const heading = texteNatifPourPdf(label, { textTransform: 'uppercase' })
+    expect(heading).toBe('DIVERSITÉ DE L’OFFRE')
+
+    const artifact = await composerDocumentAvecCorpsNatif(
+      requete(capture),
+      { signal: new AbortController().signal, chargerPolice: chargeurPoliceTest },
+      [],
+    )
+    const lecture = await lirePdf(artifact.blob)
+    expect(lecture.texteComplet).toContain('COMMUNE A1')
+    expect(lecture.texteComplet).not.toMatch(/\ufffd/)
+
     const { doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
     doc.setFont(POLICE_PDF.displayStrong, 'normal')
     doc.setFontSize(20)
-    doc.text('DIVERSITÉ DE L’OFFRE', 10, 20)
-    doc.text('COMMUNE A1', 10, 30)
-    const lecture = await lirePdf(doc.output('blob'))
-    expect(lecture.texteComplet).toContain('COMMUNE A1')
-    expect(lecture.texteComplet).toContain('DIVERSITÉ DE L’OFFRE')
-    expect(lecture.texteComplet).not.toMatch(/\ufffd/)
+    doc.text(heading, 10, 20)
+    doc.text(capture.identity.territory.name.toLocaleUpperCase('fr-FR'), 10, 30)
+    const fontLecture = await lirePdf(doc.output('blob'))
+    expect(fontLecture.texteComplet).toContain('DIVERSITÉ DE L’OFFRE')
+    expect(fontLecture.texteComplet).toContain('COMMUNE A1')
+    expect(fontLecture.texteComplet).not.toMatch(/\ufffd/)
   })
 
   it('an export from a non-production host still links the owned canonical public host', async () => {
@@ -152,9 +201,19 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(lecture.liens.some((lien) => lien.includes('lusk.calumrobertson.fr'))).toBe(true)
     expect(lecture.liens.some((lien) => /lusk\.test|lusk-pdf-native|preview/.test(lien))).toBe(false)
 
-    const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierExportUrls.ts'), 'utf8')
-    const code = source.split('\n').filter((line) => !/^\s*(\*|\/\*)/.test(line)).join('\n')
-    expect(code).not.toMatch(/\blocation\b|\.origin\b/)
+    const codeSansCommentaires = (source: string) => source
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/(?<!:)\/\/.*$/gmu, '')
+    expect(codeSansCommentaires('// location\nconst host = window.location')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('// globalThis.location\n')).not.toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('const host = window.location // runtime host')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('const url = "https://example.test" // location')).not.toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('globalThis.location')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('url?.origin')).toMatch(/\.origin\b/)
+    for (const file of ['cahierExportUrls.ts', 'cahierPdfComposer.ts']) {
+      const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype', file), 'utf8')
+      expect(codeSansCommentaires(source), file).not.toMatch(/\blocation\b|\.origin\b/)
+    }
   })
 
 })

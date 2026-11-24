@@ -9,6 +9,7 @@ import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import {
+  composerDocumentAvecCorpsNatif,
   libelleComparaisonProjection,
   lignesPiedComparaison,
   preuveFigureComparative,
@@ -19,6 +20,7 @@ import {
   capturePdfFixture,
   captureRampeDense,
 } from './helpers/cahierPdfFixtures'
+import { chargeurPoliceTest, lirePdf } from './helpers/cahierPdfRuntime'
 
 const mesure: MesureTexte = {
   largeur: (texte) => Array.from(texte).length * 4,
@@ -30,7 +32,7 @@ function projeter(capture: CahierExportCapture) {
   const modes = capture.capabilities.selectableSeries.slice(0, 3).map((serie) => serie.id)
   const projection = projeterRequeteExport(capture, modes)
   if (projection.status !== 'ready') throw new Error(projection.reason)
-  return { capture: projection.request.capture, figures: projeterRequeteExportFigures(projection.request) }
+  return { request: projection.request, capture: projection.request.capture, figures: projeterRequeteExportFigures(projection.request) }
 }
 
 function labels(capture: CahierExportCapture): string[] {
@@ -103,14 +105,21 @@ describe('#1024 — pied comparatif : le libellé du propriétaire, jamais un gr
     expect(pied(servis, capture)).not.toContain('Médiane')
   })
 
-  it('n’imprime aucun pied quand la comparaison est entièrement indisponible', () => {
+  it('n’imprime aucun pied quand la comparaison est entièrement indisponible', async () => {
     const capture = capturePdfFixture('couverture-du-territoire')
     const figure = (capture as unknown as {
       figures: { family: string; model: { value: { fact: { comparison: { reference: unknown } | null } } } }[]
     }).figures.find((candidate) => candidate.family === 'mobilite-share')!
     expect(figure.model.value.fact.comparison?.reference).toBeNull()
-    const { capture: requestCapture, figures } = projeter(capture)
+    const { request, capture: requestCapture, figures } = projeter(capture)
     expect(figures.every((projection) => !preuveFigureComparative(projection, requestCapture))).toBe(true)
+
+    const artifact = await composerDocumentAvecCorpsNatif(request, {
+      signal: new AbortController().signal,
+      chargerPolice: chargeurPoliceTest,
+    }, [])
+    const lecture = await lirePdf(artifact.blob)
+    expect(lecture.lignes.some((ligne) => ligne.texte.startsWith('¹ Groupe comparé :'))).toBe(false)
   })
 
   it('refuse une capture incohérente (libellé publié vide) au lieu d’inventer une phrase', () => {
