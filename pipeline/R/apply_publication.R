@@ -109,6 +109,40 @@ verifier_adaptateurs_apply <- function(cibles, artefacts, retire = FALSE) {
   invisible(TRUE)
 }
 
+# Référence territoriale : `apply` ne la publie JAMAIS (changement de classe E,
+# ADR-0049) — il la LIT sous le verrou du producteur de référence, dans sa
+# propre transaction et AVANT tout write. Un artefact est lié à la version de
+# référence portée par sa comparaison ; lire une autre version (ou aucune)
+# doit refuser avec une raison NOMMÉE, jamais une erreur de trigger SQL.
+verifier_reference_live_apply <- function(con, artefacts, cibles) {
+  attendus <- unique(unlist(lapply(cibles, function(id) {
+    artefact <- artefacts[[id]]
+    comparaison <- if (is.list(artefact)) artefact$contenu$comparison else NULL
+    if (is.list(comparaison) && !is.null(comparaison$reference_content_version))
+      as.character(comparaison$reference_content_version)[[1L]] else NULL
+  }), use.names = FALSE))
+  attendus <- attendus[!is.na(attendus) & nzchar(attendus)]
+  if (!length(attendus)) return(invisible(TRUE))
+  if (length(attendus) > 1L)
+    stop(erreur_apply("reference_divergente", paste0(
+      "apply : reference_divergente: artefacts liés à plusieurs références (",
+      paste(attendus, collapse = ","), ") — zéro écriture.")))
+  live <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
+  version_live <- if (is.data.frame(live) && nrow(live) &&
+                      !is.na(live$content_version[[1L]]))
+    as.character(live$content_version[[1L]]) else NA_character_
+  if (is.na(version_live) || !nzchar(version_live))
+    stop(erreur_apply("reference_absente", paste0(
+      "apply : reference_absente: aucune référence territoriale publiée ",
+      "(table_publication['territory_reference']) — zéro écriture.")))
+  if (!identical(version_live, attendus[[1L]]))
+    stop(erreur_apply("reference_divergente", paste0(
+      "apply : reference_divergente: live ", version_live,
+      ", artefact ", attendus[[1L]], " — zéro écriture.")))
+  invisible(TRUE)
+}
+
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de
 # connexion de service du nouveau chemin a lieu ici, avec la configuration
 # privée (passfile hors dépôt). Les refus sont évalués avant toute écriture.
@@ -163,6 +197,11 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
 
   recettes <- list()
   with_publication_transaction(con, {
+    # Verrou du producteur de référence (593, 1) : la version live ne peut pas
+    # bouger entre la lecture et nos écritures. Puis garde NOMMÉ, avant tout
+    # write : une référence absente ou divergente refuse la publication entière.
+    DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
+    verifier_reference_live_apply(con, plan$artefacts, cibles)
     for (ressource in cibles) {
       artefact <- plan$artefacts[[ressource]]
       if (is.null(artefact))

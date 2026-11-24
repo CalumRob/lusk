@@ -29,6 +29,18 @@ fixture_plan_minimal <- function(lignes) {
   list(ressources = lignes)
 }
 
+# DBI mock: the live reference marker the artefacts are bound to (fixtures use
+# "reference-v1"). Only the marker SELECT returns a row; the advisory-lock
+# SELECT and every other query return an empty frame.
+fixture_dbget_reference <- function(version = "reference-v1") {
+  function(con, sql, params = list()) {
+    if (grepl("table_publication WHERE table_name='territory_reference'", sql,
+              fixed = TRUE))
+      return(data.frame(content_version = version))
+    data.frame()
+  }
+}
+
 test_that("apply refuses an adapter-less closure member BEFORE any connection", {
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
@@ -128,6 +140,7 @@ test_that("apply writes one resource, one transaction, DB + local receipts", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
 
   resultat <- apply_publication("densite", root = root,
@@ -159,6 +172,7 @@ test_that("apply refuses a definition change with ZERO writes and transaction", 
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   err <- tryCatch(apply_publication("densite", root = root,
     registre = fixture_apply_registre_lock(), con = structure(list(), class = "mock")),
@@ -167,6 +181,69 @@ test_that("apply refuses a definition change with ZERO writes and transaction", 
   expect_match(conditionMessage(err), "zéro écriture", fixed = TRUE)
   expect_identical(ecritures, 0L)
   expect_identical(transactions, 0L)
+})
+
+test_that("apply refuses an absent live reference with zero writes", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  fixture_apply_magasin(root)
+  ecritures <- 0L; recettes <- 0L
+  registry <- REGISTRE_FORMES_RESSOURCE
+  registry$scalar$remplacer <- function(...) { ecritures <<- ecritures + 1L }
+  local_mocked_bindings(
+    lire_listing_live_registre = function(con) data.frame(ressource = character(),
+      version = character()),
+    ecrire_recette_ressource = function(...) { recettes <<- recettes + 1L; invisible(TRUE) },
+    ecrire_recette_locale = function(...) "x.json",
+    REGISTRE_FORMES_RESSOURCE = registry)
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) force(expr),
+    dbGetQuery = function(con, sql, params = list()) {
+      if (grepl("table_publication WHERE table_name='territory_reference'", sql,
+                fixed = TRUE)) return(data.frame(content_version = character()))
+      data.frame()
+    },
+    .package = "DBI")
+  err <- tryCatch(apply_publication("densite", root = root,
+    registre = fixture_apply_registre_lock(), con = structure(list(), class = "mock")),
+    error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "reference_absente")
+  expect_match(conditionMessage(err), "reference_absente", fixed = TRUE)
+  expect_identical(ecritures, 0L)
+  expect_identical(recettes, 0L)
+})
+
+test_that("apply refuses a divergent live reference with zero writes", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  fixture_apply_magasin(root)
+  ecritures <- 0L; recettes <- 0L
+  registry <- REGISTRE_FORMES_RESSOURCE
+  registry$scalar$remplacer <- function(...) { ecritures <<- ecritures + 1L }
+  local_mocked_bindings(
+    lire_listing_live_registre = function(con) data.frame(ressource = character(),
+      version = character()),
+    ecrire_recette_ressource = function(...) { recettes <<- recettes + 1L; invisible(TRUE) },
+    ecrire_recette_locale = function(...) "x.json",
+    REGISTRE_FORMES_RESSOURCE = registry)
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) force(expr),
+    dbGetQuery = function(con, sql, params = list()) {
+      if (grepl("table_publication WHERE table_name='territory_reference'", sql,
+                fixed = TRUE)) return(data.frame(content_version = "other-reference"))
+      data.frame()
+    },
+    .package = "DBI")
+  err <- tryCatch(apply_publication("densite", root = root,
+    registre = fixture_apply_registre_lock(), con = structure(list(), class = "mock")),
+    error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "reference_divergente")
+  expect_match(conditionMessage(err),
+    "reference_divergente: live other-reference, artefact reference-v1", fixed = TRUE)
+  expect_identical(ecritures, 0L)
+  expect_identical(recettes, 0L)
 })
 
 test_that("apply --retire removes rows via the adapter and leaves a receipt", {
@@ -188,6 +265,7 @@ test_that("apply --retire removes rows via the adapter and leaves a receipt", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   resultat <- apply_publication("densite", retire = TRUE, root = root,
     registre = fixture_apply_registre_lock(), con = structure(list(), class = "mock"))
@@ -213,7 +291,7 @@ test_that("apply of a NEW scalar emits the full insert set; existing is scoped",
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
     dbExecute = function(con, sql, params = list()) { enregistrer(sql, params); 0L },
-    dbGetQuery = function(con, sql, params = list()) data.frame(),
+    dbGetQuery = fixture_dbget_reference(),
     dbWriteTable = function(con, name, value, ...) {
       enregistrer(paste0("WRITETABLE ", name)); nrow(value)
     },
@@ -268,6 +346,7 @@ test_that("apply @version selects that artefact for rollback", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   apply_publication(paste0("densite@", version0), root = root,
     registre = fixture_apply_registre_lock(), con = structure(list(), class = "mock"))

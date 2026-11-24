@@ -68,11 +68,13 @@
 }
 
 # Build scalar artefacts for one indicator and their lock registry.
-.guarded_apply_artefact <- function(root, indicator, values, label = indicator) {
+.guarded_apply_artefact <- function(root, indicator, values, label = indicator,
+                                    reference_version = "reference-v1") {
   projection <- artefacts_fixture_scalar_indicator(indicator, paste0("src_", indicator), values)
   projection$descriptors$label <- label
   projection$descriptors$descriptor_version <- paste0(indicator, "-", substr(label, 1L, 8L))
   reference <- artefacts_fixture_reference()
+  reference$content_version <- reference_version
   comparison <- comparaison_scalaire_ressource(projection, indicator, reference)
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection),
@@ -196,4 +198,39 @@ test_that("guarded: a forced failure mid-apply rolls back registry and receipts"
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM scalar_observation WHERE indicator_id='a'")), 0L)
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM resource_publication")), 0L)
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM resource_publication_event")), 0L)
+})
+
+# Snapshot of everything a divergent-reference apply must leave untouched.
+.guarded_apply_schema_digest <- function(con) {
+  list(
+    reference = DBI::dbGetQuery(con, paste0(
+      "SELECT table_name,content_version,row_count,reference_content_version ",
+      "FROM table_publication WHERE table_name='territory_reference'")),
+    territory = DBI::dbGetQuery(con, "SELECT * FROM territory_reference ORDER BY territory_id"),
+    registry = DBI::dbGetQuery(con, "SELECT * FROM resource_publication ORDER BY resource_id"),
+    receipts = DBI::dbGetQuery(con, "SELECT * FROM resource_publication_event ORDER BY event_id"),
+    observations = DBI::dbGetQuery(con, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id")
+  )
+}
+
+test_that("guarded: an artefact bound to another reference refuses with zero writes", {
+  con <- .guarded_apply_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .guarded_apply_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
+  # Live reference is "reference-v1" (published by the fixture); this artefact
+  # is bound to a different reference generation.
+  a <- .guarded_apply_artefact(root, "a", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30),
+                               reference_version = "reference-autre")
+  avant <- .guarded_apply_schema_digest(con)
+  err <- tryCatch(apply_publication("a", root = root, registre = a$lock, con = con),
+                  error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "reference_divergente")
+  expect_match(conditionMessage(err), "reference-autre", fixed = TRUE)
+  # No serving row, registry row, marker or receipt changed.
+  expect_identical(.guarded_apply_schema_digest(con), avant)
 })
