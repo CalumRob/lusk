@@ -460,7 +460,7 @@ TABLES_SERVICE_COLLECTION <- paste0(
 TABLES_SERVICE_AEDAR <- paste0(
   "aedar_territorial_aggregate|aedar_territory_summary|aedar_comparison_",
   "|aedar_density_class_summary|aedar_littoral_summary")
-TABLES_SERVICE_REGISTRE <- "resource_publication"
+TABLES_SERVICE_REGISTRE <- "resource_publication|resource_publication_descriptor"
 TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL, "|",
   TABLES_SERVICE_SERIE, "|", TABLES_SERVICE_COLLECTION, "|", TABLES_SERVICE_AEDAR,
   "|", TABLES_SERVICE_REGISTRE)
