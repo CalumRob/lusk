@@ -78,6 +78,22 @@ test_that("a new unallowlisted serving-table write fails the audit (proof)", {
   expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
 })
 
+test_that("plan and apply share ONE closure-verdict function", {
+  racine <- racine_pipeline()
+  lignes_apply <- readLines(file.path(racine, "R", "apply_publication.R"), warn = FALSE)
+  lignes_plan <- readLines(file.path(racine, "R", "plan_publication.R"), warn = FALSE)
+  src_apply <- paste(lignes_apply, collapse = "\n")
+  src_plan <- paste(lignes_plan, collapse = "\n")
+  # Defined once, in plan_publication.R, and called by BOTH.
+  expect_equal(sum(grepl("^verdict_fermetures\\s*<-", lignes_plan)), 1L)
+  expect_equal(sum(grepl("^verdict_fermetures\\s*<-", lignes_apply)), 0L)
+  expect_true(grepl("verdict_fermetures\\(", src_apply))
+  expect_true(grepl("verdict_fermetures\\(", src_plan))
+  # apply no longer constructs causes or propagates closure components itself.
+  expect_false(grepl("cause_ligne\\s*<-", src_apply))
+  expect_false(grepl("composantes_cascade\\(", src_apply))
+})
+
 test_that("every DBI params list in R/ is positional (RPostgres contract)", {
   racine <- racine_pipeline()
   expect_equal(nrow(auditer_params_dbi(racine)), 0L)

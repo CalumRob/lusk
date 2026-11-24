@@ -133,6 +133,75 @@ source_blocage <- function(detail, raison) {
   ""
 }
 
+# VERDICT UNIQUE des fermetures (ADR-0049, #1137 review) -----------------------
+# `plan` et `apply` partagent CE calcul : causes par ressource (gel, régression,
+# définition), propagation à toute la composante, et présentation. `confirmes`
+# lève UNIQUEMENT la cause « définition » des ressources nommées ; plan appelle
+# avec confirmes = character() (verdict d'affichage inchangé), apply avec sa
+# liste de confirmations. `motif` sert les messages d'apply, `motif_plan` le
+# champ bloque_par du plan — deux rendus, UNE seule source de vérité.
+verdict_fermetures <- function(lignes, artefacts, membres, confirmes = character()) {
+  cause_ligne <- function(i) {
+    ressource <- as.character(lignes$ressource[[i]])
+    causes <- list()
+    etat_gel <- if ("gel" %in% names(lignes)) lignes$gel[[i]] else "not required"
+    if (identical(etat_gel, "refused")) {
+      raison <- if ("gel_raison" %in% names(lignes)) as.character(lignes$gel_raison[[i]]) else ""
+      detail <- if ("gel_detail" %in% names(lignes) && !is.na(lignes$gel_detail[[i]]))
+        as.character(lignes$gel_detail[[i]]) else ""
+      source <- source_blocage(detail, raison)
+      motif_raison <- if (nzchar(source)) paste0(raison, ": ", source) else raison
+      causes[[length(causes) + 1L]] <- list(
+        type = "gel", ressource = ressource, raison = raison, detail = detail,
+        motif = paste0(ressource, " (", raison,
+          if (nzchar(detail)) paste0(": ", detail) else "", ")"),
+        motif_plan = paste0(ressource, " (", motif_raison, ")"))
+    }
+    check <- if ("check" %in% names(lignes)) as.character(lignes$check[[i]]) else "none"
+    if (identical(check, "regression")) {
+      causes[[length(causes) + 1L]] <- list(
+        type = "regression", ressource = ressource,
+        motif = paste0(ressource, " (régression)"),
+        motif_plan = paste0(ressource, " (régression)"))
+    }
+    definition <- if ("definition" %in% names(lignes)) isTRUE(lignes$definition[[i]]) else FALSE
+    if (definition && !ressource %in% as.character(confirmes)) {
+      champs <- if ("definition_champs" %in% names(lignes))
+        as.character(unlist(lignes$definition_champs[[i]], use.names = FALSE)) else character()
+      causes[[length(causes) + 1L]] <- list(
+        type = "definition", ressource = ressource, champs = champs,
+        motif = paste0(ressource, " (definition: ", paste(champs, collapse = "+"), ")"),
+        motif_plan = paste0(ressource, " (definition: ", paste(champs, collapse = ","), ")"))
+    }
+    causes
+  }
+
+  groupes <- if (length(artefacts) && length(membres))
+    composantes_cascade(membres, artefacts) else if (length(membres)) list(membres) else list()
+  # Les vecteurs sont alignés sur `lignes` (et non sur `membres`) : le plan les
+  # affecte directement à son data.frame, y compris quand la fermeture est vide.
+  n <- nrow(lignes)
+  bloque <- rep(FALSE, n)
+  bloque_par <- rep("", n)
+  causes <- vector("list", n)
+  for (groupe in groupes) {
+    cs <- unlist(lapply(groupe, function(id)
+      cause_ligne(match(id, as.character(lignes$ressource)))), recursive = FALSE)
+    if (!length(cs)) next
+    motifs <- vapply(cs, `[[`, character(1), "motif_plan")
+    indices <- which(as.character(lignes$ressource) %in% groupe)
+    bloque[indices] <- TRUE
+    bloque_par[indices] <- paste(motifs, collapse = "; ")
+    for (i in indices) causes[[i]] <- cs
+  }
+  list(
+    bloque = bloque, bloque_par = bloque_par, causes = causes,
+    groupes = groupes,
+    causes_groupes = lapply(groupes, function(g)
+      unlist(causes[match(g, as.character(lignes$ressource))], recursive = FALSE))
+  )
+}
+
 # -- Version de référence : une classification territoriale marque tout --------
 
 version_reference_artefacts <- function(artefacts) {
@@ -315,30 +384,8 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     }
   }
 
-  # Un refus dans une fermeture bloque ses autres membres, même si leur propre
-  # gel est conforme : ils seraient publiés dans la même transaction.
-  bloque <- rep(FALSE, length(ids))
-  bloque_par <- rep("", length(ids))
-  for (composante in composantes_cascade(cascade, artefacts)) {
-    indices <- which(ids %in% composante)
-    motifs <- character()
-    for (i in indices) {
-      if (identical(gel_etat[[i]], "refused")) {
-        source <- source_blocage(gel_detail[[i]], gel_raison[[i]])
-        motif_raison <- if (nzchar(source))
-          paste0(gel_raison[[i]], ": ", source) else gel_raison[[i]]
-        motifs <- c(motifs, paste0(ids[[i]], " (", motif_raison, ")"))
-      } else if (isTRUE(definition[[i]])) {
-        motifs <- c(motifs, paste0(ids[[i]], " (definition: ",
-                                   paste(definition_champs[[i]], collapse = ","), ")"))
-      }
-    }
-    if (length(motifs)) {
-      bloque[indices] <- TRUE
-      bloque_par[indices] <- paste(motifs, collapse = "; ")
-    }
-  }
-
+  # Verdict UNIQUE de fermeture (partagé avec apply) — voir verdict_fermetures.
+  # Le plan appelle sans confirmation : output d'affichage inchangé.
   ressources <- data.frame(
     ressource = ids,
     forme = vapply(ids, function(id) as.character(artefacts[[id]]$forme), character(1)),
@@ -347,8 +394,8 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     statut_adoption = ifelse(is.na(lives), "not adopted", "adopted"),
     change = ids %in% changees,
     cascade = ids %in% cascade,
-    bloque = bloque,
-    bloque_par = bloque_par,
+    bloque = rep(FALSE, length(ids)),
+    bloque_par = rep("", length(ids)),
     gel = gel_etat,
     gel_raison = gel_raison,
     gel_detail = gel_detail,
@@ -361,6 +408,11 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     stringsAsFactors = FALSE
   )
   ressources$definition_champs <- I(definition_champs)
+  verdict <- verdict_fermetures(ressources, artefacts, cascade, confirmes = character())
+  ressources$bloque <- verdict$bloque
+  ressources$bloque_par <- verdict$bloque_par
+  bloque <- ressources$bloque
+  bloque_par <- ressources$bloque_par
 
   refuses <- ressources[ressources$gel == "refused",
                         c("ressource", "gel_raison", "gel_detail"), drop = FALSE]

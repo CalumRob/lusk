@@ -27,13 +27,11 @@ analyser_ids_apply <- function(ids) {
   data.frame(ressource = ressources, version = versions, stringsAsFactors = FALSE)
 }
 
-# Refus PUR : aucun accès à la base, aucun write. Le verdict est recomposé à
-# partir des CAUSES du plan (gel, régression, définition), puis propagé à toute
-# la composante de fermeture. Une confirmation ne lève QUE la cause « définition
-# modifiée » de la ressource nommée : gel / empreinte absente / régression /
-# autre membre non confirmé continuent de bloquer. Le champ `bloque` du plan
-# reste le verdict d'affichage (sans confirmation) — on ne le contourne pas, on
-# réévalue ses causes avec la confirmation fournie.
+# Refus PUR : aucun accès à la base, aucun write. Le verdict des fermetures est
+# UNIQUE (verdict_fermetures dans plan_publication.R), partagé avec `plan`.
+# `apply` ne fait que traduire le résultat en erreur_apply : les causes et leur
+# propagation ne sont PAS recalculées ici. `confirm_definition` ne lève que la
+# cause « définition » des ressources nommées, dans le même verdict.
 verifier_refus_apply <- function(plan, cibles, confirm_definition = character()) {
   lignes <- plan$ressources
   indices <- match(cibles, as.character(lignes$ressource))
@@ -41,40 +39,11 @@ verifier_refus_apply <- function(plan, cibles, confirm_definition = character())
     stop(erreur_apply("artefact_absent",
       paste0("apply : ressource sans artefact construit : ",
              paste(cibles[is.na(indices)], collapse = ","), " — zéro écriture.")))
-  confirmes <- as.character(confirm_definition)
 
-  cause_ligne <- function(i) {
-    ressource <- as.character(lignes$ressource[[i]])
-    causes <- list()
-    if (isTRUE(identical_or_false(lignes$gel[[i]], "refused"))) {
-      detail <- if ("gel_detail" %in% names(lignes) &&
-                    !is.na(lignes$gel_detail[[i]]) && nzchar(lignes$gel_detail[[i]]))
-        paste0(": ", lignes$gel_detail[[i]]) else ""
-      causes[[length(causes) + 1L]] <- list(
-        type = "gel", ressource = ressource,
-        motif = paste0(ressource, " (", lignes$gel_raison[[i]], detail, ")"))
-    }
-    if (isTRUE(identical_or_false(lignes$check[[i]], "regression")))
-      causes[[length(causes) + 1L]] <- list(
-        type = "regression", ressource = ressource,
-        motif = paste0(ressource, " (régression)"))
-    if (isTRUE(lignes$definition[[i]]) && !ressource %in% confirmes) {
-      champs <- lignes$definition_champs[[i]]
-      causes[[length(causes) + 1L]] <- list(
-        type = "definition", ressource = ressource,
-        motif = paste0(ressource, " (definition: ",
-                       paste(as.character(champs), collapse = "+"), ")"))
-    }
-    causes
-  }
-
-  # Propagation au sein de la fermeture : une cause sur un membre bloque TOUTE
-  # sa composante, car les ressources sont publiées dans la même transaction.
-  groupes <- if (!is.null(plan$artefacts) && length(plan$artefacts))
-    composantes_cascade(cibles, plan$artefacts) else list(cibles)
-  for (groupe in groupes) {
-    causes <- unlist(lapply(groupe, function(id)
-      cause_ligne(match(id, as.character(lignes$ressource)))), recursive = FALSE)
+  verdict <- verdict_fermetures(lignes,
+    if (is.null(plan$artefacts)) list() else plan$artefacts,
+    cibles, confirmes = as.character(confirm_definition))
+  for (causes in verdict$causes_groupes) {
     if (!length(causes)) next
     types <- unique(vapply(causes, `[[`, character(1), "type"))
     refus <- if (length(types) == 1L) types[[1L]] else "fermeture_bloquee"
@@ -90,8 +59,6 @@ verifier_refus_apply <- function(plan, cibles, confirm_definition = character())
   }
   invisible(TRUE)
 }
-
-identical_or_false <- function(x, value) !is.na(x) & x == value
 
 # Charger les artefacts construits SANS connexion : le préflight (adaptateurs,
 # gel) travaille sur le magasin local avant même l'ouverture de la base.
