@@ -96,6 +96,22 @@
   list(version = ecrit$version, lock = lock)
 }
 
+# Read a resource's full observation row set KEYED by territory. Ordering by
+# column 1 (indicator_id) is constant and leaves row order undefined.
+.guarded_apply_observations_a <- function(con) {
+  DBI::dbGetQuery(con, paste0(
+    "SELECT indicator_id,territory_id,territory_type,value,status,",
+    "support_count,denominator_count FROM scalar_observation WHERE indicator_id='a' ",
+    "ORDER BY territory_type,territory_id"))
+}
+
+.guarded_apply_faits_artefact <- function(root, version) {
+  faits <- lire_artefact_ressource("a", version, root = root)$contenu$faits$facts
+  faits <- faits[order(faits$territory_type, faits$territory_id), , drop = FALSE]
+  rownames(faits) <- NULL
+  faits
+}
+
 .guarded_apply_verifier_lignes <- function(con, table, indicator) {
   champs <- DBI::dbListFields(con, table)
   where <- if ("indicator_id" %in% champs) " WHERE indicator_id=$1" else
@@ -147,13 +163,13 @@ test_that("guarded: apply A leaves every other scalar byte-identical, rollback a
   a2 <- .guarded_apply_artefact(root, "a", valeurs_a + 1)
   registre2 <- c(a2$lock, b$lock)
   apply_publication("a", root = root, registre = registre2, con = con)
-  modifie <- DBI::dbGetQuery(con,
-    "SELECT value FROM scalar_observation WHERE indicator_id='a' ORDER BY territory_id")$value
-  expect_false(identical(as.numeric(modifie), valeurs_a))
+  expect_equal(.guarded_apply_observations_a(con),
+               .guarded_apply_faits_artefact(root, a2$version))
   apply_publication(paste0("a@", a$version), root = root, registre = registre, con = con)
-  restaure <- DBI::dbGetQuery(con,
-    "SELECT territory_id,value FROM scalar_observation WHERE indicator_id='a' ORDER BY territory_id")
-  expect_identical(restaure$value, valeurs_a)
+  # Full restored row set equals the v1 artefact's rows exactly, keyed by
+  # (territory_type, territory_id) — not an order-dependent value vector.
+  expect_equal(.guarded_apply_observations_a(con),
+               .guarded_apply_faits_artefact(root, a$version))
 
   # Retirement removes A's rows and leaves a receipt.
   apply_publication("a", retire = TRUE, root = root, registre = registre, con = con)
