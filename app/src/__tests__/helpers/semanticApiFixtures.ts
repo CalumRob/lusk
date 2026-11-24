@@ -127,6 +127,7 @@ function fixtureInputKey(value: object | undefined): number | null {
   return key
 }
 const sourcesForCache = new Map<string, Array<Record<string, any>>>()
+const observationFactCache = new Map<string, Record<string, any> | null>()
 const syntheticIndicatorsCache = new Map<string, Array<Record<string, any>>>()
 const nativeReadFixtureCache = new Map<string, Record<string, any>>()
 
@@ -465,6 +466,20 @@ function syntheticProfileValue(resource: Resource, target: Record<string, any>, 
 }
 
 function syntheticObservationFact(resource: Resource, target: Record<string, any>, coordinate?: string | null): Record<string, any> | null {
+  const identity = observationTarget(target)
+  if (!identity) return null
+  const key = JSON.stringify([resource.resource_id, resource.shapes, identity.type, identity.id,
+    coordinate ?? null])
+  if (observationFactCache.has(key)) {
+    const cached = observationFactCache.get(key)!
+    return cached ? cloneFixture(cached) : null
+  }
+  const fact = buildSyntheticObservationFact(resource, target, coordinate)
+  observationFactCache.set(key, fact)
+  return fact ? cloneFixture(fact) : null
+}
+
+function buildSyntheticObservationFact(resource: Resource, target: Record<string, any>, coordinate?: string | null): Record<string, any> | null {
   const identity = observationTarget(target)
   if (!identity) return null
   const metadata = metadataFor(resource.theme_id)
