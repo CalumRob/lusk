@@ -153,8 +153,8 @@ testthat suite. It cold-builds each theme and the full graph against `run_pipeli
 many minutes with the real cache; it intentionally clears the local `_targets/` store between
 comparisons. Without `data/raw`, the explicit command skips its two parity tests. Use an isolated
 worktree with its own data copy for a real-data run; never link the main checkout's data.
-Whole-payload and committed-artefact contracts also live in `pipeline/slow-tests/`, each with the
-contract it protects; keep default tests on small fixtures and run `scripts/verify-r-suite-budget.R`
+Whole-payload, committed-artefact and execution-only fixture contracts also live in `pipeline/slow-tests/`,
+each with the contract it protects; keep default tests on small fixtures and run `scripts/verify-r-suite-budget.R`
 for the serial 5 s/test and 15 s/file guard (reasoned exceptions are listed in that script).
 
 This audit is separate from the real-data verification locks: those remain input-driven `verif_*`
