@@ -1,4 +1,5 @@
 # test-targets-byte-identical ----------------------------------------------------
+# Subject files: pipeline/_targets.R, pipeline/R, pipeline/data
 # Audit lent, explicite (#565) : ce fichier est hors de tests/testthat/ pour
 # que testthat::test_local() ne lance pas les reconstructions froides dès que
 # le cache réel existe. Depuis pipeline/, l'invocation dédiée est :

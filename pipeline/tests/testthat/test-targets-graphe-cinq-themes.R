@@ -29,7 +29,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # reste intact.
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   noms <- manifeste$name
 
   # les cinq grappes : la MÊME famille de targets par thème, nommée depuis le
@@ -94,7 +94,7 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   # ne le lit jamais).
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   commande <- function(nom) manifeste$command[manifeste$name == nom]
 
   # publier : Économie et Mobilité publient PAR leur seam (theme$publier),
@@ -151,7 +151,7 @@ test_that("la sélection partielle du cron ne câble aucune cible de modèle de 
   # dont Démographie, qui déclarait read_model avant #900
   withr::local_envvar(LUSK_THEMES = "demographie,habitat,economie")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   noms <- manifeste$name
 
   # aucune des trois familles retirées n'est atteignable en sélection partielle
@@ -187,9 +187,7 @@ test_that("les étapes de données d'un thème ne dépendent jamais de celles d'
   # Issue #341 (course en parallèle) : la vérification de structure lit un
   # store ISOLÉ (jamais le store réel, jamais de unlink) — voir le test de
   # régression ci-dessous.
-  store_structure <- tempfile("graphe-structure-")
-
-  reseau <- targets::tar_network(store = store_structure)
+  reseau <- reseau_graphe()
   aretes <- reseau$edges
   partages <- c("fusion_vintages", "geometrie")
 
@@ -239,8 +237,7 @@ test_that("la vérification de structure lit un store isolé — jamais la meta 
   withr::local_envvar(LUSK_THEMES = "")
 
   # 1) le VRAI graphe : la structure se lit avec un store isolé
-  reseau <- targets::tar_network(
-                                 store = tempfile("graphe-structure-"))
+  reseau <- reseau_graphe()
   expect_true(nrow(reseau$edges) > 0)
 
   # 2) le mini-graphe : une meta partiellement écrite ne gêne pas la lecture
@@ -253,8 +250,7 @@ test_that("la vérification de structure lit un store isolé — jamais la meta 
   withr::local_dir(projet)
   on.exit(unlink(projet, recursive = TRUE), add = TRUE)
 
-  reseau2 <- targets::tar_network(
-                                  store = tempfile("graphe-structure-"))
+  reseau2 <- reseau_graphe()
   expect_true(nrow(reseau2$edges) > 0)
   expect_identical(readBin(file.path(projet, "_targets", "meta", "meta"),
                            "raw", n = 8L), meta_midrun)

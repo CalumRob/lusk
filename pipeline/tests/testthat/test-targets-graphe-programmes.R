@@ -40,7 +40,7 @@ test_that("le run complet câble la publication du payload partagé programmes",
   # intact (la règle #341).
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   noms <- manifeste$name
 
   # la famille programmes : le téléchargement du bloc des verrous
@@ -72,7 +72,7 @@ test_that("le seam publier_programmes est appelé PAR SYMBOLE, la forme d'appel 
   withr::local_dir(racine)
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   commande <- function(nom) manifeste$command[manifeste$name == nom]
 
   # le seam appelé par son SYMBOLE avec la MÊME forme que publie_theme (et que
@@ -108,7 +108,7 @@ test_that("un run restreint ne câble RIEN du thème Programmes", {
   withr::local_dir(racine)
   withr::local_envvar(LUSK_THEMES = "demographie")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   noms <- manifeste$name
 
   # ni la publication, ni le brut, ni les vintages, ni le rapport, ni même le
@@ -128,9 +128,7 @@ test_that("la chaîne programmes est LEAF : rien des CINQ thèmes n'en dépend",
   withr::local_envvar(LUSK_THEMES = "")
   # Issue #341 (course en parallèle) : la vérification de structure lit un
   # store ISOLÉ (jamais le store réel, jamais de unlink)
-  store_structure <- tempfile("graphe-programmes-")
-
-  reseau <- targets::tar_network(store = store_structure)
+  reseau <- reseau_graphe()
   aretes <- reseau$edges
 
   # l'aval direct des targets programmes : la fusion partagée (les vintages du

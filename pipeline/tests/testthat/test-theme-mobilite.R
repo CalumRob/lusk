@@ -40,7 +40,6 @@ test_that("MANIFEST_MOBILITE : les quinze sources retenues, les 11 colonnes stan
                                      "stationnement-velo")] == "cron"))
 })
 
-
 test_that("theme_mobilite : le descripteur porte les membres requis du contrat", {
   th <- theme_mobilite()
 
@@ -79,7 +78,6 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   sans_directions <- th[setdiff(names(th), "directions")]
   expect_error(verifier_descripteur_mobilite(sans_directions), "directions")
 })
-
 
 test_that("vintages_mobilite : quinze sources publiques incluent la production nationale du raccordement", {
   v <- vintages_mobilite()
@@ -184,9 +182,6 @@ test_that("verifier_contrat_mobilite_demande_reseaux : les trois sources de l'é
                "communes_limites")
 })
 
-
-
-
 test_that("construire_donnees_mobilite : assemble le spine d'adresses et toutes les sources du thème", {
   table_amenagements <- sf::st_sf(
     id_local = "geovelo_1_29011", code_com_d = "29011", code_com_g = "29011",
@@ -274,7 +269,6 @@ test_that("construire_donnees_mobilite : assemble le spine d'adresses et toutes 
   expect_equal(appels$sources, "cache-test")
 })
 
-
 test_that("construire_donnees_mobilite : une source manquante du cache s'arrête bruyamment", {
   local_mocked_bindings(
     lire_voitures_communes = function(chemin) {
@@ -319,8 +313,6 @@ base_epci_mini_analytique <- function() {
     "29002", "Commune C", "200000002", "EPCI Y", "29", "53"
   )
 }
-
-
 
 test_that("construire_analytiques_mobilite : le poids-Adresse et les builders retenus", {
   adresses <- sf::st_sf(
@@ -450,7 +442,6 @@ test_that("construire_analytiques_mobilite : le poids-Adresse et les builders re
               "saillance_territoires.rds", "moyennes_acces_territoires.rds"))
     expect_false(file.exists(file.path(sortie, f)), info = f)
 })
-
 
 test_that("publier_mobilite : le seam de publication est câblé (plus un stub)", {
   # un appel sans données échoue pour une raison de DONNÉES (cache absent),
@@ -1041,6 +1032,7 @@ test_that("calculer_reseaux_velo_communes : un input corrompu s'arrête bruyamme
 # un fait, jamais une ligne manquante) ; une commune présente dans le b mais
 # absente du t/c (impossible en pratique — tout le monde a des routes) porte
 # t/c = 0.
+
 test_that("fusionner_reseaux_velo_communes : la table b s'intègre à la table t/c en la table complète", {
   tc <- tibble::tibble(
     commune = c("22001", "22002", "29001"),
@@ -1101,6 +1093,7 @@ test_that("fusionner_reseaux_velo_communes : la table b s'intègre à la table t
 # TC », « Bornes de recharge », « Stationnement vélo ».
 
 # MANIFEST_MOBILITE_KORRIGO -----------------------------------------------------
+
 test_that("MANIFEST_MOBILITE_KORRIGO : la base GTFS Korrigo — les arrêts (stops.txt), ODbL", {
   frag <- MANIFEST_MOBILITE_KORRIGO
 
@@ -1125,6 +1118,7 @@ test_that("MANIFEST_MOBILITE_KORRIGO : la base GTFS Korrigo — les arrêts (sto
 # MANIFEST_MOBILITE_BATIMENTS ---------------------------------------------------
 
 # MANIFEST_MOBILITE_BORNES ------------------------------------------------------
+
 test_that("MANIFEST_MOBILITE_BORNES : le fichier consolidé IRVE, Licence Ouverte, vintage verrouillé", {
   frag <- MANIFEST_MOBILITE_BORNES
 
@@ -1140,6 +1134,7 @@ test_that("MANIFEST_MOBILITE_BORNES : le fichier consolidé IRVE, Licence Ouvert
 })
 
 # MANIFEST_MOBILITE_STATIONNEMENT_VELO ------------------------------------------
+
 test_that("MANIFEST_MOBILITE_STATIONNEMENT_VELO : le hub Ecolab pris tel quel, ODbL", {
   frag <- MANIFEST_MOBILITE_STATIONNEMENT_VELO
 
@@ -1156,6 +1151,7 @@ test_that("MANIFEST_MOBILITE_STATIONNEMENT_VELO : le hub Ecolab pris tel quel, O
 })
 
 # verifier_contrat_manifest_mobilite --------------------------------------------
+
 test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe son contrat", {
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
@@ -1174,6 +1170,7 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
 })
 
 # normaliser_stops_gtfs ----------------------------------------------------------
+
 test_that("normaliser_stops_gtfs : la base GTFS stops.txt, les coordonnées numérisées", {
   # une forme RÉDUITE mais fidèle du stops.txt GTFS (la fédération Korrigo) :
   # stop_id (le préfixe réseau — STAR pour Rennes), stop_lat, stop_lon
@@ -1221,6 +1218,7 @@ test_that("normaliser_stops_gtfs : un input corrompu s'arrête bruyamment", {
 })
 
 # normaliser_bornes_recharges ----------------------------------------------------
+
 test_that("normaliser_bornes_recharges : une ligne par point de charge, le code commune conservé", {
   brut <- tibble::tibble(
     code_insee_commune = c("29011", "29011", "22001", NA, "22100"),
@@ -1241,6 +1239,7 @@ test_that("normaliser_bornes_recharges : une ligne par point de charge, le code 
 })
 
 # normaliser_stationnement_velo ---------------------------------------------------
+
 test_that("normaliser_stationnement_velo : une ligne par (commune × millésime), le taux recomposé", {
   brut <- tibble::tibble(
     date_mesure = c("2024-01-01", "2024-01-01", "2024-01-01", "2024-01-01",
@@ -1290,7 +1289,6 @@ fixture_adresses_spatiale <- function() {
   list(adresses = adresses, stops = stops)
 }
 
-
 test_that("calculer_part_proches_arret_communes : la vraie part des adresses à 500 m", {
   skip_if_not(requireNamespace("sf", quietly = TRUE),
               "sf est requis pour le calcul spatial de l'offre TC.")
@@ -1310,7 +1308,6 @@ test_that("calculer_part_proches_arret_communes : la vraie part des adresses à 
   expect_identical(sf::sf_use_s2(), avant)
 })
 
-
 test_that("calculer_part_proches_arret_communes : un input corrompu s'arrête bruyamment", {
   skip_if_not(requireNamespace("sf", quietly = TRUE),
               "sf est requis pour le calcul spatial de l'offre TC.")
@@ -1328,6 +1325,7 @@ test_that("calculer_part_proches_arret_communes : un input corrompu s'arrête br
 })
 
 # calculer_bornes_communes -------------------------------------------------------
+
 test_that("calculer_bornes_communes : les stations distinctes par commune du référentiel partagé", {
   base_epci <- tibble::tribble(
     ~CODGEO, ~EPCI, ~DEP,
@@ -1356,6 +1354,7 @@ test_that("calculer_bornes_communes : les stations distinctes par commune du ré
 })
 
 # calculer_stationnement_velo_communes -------------------------------------------
+
 test_that("calculer_stationnement_velo_communes : le millésime le plus récent par commune", {
   velo <- tibble::tibble(
     geocode_commune = c("29011", "29011", "22001"),
@@ -1390,6 +1389,7 @@ test_that("calculer_stationnement_velo_communes : le millésime le plus récent 
 # Les trois clés scalaires du sous-bloc portent le détail NA — la forme longue
 # (code × key × detail × value) du contrat, la même que les autres clés
 # multi-mesures du payload.
+
 test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle", {
   base <- tibble::tribble(
     ~CODGEO, ~EPCI, ~DEP,
@@ -1520,6 +1520,7 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 # le même que les densités de stationnement. Une observation BPE absente reste
 # absente (jamais un zéro inventé) ; le zéro observé d'une commune rurale sans
 # station reste un fait.
+
 test_that("agreger_offre_territoires : stations-service et densités / 1 000 hab. recalculées depuis les comptes (#953)", {
   base <- tibble::tribble(
     ~CODGEO, ~EPCI, ~DEP,
@@ -1670,130 +1671,6 @@ test_that("INDICATEURS_MOBILITE : les dix-sept clés retenues, chacune estampill
   expect_false(any(grepl("batiments", unlist(ind$sources))))
 })
 
-# fixture_raccordement ------------------------------------------------------------
-# L'assembleur national consomme un résultat complet et validé, jamais une
-# miniature présentée comme la production nationale. Les exemples de calcul à
-# trois communes restent à la couture du calcul dans test-raccordement-national.
-fixture_raccordement <- function() {
-  lire_artefact_raccordement_national()
-}
-
-territoires_fixture_indicateurs_mobilite <- function() {
-  path <- file.path(pkgload::pkg_path(), "..", "public", "data", "territoires.parquet")
-  nanoparquet::read_parquet(path) %>% dplyr::rename(code = territoire)
-}
-
-histoires_fixture_indicateurs_mobilite <- function() {
-  # #1048 : le producteur n'émet plus aucune lecture — la table est VIDE.
-  # Le Parquet `histoires_mobilite.parquet` committé est l'état ANTÉRIEUR au
-  # retrait (facts non republiés en slice 2) : il ne doit plus servir de fixture.
-  data.frame(
-    territoire = character(), type = character(), theme = character(),
-    story_key = character(), stringsAsFactors = FALSE
-  )
-}
-
-# fixture_indicateurs_mobilite ---------------------------------------------------
- # La liste des artefacts analytiques pour l'assemblage des indicateurs (le seam
- # construire_indicateurs_mobilite, issue #141) : la « Taille », les 5 parts
-# d'isolation et LEURS RANGS (mocked — la forme exacte des artefacts que le
-# chaînon persiste : isolation_territoires.rds et isolation_rangs.rds), l'étage
-# demande/réseaux et le sous-bloc. La forme de chaque table est celle des
-# builders réels — le seam ne calcule RIEN, il assemble.
-
-fixture_indicateurs_mobilite <- function() {
-  territoires <- territoires_fixture_indicateurs_mobilite()
-  codes <- territoires$codes %||% territoires$code
-  voitures_territoires <- tidyr::crossing(code = codes,
-    detail = c("sans_voiture", "une_voiture", "deux_plus")) %>%
-    dplyr::mutate(key = "voitures_menage",
-      value = dplyr::if_else(detail == "sans_voiture", 0.2,
-                             dplyr::if_else(detail == "une_voiture", 0.5, 0.3)))
-  reseaux_territoires <- tidyr::crossing(code = codes,
-    detail = c("t_longueur", "b_longueur", "c_longueur")) %>%
-    dplyr::mutate(key = "reseaux", value = 1)
-  reseaux_par_habitant_territoires <- tidyr::crossing(code = codes,
-    detail = c("t_km_1000", "b_km_1000", "c_km_1000")) %>%
-    dplyr::mutate(key = "reseaux_par_habitant", value = 2)
-  surface_reseaux_routiers_territoires <- tibble::tibble(code = codes, value = 0.1)
-  offre_territoires <- dplyr::bind_rows(
-    tidyr::crossing(code = codes, key = c("offre_tc", "bornes_recharge",
-      "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
-      "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
-      "stations_service", "stations_service_1000", "bornes_recharge_1000")) %>%
-      dplyr::mutate(detail = NA_character_,
-                    value = dplyr::if_else(key == "offre_tc", 0.5, 10)),
-    tidyr::crossing(code = codes,
-      detail = c("protege_longueur", "protege_km_1000", "partage_longueur",
-                 "partage_km_1000", "total_longueur")) %>%
-      dplyr::mutate(key = "offre_cyclable", value = 1)
-  )
-  list(
-    voitures_territoires = voitures_territoires,
-    reseaux_territoires = reseaux_territoires,
-    reseaux_par_habitant_territoires = reseaux_par_habitant_territoires,
-    surface_reseaux_routiers_territoires = surface_reseaux_routiers_territoires,
-    offre_territoires = offre_territoires,
-    raccordement = fixture_raccordement()
-  )
-}
-
-
-test_that("construire_indicateurs_mobilite : les dix-sept clés retenues, leurs rangs et estampilles", {
-  fx <- fixture_indicateurs_mobilite()
-  territoires <- territoires_fixture_indicateurs_mobilite()
-  n_territoires <- nrow(territoires)
-  ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
-  expect_setequal(unique(ind$key), c("voitures_menage", "reseaux", "reseaux_par_habitant",
-  "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
-  "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
-  "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
-  "stations_service", "stations_service_1000", "bornes_recharge_1000",
-  "offre_cyclable", "raccordement_tc", "raccordement_courbe",
-  "raccordement_reference"))
-  expect_false(any(c("nb_buildings", "tot_loss_t", "iso_banque",
-                     "share_food_t", "avg_tot_car") %in% ind$key))
-  grille_n <- length(grille_raccordement_national())
-  expect_equal(nrow(ind),
-    n_territoires * (3L + 3L + 3L + 1L + 9L + 5L + 1L) +
-      n_territoires * grille_n + grille_n)
-  expect_equal(sum(ind$key == "voitures_menage"), n_territoires * 3)
-  expect_equal(sum(ind$key == "reseaux"), n_territoires * 3)
-  expect_equal(sum(ind$key == "reseaux_par_habitant"), n_territoires * 3)
-  expect_equal(sum(ind$key == "surface_reseaux_routiers"), n_territoires)
-  expect_equal(sum(ind$key == "offre_cyclable"), n_territoires * 5)
-  for (cle in c("offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
-                "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
-                "stationnement_velo_par_voiture", "stations_service",
-                "stations_service_1000", "bornes_recharge_1000"))
-    expect_equal(sum(ind$key == cle), n_territoires, info = cle)
-  expect_equal(unique(ind$unit[ind$key == "stations_service"]), "stations")
-  expect_equal(unique(ind$unit[ind$key == "bornes_recharge_1000"]), "bornes / 1 000 hab")
-  for (cle in c("stations_service", "stations_service_1000", "bornes_recharge_1000"))
-    expect_true(any(!is.na(ind$rang_epci[ind$key == cle])), info = cle)
-  # l'estampille de l'offre cyclable : l'horloge lente OSM
-  ref_osm <- vintages_mobilite()$source[vintages_mobilite()$id == "osm_reseaux"]
-  expect_true(all(ind$vintage_source[ind$key == "offre_cyclable"] == ref_osm))
-  # LE RACCORDEMENT : le scalaire et ses deux clés de figure
-  racc_ind <- ind[ind$key == "raccordement_tc", ]
-  expect_equal(racc_ind$value[racc_ind$territoire == "35238"], 0.43772196082183124)
-  non_routee <- racc_ind[racc_ind$territoire == "22001", ]
-  expect_equal(non_routee$value, 0)
-  expect_equal(non_routee$rider, "no_modeled_endpoint_stops")
-  ref_national <- vintages_mobilite()$source[
-    vintages_mobilite()$id == "raccordement_gtfs_national"]
-  expect_true(all(racc_ind$vintage_source == ref_national))
-  expect_true(all(racc_ind$vintage_date_reference == "2026-10-10"))
-  courbe_ind <- ind[ind$key == "raccordement_courbe", ]
-  expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
-  expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
-                  grille_raccordement_national())
-  reference_ind <- ind[ind$key == "raccordement_reference", ]
-  expect_setequal(unique(reference_ind$territoire), "53")
-  expect_equal(nrow(reference_ind), grille_n)
-})
-
-
 test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction DÉCLARÉE de SA clé (#368)", {
   # le mécanisme de l'audit ordinal : chaque mesure est classée dans SON groupe
   # avec la direction de SA clé (DIRECTIONS_MOBILITE — jamais le défaut
@@ -1846,49 +1723,6 @@ test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction D
     ),
     "voitures_menage"
   )
-})
-
-
-test_that("validations_mobilite : le raccordement hors domaine ou hors grille fait échouer la validation bruyamment (#486)", {
-  fx <- fixture_indicateurs_mobilite()
-  territoires <- territoires_fixture_indicateurs_mobilite()
-  fabriquer_payload <- function() list(
-    indicateurs = construire_indicateurs_mobilite(fx, territoires,
-                                                  vintages_mobilite()),
-    histoires = histoires_fixture_indicateurs_mobilite(),
-    territoires = reference_territoires(territoires),
-    apercu = assemble_apercu(territoires, list())
-  )
-
-  # une part joignable > 1 (une corruption du calcul) fait échouer
-  payload <- fabriquer_payload()
-  payload$indicateurs$value[
-    payload$indicateurs$key == "raccordement_tc" &
-      payload$indicateurs$territoire == "22001"] <- 1.5
-  expect_error(validate_payload(
-    payload, indicateurs = INDICATEURS_MOBILITE,
-    vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE), "population joignable")
-
-  # un détail de courbe HORS GRILLE (91 minutes) fait échouer
-  payload <- fabriquer_payload()
-  courbe <- which(payload$indicateurs$key == "raccordement_courbe" &
-                    payload$indicateurs$detail == "t0090")
-  payload$indicateurs$detail[courbe[1]] <- "t0091"
-  expect_error(validate_payload(
-    payload, indicateurs = INDICATEURS_MOBILITE,
-    vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE), "grille publiée")
-
-  # un détail MAL FORMÉ fait échouer
-  payload <- fabriquer_payload()
-  courbe <- which(payload$indicateurs$key == "raccordement_reference" &
-                    payload$indicateurs$detail == "t0000")
-  payload$indicateurs$detail[courbe[1]] <- "90 minutes"
-  expect_error(validate_payload(
-    payload, indicateurs = INDICATEURS_MOBILITE,
-    vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE), "grille publiée")
 })
 
 # =============================================================================
@@ -2133,45 +1967,11 @@ test_that("publier_mobilite transmet classes_littoral au payload", {
                    reference = reference_canonique_minimale_test())
   expect_identical(vu$classes_littoral, source)
 })
+
 test_that("compute_histoires_mobilite : le thème ne porte plus de lecture (#1048)", {
   vide <- compute_histoires_mobilite(list(), vintages_mobilite())
   expect_equal(nrow(vide), 0L)
   expect_true(all(c("territoire", "type", "theme", "story_key") %in% names(vide)))
   resolu <- resoudre_histoires(vide, "mobilite")
   expect_equal(nrow(resolu), 0L)
-})
-
-test_that("validations_mobilite : les corruptions des validateurs survivants échouent bruyamment", {
-  fx <- fixture_indicateurs_mobilite()
-  territoires <- territoires_fixture_indicateurs_mobilite()
-  fabriquer_payload <- function() list(
-    indicateurs = construire_indicateurs_mobilite(fx, territoires,
-                                                  vintages_mobilite()),
-    histoires = resoudre_histoires(compute_histoires_mobilite(fx,
-      vintages_mobilite()), "mobilite"),
-    territoires = reference_territoires(territoires),
-    apercu = assemble_apercu(territoires, list())
-  )
-  valider <- function(payload) validate_payload(
-    payload, indicateurs = INDICATEURS_MOBILITE,
-    vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE)
-
-  # un payload sain passe la validation générique + les validations du thème
-  expect_no_error(valider(fabriquer_payload()))
-
-  # une part de surface routière > 1 est une corruption (aire intersectée)
-  payload <- fabriquer_payload()
-  payload$indicateurs$value[
-    payload$indicateurs$key == "surface_reseaux_routiers" &
-      payload$indicateurs$territoire == "22001"] <- 1.5
-  expect_error(valider(payload), "surface routière")
-
-  # une longueur d'offre cyclable négative est une corruption
-  payload <- fabriquer_payload()
-  payload$indicateurs$value[
-    payload$indicateurs$key == "offre_cyclable" &
-      payload$indicateurs$detail == "protege_longueur" &
-      payload$indicateurs$territoire == "22001"] <- -1
-  expect_error(valider(payload), "offre cyclable")
 })

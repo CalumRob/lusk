@@ -140,6 +140,14 @@ Rscript -e "testthat::test_local(filter = 'distribution-acces-batiments|modeles-
 # Before handoff: the complete default fixture suite.
 Rscript -e "testthat::test_local(stop_on_failure = TRUE)"
 
+# Serial regression budget: no test > 5 s and no file > 15 s unless listed with a reason.
+Rscript scripts/verify-r-suite-budget.R
+# Reuse an existing timing CSV pair without rerunning: append --from-csv-prefix=<path>.
+
+# Orchestrator slow tier: all tests, or only tests whose declared subjects changed.
+Rscript scripts/run-slow-tests.R
+Rscript scripts/run-slow-tests.R --for pipeline/R/example.R tests/testthat/example.R
+
 # Slow parity audit: run for targets/orchestration changes or before a release.
 Rscript scripts/verify-targets-byte-identical.R
 ```
@@ -149,6 +157,11 @@ testthat suite. It cold-builds each theme and the full graph against `run_pipeli
 many minutes with the real cache; it intentionally clears the local `_targets/` store between
 comparisons. Without `data/raw`, the explicit command skips its two parity tests. Use an isolated
 worktree with its own data copy for a real-data run; never link the main checkout's data.
+Whole-payload, committed-artefact and execution-only fixture contracts also live in `pipeline/slow-tests/`,
+each with the contract it protects; keep default tests on small fixtures and run `scripts/verify-r-suite-budget.R`
+for the serial 5 s/test and 15 s/file guard (reasoned exceptions are listed in that script).
+`pipeline/slow-tests/` is run by the ORCHESTRATOR before merging any PR that touches a declared subject file and at every periodic cold-build audit / E release (ADR-0049 decision 4).
+Use `Rscript scripts/run-slow-tests.R --for <changed files...>` (all slow tests when `--for` is omitted); every slow-test header declares its subject files.
 
 This audit is separate from the real-data verification locks: those remain input-driven `verif_*`
 targets in `_targets.R` and need no environment-variable opt-in (issue #342). Do not reintroduce

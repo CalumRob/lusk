@@ -69,33 +69,48 @@ autorise_site <- function(rel, source, autorisations) {
 
 auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_service_postgres\\(",
                               autorisations = AUTORISATIONS_DB) {
-  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
-  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  fichiers <- fichiers_structure(racine, motif = "dbConnect|configuration_service_postgres")
   trousses <- list()
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
-    lignes <- readLines(f, warn = FALSE)
-    for (i in seq_along(lignes)) {
-      l <- lignes[[i]]
-      if (!grepl(motif, l)) next
-      # Une DÉFINITION de fonction n'est pas un appel.
-      if (grepl("(<-|=)\\s*function\\s*\\(", l)) next
-      debut <- which(grepl(BLOCS_OUVRANTS, lignes[seq_len(i)]))
+    source <- source_structure(f)
+    appels <- appels_structure(source)
+    sites <- appels[appels$fonction %in%
+                      c("dbConnect", "configuration_service_postgres"), , drop = FALSE]
+    # `do.call(DBI::dbConnect, ...)` opens the same connection but the parser
+    # represents dbConnect as a function reference, not a direct call node.
+    references <- references_do_call(
+      source, c("dbConnect", "configuration_service_postgres"))
+    sites <- rbind(sites, references)
+    sites <- sites[!duplicated(paste(sites$fonction, sites$line1, sites$col1)), ,
+                   drop = FALSE]
+    for (i in seq_len(nrow(sites))) {
+      site <- sites[i, , drop = FALSE]
+      blocs <- appels_ancetres(site$id, source)
+      blocs <- blocs[blocs$fonction %in% c("function", "if", "for", "while"), ,
+                     drop = FALSE]
+      gardes <- appels[appels$fonction %in%
+                         c("verifier_gel_release", "verifier_gel_lignage_ressource"), ,
+                       drop = FALSE]
       garde <- FALSE
-      if (length(debut)) {
-        for (j in debut) {
-          if (any(grepl("(verifier_gel_release|verifier_gel_lignage_ressource)\\(",
-                        lignes[j:i]))) {
-            garde <- TRUE
-            break
-          }
+      for (j in seq_len(nrow(blocs))) {
+        dans_bloc <- vapply(gardes$id, function(id) {
+          appel_descendant_de(id, blocs$id[[j]], source)
+        }, logical(1))
+        avant <- vapply(seq_len(nrow(gardes)), function(k) {
+          appel_avant(gardes[k, , drop = FALSE], site)
+        }, logical(1))
+        if (any(dans_bloc & avant)) {
+          garde <- TRUE
+          break
         }
       }
-      raison <- autorise_site(rel, l, autorisations)
+      ligne <- appel_ligne(site, source)
+      raison <- autorise_site(rel, ligne, autorisations)
       trousses[[length(trousses) + 1L]] <- data.frame(
-        fichier = rel, ligne = i, garde = garde,
+        fichier = rel, ligne = site$line1[[1L]], garde = garde,
         autorise = !is.na(raison), raison = if (is.na(raison)) "" else raison,
-        source = l, stringsAsFactors = FALSE
+        source = ligne, stringsAsFactors = FALSE
       )
     }
   }
@@ -125,19 +140,33 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
 # `sortie` est requis : un appel `verifier_gel_release()` sans argument est une
 # faute structurelle — il laisserait le garde lire un dossier implicite.
 auditer_appels_garde <- function(racine) {
-  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
-  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  fichiers <- fichiers_structure(racine, motif = "verifier_gel_release")
   trousses <- list()
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
-    lignes <- readLines(f, warn = FALSE)
-    for (i in seq_along(lignes)) {
-      l <- sub("#.*$", "", lignes[[i]])
-      if (!grepl("verifier_gel_release\\s*\\(", l)) next
+    source <- source_structure(f)
+    appels <- appels_structure(source)
+    sites <- appels[appels$fonction == "verifier_gel_release", , drop = FALSE]
+    references <- references_do_call(source, "verifier_gel_release")
+    sites <- rbind(sites, references)
+    for (i in seq_len(nrow(sites))) {
+      site <- sites[i, , drop = FALSE]
+      sans_argument <- is.na(argument_nomme(site$id, "sortie", source)) &&
+        nrow(arguments_appel(site$id, source)) == 0L
+      if (!site$id %in% appels$id) {
+        do_call <- appels_ancetres(site$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        arguments <- if (nrow(do_call)) {
+          liste_arguments_do_call(do_call$id[[1L]], source)
+        } else {
+          data.frame()
+        }
+        sans_argument <- nrow(arguments) == 0L
+      }
       trousses[[length(trousses) + 1L]] <- data.frame(
-        fichier = rel, ligne = i,
-        sans_argument = grepl("verifier_gel_release\\s*\\(\\s*\\)", l),
-        source = trimws(l), stringsAsFactors = FALSE
+        fichier = rel, ligne = site$line1[[1L]],
+        sans_argument = sans_argument,
+        source = appel_ligne(site, source), stringsAsFactors = FALSE
       )
     }
   }
@@ -182,40 +211,62 @@ AUTORISATIONS_RESEAU <- list(
        couvert = FALSE)
 )
 
-MOTIF_RESEAU <- paste0(
-  "utils::download\\.file|download\\.file\\(", "|req_perform\\(", "|httr::GET\\(", "|httr2::request\\(",
-  "|curl_fetch|url\\(\"https?://|st_read\\([^)]*https?://",
-  "|read_csv\\([^)]*https?://|fromJSON\\([^)]*https?://"
+FONCTIONS_RESEAU <- c(
+  "download.file", "req_perform", "GET", "request", "curl_fetch",
+  "url", "st_read", "read_csv", "fromJSON"
 )
+FONCTIONS_RESEAU_URL <- c("url", "st_read", "read_csv", "fromJSON")
 
 auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) {
-  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
-  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  fichiers <- fichiers_structure(racine, motif = paste(FONCTIONS_RESEAU, collapse = "|"))
   trousses <- list()
+  noms <- FONCTIONS_RESEAU
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
-    lignes <- readLines(f, warn = FALSE)
-    for (i in seq_along(lignes)) {
-      brut <- lignes[[i]]
-      # On ignore les commentaires et les paramètres par défaut (download = ...).
-      l <- sub("#.*$", "", brut)
-      if (!grepl(MOTIF_RESEAU, l)) next
-      # `download = utils::download.file` est une DÉCLARATION de seam réseau
-      # (AEDAR) : elle doit être auditée, pas ignorée.
-      if (grepl("(fetch|download_file)\\s*=", l)) next
+    source <- source_structure(f)
+    appels <- appels_structure(source)
+    sites <- appels[appels$fonction %in% noms, , drop = FALSE]
+    sites <- sites[vapply(seq_len(nrow(sites)), function(i) {
+      if (!sites$fonction[[i]] %in% FONCTIONS_RESEAU_URL) return(TRUE)
+      grepl("https?://", appel_texte(sites[i, , drop = FALSE], source))
+    }, logical(1)), , drop = FALSE]
+
+    # A default such as `download = utils::download.file` is an audited network
+    # seam even though it is a function reference, not a call. `fetch` and
+    # `download_file` defaults remain excluded exactly as before.
+    references <- references_structure(source, noms)
+    references <- references[vapply(references$id, function(id) {
+      ligne <- source$lignes[[references$line1[references$id == id][[1L]]]]
+      if (grepl("(fetch|download_file)\\s*=", ligne)) return(FALSE)
+      if (grepl("(^|,)\\s*download\\s*=", ligne)) return(TRUE)
+      ancetres <- appels_ancetres(id, source)
+      do_call <- ancetres[ancetres$fonction == "do.call", , drop = FALSE]
+      if (!nrow(do_call)) return(FALSE)
+      any(vapply(do_call$id, function(appel_id) {
+        argument <- premier_argument_appel(appel_id, source)
+        !is.na(argument) && appel_descendant_de(id, argument, source)
+      }, logical(1)))
+    }, logical(1)), , drop = FALSE]
+    sites <- rbind(sites, references)
+    sites <- sites[!duplicated(paste(sites$fonction, sites$line1, sites$col1)), ,
+                   drop = FALSE]
+
+    for (i in seq_len(nrow(sites))) {
+      appel <- sites[i, , drop = FALSE]
       couvert <- FALSE; raison <- NA_character_
+      ligne <- appel_ligne(appel, source)
       for (a in autorisations) {
-        if (grepl(a$fichier, rel) && grepl(a$motif, l)) {
+        if (grepl(a$fichier, rel) && grepl(a$motif, ligne)) {
           couvert <- isTRUE(a$couvert)
           raison <- a$raison
           break
         }
       }
       trousses[[length(trousses) + 1L]] <- data.frame(
-        fichier = rel, ligne = i, couvert = couvert,
+        fichier = rel, ligne = appel$line1[[1L]], couvert = couvert,
         autorise = !is.na(raison),
         raison = if (is.na(raison)) "" else raison,
-        source = trimws(l), stringsAsFactors = FALSE
+        source = ligne, stringsAsFactors = FALSE
       )
     }
   }
@@ -249,21 +300,45 @@ verifier_structure_reseau <- function(racine, autorisations = AUTORISATIONS_RESE
 MOTIF_HASH_JSON <- "sha256\\s*\\(.*toJSON\\s*\\("
 MOTIF_ENVELOPPE_WFS <- "toJSON\\s*\\(\\s*(brut|reponse|response|collection|limites|enveloppe|collection_wfs)\\b"
 
+enveloppe_wfs <- function(id, source, noms_enveloppe) {
+  appels <- appels_structure(source)
+  json <- appels[vapply(appels$id, function(appel_id) {
+    appel_descendant_de(appel_id, id, source)
+  }, logical(1)) & appels$fonction == "toJSON", , drop = FALSE]
+  for (j in seq_len(nrow(json))) {
+    argument <- premier_argument_appel(json$id[[j]], source)
+    if (is.na(argument)) next
+    texte <- trimws(noeud_texte(argument, source))
+    if (grepl(paste0("^(", noms_enveloppe, ")\\b"), texte)) return(TRUE)
+  }
+  FALSE
+}
+
 auditer_hachages_wfs <- function(racine) {
-  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
-  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  fichiers <- fichiers_structure(racine, motif = "sha256")
   trousses <- list()
+  noms_enveloppe <- "brut|reponse|response|collection|limites|enveloppe|collection_wfs"
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
-    lignes <- readLines(f, warn = FALSE)
-    for (i in seq_along(lignes)) {
-      l <- sub("#.*$", "", lignes[[i]])
-      if (!grepl(MOTIF_HASH_JSON, l)) next
-      enveloppe <- grepl(MOTIF_ENVELOPPE_WFS, l)
+    source <- source_structure(f)
+    appels <- appels_structure(source)
+    hachages <- appels[appels$fonction == "sha256", , drop = FALSE]
+    references <- references_do_call(source, "sha256")
+    hachages <- rbind(hachages, references)
+    for (i in seq_len(nrow(hachages))) {
+      hachage <- hachages[i, , drop = FALSE]
+      racine_hachage <- hachage$id
+      if (!hachage$id %in% appels$id) {
+        do_call <- appels_ancetres(hachage$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        if (nrow(do_call)) racine_hachage <- do_call$id[[1L]]
+      }
+      enveloppe <- enveloppe_wfs(racine_hachage, source, noms_enveloppe)
       autorise <- !enveloppe || grepl("^R/wfs_digest\\.R$", rel)
       trousses[[length(trousses) + 1L]] <- data.frame(
-        fichier = rel, ligne = i, enveloppe = enveloppe,
-        autorise = autorise, source = trimws(l), stringsAsFactors = FALSE
+        fichier = rel, ligne = hachage$line1[[1L]], enveloppe = enveloppe,
+        autorise = autorise, source = appel_ligne(hachage, source),
+        stringsAsFactors = FALSE
       )
     }
   }
@@ -292,46 +367,59 @@ verifier_structure_hachages_wfs <- function(racine) {
 
 # Paramètres DBI positionnels (revue #1170) -----------------------------------
 # RPostgres refuse une liste `params` nommée (« `params` must not be named »).
-# Un test avec DBI mocké ne le voit pas : ce scanner extrait CHAQUE appel
-# dbExecute/dbGetQuery/dbSendQuery de R/ (parenthèses équilibrées) et exige des
-# paramètres positionnels : `list(a, b)` ou `unname(as.list(x))`, jamais
-# `list(nom = ...)` ni `as.list(...)` dont les noms viennent du data.frame.
-extraire_appels_dbi <- function(texte) {
-  appels <- character()
-  positions <- gregexpr("db(Execute|GetQuery|SendQuery)\\s*\\(", texte)[[1L]]
-  if (positions[[1L]] < 0L) return(appels)
-  for (p in seq_along(positions)) {
-    debut <- positions[[p]]
-    profondeur <- 0L
-    for (k in debut:nchar(texte)) {
-      ch <- substr(texte, k, k)
-      if (ch == "(") profondeur <- profondeur + 1L
-      if (ch == ")") {
-        profondeur <- profondeur - 1L
-        if (profondeur == 0L) {
-          appels <- c(appels, substr(texte, debut, k))
-          break
-        }
-      }
+# Un test avec DBI mocké ne le voit pas : les appels dbExecute/dbGetQuery/
+# dbSendQuery sont lus dans le parse data partagé et exigent des paramètres
+# positionnels : `list(a, b)` ou `unname(as.list(x))`, jamais `list(nom = ...)`
+# ni `as.list(...)` dont les noms viennent du data.frame.
+params_dbi_nommes <- function(valeur, source) {
+  if (is.na(valeur)) return(FALSE)
+  appels <- appels_structure(source)
+  descendants <- appels[vapply(appels$id, function(id) {
+    appel_descendant_de(id, valeur, source)
+  }, logical(1)), , drop = FALSE]
+  for (i in seq_len(nrow(descendants))) {
+    appel <- descendants[i, , drop = FALSE]
+    if (appel$fonction == "list" &&
+        any(enfants_parse(appel$id, source)$terminal &
+            enfants_parse(appel$id, source)$text == "=")) return(TRUE)
+    if (appel$fonction == "as.list") {
+      ancetres <- appels_ancetres(appel$id, source)
+      if (!nrow(ancetres) || !identical(ancetres$fonction[[1L]], "unname")) return(TRUE)
     }
   }
-  appels
+  FALSE
 }
 
 auditer_params_dbi <- function(racine) {
-  fichiers <- list.files(file.path(racine, "R"), pattern = "\\.R$", full.names = TRUE)
+  fichiers <- fichiers_structure(
+    racine, sous = "R", motif = "dbExecute|dbGetQuery|dbSendQuery")
   trousses <- list()
   for (f in fichiers) {
-    texte <- paste(readLines(f, warn = FALSE), collapse = "\n")
-    for (appel in extraire_appels_dbi(texte)) {
-      if (!grepl("params\\s*=", appel)) next
-      nomme <- grepl("params\\s*=\\s*list\\s*\\([^)]*[[:alnum:]_.]+\\s*=", appel) ||
-        (grepl("params\\s*=\\s*as\\.list\\s*\\(", appel) &&
-           !grepl("unname\\s*\\(\\s*as\\.list\\s*\\(", appel))
-      if (!nomme) next
+    source <- source_structure(f)
+    appels <- appels_structure(source)
+    sites <- appels[appels$fonction %in% c("dbExecute", "dbGetQuery", "dbSendQuery"), ,
+                   drop = FALSE]
+    references <- references_do_call(source, c("dbExecute", "dbGetQuery", "dbSendQuery"))
+    sites <- rbind(sites, references)
+    for (i in seq_len(nrow(sites))) {
+      site <- sites[i, , drop = FALSE]
+      valeur <- argument_nomme(site$id, "params", source)
+      if (!site$id %in% appels$id) {
+        do_call <- appels_ancetres(site$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        if (nrow(do_call)) {
+          arguments <- arguments_appel(do_call$id[[1L]], source)
+          liste <- if (nrow(arguments) >= 2L) arguments$id[[2L]] else NA_integer_
+          if (!is.na(liste) &&
+              identical(appels$fonction[match(liste, appels$id)], "list")) {
+            valeur <- argument_nomme(liste, "params", source)
+          }
+        }
+      }
+      if (!params_dbi_nommes(valeur, source)) next
       trousses[[length(trousses) + 1L]] <- data.frame(
         fichier = relatif_sous(f, racine),
-        source = gsub("\\s+", " ", appel), stringsAsFactors = FALSE)
+        source = appel_ligne(site, source), stringsAsFactors = FALSE)
     }
   }
   if (!length(trousses)) return(data.frame(fichier = character(), source = character()))
@@ -352,7 +440,7 @@ verifier_params_dbi_positionnels <- function(racine) {
 # Écriture des tables de service (ADR-0049 décision 8 / #1137) -----------------
 # SEUL un adaptateur de forme peut écrire les tables de service d'une forme.
 # Le scanner repère toute écriture (DELETE/INSERT/UPDATE/TRUNCATE/dbWriteTable)
-# sur une table de service scalaire ; un site non autorisé fait échouer la
+# sur une table de service d'une forme enregistrée ; un site non autorisé fait échouer la
 # suite. Les producteurs historiques sont autorisés « retire in ADR-0049 step 4 »
 # ; `apply` n'écrit AUCUNE table de service directement — il délègue à l'adaptateur.
 TABLES_SERVICE_SCALAIRE <- paste0(
@@ -376,9 +464,20 @@ TABLES_SERVICE_REGISTRE <- "resource_publication"
 TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL, "|",
   TABLES_SERVICE_SERIE, "|", TABLES_SERVICE_COLLECTION, "|", TABLES_SERVICE_AEDAR,
   "|", TABLES_SERVICE_REGISTRE)
+est_table_service <- function(nom) {
+  nom <- trimws(nom)
+  nom <- gsub("^[\"']|[\"']$", "", nom)
+  motifs <- strsplit(TABLES_SERVICE, "|", fixed = TRUE)[[1L]]
+  any(vapply(motifs, function(table) {
+    if (endsWith(table, "_")) startsWith(nom, table) else identical(nom, table)
+  }, logical(1)))
+}
+MOTIF_NOM_TABLE_SERVEUR <- paste(vapply(strsplit(TABLES_SERVICE, "|", fixed = TRUE)[[1L]],
+  function(table) if (endsWith(table, "_")) table else paste0(table, "[\"']"),
+  character(1)), collapse = "|")
 MOTIF_ECRITURE_SERVEUR <- paste0(
   "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE, ")",
-  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE, ")")
+  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", MOTIF_NOM_TABLE_SERVEUR, ")")
 
 AUTORISATIONS_ECRITURE_SERVEUR <- list(
   list(fichier = "^R/adaptateur_scalaire\\.R$",
@@ -423,15 +522,50 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
 
 auditer_ecritures_serveur <- function(racine,
                                       autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
-  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
-  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  fichiers <- fichiers_structure(
+    racine, motif = paste0(TABLES_SERVICE, "|dbWriteTable|dbAppendTable"))
   trousses <- list()
+  sql <- paste0("(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(",
+                TABLES_SERVICE, ")")
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
-    lignes <- readLines(f, warn = FALSE)
-    for (i in seq_along(lignes)) {
-      l <- sub("#.*$", "", lignes[[i]])
-      if (!grepl(MOTIF_ECRITURE_SERVEUR, l, ignore.case = TRUE)) next
+    source <- source_structure(f)
+    donnees <- source$donnees
+    appels <- appels_structure(source)
+    lignes_fautives <- integer()
+    if (!is.null(donnees)) {
+      chaines <- donnees[donnees$terminal, , drop = FALSE]
+      chaines <- chaines[grepl(sql, chaines$text, ignore.case = TRUE), ,
+                         drop = FALSE]
+      lignes_fautives <- c(lignes_fautives, chaines$line1)
+    }
+    ecritures <- appels[appels$fonction %in% c("dbWriteTable", "dbAppendTable"), ,
+                       drop = FALSE]
+    for (i in seq_len(nrow(ecritures))) {
+      arguments <- arguments_appel(ecritures$id[[i]], source)
+      if (nrow(arguments) < 2L) next
+      nom_table <- trimws(noeud_texte(arguments$id[[2L]], source))
+      if (est_table_service(nom_table)) {
+        lignes_fautives <- c(lignes_fautives, ecritures$line1[[i]])
+      }
+    }
+    references <- references_do_call(source, c("dbWriteTable", "dbAppendTable"))
+    for (i in seq_len(nrow(references))) {
+      do_call <- appels_ancetres(references$id[[i]], source)
+      do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+      if (!nrow(do_call)) next
+      arguments <- arguments_appel(do_call$id[[1L]], source)
+      if (nrow(arguments) < 2L) next
+      liste <- arguments$id[[2L]]
+      if (!identical(appels$fonction[match(liste, appels$id)], "list")) next
+      valeurs <- arguments_appel(liste, source)
+      if (nrow(valeurs) < 2L) next
+      nom_table <- trimws(noeud_texte(valeurs$id[[2L]], source))
+      if (est_table_service(nom_table)) {
+        lignes_fautives <- c(lignes_fautives, references$line1[[i]])
+      }
+    }
+    for (i in unique(lignes_fautives)) {
       raison <- NA_character_
       for (a in autorisations) {
         if (grepl(a$fichier, rel)) { raison <- a$raison; break }
@@ -439,7 +573,7 @@ auditer_ecritures_serveur <- function(racine,
       trousses[[length(trousses) + 1L]] <- data.frame(
         fichier = rel, ligne = i, autorise = !is.na(raison),
         raison = if (is.na(raison)) "" else raison,
-        source = trimws(l), stringsAsFactors = FALSE
+        source = trimws(source$lignes[[i]]), stringsAsFactors = FALSE
       )
     }
   }

@@ -1,3 +1,10 @@
+# Slow tier (#1172): scans every committed producer payload and vintages table to protect
+# Subject files: pipeline/R, pipeline/inst/extdata/theme-metadata, pipeline/tests/testthat/helper-payload.R, public/data
+# the public source-label language contract (no pipeline artefact ids in published labels).
+# Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-contract-vintages-langue.R', package='lusk')"
+
+for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper)
+
 # test-contract-vintages-langue -------------------------------------------------
 # Le contrat de langue publique sur les labels de source des faits producteurs (issue #365) :
 # le miroir pipeline du test MOTS_INTERNES de l'app (methodes-indicateurs.spec.ts).
@@ -39,6 +46,7 @@ valeurs_sources <- function(objet) {
 }
 
 test_that("aucun label de source producteur ne porte un id d'artefact du pipeline", {
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
   expect_true(dir.exists(racine_public),
               info = "public/data absent — la racine du dépôt est introuvable")
 

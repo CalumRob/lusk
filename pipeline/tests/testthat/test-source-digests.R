@@ -50,12 +50,12 @@ test_that("aucune commande du graphe ne contient de splice bquote non résolu (#
   withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
                       LUSK_SORTIE = tempfile("sortie-splice-"),
                       LUSK_CACHE = tempfile("cache-splice-"))
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   expect_false(any(grepl("..(", manifeste$command, fixed = TRUE)))
   commande <- manifeste$command[manifeste$name == "digests_run"]
   # Toute dépendance `sources_*` du target est bien citée dans sa commande —
   # pas seulement dans la liste des dépendances calculée par targets.
-  aretes <- targets::tar_network(store = tempfile("reseau-splice-"))$edges
+  aretes <- reseau_graphe()$edges
   dependances <- aretes$from[aretes$to == "digests_run" &
                                grepl("^sources_", aretes$from)]
   expect_true(length(dependances) >= 8L)
@@ -123,7 +123,7 @@ test_that("la cible digests_run projette les ids courants, pas tout le cache", {
   withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
                       LUSK_SORTIE = tempfile("sortie-digests-"),
                       LUSK_CACHE = tempfile("cache-digests-"))
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   ligne <- manifeste$command[manifeste$name == "digests_run"]
   expect_true(length(ligne) == 1L)
   expect_true(grepl("publier_digests_run", ligne, fixed = TRUE))
@@ -233,7 +233,7 @@ test_that("digests_run dépend de tous les téléchargements du graphe (#1109)",
   withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
                       LUSK_SORTIE = tempfile("sortie-graphe-digests-"),
                       LUSK_CACHE = tempfile("cache-graphe-digests-"))
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   commande <- manifeste$command[manifeste$name == "digests_run"]
   for (cible in c("sources_programmes", "sources_classes_densite",
                   "sources_classes_littoral", "geometrie", "sources_demographie",
@@ -249,7 +249,7 @@ test_that("un run partiel ne dépend pas des téléchargements Programmes (#1109
   withr::local_envvar(LUSK_THEMES = "economie", LUSK_MODE = "cron",
                       LUSK_SORTIE = tempfile("sortie-partielle-digests-"),
                       LUSK_CACHE = tempfile("cache-partielle-digests-"))
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   commande <- manifeste$command[manifeste$name == "digests_run"]
   expect_false(grepl("sources_programmes", commande, fixed = TRUE))
   expect_true(grepl("sources_classes_densite", commande, fixed = TRUE))

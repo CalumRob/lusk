@@ -99,6 +99,22 @@ test_that("a planted write to any new shape's serving table fails (proof)", {
   expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
 })
 
+test_that("profile serving tables are covered by the serving-write audit", {
+  d <- tempfile("seam-profile-write-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines(c(
+    "f <- function(con) {",
+    "  DBI::dbExecute(con, 'DELETE FROM profile_observation')",
+    "  DBI::dbWriteTable(con, 'profile_axis', data.frame())",
+    "}"
+  ), file.path(d, "R", "profile_writer.R"))
+  sites <- auditer_ecritures_serveur(d)
+  expect_equal(nrow(sites), 2L)
+  expect_true(all(!sites$autorise))
+  expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
+})
+
 test_that("plan and apply share ONE closure-verdict function", {
   racine <- racine_pipeline()
   lignes_apply <- readLines(file.path(racine, "R", "apply_publication.R"), warn = FALSE)

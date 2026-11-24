@@ -132,9 +132,9 @@ test_that("le target de publication dépend de digests_run (empreintes du run)",
     LUSK_SORTIE = tempfile("sortie-graphe-"),
     LUSK_CACHE = tempfile("cache-graphe-")
   )
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   expect_true("digests_run" %in% manifeste$name)
-  edges <- targets::tar_network()$edges
+  edges <- reseau_graphe()$edges
   expect_true("digests_run" %in%
                 edges$from[edges$to == "publie_backend_retained"])
   expect_true("digests_run" %in%

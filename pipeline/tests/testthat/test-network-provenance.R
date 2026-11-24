@@ -61,6 +61,18 @@ test_that("l'audit réseau échoue sur une lecture non déclarée (preuve)", {
   expect_error(verifier_structure_reseau(d), "undeclared network read")
 })
 
+test_that("a file whose only network call is httr2::request is audited", {
+  d <- tempfile("audit-request-only-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines("f <- function() httr2::request('https://example.test')",
+             file.path(d, "R", "request-only.R"))
+  sites <- auditer_appels_reseau(d)
+  expect_identical(nrow(sites), 1L)
+  expect_false(sites$autorise[[1L]])
+  expect_error(verifier_structure_reseau(d), "undeclared network read")
+})
+
 test_that("publier_geometrie enregistre une empreinte par couche WFS", {
   sortie <- tempfile("sortie-geom-")
   dir.create(sortie)

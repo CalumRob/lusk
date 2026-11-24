@@ -1,3 +1,11 @@
+# Slow tier (#1172): execution is the contract: always-cue report rewrites and downstream-failure survival on the mini-graph.
+# Subject files: pipeline/_targets.R, pipeline/tests/testthat/helper-targets-fixtures.R
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 # test-targets-rapport -----------------------------------------------------------
 # Seam 3 (#340, épique #329) : le rapport de run en target INDÉPENDANT — écrit
 # à chaque run même quand la chaîne saute (tar_cue(mode = "always")), et
@@ -59,4 +67,6 @@ test_that("le rapport de run survit à l'échec d'une étape aval (error = conti
   apres <- lire_rapport(projet)
   expect_false(is.null(apres))              # le rapport existe toujours
   expect_false(identical(avant, apres))     # et porte le run échoué
+})
+
 })
