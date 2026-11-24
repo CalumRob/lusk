@@ -29,6 +29,43 @@ fixture_plan_minimal <- function(lignes) {
   list(ressources = lignes)
 }
 
+test_that("apply refuses an adapter-less closure member BEFORE any connection", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  # part_passoires (scalar, has an adapter) declares distribution_dpe through
+  # its comparison_scalar dependency; the profile shape has NO remplacer.
+  scalaire <- artefacts_fixture_scalar_indicator(
+    "part_passoires", "dpe_22", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  handler <- REGISTRE_FORMES_RESSOURCE[["scalar"]]
+  ecrire_artefact_ressource("part_passoires", "scalar",
+    contenu_artefact(faits_forme(handler, scalaire), scalaire$descriptors,
+                     scalaire$provenance, NULL),
+    digests_lignage = digests_lignage_ressource(
+      "dpe_22", artefacts_fixture_digests("dpe_22")), root = root)
+  profil <- artefacts_fixture_profile_projections()[["distribution_dpe"]]
+  ecrire_artefact_ressource("distribution_dpe", "declared_profile",
+    contenu_artefact(profil[setdiff(names(profil),
+      c("descriptor", "provenance", "comparison"))],
+      profil$descriptor, profil$provenance, profil$comparison),
+    digests_lignage = digests_lignage_ressource(
+      "profile_source", artefacts_fixture_digests("profile_source")), root = root)
+
+  connexions <- 0L
+  local_mocked_bindings(
+    dbConnect = function(...) { connexions <<- connexions + 1L; stop("no connection expected") },
+    .package = "DBI")
+  local_mocked_bindings(
+    configuration_service_postgres = function() stop("no DB config expected"))
+  err <- tryCatch(apply_publication("part_passoires", root = root,
+    registre = fixture_apply_registre_lock()), error = identity)
+  expect_s3_class(err, "erreur_apply")
+  expect_identical(err$refus, "adaptateur_absent")
+  expect_match(conditionMessage(err), "distribution_dpe", fixed = TRUE)
+  expect_match(conditionMessage(err), "declared_profile", fixed = TRUE)
+  expect_match(conditionMessage(err), "zéro connexion", fixed = TRUE)
+  expect_identical(connexions, 0L)
+})
+
 test_that("analyser_ids_apply parses plain and @version ids", {
   a <- analyser_ids_apply(c("densite", "offre_tc@v1"))
   expect_identical(a$ressource, c("densite", "offre_tc"))

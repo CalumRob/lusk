@@ -74,6 +74,41 @@ verifier_refus_apply <- function(plan, cibles, confirm_definition = character())
 
 identical_or_false <- function(x, value) !is.na(x) & x == value
 
+# Charger les artefacts construits SANS connexion : le préflight (adaptateurs,
+# gel) travaille sur le magasin local avant même l'ouverture de la base.
+charger_artefacts_construits <- function(builds, root = NULL) {
+  artefacts <- list()
+  for (i in seq_len(nrow(builds))) {
+    id <- as.character(builds$ressource[[i]])
+    version <- as.character(builds$version[[i]])
+    forme <- if ("forme" %in% names(builds)) as.character(builds$forme[[i]]) else NULL
+    artefacts[[id]] <- lire_artefact_ressource(id, version, root = root, forme = forme)
+  }
+  artefacts
+}
+
+# Refus PRÉFLIGHT : chaque membre de la fermeture doit avoir un adaptateur de
+# sa forme. Aucune connexion, aucune écriture — y compris `projeter` pour un
+# `apply` normal (la retirement n'a besoin que de `remplacer`).
+verifier_adaptateurs_apply <- function(cibles, artefacts, retire = FALSE) {
+  manquants <- character()
+  for (ressource in cibles) {
+    artefact <- artefacts[[ressource]]
+    forme <- if (is.null(artefact)) NA_character_ else as.character(artefact$forme)
+    handler <- if (is.na(forme)) NULL else REGISTRE_FORMES_RESSOURCE[[forme]]
+    if (is.na(forme) || is.null(handler) || !is.function(handler$remplacer) ||
+        (!isTRUE(retire) && !is.function(handler$projeter))) {
+      manquants <- c(manquants, paste0(ressource, "(",
+        if (is.na(forme)) "?" else forme, ")"))
+    }
+  }
+  if (length(manquants))
+    stop(erreur_apply("adaptateur_absent", paste0(
+      "apply : aucun adaptateur pour ", paste(manquants, collapse = ", "),
+      " — zéro connexion, zéro écriture.")))
+  invisible(TRUE)
+}
+
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de
 # connexion de service du nouveau chemin a lieu ici, avec la configuration
 # privée (passfile hors dépôt). Les refus sont évalués avant toute écriture.
@@ -82,6 +117,27 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
                               attributions = NULL, con = NULL,
                               receipts_dir = NULL, commit_sha = NULL) {
   analysés <- analyser_ids_apply(ids)
+
+  # --- PRÉFLIGHT 100% LOCAL : aucune connexion, aucune écriture -------------
+  builds <- construites_depuis_magasin(root)
+  # Version override -> rollback depuis l'artefact de cette version.
+  for (i in seq_len(nrow(analysés))) {
+    if (!is.na(analysés$version[[i]])) {
+      j <- match(analysés$ressource[[i]], as.character(builds$ressource))
+      if (is.na(j)) stop(erreur_apply("artefact_absent", paste0(
+        "apply : ressource inconnue dans le magasin : ", analysés$ressource[[i]],
+        " — zéro connexion, zéro écriture.")))
+      builds$version[[j]] <- analysés$version[[i]]
+    }
+  }
+  artefacts_pre <- charger_artefacts_construits(builds, root)
+  cibles <- if (isTRUE(retire)) {
+    analysés$ressource
+  } else {
+    fermeture_cascade_publication(analysés$ressource, artefacts_pre)
+  }
+  verifier_adaptateurs_apply(cibles, artefacts_pre, retire = retire)
+
   owns_con <- FALSE
   if (is.null(con)) {
     config <- configuration_service_postgres()
@@ -92,24 +148,8 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
 
   # Le registre vivant est la source du plan (remplace LUSK_LIVE_LISTING).
   live <- lire_listing_live_registre(con)
-  builds <- construites_depuis_magasin(root)
-  # Version override -> rollback depuis l'artefact de cette version.
-  for (i in seq_len(nrow(analysés))) {
-    if (!is.na(analysés$version[[i]])) {
-      j <- match(analysés$ressource[[i]], as.character(builds$ressource))
-      if (is.na(j)) stop(erreur_apply("artefact_absent", paste0(
-        "apply : ressource inconnue dans le magasin : ", analysés$ressource[[i]],
-        " — zéro écriture.")))
-      builds$version[[j]] <- analysés$version[[i]]
-    }
-  }
   plan <- plan_publication(builds = builds, live = live, lock = lock,
                            registre = registre, attributions = attributions, root = root)
-  cibles <- if (isTRUE(retire)) {
-    analysés$ressource
-  } else {
-    fermeture_cascade_publication(analysés$ressource, plan$artefacts)
-  }
   verifier_refus_apply(plan, cibles, confirm_definition)
 
   recettes <- list()
