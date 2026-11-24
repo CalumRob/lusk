@@ -428,7 +428,7 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
       registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
       metadata_directory = fixture$metadata_directory, con = con), error = identity)
-    expect_s3_class(err, "erreur_adoption", info = x$ressource)
+    expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
     expect_identical(.adopt_db_digest(con), avant, info = x$ressource)
