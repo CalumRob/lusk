@@ -21,6 +21,28 @@ test-only database, dedicated roles, and private passfile setup. The persistent 
 `lusk_it_contract`; per-run random schemas are disposable. Never point tests at the serving
 database `lusk` or copy credentials into the repository.
 
+### Orchestrator duties before merging a worker PR — Pocock orchestrator only, NOT workers
+
+Workers cannot run everything a merge needs. Before merging, the orchestrator (the session that
+dispatches and reviews) does what the worker could not:
+
+1. **Slow tier.** `pipeline/slow-tests/` is outside the default suite and nobody else runs it. From
+   `pipeline/`, run `Rscript scripts/run-slow-tests.R --for <files changed by the PR…>` (all slow tests
+   when `--for` is omitted); each slow-test header declares its subject files. Also run the whole tier at
+   every periodic cold-build audit and before an E release (ADR-0049 decision 4).
+2. **Guarded DB proofs.** Workers have no `lusk_it_contract` credentials, so their guarded tests skip;
+   a skip is not a pass. Run them yourself per `api/tests/integration/README.md` (process-scoped
+   `LUSK_TEST_*` / `LUSK_SCALAR_TEST_*`, private `PGPASSFILE`, cleanup opt-in), on the PR's final head,
+   then confirm no schema of that run remains (read-only query as the test role). Mocked DB-free tests
+   have repeatedly hidden real failures (named DBI params, missing reference, unconfirmed definitions).
+3. **Two-axis review** (Standards + Spec, `code-review` skill) on every PR; the owner's standing rule is
+   no two implementations of the same operation — check new code against existing writers/readers.
+4. **Concurrent PRs** touching the same shared structures (`REGISTRE_FORMES_RESSOURCE`,
+   `helper-provenance-audit.R`, migrations): merge one, make the other rebase; migration numbers are
+   assigned at implementation time, never reserved in specs.
+5. Edit GitHub issue bodies through UTF-8 files (`--body-file`) written by a UTF-8-safe tool; piping
+   `gh` output through Windows PowerShell 5 corrupts accents and dashes.
+
 ### UI/UX workflow (impeccable + intent) — READ BEFORE ANY UI WORK ON `app/`
 
 `.opencode/skills/` holds **impeccable** (design craft + a deterministic anti-slop detector) and five
