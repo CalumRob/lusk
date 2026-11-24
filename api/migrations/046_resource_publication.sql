@@ -80,7 +80,10 @@ END $m046_trigger$;
 -- already per-resource; this marker only replaces the global clock for reads
 -- that will move to per-resource in step 4.
 CREATE TABLE IF NOT EXISTS scalar_resource_comparison_publication (
-    indicator_id text PRIMARY KEY REFERENCES scalar_descriptor(indicator_id),
+    -- No FK to scalar_descriptor: apply deletes this marker before the
+    -- descriptor in the same transaction, and an outside FK would violate the
+    -- bridge's wholesale-replacement invariant (test-offre-tc-bridge.R).
+    indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
     content_version text NOT NULL,
     scalar_content_version text NOT NULL,
     reference_content_version text NOT NULL,

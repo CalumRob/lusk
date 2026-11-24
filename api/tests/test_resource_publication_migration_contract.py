@@ -82,7 +82,7 @@ def test_migration_046_receipt_is_append_only():
 
 def test_migration_046_per_resource_scalar_comparison_marker():
     body = _block(_m046(), "scalar_resource_comparison_publication")
-    assert "indicator_id text PRIMARY KEY REFERENCES scalar_descriptor(indicator_id)" in body
+    assert "indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$')" in body
     for col in ("content_version", "scalar_content_version",
                 "reference_content_version", "group_row_count",
                 "territory_row_count", "lineage_row_count"):

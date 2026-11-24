@@ -24,9 +24,9 @@ MIGRATION = (Path(__file__).resolve().parents[2] /
              "migrations/046_resource_publication.sql")
 SCHEMA = Path(__file__).resolve().parents[2] / "schema.sql"
 
-# A faithful pre-046 shape for the relations migration 046 references, with a
-# real scalar descriptor (the FK target of the new per-resource marker) and
-# the two GLOBAL markers the expand phase must leave untouched.
+# A faithful pre-046 shape with a real scalar descriptor and the two GLOBAL
+# markers the expand phase must leave untouched. Migration 046 is purely
+# additive and references no existing table by foreign key.
 PRE_046 = """
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY,
