@@ -11,17 +11,10 @@
 # singleton `scalar_comparison_publication`) ne sont JAMAIS écrits ici : la
 # phase expand les laisse pour l'API actuelle jusqu'à l'étape 4 (#1140).
 
-.sql_lit_scalaire <- function(x) {
-  if (is.na(x)) return("NULL")
-  paste0("'", gsub("'", "''", as.character(x)), "'")
-}
-
-.array_sql_scalaire <- function(valeurs) {
-  valeurs <- as.character(unlist(valeurs, use.names = FALSE))
-  if (!length(valeurs)) return("ARRAY[]::text[]")
-  paste0("ARRAY[", paste(vapply(valeurs, .sql_lit_scalaire, character(1)),
-                         collapse = ","), "]::text[]")
-}
+# All serving-table writes go through the SHARED writers in publish_scalar.R
+# (.ecrire_sources_scalaires / .ecrire_descripteurs_scalaires /
+# .ecrire_observations_scalaires / .ecrire_comparaison_scalaire). This adapter
+# only owns the indicator scope and the per-resource marker/registry row.
 
 # Project an artefact de ressource into the rows the adapter will write. Pure:
 # no connection, no write. The descriptor keeps the semantic fields plus the
@@ -126,19 +119,26 @@ projeter_artefact_scalaire <- function(artefact) {
 remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
                                retire = FALSE, reference_content_version = NULL, ...) {
   valider_identite_ressource(ressource)
-  id_lit <- .sql_lit_scalaire(ressource)
 
   publication_transaction(con, {
-    # FK-safe order, every statement scoped to this indicator.
+    # FK-safe order. EVERY statement is scoped to this indicator with an
+    # unnamed positional param — never a hand-built SQL literal or named list.
     DBI::dbExecute(con, "DELETE FROM scalar_resource_comparison_publication WHERE indicator_id=$1",
                    params = list(ressource))
-    DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory WHERE indicator_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_group WHERE indicator_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_observation_source WHERE indicator_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_observation WHERE indicator_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor_source WHERE indicator_id=", id_lit))
-    DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor WHERE indicator_id=", id_lit))
+    DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_comparison_territory WHERE indicator_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_comparison_group WHERE indicator_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_observation_source WHERE indicator_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_observation WHERE indicator_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source WHERE indicator_id=$1",
+                   params = list(ressource))
+    DBI::dbExecute(con, "DELETE FROM scalar_descriptor WHERE indicator_id=$1",
+                   params = list(ressource))
 
     if (isTRUE(retire)) {
       ecrire_registre_ressource(con, ressource, "scalar", version,
@@ -148,76 +148,27 @@ remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
     if (is.null(rows) || !identical(as.character(rows$ressource), ressource))
       stop("Scalar adapter rows do not match the requested resource", call. = FALSE)
 
-    for (i in seq_len(nrow(rows$sources))) {
-      DBI::dbExecute(con,
-        "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO NOTHING",
-        params = as.list(rows$sources[i, c("source_id", "name")]))
-    }
-    for (i in seq_len(nrow(rows$vintages))) {
-      DBI::dbExecute(con, paste0("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) ",
-        "VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING"),
-        params = as.list(rows$vintages[i, c("source_id", "vintage_id", "version",
-                                             "reference_date", "publication_date")]))
-    }
-
-    d <- rows$descriptor[1L, , drop = FALSE]
-    champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
-                "comparison_facet", "denominator_semantics", "completeness",
-                "descriptor_version")
-    valeurs <- vapply(champs, function(champ) .sql_lit_scalaire(d[[champ]][[1L]]), character(1))
-    colonnes <- paste(c(champs, "allowed_levels"), collapse = ",")
-    valeur_sql <- paste(c(valeurs, .array_sql_scalaire(d$allowed_levels[[1L]])), collapse = ",")
-    DBI::dbExecute(con, paste0("INSERT INTO scalar_descriptor(", colonnes, ") VALUES(",
-      valeur_sql, ")"))
-    for (source_id in as.character(unlist(d$allowed_sources, use.names = FALSE))) {
-      DBI::dbExecute(con,
-        "INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
-        params = list(ressource, source_id))
-    }
-
-    DBI::dbWriteTable(con, "scalar_observation", rows$observations,
-                      append = TRUE, row.names = FALSE)
-    DBI::dbWriteTable(con, "scalar_observation_source", rows$provenance,
-                      append = TRUE, row.names = FALSE)
+    .ecrire_sources_scalaires(con, rows$sources, rows$vintages, conflict = "nothing")
+    .ecrire_descripteurs_scalaires(con, rows$descriptor)
+    .ecrire_observations_scalaires(con, rows$observations, rows$provenance)
 
     comparaison <- rows$comparison
     if (!is.null(comparaison)) {
-      groupes <- comparaison$groups
-      if (!is.null(groupes) && nrow(groupes)) {
-        DBI::dbWriteTable(con, "scalar_comparison_group", groupes[
-          c("comparison_context", "group_id", "territory_type", "indicator_id",
-            "statistic", "median", "member_count", "eligible_count", "missing_count",
-            "lineage_source_count")], append = TRUE, row.names = FALSE)
-      }
-      territoires <- comparaison$territories
-      if (!is.null(territoires) && nrow(territoires)) {
-        DBI::dbWriteTable(con, "scalar_comparison_territory", territoires[
-          c("comparison_context", "group_id", "territory_type", "indicator_id",
-            "territory_id", "value", "status", "rank", "tie_count", "rank_size")],
-          append = TRUE, row.names = FALSE)
-      }
-      lignage <- comparaison$lineage
-      if (!is.null(lignage) && nrow(lignage)) {
-        lignage <- lignage
-        lignage$comparison_family <- "scalar"
-        lignage$comparison_content_version <- as.character(comparaison$content_version)
-        DBI::dbWriteTable(con, "comparison_source_lineage", lignage[
-          c("comparison_family", "comparison_context", "group_id", "territory_type",
-            "facet_id", "source_id", "vintage_id", "comparison_content_version")],
-          append = TRUE, row.names = FALSE)
-      }
+      .ecrire_comparaison_scalaire(con, comparaison)
       reference <- if (is.null(reference_content_version))
         as.character(comparaison$reference_content_version[[1L]]) else
         as.character(reference_content_version)
+      # Per-resource marker (the expand-phase counterpart of the untouched
+      # global scalar_comparison_publication singleton).
       DBI::dbExecute(con, paste0(
         "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
         "scalar_content_version,reference_content_version,group_row_count,",
         "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)"),
         params = list(ressource, as.character(comparaison$content_version),
           as.character(comparaison$scalar_content_version), reference,
-          if (is.null(groupes)) 0L else nrow(groupes),
-          if (is.null(territoires)) 0L else nrow(territoires),
-          if (is.null(lignage)) 0L else nrow(lignage)))
+          if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
+          if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
+          if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage)))
       reference_content_version <- reference
     }
 

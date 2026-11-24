@@ -78,12 +78,17 @@ test_that("projeter refuses a non-scalar artefact", {
 test_that("remplacer scopes every delete to one indicator and spares global markers", {
   artefact <- artefact_scalaire_fixture("densite")
   rows <- projeter_artefact_scalaire(artefact)
-  executes <- character(); writes <- character()
+  executes <- character(); writes <- character(); params_vus <- list()
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
-    dbExecute = function(con, sql, params = list()) { executes <<- c(executes, sql); 0L },
+    dbExecute = function(con, sql, params = list()) {
+      executes <<- c(executes, sql)
+      params_vus[[length(params_vus) + 1L]] <<- params
+      0L
+    },
     dbWriteTable = function(con, name, value, ...) { writes <<- c(writes, name); nrow(value) },
     dbGetQuery = function(con, sql, ...) data.frame(),
+    dbQuoteString = function(con, x) paste0("'", gsub("'", "''", as.character(x)), "'"),
     .package = "DBI")
   remplacer_scalaire(structure(list(), class = "mock"), "densite", rows, rows$version)
 
@@ -101,6 +106,11 @@ test_that("remplacer scopes every delete to one indicator and spares global mark
   expect_true(any(grepl("INSERT INTO resource_publication", executes)))
   expect_true(all(c("scalar_observation", "scalar_observation_source") %in% writes))
   expect_true(any(grepl("INSERT INTO scalar_descriptor\\(", executes)))
+  # The real SQL-building path sends ONLY unnamed positional params.
+  expect_true(all(vapply(params_vus, function(p) is.null(p) || length(p) == 0L ||
+    is.null(names(p)) || all(names(p) == ""), logical(1))))
+  # Descriptor values are DBI-quoted, never hand-rolled.
+  expect_true(any(grepl("VALUES\\('densite','demographie'", executes)))
 })
 
 test_that("remplacer --retire deletes rows and marks the registry retired", {
@@ -109,6 +119,7 @@ test_that("remplacer --retire deletes rows and marks the registry retired", {
     dbWithTransaction = function(con, expr) force(expr),
     dbExecute = function(con, sql, params = list()) { executes <<- c(executes, sql); 0L },
     dbWriteTable = function(con, name, ...) 0L,
+    dbQuoteString = function(con, x) paste0("'", as.character(x), "'"),
     .package = "DBI")
   remplacer_scalaire(structure(list(), class = "mock"), "densite",
                      retire = TRUE, version = "v1")
