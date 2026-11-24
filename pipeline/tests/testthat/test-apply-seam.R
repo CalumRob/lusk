@@ -58,6 +58,26 @@ test_that("a new unallowlisted serving-table write fails the audit (proof)", {
   expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
 })
 
+test_that("every DBI params list in R/ is positional (RPostgres contract)", {
+  racine <- racine_pipeline()
+  expect_equal(nrow(auditer_params_dbi(racine)), 0L)
+  expect_silent(verifier_params_dbi_positionnels(racine))
+})
+
+test_that("the DBI named-params audit fails on both named forms (proof)", {
+  d <- tempfile("seam-params-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines(c(
+    "f <- function(con) {",
+    "  DBI::dbExecute(con, 'SELECT 1', params = list(name = 1))",
+    "  DBI::dbGetQuery(con, 'SELECT 2', params = as.list(c('a', 'b')))",
+    "}" ), file.path(d, "R", "named.R"))
+  fautes <- auditer_params_dbi(d)
+  expect_equal(nrow(fautes), 2L)
+  expect_error(verifier_params_dbi_positionnels(d), "named `params`")
+})
+
 test_that("apply delegates every serving write to the shape adapter", {
   racine <- racine_pipeline()
   lignes <- readLines(file.path(racine, "R", "apply_publication.R"), warn = FALSE)

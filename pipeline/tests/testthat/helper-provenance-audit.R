@@ -264,6 +264,65 @@ verifier_structure_hachages_wfs <- function(racine) {
   invisible(sites)
 }
 
+# Paramètres DBI positionnels (revue #1170) -----------------------------------
+# RPostgres refuse une liste `params` nommée (« `params` must not be named »).
+# Un test avec DBI mocké ne le voit pas : ce scanner extrait CHAQUE appel
+# dbExecute/dbGetQuery/dbSendQuery de R/ (parenthèses équilibrées) et exige des
+# paramètres positionnels : `list(a, b)` ou `unname(as.list(x))`, jamais
+# `list(nom = ...)` ni `as.list(...)` dont les noms viennent du data.frame.
+extraire_appels_dbi <- function(texte) {
+  appels <- character()
+  positions <- gregexpr("db(Execute|GetQuery|SendQuery)\\s*\\(", texte)[[1L]]
+  if (positions[[1L]] < 0L) return(appels)
+  for (p in seq_along(positions)) {
+    debut <- positions[[p]]
+    profondeur <- 0L
+    for (k in debut:nchar(texte)) {
+      ch <- substr(texte, k, k)
+      if (ch == "(") profondeur <- profondeur + 1L
+      if (ch == ")") {
+        profondeur <- profondeur - 1L
+        if (profondeur == 0L) {
+          appels <- c(appels, substr(texte, debut, k))
+          break
+        }
+      }
+    }
+  }
+  appels
+}
+
+auditer_params_dbi <- function(racine) {
+  fichiers <- list.files(file.path(racine, "R"), pattern = "\\.R$", full.names = TRUE)
+  trousses <- list()
+  for (f in fichiers) {
+    texte <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    for (appel in extraire_appels_dbi(texte)) {
+      if (!grepl("params\\s*=", appel)) next
+      nomme <- grepl("params\\s*=\\s*list\\s*\\([^)]*[[:alnum:]_.]+\\s*=", appel) ||
+        (grepl("params\\s*=\\s*as\\.list\\s*\\(", appel) &&
+           !grepl("unname\\s*\\(\\s*as\\.list\\s*\\(", appel))
+      if (!nomme) next
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = relatif_sous(f, racine),
+        source = gsub("\\s+", " ", appel), stringsAsFactors = FALSE)
+    }
+  }
+  if (!length(trousses)) return(data.frame(fichier = character(), source = character()))
+  do.call(rbind, trousses)
+}
+
+verifier_params_dbi_positionnels <- function(racine) {
+  fautes <- auditer_params_dbi(racine)
+  if (nrow(fautes)) {
+    stop("DBI named-params audit — ", nrow(fautes),
+      " call(s) pass a named `params` list (RPostgres rejects these):\n",
+      paste0("  ", fautes$fichier, "  ", fautes$source, collapse = "\n"),
+      call. = FALSE)
+  }
+  invisible(fautes)
+}
+
 # Écriture des tables de service (ADR-0049 décision 8 / #1137) -----------------
 # SEUL un adaptateur de forme peut écrire les tables de service d'une forme.
 # Le scanner repère toute écriture (DELETE/INSERT/UPDATE/TRUNCATE/dbWriteTable)
