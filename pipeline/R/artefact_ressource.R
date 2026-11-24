@@ -21,9 +21,6 @@ ARTEFACTES_FICHIERS <- c(
 # checksummés ; le manifeste porte ces empreintes et son propre nom de fichier.
 ARTEFACTES_GRAINS_HACHES <- ARTEFACTES_FICHIERS[setdiff(names(ARTEFACTES_FICHIERS), "manifeste")]
 
-FORMES_RESSOURCE <- c("scalar", "declared_profile", "owned_series",
-                      "observed_collection", "aedar")
-
 racine_artefacts <- function(root = NULL) {
   if (is.null(root)) {
     root <- Sys.getenv("LUSK_ARTEFACTS", unset = file.path("data", "artefacts"))
@@ -98,8 +95,10 @@ verifier_dossier_artefact <- function(dossier, ressource, forme, version) {
 ecrire_artefact_ressource <- function(ressource, forme, contenu,
                                       digests_lignage = list(), root = NULL) {
   valider_identite_ressource(ressource)
+  # Le registre des formes est l'unique source de vérité : aucune énumération
+  # parallèle dans le magasin d'Artefacts de ressource.
   if (!is.character(forme) || length(forme) != 1L || is.na(forme) ||
-      !forme %in% FORMES_RESSOURCE)
+      !forme %in% names(REGISTRE_FORMES_RESSOURCE))
     stop("Unknown resource shape: ", forme, call. = FALSE)
   if (!is.list(contenu) || !all(c("faits", "descriptor", "provenance") %in% names(contenu)))
     stop("Artefact de ressource content is missing a required grain", call. = FALSE)

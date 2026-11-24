@@ -1,12 +1,12 @@
-# Per-theme splitter (ADR-0049 step 2, #1135) ---------------------------------
-# Pont temporaire entre les sorties du producteur (scalar-serving/<theme>/,
-# profile-serving/, series-serving/, collections de programmes, répertoire
-# canonique AEDAR) et les Artefacts de ressource. Il réutilise LE CODE DES
-# PRODUCTEURS — project_theme_scalar_cohort, project_scalar_comparisons,
-# read_profile_serving_artifact, read_owned_series_artifact,
-# register_programme_observed_collections, read_aedar_canonical — jamais un
-# fork de projection. Les lectures typées ne sont PAS divisées (retirement
-# ultérieur). Aucune connexion à la base de service.
+# Splitter par thème (ADR-0049 step 2, #1135) -------------------------------
+# Temporaire jusqu'à l'étape 3 (build par ressource) : il transforme les sorties
+# du producteur (scalar-serving/<theme>/, profile-serving/, series-serving/,
+# collections de programmes, répertoire canonique AEDAR) en Artefacts de
+# ressource. Il réutilise LE CODE DES PRODUCTEURS — project_theme_scalar_cohort,
+# project_scalar_comparisons, read_profile_serving_artifact,
+# read_owned_series_artifact, register_programme_observed_collections,
+# read_aedar_canonical — jamais un fork de projection. Les lectures typées ne
+# sont PAS divisées (retirement ultérieur). Aucune connexion à la base de service.
 
 lire_reference_sortie <- function(sortie) {
   chemin <- file.path(sortie, "territoires.parquet")
@@ -111,32 +111,97 @@ lire_projection_aedar_sortie <- function(sortie) {
   NULL
 }
 
-lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
-  aedar <- lire_projection_aedar_sortie(sortie)
-  list(
-    scalar = lire_projections_scalaires_sortie(sortie, metadata_directory, reference),
-    declared_profile = lire_projections_profils_sortie(sortie, metadata_directory),
-    owned_series = lire_projections_series_sortie(sortie),
-    observed_collection = lire_projections_collections_sortie(sortie),
-    aedar = if (is.null(aedar)) list() else list(aedar = aedar)
-  )
-}
-
 # La comparaison d'une ressource scalaire est calculée par le producteur sur
 # UN seul indicateur : les groupes, territoires et lignage ne contiennent que
-# facet_id == indicateur, et sont liés à la référence territoriale de la sortie.
-comparaison_ressource <- function(forme, id, projection, reference) {
-  if (!identical(forme, "scalar")) return(projection$comparison %||% NULL)
+# facet_id == ressource, et sont liés à la référence territoriale de la sortie.
+comparaison_scalaire_ressource <- function(projection, ressource, reference) {
   descriptions <- projection$descriptors
   facet <- as.character(descriptions$comparison_facet[[1L]])
   direction <- as.character(descriptions$direction[[1L]])
-  if (is.na(facet) || !identical(facet, id) || !direction %in% c("high", "low")) return(NULL)
-  grains_faits <- projection[setdiff(names(projection), c("descriptors", "provenance"))]
-  version_faits <- version_artefact(contenu_artefact(grains_faits, descriptions,
-    projection$provenance, NULL))
+  if (is.na(facet) || !identical(facet, ressource) || !direction %in% c("high", "low")) return(NULL)
+  version_faits <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection)
   project_scalar_comparisons(projection, reference$rows,
     input_scalar_content_version = version_faits,
     reference_content_version = reference$content_version)
+}
+
+# Comparaison déjà portée par la projection du producteur (profil, série,
+# collection, AEDAR) — aucune forme ne la recalcule localement.
+comparaison_persistee <- function(champ) {
+  force(champ)
+  function(projection, ressource, reference) projection[[champ]] %||% NULL
+}
+
+# Version des FAITS de CETTE ressource : descripteur + faits + provenance,
+# comparaison exclue. Seul l'artefact de la resource est haché — jamais le
+# snapshot scalaire global d'aujourd'hui (ADR-0049).
+version_faits_ressource <- function(handler, projection) {
+  version_artefact(contenu_artefact(faits_forme(handler, projection),
+    projection[[handler$champ_descripteur]], projection[[handler$champ_provenance]], NULL))
+}
+
+faits_forme <- function(handler, projection) {
+  if (!is.null(handler$champs_faits)) return(projection[handler$champs_faits])
+  exclus <- unique(c(handler$champ_descripteur, handler$champ_provenance, "comparison"))
+  projection[setdiff(names(projection), exclus)]
+}
+
+# Registre des formes de Ressource sémantique de service (ADR-0049 décision 8).
+# UNE entrée par forme ; le contrat du handler est petit et nommé :
+#   lire(sortie, reference, metadata_directory) -> liste nommée de projections ;
+#   champs_faits / champ_descripteur / champ_provenance / champ_comparaison
+#   désignent les grains de l'Artefact de ressource ;
+#   comparaison(projection, ressource, reference) -> comparaison de la ressource.
+# Ajouter une forme = ajouter UNE entrée ici ; le splitter n'a aucune branche
+# conditionnelle par forme.
+REGISTRE_FORMES_RESSOURCE <- list(
+  scalar = list(
+    lire = function(sortie, reference, metadata_directory)
+      lire_projections_scalaires_sortie(sortie, metadata_directory, reference),
+    champs_faits = c("facts", "eligible_territories"),
+    champ_descripteur = "descriptors",
+    champ_provenance = "provenance",
+    champ_comparaison = NULL,
+    comparaison = comparaison_scalaire_ressource),
+  declared_profile = list(
+    lire = function(sortie, reference, metadata_directory)
+      lire_projections_profils_sortie(sortie, metadata_directory),
+    champs_faits = NULL,
+    champ_descripteur = "descriptor",
+    champ_provenance = "provenance",
+    champ_comparaison = "comparison",
+    comparaison = comparaison_persistee("comparison")),
+  owned_series = list(
+    lire = function(sortie, reference, metadata_directory)
+      lire_projections_series_sortie(sortie),
+    champs_faits = NULL,
+    champ_descripteur = "descriptor",
+    champ_provenance = "provenance",
+    champ_comparaison = "comparison",
+    comparaison = comparaison_persistee("comparison")),
+  observed_collection = list(
+    lire = function(sortie, reference, metadata_directory)
+      lire_projections_collections_sortie(sortie),
+    champs_faits = NULL,
+    champ_descripteur = "descriptor",
+    champ_provenance = "provenance",
+    champ_comparaison = "comparison",
+    comparaison = comparaison_persistee("comparison")),
+  aedar = list(
+    lire = function(sortie, reference, metadata_directory) {
+      projection <- lire_projection_aedar_sortie(sortie)
+      if (is.null(projection)) list() else list(aedar = projection)
+    },
+    champs_faits = NULL,
+    champ_descripteur = "descriptor",
+    champ_provenance = "source",
+    champ_comparaison = "comparison",
+    comparaison = comparaison_persistee("comparison"))
+)
+
+lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
+  lapply(REGISTRE_FORMES_RESSOURCE, function(handler)
+    handler$lire(sortie, reference, metadata_directory))
 }
 
 sources_provenance_ressource <- function(provenance) {
@@ -157,20 +222,20 @@ splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference =
   if (!is.list(projections)) stop("Sortie projections must be a named list by shape", call. = FALSE)
 
   lignes <- list()
-  for (forme in FORMES_RESSOURCE) {
+  for (forme in names(REGISTRE_FORMES_RESSOURCE)) {
+    handler <- REGISTRE_FORMES_RESSOURCE[[forme]]
     famille <- projections[[forme]]
     if (is.null(famille)) next
     for (id in names(famille)) {
       valider_identite_ressource(id)
       projection <- famille[[id]]
-      descripteur <- projection$descriptor %||% projection$descriptors
-      provenance <- projection$provenance %||% projection$source
+      descripteur <- projection[[handler$champ_descripteur]]
+      provenance <- projection[[handler$champ_provenance]]
       if (is.null(provenance))
         provenance <- data.frame(source_id = character(), vintage_id = character(),
                                  stringsAsFactors = FALSE)
-      faits <- projection[setdiff(names(projection),
-        c("descriptor", "descriptors", "provenance", "source", "comparison"))]
-      comparaison <- comparaison_ressource(forme, id, projection, reference)
+      faits <- faits_forme(handler, projection)
+      comparaison <- handler$comparaison(projection, id, reference)
       contenu <- contenu_artefact(faits, descripteur, provenance, comparaison)
       digests_lignage <- digests_lignage_ressource(sources_provenance_ressource(provenance), digests)
       ecrit <- ecrire_artefact_ressource(id, forme, contenu,

@@ -7,7 +7,7 @@ test_that("le splitter produit une Artefact de ressource par ressource, puis un 
 
   premier <- splitter_sortie(tempfile("sortie-"), root = root, projections = projections,
     reference = reference, digests = digests)
-  expect_setequal(premier$forme, FORMES_RESSOURCE)
+  expect_setequal(premier$forme, names(REGISTRE_FORMES_RESSOURCE))
   expect_identical(nrow(premier), 6L)
   expect_setequal(premier$ressource, c("densite", "offre_tc", "distribution_dpe", "prix_m2",
     "acv", "aedar"))
@@ -95,6 +95,23 @@ test_that("la commande locale split lit une vraie sortie et imprime resource, sh
   version <- function(lignes) sub("^densite, scalar, ([a-f0-9]{32}), .*$", "\\1",
     grep("^densite, scalar,", lignes, value = TRUE))
   expect_identical(version(premier), version(second))
+})
+
+test_that("le registre des formes est l'unique source de vérité des formes de ressource", {
+  registre <- REGISTRE_FORMES_RESSOURCE
+  expect_identical(names(registre), c("scalar", "declared_profile", "owned_series",
+    "observed_collection", "aedar"))
+  for (forme in names(registre)) {
+    handler <- registre[[forme]]
+    expect_true(all(c("lire", "champs_faits", "champ_descripteur", "champ_provenance",
+      "champ_comparaison", "comparaison") %in% names(handler)), info = forme)
+    expect_true(is.function(handler$lire), info = forme)
+    expect_true(is.function(handler$comparaison), info = forme)
+  }
+  expect_false(exists("FORMES_RESSOURCE", inherits = TRUE))
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "splitter_ressources.R"),
+    warn = FALSE), collapse = "\n")
+  expect_false(grepl("if \\(identical\\(forme|if \\(forme", code))
 })
 
 test_that("les propriétaires de profils scalaires viennent des métadonnées producteur, sans thème écrit en dur", {
