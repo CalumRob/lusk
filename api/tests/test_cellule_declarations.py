@@ -387,8 +387,10 @@ class _ProfileConnection:
             # focal_profiles' descriptor row carries the published comparison point.
             return _Cursor([("structure_age", "Structure par âge", "%", ["commune"], "v1",
                              self.default_detail, self.default_sex, "high", None, None, None, False)])
-        if "SELECT p.content_version,p.reference_content_version" in sql:
-            return _Cursor([("profile-v1", "ref-v1", "ref-v1")])
+        if "FROM resource_publication" in sql:
+            return _Cursor([("structure_age", "declared_profile", "profile-v1", "ref-v1")])
+        if "SELECT content_version FROM table_publication" in sql and "territory_reference" in sql:
+            return _Cursor([("ref-v1",)])
         if "SELECT axis_key FROM profile_axis" in sql:
             keys = self.details if params[1] == "detail" else self.sexes
             return _Cursor([(key,) for key in keys])

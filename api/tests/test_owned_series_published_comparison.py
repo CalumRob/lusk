@@ -42,6 +42,8 @@ class FixedComparisonConnection:
             return Cursor(rows=[("c1","e1","d1"),("c2","e1","d1"),("c3","e2","d2")])
         if "WHERE territory_type='region'" in sql:
             return Cursor(rows=[("r1",)])
+        if "FROM resource_publication" in sql:
+            return Cursor(rows=[(self.dataset, "owned_series", "series-v1", "ref-v1")])
         if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
             return Cursor(rows=[(self.dataset,"series-v1","ref-v1","ref-v1")])
         if "SELECT d.dataset_id,d.indicator_id,d.theme_id" in sql:

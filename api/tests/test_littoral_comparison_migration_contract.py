@@ -29,7 +29,7 @@ WIDENED_TABLES = (
 )
 
 
-def test_044_045_046_047_are_the_pinned_migration_numbers():
+def test_044_through_048_are_the_pinned_migration_numbers():
     numbers = sorted(int(path.name.split("_", 1)[0])
                      for path in MIGRATIONS.glob("[0-9]*.sql"))
     assert 43 in numbers
@@ -37,7 +37,8 @@ def test_044_045_046_047_are_the_pinned_migration_numbers():
     assert 45 in numbers, "the AEDAR littoral sibling migration must be 045"
     assert 46 in numbers, "the per-resource publication migration must be 046 (#1137)"
     assert 47 in numbers, "the per-resource profile comparison migration must be 047 (#1138)"
-    assert not any(number > 47 for number in numbers), numbers
+    assert 48 in numbers, "the resource discovery descriptor migration must be 048 (#1140)"
+    assert not any(number > 48 for number in numbers), numbers
 
 
 def test_schema_and_migration_widen_the_same_five_context_checks():

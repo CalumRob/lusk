@@ -29,12 +29,17 @@ def live_resource_publications(conn, resource_ids, family, *, reference_content_
     ids = sorted({str(resource_id) for resource_id in resource_ids})
     if not ids:
         return {}
-    rows = conn.execute(
-        """SELECT resource_id,shape,content_version,reference_content_version
-           FROM resource_publication
-           WHERE resource_id=ANY(%s) AND retired=false""",
-        (ids,),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """SELECT resource_id,shape,content_version,reference_content_version
+               FROM resource_publication
+               WHERE resource_id=ANY(%s) AND retired=false""",
+            (ids,),
+        ).fetchall()
+    except Exception as error:
+        if getattr(error, "sqlstate", None) in ("42P01", "42703"):
+            publication_unavailable(family, "Resource publication is unavailable")
+        raise
     publications = {row[0]: PublishedResource(*row) for row in rows}
     if len(rows) != len(ids) or any(
             not publication.content_version for publication in publications.values()):

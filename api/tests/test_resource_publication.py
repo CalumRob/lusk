@@ -38,11 +38,10 @@ def test_live_registry_row_is_returned_without_a_global_marker():
     assert conn.statements[0][1] == (["resource_a"],)
 
 
-@pytest.mark.parametrize("rows", [(), (("resource_a", "scalar", "a-v1", "ref-v1"),)])
-def test_missing_or_retired_registry_row_is_a_typed_publication_gap(rows):
+def test_missing_or_retired_registry_row_is_a_typed_publication_gap():
     # The SQL predicate excludes retired rows, so both cases arrive here empty.
     with pytest.raises(PublicationUnavailable) as raised:
-        live_resource_publication(Connection(rows[:0]), "resource_a", "scalar")
+        live_resource_publication(Connection(), "resource_a", "scalar")
 
     assert raised.value.status_code == 503
     assert raised.value.family == "scalar"

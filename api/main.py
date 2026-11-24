@@ -6,7 +6,7 @@ import os
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from psycopg_pool import ConnectionPool
-from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
+from api.resource_catalogue import ResourceCatalogue, default_resource_grammar
 from api.resource_routes import create_resource_router
 from api.semantic_resource_reader import SemanticResourceReader
 from api.repository import ReadRepository
@@ -52,9 +52,15 @@ def get_repository() -> ReadRepository:
     return ReadRepository(pool())
 
 
-def get_resource_catalogue() -> ResourceCatalogue:
-    """Return validated discovery metadata derived from pipeline declarations."""
-    return default_resource_catalogue()
+def get_resource_grammar():
+    """Image-owned semantic shape grammar; never a resource inventory."""
+    return default_resource_grammar()
+
+
+def get_resource_catalogue(repository=Depends(get_repository),
+                           grammar=Depends(get_resource_grammar)) -> ResourceCatalogue:
+    """Return grammar × live registry rows × version-bound DB descriptors."""
+    return repository.resource_catalogue(grammar)
 
 
 def get_semantic_resource_reader() -> SemanticResourceReader:

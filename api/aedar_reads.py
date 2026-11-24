@@ -9,6 +9,7 @@ from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS,
                               aedar_typequ_registry_size)
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
+from api.resource_publication import live_resource_publication
 
 
 def _aedar_summary_publication_marker(conn):
@@ -17,6 +18,7 @@ def _aedar_summary_publication_marker(conn):
     Shared by the focal summary read and the whole-level cohort read so the
     clock predicate and the typed-absence classification cannot drift.
     """
+    publication = live_resource_publication(conn, "aedar", "aedar")
     marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
             s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
         FROM table_publication s
@@ -45,13 +47,14 @@ def _aedar_summary_publication_marker(conn):
     if not marker[0] or marker[1] < 1 or not marker[3]:
         publication_unavailable("aedar", "AEDAR territory summary publication is unavailable or stale")
     if (marker[2] != marker[6] or marker[4] != marker[3]
-            or marker[5] != marker[6]):
+            or marker[5] != marker[6] or publication.reference_content_version != marker[2]):
         raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
     return marker
 
 
 def _aedar_aggregate_publication_marker(conn):
     """Read and validate the aggregate publication clocks once, for focal and cohort reads."""
+    publication = live_resource_publication(conn, "aedar", "aedar")
     marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
             FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
             WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
@@ -68,7 +71,7 @@ def _aedar_aggregate_publication_marker(conn):
         raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
     if not marker[0] or marker[1] < 1:
         publication_unavailable("aedar", "AEDAR territorial publication is unavailable or incompatible")
-    if marker[2] != marker[3]:
+    if marker[2] != marker[3] or publication.reference_content_version != marker[2]:
         raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
     return marker
 
@@ -325,6 +328,7 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
 
 def _aedar_comparison_marker(conn):
     """Read and validate the reference-only AEDAR comparison publication marker."""
+    publication = live_resource_publication(conn, "aedar", "aedar")
     marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
               p.publication_mode,
@@ -353,7 +357,8 @@ def _aedar_comparison_marker(conn):
         publication_unavailable("aedar", "AEDAR comparison publication is unavailable or stale")
     if marker[9] is None or marker[10] is None:
         raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
-    if (marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or
+    if (marker[2] != marker[9] or marker[3] != marker[10]
+            or publication.reference_content_version != marker[3] or marker[6] < 1 or
              marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1" or
              marker[11] < 1 or marker[12] != len(AEDAR_AGGREGATE_READINGS) or
              marker[13] != marker[11] * marker[12] or marker[14] != marker[13] or

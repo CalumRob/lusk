@@ -197,9 +197,29 @@ declarations_semantiques_publication <- function(publication_resource_id,
 
 declarations_decouverte_ressource <- function(ressource, metadata_directory = NULL) {
   indicateur <- declaration_ressource_metadata(ressource, metadata_directory)
-  if (!is.null(indicateur))
-    return(stats::setNames(list(list(kind = "indicator", metadata = indicateur)), ressource))
-  declarations_semantiques_publication(ressource, metadata_directory)
+  if (is.null(indicateur))
+    return(declarations_semantiques_publication(ressource, metadata_directory))
+  declarations <- stats::setNames(list(list(kind = "indicator", metadata = indicateur)),
+                                  ressource)
+  # Une route de série peut publier un alias sémantique de référence nommée.
+  # L'identité de stockage reste le dataset propriétaire ; les deux déclarations
+  # sont liées au même registre vivant, sans liste d'identifiants côté API.
+  repertoire <- .repertoire_metadata_ressource(metadata_directory)
+  fichiers <- sort(list.files(repertoire, pattern = "^theme_.*\\.json$", full.names = TRUE))
+  for (chemin in fichiers) {
+    metadata <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+    for (proprietaire in names(metadata$owned_series_routes %||% list())) {
+      if (!identical(proprietaire, ressource)) next
+      route <- metadata$owned_series_routes[[proprietaire]]
+      alias <- route$reference_indicator
+      if (!isTRUE(route$reference_read_route) || is.null(alias) || alias %in% names(declarations))
+        next
+      declaration <- declaration_ressource_metadata(alias, metadata_directory)
+      if (!is.null(declaration))
+        declarations[[alias]] <- list(kind = "indicator", metadata = declaration)
+    }
+  }
+  declarations
 }
 
 attacher_declaration_ressource <- function(descripteur, ressource, metadata_directory = NULL) {

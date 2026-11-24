@@ -95,6 +95,8 @@ class _Conn:
             return None
         if "SELECT to_regclass(%s)" in s:
             return _Rows([], [(True,)])
+        if "FROM resource_publication" in s:
+            return _Rows([], [("aedar", "aedar", "aedar-v1", self.ref_version)])
         if "SELECT content_version,row_count FROM table_publication" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version, self.ref_count)])
         if "SELECT territory_id,territory_type,name FROM territory_reference" in s:

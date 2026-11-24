@@ -2,6 +2,7 @@
 
 from fastapi import HTTPException
 
+from api.resource_catalogue import ResourceCatalogue, ResourceGrammar, database_resource_catalogue
 from api.territory_search import MAX_TERRITORY_SEARCH_SCAN, search_territory_rows
 
 
@@ -10,6 +11,12 @@ class ReadRepository:
 
     def __init__(self, connections):
         self.connections = connections
+
+    def resource_catalogue(self, grammar: ResourceGrammar) -> ResourceCatalogue:
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                return database_resource_catalogue(connection, grammar)
 
     def search_territories(self, query: str, limit: int) -> dict:
         with self.connections.connection() as connection:

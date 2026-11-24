@@ -10,10 +10,10 @@ or the owner of source facts.
 
 - [Endpoint reference](ENDPOINTS.md) — every registered business operation,
   inputs, bounds, response-contract pointers and availability behavior.
-- [Semantic resource contract](batch-read-contract.md) — current discovery at
-  `GET /api/resources`, single reads at `POST /api/resources/read`, and atomic
-  batches at `POST /api/resources/read-batch`; producer-declared targets,
-  coordinates, intents, fields, and bounds.
+- [Semantic resource contract](batch-read-contract.md) — database-backed
+  discovery at `GET /api/resources`, single reads at `POST /api/resources/read`,
+  and atomic batches at `POST /api/resources/read-batch`; producer-declared
+  targets, coordinates, intents, fields, and bounds.
 - [Field selection contract](field-selection-contract.md) — current resource-owned
   projection rules and mandatory response metadata.
 - [Historical theme-read contract](theme-read-contract.md) — retired theme and
@@ -60,9 +60,11 @@ The repository describes what this source revision can serve. It does not
 establish which revision, schema, publications, or endpoints are currently
 installed in any live environment. Check the deployed source/schema/publication
 versions with the operator before relying on a route. Routes can return `503`
-when required publication markers are absent or stale, or dependent published
-tables are incompatible; this is intentional fail-closed availability, not an
-empty successful result. A `semantic-read-batch-v2` batch instead reports a
+when the requested resource has no live `resource_publication` row, when a
+required per-resource/storage publication marker is absent or stale, or when
+dependent published tables are incompatible; this is intentional fail-closed
+availability, not an empty successful result. Legacy global scalar/profile
+markers may still exist during the expand phase but do not authorize reads. A `semantic-read-batch-v2` batch instead reports a
 classified absent publication as one `publication_unavailable` item outcome;
 hard validation, SQL/service, global-clock, provenance and snapshot failures
 still return `503`/`4xx` for the whole request. Missing focal records and
@@ -72,6 +74,11 @@ reference and OpenAPI for the operation's declared responses.
 The API's deployment requires an operator-provisioned PostgreSQL read role and
 private runtime configuration, an initialized compatible schema, and coherent
 published data. R publication is a separate, owner/operator-controlled path.
+`GET /api/resources` opens a read-only repeatable-read snapshot and intersects
+the image-owned semantic grammar with live, non-retired registry rows and their
+version-bound `resource_publication_descriptor` rows. The image carries
+`semantic-resource-contracts.json` and the TYPEQU universe, not `theme-metadata`;
+adding or retiring a resource therefore needs no API rebuild.
 The operator-owned, gitignored `README-deploy.md` and private deployment
 configuration are intentionally outside this public source documentation.
 This README authorizes no migration, publication, deployment, production

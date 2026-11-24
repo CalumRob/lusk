@@ -422,6 +422,8 @@ def test_aedar_semantic_facts_read_bounds_results_for_all_territory_levels(monke
 
     class Connection:
         def execute(self, sql, params=None):
+            if "FROM resource_publication" in sql:
+                return Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
             if "SELECT DISTINCT typequ" in sql:
                 return Cursor([(value,) for value in (params[0] if params else ()) if value in known_typequ])
             if "SELECT p.content_version" in sql:
@@ -573,6 +575,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
             state["queries"].append((sql,_args[0] if _args else None))
             if sql.startswith("SET TRANSACTION"):
                 return None
+            if "FROM resource_publication" in sql:
+                return Rows([("aedar", "aedar", "aedar-v1", "ref-v1")])
             if "SELECT DISTINCT typequ" in sql:
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
@@ -960,6 +964,8 @@ class _AedarSelectedConnection:
         s = sql
         if s.startswith("SET TRANSACTION"):
             return None
+        if "FROM resource_publication" in s:
+            return _AedarSelectedRows(["resource"], [("aedar", "aedar", "aedar-v1", "ref-v1")])
         if "SELECT DISTINCT typequ FROM aedar_territorial_aggregate" in s:
             requested = set(params[0])
             typequs = sorted({typequ for records in self.state["aggregates"].values()

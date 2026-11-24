@@ -45,6 +45,16 @@ test_that("l'écrivain partagé lie chaque déclaration à la ressource et à sa
   expect_identical(params_vus[[3L]][[1L]], "resource_b")
 })
 
+test_that("un dataset publie aussi son alias de référence nommée vers le même registre", {
+  metadata <- testthat::test_path("..", "..", "inst", "extdata", "theme-metadata")
+  declarations <- declarations_decouverte_ressource("raccordement_courbe", metadata)
+  expect_true(all(c("raccordement_courbe", "raccordement_reference") %in%
+                    names(declarations)))
+  expect_identical(declarations$raccordement_reference$metadata$owned_series_routes$
+                     raccordement_courbe$reference_indicator,
+                   "raccordement_reference")
+})
+
 test_that("les identités sémantiques AEDAR sont dérivées du grammaire, pas d'une liste API", {
   metadata <- testthat::test_path("..", "..", "inst", "extdata", "theme-metadata")
   declarations <- declarations_semantiques_publication("aedar", metadata)

@@ -47,10 +47,14 @@ class DetailConnection:
 
     def execute(self, sql, params=None):
         self.sql.append((sql, params))
-        if "to_regclass('profile_comparison_publication')" in sql:
-            return Cursor(("profile_comparison_publication",))
-        if "FROM profile_comparison_publication p" in sql:
-            return Cursor(self.marker)
+        if "to_regclass('profile_resource_comparison_publication')" in sql:
+            return Cursor(("profile_resource_comparison_publication",))
+        if "FROM resource_publication" in sql:
+            return Cursor(rows=[(params[0][0], "declared_profile", "profile-v1", "ref-v1")])
+        if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            return Cursor(("ref-v1",))
+        if "FROM profile_resource_comparison_publication" in sql:
+            return Cursor() if self.marker is None else Cursor(rows=[("housing_profile", *self.marker)])
         if "WHERE d.table_name='declared_profile'" in sql:
             return Cursor(("profile-v1", "ref-v1"))
         if "FROM profile_comparison_publication" in sql and "WHERE singleton" in sql:
@@ -313,6 +317,8 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
                 return Cursor((None,))
             if "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor((None,))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "declared_profile", "profile-v1", "ref")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(("ref",))
             return Cursor()
@@ -376,6 +382,8 @@ def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic
                 return Cursor(rows=[])
             if "to_regclass('bpe_profile_evidence_descriptor')" in sql or "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor((None,))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "declared_profile", "profile-v1", "ref")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(("ref",))
             return Cursor()
@@ -432,11 +440,15 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1", True)])
             if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
                 return Cursor(rows=[scalar])
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
-                    "scalar-v1", "ref-v1", "ref-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "ref-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("ref-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("part_passoires", "pub", "scalar-v1", "ref-v1", 1, 2,
+                    "scalar-v1", "ref-v1", "ref-v1")])
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2, True)])
             if "FROM scalar_comparison_territory" in sql:

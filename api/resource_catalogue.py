@@ -72,10 +72,14 @@ class ResourceCatalogue:
     declarations: tuple[IndicatorDeclaration, ...]
     resources: tuple[IndicatorResource, ...]
     excluded: tuple[IndicatorDeclaration, ...]
+    # DB discovery may hide a retired/stale resource while reads must still
+    # admit its known identity so the registry guard can return typed 503.
+    admission_resources: tuple[IndicatorResource, ...] | None = None
 
     @property
     def resources_by_id(self) -> dict[str, IndicatorResource]:
-        return {resource.resource_id: resource for resource in self.resources}
+        admitted = self.resources if self.admission_resources is None else self.admission_resources
+        return {resource.resource_id: resource for resource in admitted}
 
     def discovery_payload(self) -> dict:
         """Public, bounded description of producer-declared retained resources."""
@@ -642,7 +646,7 @@ def _validate_aedar_address(resource, coordinates, intent_kind):
 
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
-    resources = {resource.resource_id: resource for resource in catalogue.resources}
+    resources = catalogue.resources_by_id
     resource = resources.get(item.resource)
     if resource is None:
         raise ValueError("unknown semantic resource")
@@ -1042,12 +1046,12 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
     """
     try:
         rows = conn.execute(
-            """SELECT p.resource_id,p.content_version,d.resource_id,d.descriptor
-               FROM resource_publication p
-               JOIN resource_publication_descriptor d
+            """SELECT p.resource_id,p.content_version,d.resource_id,d.descriptor,
+                      COALESCE(p.content_version=d.content_version AND NOT p.retired,false) AS live
+               FROM resource_publication_descriptor d
+               LEFT JOIN resource_publication p
                  ON d.publication_resource_id=p.resource_id
                 AND d.content_version=p.content_version
-               WHERE NOT p.retired
                ORDER BY p.resource_id,d.resource_id"""
         ).fetchall()
     except Exception as error:
@@ -1056,32 +1060,31 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
         raise
 
     semantic_by_id = grammar.semantic_by_id
-    semantic_by_publication = {}
-    for resource_id, declaration in semantic_by_id.items():
-        publication_id = declaration.get("publication_resource_id", resource_id)
-        semantic_by_publication.setdefault(publication_id, set()).add(resource_id)
-
     resources = []
     declarations = []
-    seen = set()
+    admission = []
+    seen_live = set()
+    seen_admission = set()
     semantic_projection = None
     try:
-        for publication_id, content_version, resource_id, raw_descriptor in rows:
+        # Grammar identities remain admissible even when their registry row is
+        # absent, so a named read reaches the typed registry 503. They are not
+        # discovered until a live version-bound descriptor exists.
+        semantic_projection = discover_indicator_resources(
+            None, grammar.contract_path, metadata_by_theme={})
+        admission.extend(semantic_projection.resources)
+        seen_admission.update(resource.resource_id for resource in admission)
+        for publication_id, content_version, resource_id, raw_descriptor, live in rows:
             descriptor = (json.loads(raw_descriptor)
                           if isinstance(raw_descriptor, str) else raw_descriptor)
             if not isinstance(descriptor, dict):
                 raise ValueError("published resource descriptor must be an object")
             kind = descriptor.get("kind")
-            if resource_id in seen:
-                raise ValueError(f"duplicate published resource descriptor: {resource_id}")
             if resource_id in semantic_by_id:
                 expected = semantic_by_id[resource_id]
                 if (kind != expected.get("kind") or
                         expected.get("publication_resource_id", resource_id) != publication_id):
                     raise ValueError(f"published semantic descriptor disagrees with grammar: {resource_id}")
-                if semantic_projection is None:
-                    semantic_projection = discover_indicator_resources(
-                        None, grammar.contract_path, metadata_by_theme={})
                 matches = [resource for resource in semantic_projection.resources
                            if resource.resource_id == resource_id]
                 if len(matches) != 1:
@@ -1095,18 +1098,29 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
                     None, metadata_by_theme={metadata["theme"]: metadata})
                 matches = [item for item in projected.resources
                            if item.resource_id == resource_id]
-                if len(matches) != 1 or resource_id != publication_id:
-                    raise ValueError(f"published indicator descriptor disagrees with registry: {resource_id}")
+                if len(matches) != 1:
+                    raise ValueError(f"published indicator descriptor is not projectable: {resource_id}")
+                if resource_id != publication_id:
+                    route = (metadata.get("owned_series_routes") or {}).get(publication_id)
+                    if (not isinstance(route, dict) or not route.get("reference_read_route")
+                            or route.get("reference_indicator") != resource_id):
+                        raise ValueError(f"published indicator descriptor disagrees with registry: {resource_id}")
                 resource = matches[0]
                 declarations.extend(projected.declarations)
             else:
                 raise ValueError(f"published resource shape is not registered: {resource_id}")
             if not content_version:
                 raise ValueError("published resource descriptor has no content version")
-            resources.append(resource)
-            seen.add(resource_id)
+            if resource_id not in seen_admission:
+                admission.append(resource)
+                seen_admission.add(resource_id)
+            if live and resource_id not in seen_live:
+                resources.append(resource)
+                seen_live.add(resource_id)
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(503, "Published resource descriptor is invalid") from error
 
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
-    return ResourceCatalogue(tuple(declarations), tuple(resources), ())
+    admission.sort(key=lambda item: (item.theme_id, item.indicator_id))
+    return ResourceCatalogue(tuple(declarations), tuple(resources), (),
+                             admission_resources=tuple(admission))

@@ -43,7 +43,8 @@ class Connection:
 
     def execute(self, sql, params=None):
         self.statements.append((sql, params))
-        assert "JOIN resource_publication_descriptor" in sql
+        assert "FROM resource_publication_descriptor d" in sql
+        assert "LEFT JOIN resource_publication p" in sql
         assert "NOT p.retired" in sql
         assert "d.content_version=p.content_version" in sql
         return Cursor(self.rows)
@@ -59,8 +60,8 @@ def test_catalogue_lists_only_live_version_bound_descriptors(monkeypatch, tmp_pa
     monkeypatch.setenv("LUSK_PRODUCER_METADATA_DIR", str(tmp_path))
     grammar = default_resource_grammar.__wrapped__()
     conn = Connection([
-        ("resource_a", "a-v1", "resource_a", indicator_declaration("resource_a", label="A")),
-        ("resource_b", "b-v2", "resource_b", indicator_declaration("resource_b", label="B")),
+        ("resource_a", "a-v1", "resource_a", indicator_declaration("resource_a", label="A"), True),
+        ("resource_b", "b-v2", "resource_b", indicator_declaration("resource_b", label="B"), True),
     ])
 
     catalogue = database_resource_catalogue(conn, grammar)
@@ -75,17 +76,18 @@ def test_catalogue_lists_only_live_version_bound_descriptors(monkeypatch, tmp_pa
 def test_adding_a_registry_descriptor_needs_no_image_or_grammar_change():
     grammar = default_resource_grammar()
     conn = Connection([("new_resource", "new-v1", "new_resource",
-                        indicator_declaration("new_resource"))])
+                        indicator_declaration("new_resource"), True)])
 
     catalogue = database_resource_catalogue(conn, grammar)
 
-    assert set(catalogue.resources_by_id) == {"new_resource"}
+    assert {resource.resource_id for resource in catalogue.resources} == {"new_resource"}
+    assert "new_resource" in catalogue.resources_by_id
 
 
 def test_descriptor_cannot_inject_an_unregistered_shape():
     declaration = indicator_declaration("resource_a")
     declaration["kind"] = "invented_shape"
-    conn = Connection([("resource_a", "a-v1", "resource_a", declaration)])
+    conn = Connection([("resource_a", "a-v1", "resource_a", declaration, True)])
 
     with pytest.raises(HTTPException) as raised:
         database_resource_catalogue(conn, default_resource_grammar())
@@ -93,8 +95,72 @@ def test_descriptor_cannot_inject_an_unregistered_shape():
     assert raised.value.status_code == 503
 
 
+def test_named_reference_alias_is_discovered_against_its_owner_registry_row():
+    owner, alias = "series_owner", "series_reference"
+    metadata = {
+        "theme": "fixture", "indicator_keys": [alias],
+        "sources": {alias: "source_a"},
+        "source_records": {"source_a": {"name": "Source A"}},
+        "indicator_pages": {owner: {"indicator": owner, "label": "Owner", "unit": "count",
+                                   "levels": ["commune"]}},
+        "owned_series_routes": {owner: {
+            "axis_kind": "year", "axis_values": ["2026"], "reference_read_route": True,
+            "reference_indicator": alias, "reference_id": "national"}},
+    }
+    conn = Connection([(owner, "series-v1", alias,
+                        {"kind": "indicator", "metadata": metadata}, True)])
+
+    catalogue = database_resource_catalogue(conn, default_resource_grammar())
+
+    assert [resource.resource_id for resource in catalogue.resources] == [alias]
+    assert catalogue.resources[0].shapes == ("named_reference",)
+    assert catalogue.resources[0].target_ids == ("national",)
+
+
+def test_retired_descriptor_is_admissible_but_not_discoverable():
+    from api.resource_catalogue import validate_resource_item
+    from api.resource_requests import ResourceReadItem
+
+    conn = Connection([("resource_a", "a-v1", "resource_a",
+                        indicator_declaration("resource_a"), False)])
+    catalogue = database_resource_catalogue(conn, default_resource_grammar())
+
+    assert catalogue.discovery_payload()["resources"] == []
+    item = ResourceReadItem.model_validate({
+        "resource": "resource_a",
+        "target": {"kind": "territory", "type": "commune", "id": "c1"},
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(item, catalogue).resource_id == "resource_a"
+
+
 def test_empty_live_set_is_an_empty_catalogue_not_file_backed_discovery():
     catalogue = database_resource_catalogue(Connection(), default_resource_grammar())
 
     assert catalogue.discovery_payload() == {
         "contract": "semantic-resource-catalogue-v1", "resources": []}
+
+
+@pytest.mark.db_catalogue
+def test_resources_http_route_uses_the_database_catalogue(monkeypatch):
+    from fastapi.testclient import TestClient
+    from api import main
+    from api.resource_catalogue import ResourceCatalogue
+
+    calls = []
+
+    class Repository:
+        def resource_catalogue(self, grammar):
+            calls.append(grammar)
+            return ResourceCatalogue((), (), ())
+
+    original = main.get_repository
+    main.app.dependency_overrides[original] = lambda: Repository()
+    try:
+        response = TestClient(main.app).get("/api/resources")
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"contract": "semantic-resource-catalogue-v1", "resources": []}
+    assert len(calls) == 1

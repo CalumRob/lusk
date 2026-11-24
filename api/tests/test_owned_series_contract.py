@@ -62,6 +62,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             self.calls = []
             self.reference_version = reference_version
             self.territory_type = territory_type
+            self.registry_calls = 0
         def execute(self, sql, params=()):
             sql = " ".join(sql.split())
             self.calls.append((sql, params))
@@ -85,6 +86,10 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
                 return Cursor([])
             if "WHERE reference_indicator_id=%s LIMIT 1" in sql:
                 return Cursor([])
+            if "FROM resource_publication" in sql:
+                self.registry_calls += 1
+                version = "series-v2" if self.registry_calls == 1 else "scalar-v4"
+                return Cursor([(params[0][0], "owned_series", version, "ref-v8")])
             if "FROM series_dataset_publication WHERE dataset_id=%s" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
                                 "2026-10-01T00:00:00Z")])
@@ -202,6 +207,8 @@ def test_owned_series_selected_comparison_uses_median_and_independent_publicatio
         def execute(self, sql, params=()):
             sql = " ".join(sql.split())
             self.calls.append((sql, params))
+            if "FROM resource_publication" in sql:
+                return Cursor([("dvf_prix_m2", "owned_series", "owner-v17", "reference-v9")])
             if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
                 return Cursor([("dvf_prix_m2", "owner-v17", "reference-v9", "reference-v9")])
             if "FROM series_dataset_descriptor d WHERE" in sql:

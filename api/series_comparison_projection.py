@@ -11,6 +11,7 @@ from statistics import median
 from api.cohort_reads import _bounded_count
 from api.publication_outcomes import publication_unavailable
 from api.snapshot_reads import _comparison_cohort, _fixed_scalar_comparison_context
+from api.resource_publication import live_resource_publication
 
 
 def _context(conn, item, family="ordered_series"):
@@ -23,10 +24,12 @@ def _context(conn, item, family="ordered_series"):
     if not descriptor:
         publication_unavailable(family,
             "Series comparison descriptor/publication is unavailable")
+    publication = live_resource_publication(conn, descriptor[0], family)
     if not descriptor[7]:
         publication_unavailable(family,
             "Series comparison axis publication is unavailable or stale")
-    if not descriptor[8] or not descriptor[9] or descriptor[8] != descriptor[9]:
+    if (not descriptor[8] or not descriptor[9] or descriptor[8] != descriptor[9]
+            or publication.reference_content_version != descriptor[8]):
         raise HTTPException(503, "Series comparison descriptor/publication is unavailable")
     statistic = descriptor[4] or "median"
     if statistic == "mean" and descriptor[5] != "selected_group":

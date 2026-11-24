@@ -49,11 +49,15 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
 
         def execute(self, sql, params=None):
             self.sql.append((sql, params))
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 2,
-                    "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
+                    "scalar-v1", "reference-v1", "reference-v1")])
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
@@ -107,11 +111,15 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
 def test_published_scalar_member_projection_preserves_a_single_eligible_rank():
     class Connection:
         def execute(self, sql, params=None):
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 2,
-                    "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
+                    "scalar-v1", "reference-v1", "reference-v1")])
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[("population", "median", 10.0, 2, 1, 1, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
@@ -146,11 +154,15 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
             self.invalid = invalid
 
         def execute(self, sql, params=None):
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("comparison-v1", "old-scalar" if self.stale else "scalar-v1",
-                    "reference-v1", 1, 1, "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("population", "comparison-v1", "old-scalar" if self.stale else "scalar-v1",
+                    "old-ref" if self.stale else "reference-v1", 1, 1, "scalar-v1", "reference-v1", "reference-v1")])
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[] if self.missing else [("population", "median", 1.0, 1, 1, 0, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
@@ -177,11 +189,15 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
 def test_published_scalar_peer_rows_match_group_counts_and_tie_span(corruption):
     class Connection:
         def execute(self, sql, params=None):
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 3,
-                    "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 3,
+                    "scalar-v1", "reference-v1", "reference-v1")])
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
@@ -238,12 +254,18 @@ def test_dual_shape_scalar_facet_marker_uses_declared_family_for_preflight_and_r
                 return Cursor(rows=[])
             if "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor((None,))
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor((True,))
-            if "FROM scalar_comparison_publication p" in sql:
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(None)
             if "FROM scalar_comparison_publication" in sql:
                 return Cursor(None)
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(("reference-v1",))
             if "table_name='scalar_observation'" in sql:
@@ -280,6 +302,8 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
                 return Cursor((None,))
             if "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor((None,))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(("reference-v1",))
             if "table_name='scalar_observation'" in sql:
@@ -336,6 +360,8 @@ def test_selected_scalar_member_projection_preserves_a_single_eligible_rank(monk
                 return Cursor(rows=[("population", "Population", "persons", "high", "population", ["commune"], "d-v1")])
             if "to_regclass('bpe_profile_evidence_descriptor')" in sql or "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor((None,))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(("reference-v1",))
             if "table_name='scalar_observation'" in sql:

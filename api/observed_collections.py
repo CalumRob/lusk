@@ -4,6 +4,7 @@ from statistics import median
 from math import isfinite
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
+from api.resource_publication import live_resource_publication
 
 
 def collection_descriptors(conn, *, indicator_id=None, theme_id=None):
@@ -20,12 +21,13 @@ def collection_descriptors(conn, *, indicator_id=None, theme_id=None):
 
 def collection_marker(conn, descriptor):
     indicator = descriptor["indicator_id"]
+    publication = live_resource_publication(conn, indicator, "collection")
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
         FROM observed_collection_publication p LEFT JOIN table_publication t
           ON t.table_name='territory_reference' WHERE p.indicator_id=%s""", (indicator,)).fetchone()
     if not marker or not marker[0]:
         publication_unavailable("collection", "Observed collection publication is missing or incompatible")
-    if marker[1] != marker[2]:
+    if (marker[1] != marker[2] or publication.reference_content_version != marker[1]):
         raise HTTPException(503,"Observed collection publication is missing or incompatible")
     if descriptor["kind"] not in ("period_detail","anchored_membership"):
         raise HTTPException(503,"Unknown observed collection contract")
