@@ -448,6 +448,19 @@ test_that("la commande plan sans listing live affiche not adopted", {
   expect_true(any(grepl("live=not adopted", sortie, fixed = TRUE)))
 })
 
+test_that("l'API du plan reste minimale : listing live nu, pas de surface spéculative", {
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "plan_publication.R"),
+                          warn = FALSE), collapse = "\n")
+  expect_false(grepl("verifications = NULL", code, fixed = TRUE))
+  expect_false(grepl("live_reference", code, fixed = TRUE))
+  expect_false(grepl("is\\.function\\(live\\)", code))
+  expect_false(grepl("brut\\$resources", code))
+  expect_false(grepl("brut\\$attributions", code))
+  expect_true(grepl("LUSK_LIVE_LISTING",
+    paste(readLines(testthat::test_path("..", "..", "scripts", "publication.R"),
+                    warn = FALSE), collapse = "\n"), fixed = TRUE))
+})
+
 test_that("le plan n'ouvre aucune connexion de service et n'écrit aucun fichier", {
   racine <- testthat::test_path("..", "..")
   fichiers <- c(file.path(racine, "R", "plan_publication.R"),

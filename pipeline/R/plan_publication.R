@@ -37,7 +37,6 @@ version_live_ressource <- function(ressource, live = NULL) {
 lire_listing_live_fichier <- function(chemin) {
   if (is.null(chemin) || !nzchar(chemin) || !file.exists(chemin)) return(NULL)
   brut <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
-  if (is.list(brut) && !is.null(brut$resources)) brut <- brut$resources
   if (!is.list(brut) || !length(brut)) return(NULL)
   lignes <- lapply(brut, function(e)
     data.frame(ressource = as.character(e$ressource),
@@ -146,11 +145,9 @@ version_reference_artefacts <- function(artefacts) {
   if (!length(versions)) NULL else unique(versions)
 }
 
-reference_changee <- function(artefacts, artefacts_live, live_reference = NULL) {
+reference_changee <- function(artefacts, artefacts_live) {
   construite <- version_reference_artefacts(artefacts)
   if (is.null(construite)) return(FALSE)
-  if (!is.null(live_reference))
-    return(!identical(construite, as.character(live_reference)[[1L]]))
   live <- version_reference_artefacts(artefacts_live)
   if (is.null(live)) return(FALSE)
   !identical(sort(construite), sort(live))
@@ -254,18 +251,16 @@ verifications_par_ressource <- function(attributions, artefacts) {
 
 assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(),
                                        live = NULL, registre = list(),
-                                       attributions = NULL, verifications = NULL,
-                                       live_reference = NULL) {
+                                       attributions = NULL) {
   ids <- as.character(builds$ressource)
   versions <- vapply(ids, function(id)
     as.character(builds$version[match(id, ids)]), character(1))
   lives <- vapply(ids, version_live_ressource, character(1), live = live)
-  reference_basculee <- reference_changee(artefacts, artefacts_live, live_reference)
+  reference_basculee <- reference_changee(artefacts, artefacts_live)
 
   changees <- ids[is.na(lives) | lives != versions | reference_basculee]
   cascade <- fermeture_cascade_publication(changees, artefacts)
-  verifs <- if (length(verifications)) verifications else
-    verifications_par_ressource(attributions, artefacts)
+  verifs <- verifications_par_ressource(attributions, artefacts)
 
   gel_etat <- character(length(ids)); gel_raison <- rep("", length(ids))
   gel_detail <- rep("", length(ids)); definition <- logical(length(ids))
@@ -378,10 +373,8 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
 # -- Entrée publique : magasin + listing injecté --------------------------------
 
 plan_publication <- function(root = NULL, builds = NULL, live = NULL, lock = NULL,
-                             registre = NULL, attributions = NULL,
-                             verifications = NULL, live_reference = NULL) {
+                             registre = NULL, attributions = NULL) {
   if (is.null(builds)) builds <- construites_depuis_magasin(root)
-  if (is.function(live)) live <- live()
   if (is.character(live) && length(live) == 1L) live <- lire_listing_live_fichier(live)
   if (is.null(registre)) registre <- lire_lock(lock)
   # `attributions` est un dossier de sortie : on réutilise le lecteur canonique
@@ -404,7 +397,7 @@ plan_publication <- function(root = NULL, builds = NULL, live = NULL, lock = NUL
     }
   }
   assembler_plan_publication(builds, artefacts, artefacts_live, live, registre,
-                             attributions, verifications, live_reference)
+                             attributions)
 }
 
 imprimer_plan_publication <- function(plan, con = stdout()) {
