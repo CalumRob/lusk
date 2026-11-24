@@ -44,6 +44,9 @@ projeter_artefact_profil_declare <- function(artefact) {
   contenu <- artefact$contenu
   descriptor <- .profil_liste(contenu$descriptor, id)
   declarations <- extraire_declaration_ressource(descriptor)
+  # `details` duplicates the persisted detail axis; axes are compared as their
+  # own grain and the descriptor projection must not invent a second live copy.
+  descriptor$details <- NULL
   grain <- contenu$faits
   if (is.null(grain)) grain <- list()
   extraire <- function(nom) {

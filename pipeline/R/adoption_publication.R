@@ -32,9 +32,13 @@ comparer_adoption_artefacts <- function(artefacts, lectures) {
   resultats <- lapply(names(artefacts), function(id) {
     artefact <- artefacts[[id]]
     handler <- REGISTRE_FORMES_RESSOURCE[[artefact$forme]]
-    live <- if (is.function(handler$normaliser_live))
-      handler$normaliser_live(lectures[[id]], artefacts, lectures) else lectures[[id]]
-    comparaison <- comparer_ressource_adoptation(handler$projeter(artefact), live, handler)
+    comparaison <- tryCatch({
+      if (inherits(lectures[[id]], "error")) stop(lectures[[id]])
+      live <- if (is.function(handler$normaliser_live))
+        handler$normaliser_live(lectures[[id]], artefacts, lectures) else lectures[[id]]
+      comparer_ressource_adoptation(handler$projeter(artefact), live, handler)
+    }, error = function(e) list(identique = FALSE,
+      parties = paste0("lecture: ", conditionMessage(e))))
     data.frame(ressource = id, forme = as.character(artefact$forme),
       version = as.character(artefact$version), identique = comparaison$identique,
       parties = paste(comparaison$parties, collapse = ","), stringsAsFactors = FALSE)
@@ -54,18 +58,24 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
     stop(erreur_adoption("artefact_absent",
       "adopt : les artefacts ne correspondent pas exactement à la sortie — zéro écriture."))
   artefacts <- artefacts[ids]
+  incoherents <- vapply(seq_along(ids), function(i) {
+    artefact <- artefacts[[i]]
+    !identical(as.character(artefact$forme), as.character(builds$forme[[i]])) ||
+      !identical(as.character(artefact$version), as.character(builds$version[[i]]))
+  }, logical(1))
+  if (any(incoherents))
+    stop(erreur_adoption("artefact_absent",
+      "adopt : une adresse d'artefact ne correspond pas à la sortie — zéro écriture."))
   verifier_lecteurs_adoption(artefacts)
 
   avec_session_service_publication(artefacts, ids, lock = lock, registre = registre,
     con = con, code = function(con) {
     comparaisons <- list()
     with_publication_transaction(con, {
-      # Même niveau d'isolation, même verrou et même préflight de référence que
-      # apply. SET n'est exécuté qu'UNE fois, avant la première lecture live.
-      DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-      DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
-      reference <- lire_reference_live_apply(con)
-      verifier_reference_live_apply(con, artefacts, ids, reference = reference)
+      # EXACTEMENT le même setup de session qu'apply : isolation, verrou et
+      # préflight de référence partagés, avant la première lecture live.
+      reference <- preparer_session_service_publication(con, artefacts, ids,
+                                                         operation = "adopt")
 
       lectures <- list()
       for (id in ids) {
@@ -74,17 +84,7 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
         lectures[[id]] <- tryCatch(handler$lire_live(con, id, reference),
           error = function(e) e)
       }
-      lisibles <- vapply(lectures, function(x) !inherits(x, "error"), logical(1))
-      if (all(lisibles)) {
-        comparaisons <- comparer_adoption_artefacts(artefacts, lectures)
-      } else {
-        comparaisons <- do.call(rbind, lapply(ids, function(id) data.frame(
-          ressource = id, forme = as.character(artefacts[[id]]$forme),
-          version = as.character(artefacts[[id]]$version), identique = FALSE,
-          parties = if (inherits(lectures[[id]], "error"))
-            paste0("lecture: ", conditionMessage(lectures[[id]])) else "non compare",
-          stringsAsFactors = FALSE)))
-      }
+      comparaisons <- comparer_adoption_artefacts(artefacts, lectures)
       if (!dry_run && any(!comparaisons$identique)) {
         details <- paste0(comparaisons$ressource[!comparaisons$identique],
                           " (", comparaisons$parties[!comparaisons$identique], ")")
@@ -94,22 +94,22 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
       }
       recettes <- list()
       if (!dry_run) {
-      recettes <- lapply(ids, function(id) {
-        artefact <- artefacts[[id]]
-        ecrire_registre_ressource(con, id, as.character(artefact$forme),
-          as.character(artefact$version),
-          reference_content_version = reference$version, retired = FALSE)
-        ecrire_recette_ressource(con = con, ressource = id,
-          forme = as.character(artefact$forme), operation = "adopted",
-          old_version = NULL, new_version = as.character(artefact$version),
-          commit_sha = commit_sha, confirmed_definition = FALSE,
-          lineage_digests = artefact$digests_lignage)
-        list(ressource = id, forme = as.character(artefact$forme),
-          operation = "adopted", old_version = NULL,
-          new_version = as.character(artefact$version), confirmed_definition = FALSE,
-          lineage_digests = artefact$digests_lignage, commit_sha = commit_sha,
-          recorded_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"))
-      })
+        recettes <- lapply(ids, function(id) {
+          artefact <- artefacts[[id]]
+          ecrire_registre_ressource(con, id, as.character(artefact$forme),
+            as.character(artefact$version),
+            reference_content_version = reference$version, retired = FALSE)
+          ecrire_recette_ressource(con = con, ressource = id,
+            forme = as.character(artefact$forme), operation = "adopted",
+            old_version = NULL, new_version = as.character(artefact$version),
+            commit_sha = commit_sha, confirmed_definition = FALSE,
+            lineage_digests = artefact$digests_lignage)
+          list(ressource = id, forme = as.character(artefact$forme),
+            operation = "adopted", old_version = NULL,
+            new_version = as.character(artefact$version), confirmed_definition = FALSE,
+            lineage_digests = artefact$digests_lignage, commit_sha = commit_sha,
+            recorded_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"))
+        })
       }
       # Force receipt creation inside the transaction; lapply's value is the
       # commit boundary's only result and no serving writer is ever called.

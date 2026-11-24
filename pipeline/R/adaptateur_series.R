@@ -42,6 +42,10 @@ projeter_artefact_series <- function(artefact) {
     projection[[champ]] <- value
   }
   if (is.list(projection$descriptor)) projection$descriptor$dataset_id <- id
+  for (champ in c("state_role", "missing_reason"))
+    if (is.data.frame(projection$points) && champ %in% names(projection$points) &&
+        all(is.na(projection$points[[champ]])))
+      projection$points[[champ]] <- NULL
   comparison <- contenu$comparison
   reference <- if (is.list(comparison) && !is.null(comparison$reference_content_version))
     as.character(comparison$reference_content_version)[[1L]] else NULL

@@ -116,7 +116,8 @@ lire_reference_live_apply <- function(con) {
 # lire une autre version (ou aucune) doit refuser avec une raison NOMMÉE,
 # jamais une erreur de trigger SQL. La référence déjà lue dans la transaction
 # est passée par `reference` : aucune seconde lecture.
-verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NULL) {
+verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NULL,
+                                           operation = "apply") {
   attendus <- unique(unlist(lapply(cibles, function(id) {
     artefact <- artefacts[[id]]
     comparaison <- if (is.list(artefact)) artefact$contenu$comparison else NULL
@@ -127,19 +128,31 @@ verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NU
   if (!length(attendus)) return(invisible(TRUE))
   if (length(attendus) > 1L)
     stop(erreur_apply("reference_divergente", paste0(
-      "apply : reference_divergente: artefacts liés à plusieurs références (",
+      operation, " : reference_divergente: artefacts liés à plusieurs références (",
       paste(attendus, collapse = ","), ") — zéro écriture.")))
   version_live <- if (is.null(reference)) NULL else reference$version
   if (is.null(version_live)) version_live <- lire_reference_live_apply(con)$version
   if (is.na(version_live) || !nzchar(version_live))
     stop(erreur_apply("reference_absente", paste0(
-      "apply : reference_absente: aucune référence territoriale publiée ",
+      operation, " : reference_absente: aucune référence territoriale publiée ",
       "(table_publication['territory_reference']) — zéro écriture.")))
   if (!identical(version_live, attendus[[1L]]))
     stop(erreur_apply("reference_divergente", paste0(
-      "apply : reference_divergente: live ", version_live,
+      operation, " : reference_divergente: live ", version_live,
       ", artefact ", attendus[[1L]], " — zéro écriture.")))
   invisible(TRUE)
+}
+
+# Setup partagé de la session de service : une seule isolation, un seul verrou
+# de référence, une seule lecture et le même préflight pour apply et adopt.
+preparer_session_service_publication <- function(con, artefacts, cibles,
+                                                  operation = "apply") {
+  DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+  DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
+  reference <- lire_reference_live_apply(con)
+  verifier_reference_live_apply(con, artefacts, cibles, reference = reference,
+                                operation = operation)
+  reference
 }
 
 # SEAM PARTAGÉE apply/adopt (#1142) : le gel de lignage est évalué ici,
@@ -201,13 +214,8 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   with_publication_transaction(con, {
     # Un seul niveau d'isolement pour TOUTE la transaction (comme le producteur
     # AEDAR le faisait) : il est positionné AVANT la première requête, ici.
-    DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-    # Verrou du producteur de référence (593, 1) : la version live ne peut pas
-    # bouger entre la lecture et nos écritures. Une SEULE lecture des lignes de
-    # référence, partagée avec les adaptateurs, puis garde NOMMÉ avant tout write.
-    DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
-    reference <- lire_reference_live_apply(con)
-    verifier_reference_live_apply(con, plan$artefacts, cibles, reference = reference)
+    reference <- preparer_session_service_publication(con, plan$artefacts, cibles,
+                                                       operation = "apply")
     for (ressource in cibles) {
       artefact <- plan$artefacts[[ressource]]
       if (is.null(artefact))

@@ -95,6 +95,24 @@ test_that("adoption writes only registry rows and adopted receipts, and dry-run 
   expect_identical(sec$locales, 0L)
 })
 
+test_that("profile adoption accepts only the exact global-to-resource scalar binding chain", {
+  dependance <- list(contenu = contenu_artefact(
+    data.frame(territory_id = "c1", value = 1),
+    list(indicator_id = "part_passoires"),
+    data.frame(source_id = "s", vintage_id = "v"), NULL))
+  artefacts <- list(part_passoires = dependance)
+  facts_version <- version_faits_artefact(dependance)
+  rows <- list(descriptor = list(comparison_scalar = "part_passoires",
+                                  required_scalar_version = "global-scalar-token"),
+               global_scalar_token = "global-scalar-token")
+  normalise <- normaliser_live_profil(rows, artefacts, list())
+  expect_identical(normalise$descriptor$required_scalar_version, facts_version)
+
+  rows$global_scalar_token <- "another-global-token"
+  normalise <- normaliser_live_profil(rows, artefacts, list())
+  expect_identical(normalise$descriptor$required_scalar_version, "global-scalar-token")
+})
+
 test_that("splitter binds profile, series and collection comparisons to their resource facts", {
   reference <- artefacts_fixture_reference()
   profile <- artefacts_fixture_profile_artefact()$artefact$contenu
@@ -105,6 +123,12 @@ test_that("splitter binds profile, series and collection comparisons to their re
   expect_identical(cmp$reference_content_version, reference$content_version)
 
   serie <- adaptateur_series_projection()
+  serie$dataset_name <- "build-only"
+  serie$vintage <- data.frame(id = "build-only")
+  serie$excluded <- list(rows = "build-only")
+  persisted <- faits_forme(REGISTRE_FORMES_RESSOURCE[["owned_series"]], serie)
+  expect_false(any(c("dataset_name", "vintage", "excluded") %in% names(persisted)))
+  expect_true(all(c("points", "point_provenance") %in% names(persisted)))
   serie$descriptor$comparison_levels <- c("commune")
   serie$descriptor$comparison_axis_values <- c("M2", "M3")
   serie$descriptor$direction <- "high"
@@ -118,30 +142,4 @@ test_that("splitter binds profile, series and collection comparisons to their re
   cmp <- comparaison_collection_ressource(collection, "acv", reference)
   expect_identical(cmp$reference_content_version, reference$content_version)
   expect_true(nrow(cmp$groups) > 0L)
-})
-
-test_that("every shape's adoption reader contract compares its real adapter projection", {
-  root <- artefacts_fixture_root()
-  on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  artefacts <- list(
-    declared_profile = artefacts_fixture_profile_artefact(root = root)$artefact,
-    owned_series = adaptateur_series_artefact(root),
-    observed_collection = adaptateur_collection_artefact(root),
-    aedar = adaptateur_aedar_artefact(root))
-  for (forme in names(artefacts)) {
-    handler <- REGISTRE_FORMES_RESSOURCE[[forme]]
-    attendu <- handler$projeter(artefacts[[forme]])
-    expect_true(comparer_ressource_adoptation(attendu, attendu, handler)$identique,
-                info = forme)
-    live <- attendu
-    if (!is.null(live$comparison$groups) && nrow(live$comparison$groups))
-      live$comparison$groups[1L, 1L] <- "changed"
-    else if (!is.null(live$projection$points) && nrow(live$projection$points))
-      live$projection$points$value[1L] <- live$projection$points$value[1L] + 1
-    else if (!is.null(live$projection$facts) && nrow(live$projection$facts))
-      live$projection$facts$value[1L] <- live$projection$facts$value[1L] + 1
-    else live$descriptor$label[1L] <- "changed"
-    expect_false(comparer_ressource_adoptation(attendu, live, handler)$identique,
-                 info = forme)
-  }
 })

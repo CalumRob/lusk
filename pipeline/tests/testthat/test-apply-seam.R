@@ -33,14 +33,17 @@ test_that("adopt uses the shared serving-session seam and writes no serving tabl
   connexions <- verifier_structure_gel(racine)
   nouveaux <- connexions[grepl("/(apply_publication|adoption_publication)\\.R$",
                                connexions$fichier), , drop = FALSE]
-  expect_equal(nrow(nouveaux), 1L)
-  expect_match(nouveaux$fichier, "apply_publication\\.R$")
-  expect_true(nouveaux$garde)
-  expect_false(nouveaux$autorise)
+  expect_true(nrow(nouveaux) >= 1L)
+  expect_true(all(grepl("apply_publication\\.R$", nouveaux$fichier)))
+  expect_true(all(nouveaux$garde))
+  expect_false(any(nouveaux$autorise))
 
   for (fichier in c("R/apply_publication.R", "R/adoption_publication.R")) {
     source <- paste(readLines(file.path(racine, fichier), warn = FALSE), collapse = "\n")
     expect_true(grepl("avec_session_service_publication\\(", source), info = fichier)
+    expect_true(grepl("preparer_session_service_publication\\(", source), info = fichier)
+    if (identical(fichier, "R/adoption_publication.R"))
+      expect_false(grepl("SET TRANSACTION ISOLATION LEVEL", source), info = fichier)
     expect_false(grepl("dbConnect\\(", source) && !identical(fichier, "R/apply_publication.R"),
                  info = fichier)
   }

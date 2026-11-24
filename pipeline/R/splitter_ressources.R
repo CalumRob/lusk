@@ -342,7 +342,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_profil_declare,
     lire_live = lire_live_profil_declare,
     normaliser_live = normaliser_live_profil,
-    champs_live = c("descriptor", "axes", "facts", "provenance", "comparison"),
+    champs_live = c("descriptor", "axes", "facts", "provenance", "datasets",
+                    "vintages", "eligible_territories", "comparison"),
     colonnes_stockage = list(),
     champs_comparaison = c("groups", "territories", "lineage"),
     colonnes_comparaison = list(
@@ -350,7 +351,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
-    champs_faits = NULL,
+    # Only persisted serving grains belong to the Artefact de ressource.
+    # dataset_name/vintage/excluded are build-time inputs, not live rows.
+    champs_faits = c("points", "point_provenance", "named_reference",
+                     "named_reference_descriptors", "named_reference_provenance",
+                     "context_parent_policy"),
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
@@ -366,7 +371,6 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champs_live = c("projection", "comparison"),
     colonnes_stockage = list(),
     champs_comparaison = c("groups", "territories", "lineage", "zero_reasons",
-                           "content_version", "ordered_series_content_version",
                            "reference_content_version", "axis_values")),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
@@ -408,7 +412,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     colonnes_stockage = list(),
     champs_comparaison = c("groups", "territories", "density_rows", "littoral_rows",
       "content_version", "aedar_content_version", "reference_content_version",
-      "input_content_version", "input_identity", "source_snapshot_id", "publication_mode"))
+      "input_content_version", "input_identity", "source_snapshot_id", "publication_mode",
+      "group_row_count", "territory_row_count"))
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

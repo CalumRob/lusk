@@ -599,6 +599,34 @@ $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='apply-shapes-db', stop_on_failure=TRUE)"
 ```
 
+### Registry adoption (#1142)
+
+`pipeline/tests/testthat/test-adopt-db.R` is the guarded, non-retained adoption
+proof. It uses the same `LUSK_SCALAR_TEST_*` variables, exact
+`lusk_it_contract` target and publisher role, private `PGPASSFILE`, cleanup
+opt-in and runtime identity checks as the shape proofs. It skips before any connection without
+that configuration and drops only its own random `it_adopt_*` schema.
+
+The fixture calls the normal `publish_retained_backend_snapshot(atomic=TRUE)`
+entry point. Territory reference, scalar snapshot, declared profile and their
+comparisons use the real publishers. At fixture scale the four typed-reading
+families are no-op stubs because adoption explicitly ignores them and complete
+canonical typed-reading fixtures are unavailable; no expected serving rows are
+SQL-seeded. The proof adopts from the same sortie, requires the whole-schema data
+digest to stay byte-identical apart from registry/receipts, refuses one altered
+live row with zero writes and the resource named, checks `plan` reports every
+resource unchanged, and forces a receipt failure to prove transaction rollback.
+
+```powershell
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter='adopt-db', stop_on_failure=TRUE)"
+```
+
+The default-suite comparison/orchestration contracts live in
+`test-adoption.R`; the full five-shape projection proof is in the explicit slow
+tier (`slow-tests/test-adoption-shape-projections.R`). A skip is not a guarded
+pass: the orchestrator runs the proof on the PR's final head.
+
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration

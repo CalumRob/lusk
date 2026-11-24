@@ -19,6 +19,22 @@
   bridge_parse_text_array(x)
 }
 
+.adoption_vintages <- function(con, pairs) {
+  pairs <- unique(as.data.frame(pairs, stringsAsFactors = FALSE))
+  pairs <- pairs[!is.na(pairs$source_id) & !is.na(pairs$vintage_id), , drop = FALSE]
+  if (!nrow(pairs)) return(data.frame(source_id = character(), vintage_id = character(),
+    version = character(), reference_date = as.Date(character()),
+    publication_date = as.Date(character()), stringsAsFactors = FALSE))
+  where <- paste(vapply(seq_len(nrow(pairs)), function(i)
+    paste0("(source_id=$", 2L * i - 1L, " AND vintage_id=$", 2L * i, ")"),
+    character(1)), collapse = " OR ")
+  params <- unlist(lapply(seq_len(nrow(pairs)), function(i)
+    list(pairs$source_id[[i]], pairs$vintage_id[[i]])), use.names = FALSE)
+  .adoption_query(con, paste0(
+    "SELECT source_id,vintage_id,version,reference_date,publication_date FROM source_vintage ",
+    "WHERE ", where, " ORDER BY source_id,vintage_id"), as.list(params))
+}
+
 lire_live_scalaire <- function(con, ressource, reference) {
   id <- as.character(ressource)
   params <- list(id)
@@ -65,7 +81,8 @@ lire_live_profil_declare <- function(con, ressource, reference) {
   d <- .adoption_query(con, "SELECT * FROM profile_descriptor WHERE indicator_id=$1", params)
   if (nrow(d) != 1L)
     stop(paste0("adoption : descripteur de profil absent ou multiple pour ", id), call. = FALSE)
-  axes <- .adoption_query(con, "SELECT * FROM profile_axis WHERE indicator_id=$1", params)
+  axes <- .adoption_query(con,
+    "SELECT * FROM profile_axis WHERE indicator_id=$1 ORDER BY axis_name,ordinal", params)
   sources <- .adoption_query(con,
     "SELECT source_id FROM profile_descriptor_source WHERE indicator_id=$1 ORDER BY source_id",
     params)$source_id
@@ -73,7 +90,7 @@ lire_live_profil_declare <- function(con, ressource, reference) {
   descriptor$levels <- .adoption_array(d$allowed_levels[[1L]])
   descriptor$allowed_levels <- NULL
   descriptor$source <- as.character(sources)
-  descriptor$sexes <- if (any(axes$axis_name == "sex")) "sex" else character()
+  descriptor$sexes <- as.character(axes$axis_key[axes$axis_name == "sex"])
   facts <- .adoption_query(con, paste0(
     "SELECT indicator_id,territory_id,territory_type,detail_key,sex_key,",
     "detail_axis_name,sex_axis_name,value,status FROM profile_observation ",
@@ -92,10 +109,16 @@ lire_live_profil_declare <- function(con, ressource, reference) {
   scalar_marker <- .adoption_query(con, paste0(
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"))
   global_scalar_token <- if (nrow(scalar_marker)) as.character(scalar_marker$content_version[[1L]]) else NA_character_
+  datasets <- .adoption_query(con,
+    "SELECT source_id,name FROM source_dataset WHERE source_id=ANY($1::text[]) ORDER BY source_id",
+    list(sources))
+  vintages <- .adoption_vintages(con, provenance[c("source_id", "vintage_id")])
+  levels <- as.character(descriptor$levels)
+  eligible <- unique(reference$rows[reference$rows$territory_type %in% levels,
+                                   c("territory_id", "territory_type"), drop = FALSE])
   list(descriptor = descriptor, axes = axes, facts = facts, provenance = provenance,
-       datasets = data.frame(source_id = sources, name = sources, stringsAsFactors = FALSE),
-       vintages = data.frame(), comparison = comparison,
-       global_scalar_token = global_scalar_token)
+       datasets = datasets, vintages = vintages, eligible_territories = eligible,
+       comparison = comparison, global_scalar_token = global_scalar_token)
 }
 
 # Today's full profile publisher binds required_scalar_version to the GLOBAL
@@ -196,6 +219,7 @@ lire_live_collection <- function(con, ressource, reference) {
   descriptor$allowed_levels <- .adoption_array(d$allowed_levels[[1L]])
   categories <- .adoption_query(con,
     "SELECT * FROM observed_collection_category WHERE indicator_id=$1", params)
+  categories$anchor_levels <- I(lapply(categories$anchor_levels, .adoption_array))
   table <- switch(as.character(descriptor$kind), period_detail = "period_detail_observation",
                   anchored_membership = "anchored_membership",
                   stop("Unknown observed collection kind", call. = FALSE))
@@ -208,6 +232,12 @@ lire_live_collection <- function(con, ressource, reference) {
       "SELECT * FROM observed_collection_comparison_territory WHERE indicator_id=$1", params),
     lineage = .adoption_query(con,
       "SELECT * FROM observed_collection_comparison_lineage WHERE indicator_id=$1", params))
+  sources <- sort(unique(as.character(c(categories$source_id, facts$source_id))))
+  sources <- sources[!is.na(sources) & nzchar(sources)]
+  datasets <- .adoption_query(con,
+    "SELECT source_id,name FROM source_dataset WHERE source_id=ANY($1::text[]) ORDER BY source_id",
+    list(sources))
+  vintages <- .adoption_vintages(con, facts[c("source_id", "vintage_id")])
   marker <- .adoption_query(con,
     "SELECT * FROM observed_collection_comparison_publication WHERE indicator_id=$1", params)
   if (nrow(marker) == 1L) {
@@ -215,8 +245,8 @@ lire_live_collection <- function(con, ressource, reference) {
                     "reference_content_version"))
       comparison[[champ]] <- as.character(marker[[champ]][[1L]])
   }
-  list(projection = list(descriptor = descriptor, categories = categories, facts = facts),
-       comparison = comparison)
+  list(projection = list(descriptor = descriptor, categories = categories, facts = facts,
+                         datasets = datasets, vintages = vintages), comparison = comparison)
 }
 
 .adoption_json_frame <- function(x) {
@@ -270,7 +300,8 @@ lire_live_aedar <- function(con, ressource, reference) {
   marker <- .adoption_query(con, "SELECT * FROM aedar_comparison_publication")
   if (nrow(marker) != 1L) stop("adoption : marqueur de comparaison AEDAR absent", call. = FALSE)
   tokens <- c("content_version", "aedar_content_version", "reference_content_version",
-              "input_content_version", "source_snapshot_id", "publication_mode")
+              "input_content_version", "source_snapshot_id", "publication_mode",
+              "group_row_count", "territory_row_count")
   comparison <- c(as.list(marker[1L, tokens, drop = FALSE]), list(
     groups = .adoption_query(con, "SELECT * FROM aedar_comparison_group"),
     territories = .adoption_query(con, "SELECT * FROM aedar_comparison_territory"),

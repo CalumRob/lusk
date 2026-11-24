@@ -56,52 +56,45 @@
 }
 
 .adopt_db_fixture <- function() {
-  sortie <- tempfile("adopt-sortie-")
+  sortie <- artefacts_fixture_sortie_scalaire()
   root <- artefacts_fixture_root()
-  dir.create(sortie, recursive = TRUE)
-  on.exit(unlink(c(sortie, root), recursive = TRUE), add = TRUE)
-  base <- artefacts_fixture_reference()$rows
-  canonical <- data.frame(territoire = base$territory_id, type = base$territory_type,
-    nom = base$territory_id, departement = rep(NA_character_, nrow(base)),
-    epci = base$epci_id, classe_densite_code = base$density_class_code,
-    classe_densite_libelle_public = base$density_class_code, stringsAsFactors = FALSE)
-  nanoparquet::write_parquet(canonical, file.path(sortie, "territoires.parquet"))
-  reference <- project_territory_reference(canonical)
-
-  scalar <- artefacts_fixture_scalar_indicator("densite", "src_densite",
-    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
-  scalar$datasets <- data.frame(source_id = "src_densite", name = "Densité",
-                                stringsAsFactors = FALSE)
-  scalar$vintages <- data.frame(source_id = "src_densite", vintage_id = "2020",
-    version = "2020", reference_date = as.Date("2020-01-01"),
-    publication_date = as.Date("2021-01-01"), stringsAsFactors = FALSE)
+  reference <- lire_reference_sortie(sortie)
+  unlink(file.path(sortie, "scalar-serving"), recursive = TRUE)
+  eligible <- reference$rows[c("territory_id", "territory_type")]
+  scalar <- list(
+    facts = data.frame(indicator_id = "densite", territory_id = eligible$territory_id,
+      territory_type = eligible$territory_type, value = seq_len(nrow(eligible)),
+      status = "measured", support_count = NA_integer_, denominator_count = NA_integer_,
+      stringsAsFactors = FALSE),
+    descriptors = data.frame(indicator_id = "densite", theme_id = "demographie",
+      allowed_sources = I(list("src_densite")), label = "Densité", unit = "count",
+      direction = "high", comparison_facet = "densite",
+      allowed_levels = I(list(c("commune", "epci", "departement", "region"))),
+      denominator_semantics = "count", completeness = "sparse",
+      descriptor_version = "densite-descriptor-v1", stringsAsFactors = FALSE),
+    provenance = data.frame(indicator_id = "densite", territory_id = eligible$territory_id,
+      source_id = "src_densite", vintage_id = "2020", stringsAsFactors = FALSE),
+    datasets = data.frame(source_id = "src_densite", name = "Densité",
+                          stringsAsFactors = FALSE),
+    vintages = data.frame(source_id = "src_densite", vintage_id = "2020", version = "2020",
+      reference_date = as.Date("2020-01-01"), publication_date = as.Date("2021-01-01"),
+      stringsAsFactors = FALSE), eligible_territories = eligible)
   write_scalar_serving_artifact(scalar, file.path(sortie, "scalar-serving", "demographie"))
   snapshot <- list(scalar = scalar,
     comparison = project_scalar_comparisons(scalar, reference$rows,
       scalar_content_version(scalar), reference$content_version),
     retired_indicator_ids = character())
 
-  profile <- artefacts_fixture_profile_artefact(root = root)$artefact$contenu
-  descriptor <- profile$descriptor
-  descriptor$indicator_id <- "structure_age"
-  descriptor$comparison_scalar <- NULL
-  descriptor$required_scalar_version <- NULL
-  descriptor$comparison_detail <- "d1"
-  descriptor$comparison_sex <- NULL
-  descriptor$levels <- "commune"
-  descriptor$source <- "profile_source"
-  profile$descriptor <- descriptor
-  profile$faits$axes$indicator_id <- "structure_age"
-  profile$faits$eligible_territories <- reference$rows[c("territory_id", "territory_type")]
-  profile$provenance$indicator_id <- "structure_age"
+  payload <- compute_payload_test(load_fixture())
+  profile <- project_structure_age_profile(payload, lire_theme_metadata("demographie"),
+                                            payload$territoires)
   write_profile_serving_artifact(profile, file.path(sortie, "profile-serving", "structure_age"))
-  jsonlite::write_json(list(
-    list(source_id = "src_densite", sha256 = "sha256-src_densite", bytes = 10L),
-    list(source_id = "profile_source", sha256 = "sha256-profile_source", bytes = 10L)),
-    file.path(sortie, "source-digests.json"), auto_unbox = TRUE)
-  lock <- artefacts_fixture_digests(c("src_densite", "profile_source"))
+  sources <- sort(unique(c(scalar$provenance$source_id, profile$provenance$source_id)))
+  digests <- artefacts_fixture_digests(sources)
+  jsonlite::write_json(unname(digests), file.path(sortie, "source-digests.json"),
+                       auto_unbox = TRUE)
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
-       scalar_version = scalar_content_version(scalar), lock = lock)
+       scalar_version = scalar_content_version(scalar), lock = digests)
 }
 
 .adopt_db_publish_full_path <- function(con, fixture) {
@@ -115,9 +108,8 @@
     read_typed_reading_publication_from = function(...) list(),
     publish_typed_reading_publication = function(...) list(),
     publish_canonical_milieux_reading = function(...) list(reading = list(), owned_series = list()))
-  with_publication_transaction(con,
-    publish_retained_backend_snapshot(con, sortie = fixture$sortie, atomic = TRUE,
-                                      companion_profiles = TRUE))
+  publish_retained_backend_snapshot(con, sortie = fixture$sortie, atomic = TRUE,
+                                    companion_profiles = TRUE)
 }
 
 .adopt_db_digest <- function(con) {
@@ -150,6 +142,7 @@ test_that("guarded: normal full-path publication adopts with unchanged data and 
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_full_path(con, fixture)
   avant <- .adopt_db_digest(con)
 
@@ -179,10 +172,12 @@ test_that("guarded: one altered live row refuses adoption with zero writes and n
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_full_path(con, fixture)
   DBI::dbExecute(con, paste0(
     "UPDATE scalar_observation SET value=value+1 WHERE indicator_id='densite' ",
-    "AND territory_id='c1'"))
+    "AND territory_id=(SELECT territory_id FROM scalar_observation ",
+    "WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1)"))
   avant <- .adopt_db_digest(con)
   registre_avant <- .adopt_db_registry_digest(con)
 
@@ -203,6 +198,7 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_full_path(con, fixture)
   avant <- .adopt_db_digest(con)
   registre_avant <- .adopt_db_registry_digest(con)
