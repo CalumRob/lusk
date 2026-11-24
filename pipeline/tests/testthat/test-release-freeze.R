@@ -215,7 +215,7 @@ test_that("l'audit structurel échoue sur une connexion non gardée (preuve)", {
   sites <- auditer_appels_db(d)
   expect_true(any(grepl("unguarded\\.R", sites$fichier)))
   expect_true(any(!sites$garde & !sites$autorise))
-  expect_error(verifier_structure_gel(d), "without verifier_gel_release")
+  expect_error(verifier_structure_gel(d), "without a freeze guard")
 })
 
 test_that("le chemin LUSK_SCALAR_SCOPE refuse avant toute écriture", {

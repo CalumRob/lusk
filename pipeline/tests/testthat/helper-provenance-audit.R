@@ -7,19 +7,49 @@
 BLOCS_OUVRANTS <- "function\\s*\\(|\\bif\\s*\\(|\\bfor\\s*\\(|\\bwhile\\s*\\("
 
 # autorisations : liste de listes (fichier, raison) — fichier peut être un regex.
+# Les chemins historiques sont autorisés EN ATTENDANT l'étape 4 (ADR-0049) :
+# ils sont explicitement marqués « retire in ADR-0049 step 4 ». Le SEUL nouveau
+# `apply` n'est PAS allowlisté : son ouverture porte le garde de gel de lignage
+# (verifier_gel_lignage_ressource) au site même du dbConnect — voir #1137.
 AUTORISATIONS_DB <- list(
   list(fichier = "^R/publish_serving_bridge\\.R$",
-       raison = "pont offre_tc #1072 — outil de recovery, hors périmètre #1103"),
-  list(fichier = "^scripts/smoke-.*\\.R$",
-       raison = "tests de fumée ciblent exclusivement des schémas lusk_it_* jetables"),
+       raison = "pont offre_tc #1072 — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/publish-aedar-aggregates\\.R$",
        motif = "reference_connection",
-       raison = "branche --check : connexion READ ONLY de référence territoriale, aucune écriture"),
+       raison = "branche --check READ ONLY — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/publish-serving-tables\\.R$",
        motif = "configuration_service_postgres\\(\\) # fail before any upstream compute",
-       raison = "branche --targets : validation de configuration seulement, le garde est dans le target du graphe"),
+       raison = "branche --targets : validation de configuration seulement — retire in ADR-0049 step 4"),
   list(fichier = "^R/publish_postgres_configuration\\.R$",
-       raison = "configuration_service_postgres() ne ouvre aucune connexion ; le garde précède dbConnect")
+       raison = "configuration_service_postgres() n'ouvre aucune connexion — retire in ADR-0049 step 4"),
+  # Chaque smoke est nommé EXACTEMENT : un nouveau fichier ne peut pas entrer
+  # dans l'allowlist par un motif large.
+  list(fichier = "^scripts/smoke-comparison-lineage-fixture\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-demographic-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-fiche-series-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-habitat-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-housing-economy-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-littoral-reference\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-milieux-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-profile-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-programme-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-retained-baseline-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-retained-territory-reference\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-series-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4")
 )
 
 relatif_sous <- function(chemin, racine) {
@@ -54,7 +84,8 @@ auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_servic
       garde <- FALSE
       if (length(debut)) {
         for (j in debut) {
-          if (any(grepl("verifier_gel_release\\(", lignes[j:i]))) {
+          if (any(grepl("(verifier_gel_release|verifier_gel_lignage_ressource)\\(",
+                        lignes[j:i]))) {
             garde <- TRUE
             break
           }
@@ -81,7 +112,7 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
   if (nrow(fautes)) {
     stop(
       "Structural guard audit — ", nrow(fautes),
-      " serving-DB call site(s) without verifier_gel_release() and without an allowlist reason:\n",
+      " serving-DB call site(s) without a freeze guard (verifier_gel_release() / verifier_gel_lignage_ressource()) and without an allowlist reason:\n",
       paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", trimws(fautes$source),
              collapse = "\n"),
       call. = FALSE
@@ -252,6 +283,138 @@ verifier_structure_hachages_wfs <- function(racine) {
       "Structural WFS-hash audit — ", nrow(fautes),
       " raw GetFeature envelope(s) hashed outside the canonical helper:\n",
       paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", trimws(fautes$source),
+             collapse = "\n"),
+      call. = FALSE
+    )
+  }
+  invisible(sites)
+}
+
+# Paramètres DBI positionnels (revue #1170) -----------------------------------
+# RPostgres refuse une liste `params` nommée (« `params` must not be named »).
+# Un test avec DBI mocké ne le voit pas : ce scanner extrait CHAQUE appel
+# dbExecute/dbGetQuery/dbSendQuery de R/ (parenthèses équilibrées) et exige des
+# paramètres positionnels : `list(a, b)` ou `unname(as.list(x))`, jamais
+# `list(nom = ...)` ni `as.list(...)` dont les noms viennent du data.frame.
+extraire_appels_dbi <- function(texte) {
+  appels <- character()
+  positions <- gregexpr("db(Execute|GetQuery|SendQuery)\\s*\\(", texte)[[1L]]
+  if (positions[[1L]] < 0L) return(appels)
+  for (p in seq_along(positions)) {
+    debut <- positions[[p]]
+    profondeur <- 0L
+    for (k in debut:nchar(texte)) {
+      ch <- substr(texte, k, k)
+      if (ch == "(") profondeur <- profondeur + 1L
+      if (ch == ")") {
+        profondeur <- profondeur - 1L
+        if (profondeur == 0L) {
+          appels <- c(appels, substr(texte, debut, k))
+          break
+        }
+      }
+    }
+  }
+  appels
+}
+
+auditer_params_dbi <- function(racine) {
+  fichiers <- list.files(file.path(racine, "R"), pattern = "\\.R$", full.names = TRUE)
+  trousses <- list()
+  for (f in fichiers) {
+    texte <- paste(readLines(f, warn = FALSE), collapse = "\n")
+    for (appel in extraire_appels_dbi(texte)) {
+      if (!grepl("params\\s*=", appel)) next
+      nomme <- grepl("params\\s*=\\s*list\\s*\\([^)]*[[:alnum:]_.]+\\s*=", appel) ||
+        (grepl("params\\s*=\\s*as\\.list\\s*\\(", appel) &&
+           !grepl("unname\\s*\\(\\s*as\\.list\\s*\\(", appel))
+      if (!nomme) next
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = relatif_sous(f, racine),
+        source = gsub("\\s+", " ", appel), stringsAsFactors = FALSE)
+    }
+  }
+  if (!length(trousses)) return(data.frame(fichier = character(), source = character()))
+  do.call(rbind, trousses)
+}
+
+verifier_params_dbi_positionnels <- function(racine) {
+  fautes <- auditer_params_dbi(racine)
+  if (nrow(fautes)) {
+    stop("DBI named-params audit — ", nrow(fautes),
+      " call(s) pass a named `params` list (RPostgres rejects these):\n",
+      paste0("  ", fautes$fichier, "  ", fautes$source, collapse = "\n"),
+      call. = FALSE)
+  }
+  invisible(fautes)
+}
+
+# Écriture des tables de service (ADR-0049 décision 8 / #1137) -----------------
+# SEUL un adaptateur de forme peut écrire les tables de service d'une forme.
+# Le scanner repère toute écriture (DELETE/INSERT/UPDATE/TRUNCATE/dbWriteTable)
+# sur une table de service scalaire ; un site non autorisé fait échouer la
+# suite. Les producteurs historiques sont autorisés « retire in ADR-0049 step 4 »
+# ; `apply` n'écrit AUCUNE table de service directement — il délègue à l'adaptateur.
+TABLES_SERVICE_SCALAIRE <- paste0(
+  "scalar_observation|scalar_descriptor|scalar_comparison_",
+  "|comparison_source_lineage|scalar_resource_comparison_publication")
+MOTIF_ECRITURE_SERVEUR <- paste0(
+  "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE_SCALAIRE, ")",
+  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE_SCALAIRE, ")")
+
+AUTORISATIONS_ECRITURE_SERVEUR <- list(
+  list(fichier = "^R/adaptateur_scalaire\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/publish_scalar\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^R/publish_profile\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^R/aedar_aggregates\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-profile-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4")
+)
+
+auditer_ecritures_serveur <- function(racine,
+                                      autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
+  fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE, recursive = TRUE)
+  fichiers <- fichiers[grepl("/(R|scripts)/[^/]+\\.R$", fichiers)]
+  trousses <- list()
+  for (f in fichiers) {
+    rel <- relatif_sous(f, racine)
+    lignes <- readLines(f, warn = FALSE)
+    for (i in seq_along(lignes)) {
+      l <- sub("#.*$", "", lignes[[i]])
+      if (!grepl(MOTIF_ECRITURE_SERVEUR, l, ignore.case = TRUE)) next
+      raison <- NA_character_
+      for (a in autorisations) {
+        if (grepl(a$fichier, rel)) { raison <- a$raison; break }
+      }
+      trousses[[length(trousses) + 1L]] <- data.frame(
+        fichier = rel, ligne = i, autorise = !is.na(raison),
+        raison = if (is.na(raison)) "" else raison,
+        source = trimws(l), stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(trousses)) {
+    return(data.frame(fichier = character(), ligne = integer(),
+                      autorise = logical(), raison = character(), source = character()))
+  }
+  do.call(rbind, trousses)
+}
+
+verifier_structure_ecritures_serveur <- function(racine,
+                                                 autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
+  sites <- auditer_ecritures_serveur(racine, autorisations)
+  fautes <- sites[!sites$autorise, , drop = FALSE]
+  if (nrow(fautes)) {
+    stop(
+      "Structural serving-table write audit — ", nrow(fautes),
+      " write(s) to a serving table outside a shape adapter:\n",
+      paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", fautes$source,
              collapse = "\n"),
       call. = FALSE
     )

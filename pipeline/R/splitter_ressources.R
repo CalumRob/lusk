@@ -233,7 +233,13 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = NULL,
     comparaison = comparaison_scalaire_ressource,
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = "facts"),
+    champ_faits_drift = "facts",
+    # Shape adapter (ADR-0049 seam): the ONLY writer of this shape's serving
+    # tables. projeter(artefact) -> scoped rows; remplacer(con, ...) applies
+    # them inside the publication transaction. Defined in adaptateur_scalaire.R
+    # (loaded before this file) and attached here as registry fields.
+    projeter = projeter_artefact_scalaire,
+    remplacer = remplacer_scalaire),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),

@@ -284,7 +284,7 @@ retained_backend_markers <- function(con) {
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT table_name, content_version, reference_content_version ",
     "FROM table_publication WHERE table_name IN (", placeholders, ")"),
-    params = as.list(names))
+    params = unname(as.list(names)))
   comparison <- DBI::dbGetQuery(con, paste0(
     "SELECT content_version, scalar_content_version, reference_content_version ",
     "FROM scalar_comparison_publication WHERE singleton"))

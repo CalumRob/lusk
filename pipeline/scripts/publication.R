@@ -1,11 +1,17 @@
 #!/usr/bin/env Rscript
-# Local publication commands (ADR-0049 step 2, #1135/#1136).
-# `split <sortie>` turns one producer sortie into immutable per-resource
-# artefacts under LUSK_ARTEFACTS (default pipeline/data/artefacts).
-# `plan [sortie]` prints the read-only publication plan over that artefact
-# store and an injected live listing (LUSK_LIVE_LISTING, JSON). It NEVER opens
-# a serving-database connection, NEVER reads a registry and NEVER writes a file.
-# Run from pipeline/.
+# Local publication commands (ADR-0049 step 2, #1135/#1136/#1137).
+#   split <sortie>            -> immutable per-resource artefacts (LUSK_ARTEFACTS)
+#   plan [sortie]             -> READ-ONLY plan. Never opens a serving connection.
+#                                Live source = explicit offline LUSK_LIVE_LISTING
+#                                file; the live registry is used by `apply`.
+#   apply <ids...> [--confirm-definition <id>] [--retire <id>]
+#                             -> the ONLY new code that opens a serving
+#                                connection. Refuses before any write on
+#                                lineage freeze, code regression or unconfirmed
+#                                definition change. One transaction; append-only
+#                                DB receipt; local JSON receipt after commit.
+#                                `<id>@<version>` applies that artefact version
+#                                (rollback). Run from pipeline/.
 if (!requireNamespace("pkgload", quietly = TRUE)) {
   stop("pkgload is required to load the pipeline.", call. = FALSE)
 }
@@ -34,7 +40,42 @@ if (identical(commande, "split")) {
     live = Sys.getenv("LUSK_LIVE_LISTING", unset = ""),
     attributions = if (nzchar(sortie)) sortie else NULL)
   imprimer_plan_publication(plan)
+} else if (identical(commande, "apply")) {
+  if (length(args) < 2L) {
+    stop(paste0("Usage: Rscript scripts/publication.R apply <ids...> ",
+      "[--confirm-definition <id>] [--retire <id>] (from pipeline/)"), call. = FALSE)
+  }
+  reste <- args[-1L]
+  confirmer <- character(); retirer <- character(); ids <- character()
+  i <- 1L
+  while (i <= length(reste)) {
+    token <- reste[[i]]
+    if (identical(token, "--confirm-definition") || identical(token, "--retire")) {
+      if (i == length(reste)) stop("Missing id after ", token, call. = FALSE)
+      if (identical(token, "--confirm-definition")) confirmer <- c(confirmer, reste[[i + 1L]])
+      else retirer <- c(retirer, reste[[i + 1L]])
+      i <- i + 2L
+    } else {
+      ids <- c(ids, token)
+      i <- i + 1L
+    }
+  }
+  if (length(ids) && length(retirer))
+    stop("--retire cannot be mixed with normal apply ids in one command", call. = FALSE)
+  cibles <- c(ids, retirer)
+  if (!length(cibles)) stop("apply requires at least one resource id", call. = FALSE)
+  resultat <- apply_publication(
+    cibles,
+    confirm_definition = confirmer,
+    retire = length(retirer) > 0L,
+    commit_sha = Sys.getenv("GITHUB_SHA", unset = ""))
+  for (recette in resultat$receipts) {
+    cat(sprintf("applied %s %s %s -> %s\n", recette$ressource, recette$operation,
+                if (is.null(recette$old_version)) "none" else recette$old_version,
+                recette$new_version))
+  }
 } else {
-  stop("Usage: Rscript scripts/publication.R split <sortie> | plan [sortie]",
+  stop(paste0("Usage: Rscript scripts/publication.R split <sortie> | ",
+       "plan [sortie] | apply <ids...> [--confirm-definition <id>] [--retire <id>]"),
        call. = FALSE)
 }

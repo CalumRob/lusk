@@ -745,6 +745,96 @@ publish_registered_scalar_comparison <- function(projection, db) {
   })
 }
 
+# --- Shared scalar serving writers (ADR-0049 step 2, #1137) -------------------
+# ONE writer per scalar serving table. Both the wholesale retained publishers
+# below and the per-resource shape adapter (adaptateur_scalaire.R) call THESE
+# functions; neither reimplements the other's SQL. All quoting goes through
+# DBI::dbQuoteString and every `params` list is UNNAMED positional — RPostgres
+# rejects named params, and a mocked DBI call must not hide that.
+.quoter_sql_scalaire <- function(con, x) {
+  if (length(x) == 1L && is.na(x)) return("NULL")
+  as.character(DBI::dbQuoteString(con, as.character(x)))
+}
+
+.ecrire_sources_scalaires <- function(con, datasets, vintages,
+                                      conflict = c("nothing", "update")) {
+  conflict <- match.arg(conflict)
+  sql_source <- if (identical(conflict, "update"))
+    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name"
+  else
+    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO NOTHING"
+  sql_vintage <- if (identical(conflict, "update"))
+    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date"
+  else
+    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING"
+  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) {
+    d <- datasets[i, , drop = FALSE]
+    DBI::dbExecute(con, sql_source,
+                   params = unname(as.list(d[c("source_id", "name")])))
+  }
+  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) {
+    v <- vintages[i, , drop = FALSE]
+    DBI::dbExecute(con, sql_vintage,
+                   params = unname(as.list(v[c("source_id", "vintage_id", "version",
+                                                "reference_date", "publication_date")])))
+  }
+  invisible(TRUE)
+}
+
+.ecrire_descripteurs_scalaires <- function(con, descriptors) {
+  champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
+              "comparison_facet", "denominator_semantics", "completeness",
+              "descriptor_version")
+  for (i in seq_len(nrow(descriptors))) {
+    d <- descriptors[i, , drop = FALSE]
+    levels <- as.character(d$allowed_levels[[1L]])
+    array_sql <- paste0("ARRAY[", paste(vapply(levels, function(x)
+      .quoter_sql_scalaire(con, x), character(1)), collapse = ","), "]::text[]")
+    values <- vapply(champs, function(field)
+      .quoter_sql_scalaire(con, d[[field]][[1L]]), character(1))
+    DBI::dbExecute(con, paste0("INSERT INTO scalar_descriptor(",
+      paste(c(champs, "allowed_levels"), collapse = ","), ") VALUES(",
+      paste(c(values, array_sql), collapse = ","),
+      ") ON CONFLICT(indicator_id) DO UPDATE SET ",
+      paste(vapply(setdiff(champs, "indicator_id"), function(field)
+        paste0(field, "=EXCLUDED.", field), character(1)), collapse = ","),
+      ",allowed_levels=EXCLUDED.allowed_levels"))
+    for (source_id in as.character(d$allowed_sources[[1L]])) {
+      DBI::dbExecute(con,
+        "INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
+        params = list(d$indicator_id[[1L]], source_id))
+    }
+  }
+  invisible(TRUE)
+}
+
+.ecrire_observations_scalaires <- function(con, facts, provenance) {
+  DBI::dbWriteTable(con, "scalar_observation", facts, append = TRUE, row.names = FALSE)
+  DBI::dbWriteTable(con, "scalar_observation_source", provenance,
+                    append = TRUE, row.names = FALSE)
+  invisible(TRUE)
+}
+
+.ecrire_comparaison_scalaire <- function(con, projection) {
+  group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "statistic", "median", "member_count", "eligible_count", "missing_count",
+    "lineage_source_count")
+  territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "territory_id", "value", "status", "rank", "tie_count", "rank_size")
+  DBI::dbWriteTable(con, "scalar_comparison_group",
+    projection$groups[group_fields], append = TRUE, row.names = FALSE)
+  DBI::dbWriteTable(con, "scalar_comparison_territory",
+    projection$territories[territory_fields], append = TRUE, row.names = FALSE)
+  lineage <- projection$lineage
+  lineage$comparison_family <- "scalar"
+  lineage$comparison_content_version <- projection$content_version
+  DBI::dbWriteTable(con, "comparison_source_lineage",
+    lineage[c("comparison_family", "comparison_context", "group_id", "territory_type",
+      "facet_id", "source_id", "vintage_id", "comparison_content_version")],
+    append = TRUE, row.names = FALSE)
+  invisible(TRUE)
+}
+
 scalar_comparison_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
@@ -763,20 +853,7 @@ scalar_comparison_postgres_adapter <- function(con) {
       DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='scalar'")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_territory")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_group")
-      group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-        "statistic", "median", "member_count", "eligible_count", "missing_count", "lineage_source_count")
-      territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-        "territory_id", "value", "status", "rank", "tie_count", "rank_size")
-      DBI::dbWriteTable(con, "scalar_comparison_group",
-        projection$groups[group_fields], append=TRUE, row.names=FALSE)
-      DBI::dbWriteTable(con, "scalar_comparison_territory",
-        projection$territories[territory_fields], append=TRUE, row.names=FALSE)
-      lineage <- projection$lineage
-      lineage$comparison_family <- "scalar"
-      lineage$comparison_content_version <- projection$content_version
-      DBI::dbWriteTable(con, "comparison_source_lineage",
-        lineage[c("comparison_family","comparison_context","group_id","territory_type",
-          "facet_id","source_id","vintage_id","comparison_content_version")], append=TRUE, row.names=FALSE)
+      .ecrire_comparaison_scalaire(con, projection)
       DBI::dbExecute(con, paste(
         "INSERT INTO scalar_comparison_publication(singleton, content_version, scalar_content_version,",
         "reference_content_version, group_row_count, territory_row_count, lineage_row_count, published_at)",
@@ -1062,10 +1139,6 @@ scalar_postgres_adapter <- function(con) {
       facts <- projection$facts
       descriptors <- projection$descriptors
       provenance <- projection$provenance
-      quote_value <- function(x) {
-        if (length(x) == 1L && is.na(x)) return("NULL")
-        as.character(DBI::dbQuoteString(con, as.character(x)))
-      }
       # Validate before any write. This repeats the no-op-path guard under the
       # same publication lock/transaction so a changed live inventory cannot
       # slip between validation and replacement.
@@ -1076,7 +1149,7 @@ scalar_postgres_adapter <- function(con) {
         as.character(projection$descriptors$indicator_id))
       retiring <- intersect(omitted, retired_indicator_ids)
       if (length(retiring)) {
-        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_scalaire(con, x), character(1)), collapse=",")
         DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage ",
           "WHERE comparison_family='scalar' AND facet_id IN (", ids_sql, ")"))
         DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory ",
@@ -1089,48 +1162,20 @@ scalar_postgres_adapter <- function(con) {
         DBI::dbExecute(con,
           "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
-      for (row in seq_len(nrow(projection$datasets))) {
-        d <- projection$datasets[row, , drop = FALSE]
-        DBI::dbExecute(con, "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-                       params = unname(as.list(d[c("source_id", "name")])))
-      }
-      for (row in seq_len(nrow(projection$vintages))) {
-        v <- projection$vintages[row, , drop = FALSE]
-        DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-                       params = unname(as.list(v[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
-      }
+      .ecrire_sources_scalaires(con, projection$datasets, projection$vintages,
+                                conflict = "update")
       # The scalar table is one table-owned snapshot; the only permitted live
       # omissions were explicitly checked above and retire their comparison
       # dependencies before descriptor deletion (their FK is not cascading).
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
       if (length(retiring)) {
-        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_scalaire(con, x), character(1)), collapse=",")
         DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor WHERE indicator_id IN (",
           ids_sql, ")"))
       }
-      for (i in seq_len(nrow(descriptors))) {
-        d <- descriptors[i, , drop = FALSE]
-        levels <- as.character(d$allowed_levels[[1L]])
-        array_sql <- paste0("ARRAY[", paste(vapply(levels, quote_value, character(1)), collapse=","), "]::text[]")
-        fields <- c("indicator_id", "theme_id", "label", "unit", "direction",
-                    "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
-        values <- vapply(fields, function(field) quote_value(d[[field]][[1L]]), character(1))
-        sql <- paste0("INSERT INTO scalar_descriptor(", paste(fields, collapse=","), ",allowed_levels) VALUES (",
-          paste(c(values, array_sql), collapse=","), ") ON CONFLICT(indicator_id) DO UPDATE SET ",
-          paste(vapply(setdiff(fields, "indicator_id"), function(field)
-            paste0(field, "=EXCLUDED.", field), character(1)), collapse=","),
-          ",allowed_levels=EXCLUDED.allowed_levels")
-        DBI::dbExecute(con, sql)
-        allowed_sources <- as.character(d$allowed_sources[[1L]])
-        for (source_id in allowed_sources) {
-          DBI::dbExecute(con,
-            "INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
-            params=list(d$indicator_id[[1L]], source_id))
-        }
-      }
-      DBI::dbWriteTable(con, "scalar_observation", facts, append = TRUE, row.names = FALSE)
-      DBI::dbWriteTable(con, "scalar_observation_source", provenance, append = TRUE, row.names = FALSE)
+      .ecrire_descripteurs_scalaires(con, descriptors)
+      .ecrire_observations_scalaires(con, facts, provenance)
       reference <- DBI::dbGetQuery(con, "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (!nrow(reference)) stop("Territory reference publication is unavailable", call. = FALSE)
       DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES ('scalar_observation',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
