@@ -269,7 +269,14 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # (loaded before this file) and attached here as registry fields.
     lier_dependance = lier_dependance_aucune,
     projeter = projeter_artefact_scalaire,
-    remplacer = remplacer_scalaire),
+    remplacer = remplacer_scalaire,
+    # Adoption reads the SAME projection the adapter writes. Storage-only
+    # columns are declared here, never special-cased in the adopt command.
+    lire_live = lire_live_scalaire,
+    champs_live = c("descriptor", "eligible_territories", "observations", "provenance",
+                    "comparison"),
+    colonnes_stockage = list(observations = "published_at"),
+    champs_comparaison = c("groups", "territories", "lineage")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),

@@ -110,6 +110,7 @@ projeter_artefact_scalaire <- function(artefact) {
                  stringsAsFactors = FALSE)),
     sources = sources, vintages = vintages,
     observations = observations, provenance = provenance,
+    eligible_territories = contenu$faits[["eligible_territories"]],
     comparison = comparison, declarations = declarations,
     digests_lignage = artefact$digests_lignage
   )
