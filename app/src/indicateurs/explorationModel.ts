@@ -140,52 +140,8 @@ export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat:
   return { ...payload, indicateurs: filtrerFaits(payload.indicateurs, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, dimension: facet.dimension, niveau }, CORRESPONDANCE_CARTE).filter((fact) => ids.has(fact.territoire)) }
 }
 
-/**
- * KDE points retain the data-domain x and expose y in a stable 0..100 plot space.
- *
- * #1165 : la figure est IDENTIQUE pour des entrées identiques — le KDE est une
- * fonction pure. En production la MÊME distribution triée est recalculée à
- * chaque re-render réactif de la Page d'indicateur (32 appels dont 27 redondants
- * mesurés sur la seule spec `indicateur-page-contexte`). Un petit LRU EXACT
- * indexé sur le CONTENU (pas sur l'identité : `modeleExploration` recrée la copie
- * triée à chaque appel) ramène cela à un calcul unique, SANS toucher aux maths :
- * bande passante, nombre d'échantillons et projection y 0..100 inchangés.
- */
-const CACHE_DENSITE_TAILLE = 8
-interface EntreeDensite { valeurs: readonly number[]; samples: number; resultat: DensitePoint[] }
-const cacheDensite: EntreeDensite[] = []
-
-/** Égalité EXACTE du contenu (ordre inclus) — aucun hash, donc aucune collision. */
-function memesValeurs(a: readonly number[], b: readonly number[]): boolean {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
-  return true
-}
-
-/** Le résultat mis en cache est gelé : aucun appelant ne peut le corrompre. */
-function gelerResultat(points: DensitePoint[]): DensitePoint[] {
-  for (const point of points) Object.freeze(point)
-  return Object.freeze(points) as DensitePoint[]
-}
-
+/** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
 export function estimerDensite(values: readonly number[], samples = 64): DensitePoint[] {
-  for (let i = 0; i < cacheDensite.length; i++) {
-    const entree = cacheDensite[i]
-    if (entree.samples === samples && memesValeurs(entree.valeurs, values)) {
-      if (i > 0) {
-        cacheDensite.splice(i, 1)
-        cacheDensite.unshift(entree)
-      }
-      return entree.resultat
-    }
-  }
-  const resultat = gelerResultat(calculerDensite(values, samples))
-  cacheDensite.unshift({ valeurs: values, samples, resultat })
-  if (cacheDensite.length > CACHE_DENSITE_TAILLE) cacheDensite.pop()
-  return resultat
-}
-
-function calculerDensite(values: readonly number[], samples = 64): DensitePoint[] {
   if (!values.length) return []
   // Math.min/Math.max en boucle : sémantique IDENTIQUE au spread (NaN,
   // Infinity, -0) sans risque de débordement de pile sur un grand tableau.

@@ -89,10 +89,10 @@ describe('modèle pur de Page d’indicateur', () => {
   })
 })
 
-describe('estimerDensite — exactitude et mémoïsation (#1165)', () => {
+describe('estimerDensite — exactitude bit-à-bit (#1165)', () => {
   // Oracle : l'implémentation KDE d'ORIGINE, conservée telle quelle dans le
   // test. Aucune optimisation ne doit en modifier le moindre bit (x, density,
-  // y, y mappé 0..100, NaN/Infinity/span 0), y compris après la mémoïsation.
+  // y, y mappé 0..100, NaN/Infinity/span 0).
   const oracle = (values: readonly number[], samples = 64): ReturnType<typeof estimerDensite> => {
     if (!values.length) return []
     const min = Math.min(...values)
@@ -132,6 +132,8 @@ describe('estimerDensite — exactitude et mémoïsation (#1165)', () => {
       { valeurs: [Infinity, 1, 2, 3] },
       { valeurs: [-Infinity, 0, Infinity] },
       { valeurs: [0, -0, 1, 2] },
+      { valeurs: [-0, -0] },
+      { valeurs: [0, 0] },
       { valeurs: [10, 20, 30], samples: 1 },
       { valeurs: [10, 20, 30], samples: 2 },
       { valeurs: [10, 20, 30], samples: 7 },
@@ -140,44 +142,6 @@ describe('estimerDensite — exactitude et mémoïsation (#1165)', () => {
     for (const { valeurs, samples } of cas) {
       attendMeme(estimerDensite(valeurs, samples), oracle(valeurs, samples))
     }
-  })
-
-  it('mémorise par contenu : un tableau distinct de même contenu réutilise exactement le même résultat', () => {
-    const valeurs = pseudoAleatoire(400)
-    const premier = estimerDensite(valeurs)
-    const copie = estimerDensite([...valeurs])
-    expect(copie).toBe(premier)
-    // un contenu différent (ordre différent) ne doit PAS être confondu
-    const autre = estimerDensite([...valeurs].reverse())
-    expect(autre).not.toBe(premier)
-    attendMeme(autre, oracle([...valeurs].reverse()))
-  })
-
-  it('ne renvoie jamais un tableau mutable partagé', () => {
-    const valeurs = pseudoAleatoire(200)
-    const resultat = estimerDensite(valeurs)
-    expect(Object.isFrozen(resultat)).toBe(true)
-    expect(resultat.every((point) => Object.isFrozen(point))).toBe(true)
-    expect(() => { (resultat as unknown as Array<{ y: number }>)[0].y = -999 }).toThrow()
-    // une lecture ultérieure du même contenu reste intacte malgré la tentative d'écriture
-    attendMeme(estimerDensite([...valeurs]), oracle(valeurs))
-  })
-
-  it('le nombre d’échantillons fait partie de la clé de cache', () => {
-    const valeurs = pseudoAleatoire(100)
-    const a = estimerDensite(valeurs, 64)
-    const b = estimerDensite(valeurs, 16)
-    expect(b).not.toBe(a)
-    expect(b).toHaveLength(16)
-    attendMeme(b, oracle(valeurs, 16))
-  })
-
-  it('deux distributions distinctes ne partagent jamais un résultat', () => {
-    const a = estimerDensite([10, 20, 30])
-    const b = estimerDensite([1, 2, 3])
-    expect(b).not.toBe(a)
-    attendMeme(a, oracle([10, 20, 30]))
-    attendMeme(b, oracle([1, 2, 3]))
   })
 })
 
