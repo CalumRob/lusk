@@ -18,14 +18,17 @@ lire_reference_sortie <- function(sortie) {
 # Chaque thème garde son artefact scalaire de producteur ; on lui applique la
 # projection DEJA déclarée (exclusions de disposition, contrôle d'éligibilité)
 # avant de découper par indicateur — un indicateur = une ressource scalaire.
-lire_projections_scalaires_sortie <- function(sortie, metadata_directory = NULL) {
+lire_projections_scalaires_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
   themes <- retained_scalar_artifact_owners(metadata_directory)
+  if (is.null(reference)) reference <- lire_reference_sortie(sortie)
+  # Même univers éligible que le chemin de publication courant
+  # (project_retained_scalar_snapshot) : on ne compare PAS l'artefact à lui-même.
+  eligible <- reference$rows[c("territory_id", "territory_type")]
   projections <- list()
   for (theme in themes) {
     dossier <- file.path(sortie, "scalar-serving", theme)
     if (!dir.exists(dossier)) next
-    lu <- read_scalar_serving_artifact(dossier)
-    projection <- project_theme_scalar_cohort(sortie, lu$eligible_territories, theme,
+    projection <- project_theme_scalar_cohort(sortie, eligible, theme,
       artifact_directory = sortie)
     for (id in as.character(projection$descriptors$indicator_id)) {
       subset_field <- function(field)
@@ -99,10 +102,10 @@ lire_projection_aedar_sortie <- function(sortie) {
   NULL
 }
 
-lire_projections_sortie <- function(sortie, metadata_directory = NULL) {
+lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
   aedar <- lire_projection_aedar_sortie(sortie)
   list(
-    scalar = lire_projections_scalaires_sortie(sortie, metadata_directory),
+    scalar = lire_projections_scalaires_sortie(sortie, metadata_directory, reference),
     declared_profile = lire_projections_profils_sortie(sortie, metadata_directory),
     owned_series = lire_projections_series_sortie(sortie),
     observed_collection = lire_projections_collections_sortie(sortie),
@@ -135,12 +138,12 @@ sources_provenance_ressource <- function(provenance) {
 
 splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference = NULL,
                             digests = NULL, metadata_directory = NULL) {
-  if (is.null(projections)) projections <- lire_projections_sortie(sortie, metadata_directory)
   if (is.null(reference)) reference <- lire_reference_sortie(sortie)
   if (!is.list(reference) || !is.data.frame(reference$rows) ||
       !is.character(reference$content_version) || length(reference$content_version) != 1L ||
       is.na(reference$content_version) || !nzchar(reference$content_version))
     stop("Splitter requires a canonical territory reference and its version", call. = FALSE)
+  if (is.null(projections)) projections <- lire_projections_sortie(sortie, metadata_directory, reference)
   if (is.null(digests)) digests <- lire_digests_source(file.path(sortie, NOM_DIGESTS))
   if (!is.list(projections)) stop("Sortie projections must be a named list by shape", call. = FALSE)
 

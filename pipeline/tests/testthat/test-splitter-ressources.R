@@ -97,6 +97,18 @@ test_that("la commande locale split lit une vraie sortie et imprime resource, sh
   expect_identical(version(premier), version(second))
 })
 
+test_that("un artefact scalaire dont l'univers diffère de la référence canonique est refusé", {
+  sortie <- artefacts_fixture_sortie_scalaire()
+  root <- artefacts_fixture_root()
+  on.exit(unlink(c(sortie, root), recursive = TRUE), add = TRUE)
+  territoires <- nanoparquet::read_parquet(file.path(sortie, "territoires.parquet"))
+  territoires <- territoires[territoires$territoire != "22001", , drop = FALSE]
+  nanoparquet::write_parquet(territoires, file.path(sortie, "territoires.parquet"))
+
+  expect_error(splitter_sortie(sortie, root = root),
+    "eligibility differs from the current serving universe")
+})
+
 test_that("le contrat des fichiers canoniques AEDAR appartient au producteur et est partagé", {
   expect_identical(unname(AEDAR_CANONICAL_FILES),
     c("aedar_territorial_aggregate.parquet", "aedar_territorial_aggregate_source.parquet",
