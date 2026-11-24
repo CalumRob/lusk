@@ -751,36 +751,6 @@ publish_registered_scalar_comparison <- function(projection, db) {
 # functions; neither reimplements the other's SQL. All quoting goes through
 # DBI::dbQuoteString and every `params` list is UNNAMED positional — RPostgres
 # rejects named params, and a mocked DBI call must not hide that.
-.quoter_sql_scalaire <- function(con, x) {
-  if (length(x) == 1L && is.na(x)) return("NULL")
-  as.character(DBI::dbQuoteString(con, as.character(x)))
-}
-
-.ecrire_sources_scalaires <- function(con, datasets, vintages,
-                                      conflict = c("nothing", "update")) {
-  conflict <- match.arg(conflict)
-  sql_source <- if (identical(conflict, "update"))
-    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name"
-  else
-    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO NOTHING"
-  sql_vintage <- if (identical(conflict, "update"))
-    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date"
-  else
-    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING"
-  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) {
-    d <- datasets[i, , drop = FALSE]
-    DBI::dbExecute(con, sql_source,
-                   params = unname(as.list(d[c("source_id", "name")])))
-  }
-  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) {
-    v <- vintages[i, , drop = FALSE]
-    DBI::dbExecute(con, sql_vintage,
-                   params = unname(as.list(v[c("source_id", "vintage_id", "version",
-                                                "reference_date", "publication_date")])))
-  }
-  invisible(TRUE)
-}
-
 .ecrire_descripteurs_scalaires <- function(con, descriptors) {
   champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
               "comparison_facet", "denominator_semantics", "completeness",
@@ -789,9 +759,9 @@ publish_registered_scalar_comparison <- function(projection, db) {
     d <- descriptors[i, , drop = FALSE]
     levels <- as.character(d$allowed_levels[[1L]])
     array_sql <- paste0("ARRAY[", paste(vapply(levels, function(x)
-      .quoter_sql_scalaire(con, x), character(1)), collapse = ","), "]::text[]")
+      .quoter_sql_serveur(con, x), character(1)), collapse = ","), "]::text[]")
     values <- vapply(champs, function(field)
-      .quoter_sql_scalaire(con, d[[field]][[1L]]), character(1))
+      .quoter_sql_serveur(con, d[[field]][[1L]]), character(1))
     DBI::dbExecute(con, paste0("INSERT INTO scalar_descriptor(",
       paste(c(champs, "allowed_levels"), collapse = ","), ") VALUES(",
       paste(c(values, array_sql), collapse = ","),
@@ -1149,7 +1119,7 @@ scalar_postgres_adapter <- function(con) {
         as.character(projection$descriptors$indicator_id))
       retiring <- intersect(omitted, retired_indicator_ids)
       if (length(retiring)) {
-        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_scalaire(con, x), character(1)), collapse=",")
+        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_serveur(con, x), character(1)), collapse=",")
         DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage ",
           "WHERE comparison_family='scalar' AND facet_id IN (", ids_sql, ")"))
         DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory ",
@@ -1162,7 +1132,7 @@ scalar_postgres_adapter <- function(con) {
         DBI::dbExecute(con,
           "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
-      .ecrire_sources_scalaires(con, projection$datasets, projection$vintages,
+      .ecrire_sources_serveur(con, projection$datasets, projection$vintages,
                                 conflict = "update")
       # The scalar table is one table-owned snapshot; the only permitted live
       # omissions were explicitly checked above and retire their comparison
@@ -1170,7 +1140,7 @@ scalar_postgres_adapter <- function(con) {
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
       if (length(retiring)) {
-        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_scalaire(con, x), character(1)), collapse=",")
+        ids_sql <- paste(vapply(retiring, function(x) .quoter_sql_serveur(con, x), character(1)), collapse=",")
         DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor WHERE indicator_id IN (",
           ids_sql, ")"))
       }

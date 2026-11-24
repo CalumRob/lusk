@@ -80,11 +80,13 @@ test_that("changer part_passoires ajoute le profil DPE par cascadance déclarée
   plan <- plan_publication(root = p$root, builds = plan_fixture_builds(apres),
                            live = live, registre = p$verrou$registre)
 
-  expect_identical(plan$changees, "part_passoires")
+  # Le profil enregistre à la construction la version des faits de sa
+  # dépendance (#1138) : changer part_passoires change AUSSI l'artefact du
+  # profil, les deux sont donc « changed » et la cascade les réunit.
+  expect_setequal(plan$changees, c("part_passoires", "distribution_dpe"))
   expect_setequal(plan$cascade, c("part_passoires", "distribution_dpe"))
-  # Le profil n'a PAS changé de version : il est ajouté par la déclaration.
   ligne <- plan$ressources[plan$ressources$ressource == "distribution_dpe", ]
-  expect_identical(ligne$change, FALSE)
+  expect_identical(ligne$change, TRUE)
   expect_identical(ligne$cascade, TRUE)
 })
 

@@ -83,6 +83,76 @@ artefacts_fixture_profile_projections <- function(reference_version = "reference
   list(distribution_dpe = projection)
 }
 
+# A declared-profile artefact with the FULL serving projection shape (descriptor,
+# axes, facts, provenance, datasets, vintages and one comparison) so the shape
+# adapter can be exercised up to the DBI boundary. Test-only, synthetic.
+artefacts_fixture_profile_artefact <- function(root = artefacts_fixture_root(),
+                                               owner = "distribution_dpe",
+                                               comparison_scalar = "part_passoires",
+                                               required_scalar_version = "part-passoires-v1",
+                                               reference_version = "reference-v1",
+                                               label = "DPE distribution",
+                                               source_id = "profile_source") {
+  descriptor <- list(indicator_id = owner, theme_id = "habitat", label = label,
+    unit = "kWh", direction = "none", comparison_direction = "high",
+    levels = c("commune"), completeness = "dense_complete",
+    descriptor_version = paste0(owner, "-descriptor-v1"),
+    comparison_detail = if (is.null(comparison_scalar)) "d1" else NULL,
+    comparison_sex = NULL,
+    comparison_scalar = comparison_scalar,
+    required_scalar_version = required_scalar_version,
+    denominator_semantics = "count", detail_units_required = FALSE,
+    sexes = character(), source = source_id)
+  axes <- data.frame(axis_name = c("detail", "detail"), axis_key = c("d1", "d2"),
+    label = c("D1", "D2"), ordinal = c(0L, 1L), unit = c("kWh", "kWh"),
+    stringsAsFactors = FALSE)
+  facts <- data.frame(territory_id = rep(c("c1", "c2"), each = 2L),
+    territory_type = rep("commune", 4L), detail = rep(c("d1", "d2"), 2L),
+    sex = rep("", 4L), value = c(1, 2, 3, 4), status = rep("measured", 4L),
+    stringsAsFactors = FALSE)
+  provenance <- data.frame(indicator_id = rep(owner, nrow(facts)),
+    territory_id = facts$territory_id, detail_key = facts$detail,
+    sex_key = facts$sex, source_id = rep(source_id, nrow(facts)),
+    vintage_id = rep("v1", nrow(facts)), stringsAsFactors = FALSE)
+  datasets <- data.frame(source_id = source_id, name = "Profile source",
+    stringsAsFactors = FALSE)
+  vintages <- data.frame(source_id = source_id, vintage_id = "v1",
+    version = "2020", reference_date = NA_character_,
+    publication_date = NA_character_, stringsAsFactors = FALSE)
+  faits <- list(facts = facts, axes = axes, datasets = datasets, vintages = vintages,
+    eligible_territories = artefacts_fixture_territories())
+  cmp_content <- "profile-cmp-v1"
+  cmp_facts <- "profile-facts-v1"
+  groups <- data.frame(comparison_context = "same_level", group_id = "g1",
+    territory_type = "commune", indicator_id = owner, detail_key = "d1",
+    sex_key = "", statistic = "median", median = 2.5, member_count = 2L,
+    eligible_count = 2L, missing_count = 0L, lineage_source_count = 1L,
+    profile_content_version = cmp_facts,
+    reference_content_version = reference_version, stringsAsFactors = FALSE)
+  territories <- data.frame(comparison_context = "same_level", group_id = "g1",
+    territory_type = "commune", indicator_id = owner, detail_key = "d1",
+    sex_key = "", territory_id = "c1", value = 1, status = "measured",
+    rank = 1L, tie_count = 1L, rank_size = 2L,
+    profile_content_version = cmp_facts,
+    reference_content_version = reference_version, stringsAsFactors = FALSE)
+  lineage <- data.frame(comparison_context = "same_level", group_id = "g1",
+    territory_type = "commune", facet_id = owner, source_id = source_id,
+    vintage_id = "v1", stringsAsFactors = FALSE)
+  comparison <- list(content_version = cmp_content,
+    profile_content_version = cmp_facts,
+    reference_content_version = reference_version,
+    groups = groups, territories = territories, lineage = lineage)
+  contenu <- contenu_artefact(faits, descriptor, provenance, comparison)
+  digests <- artefacts_fixture_digests(source_id)
+  ecrit <- ecrire_artefact_ressource(owner, "declared_profile", contenu,
+    digests_lignage = digests_lignage_ressource(source_id, digests), root = root)
+  artefact <- lire_artefact_ressource(owner, ecrit$version, root = root)
+  lock <- stats::setNames(list(list(sha256 = paste0("sha256-", source_id),
+    acquired_at = "2026-01-01")), source_id)
+  list(root = root, ressource = owner, version = ecrit$version,
+       artefact = artefact, lock = lock)
+}
+
 artefacts_fixture_series_projections <- function() {
   list(prix_m2 = list(
     dataset_id = "prix_m2",

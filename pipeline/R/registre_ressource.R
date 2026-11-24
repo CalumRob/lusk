@@ -39,6 +39,22 @@ lire_listing_live_registre <- function(con) {
   registre[c("ressource", "version")]
 }
 
+# Version des FAITS vivants d'une ressource scalaire : le jeton
+# `scalar_content_version` du marqueur de comparaison PAR RESSOURCE (#1137),
+# qui est précisément la version des faits de cette ressource (#1135). Le token
+# global `table_publication['scalar_observation']` n'est JAMAIS utilisé ici.
+# NA_character_ si le marqueur n'existe pas (dépendance absente du vivant).
+version_faits_live_ressource <- function(con, ressource) {
+  valider_identite_ressource(ressource)
+  ligne <- DBI::dbGetQuery(con, paste0(
+    "SELECT scalar_content_version FROM scalar_resource_comparison_publication ",
+    "WHERE indicator_id=$1"), params = list(as.character(ressource)[[1L]]))
+  if (!is.data.frame(ligne) || !nrow(ligne) || is.na(ligne$scalar_content_version[[1L]]) ||
+      !nzchar(as.character(ligne$scalar_content_version[[1L]])))
+    return(NA_character_)
+  as.character(ligne$scalar_content_version[[1L]])
+}
+
 # Upsert de la ligne de registre, DANS LA MÊME TRANSACTION que les lignes de
 # l'adaptateur. `retired = TRUE` garde la version connue mais retire la
 # ressource de l'ensemble vivant.

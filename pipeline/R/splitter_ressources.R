@@ -159,9 +159,29 @@ comparaison_persistee <- function(champ) {
 # comparaison exclue. Seul l'artefact de la resource est haché — jamais le
 # snapshot scalaire global d'aujourd'hui (ADR-0049).
 version_faits_ressource <- function(handler, projection) {
-  version_artefact(contenu_artefact(faits_forme(handler, projection),
-    projection[[handler$champ_descripteur]], projection[[handler$champ_provenance]], NULL))
+  version_faits_artefact(list(contenu = contenu_artefact(
+    faits_forme(handler, projection),
+    projection[[handler$champ_descripteur]], projection[[handler$champ_provenance]], NULL)))
 }
+
+# Enregistre À LA CONSTRUCTION la version des FAITS de la ressource déclarée
+# comme dépendance, calculée depuis LA MÊME sortie. `apply` ne fait que VÉRIFIER
+# ce jeton (#1138) : jamais de rebind silencieux. Si la dépendance n'est pas
+# construite dans cette sortie, le jeton du producteur est conservé tel quel —
+# la vérification d'apply le confrontera au vivant. Aucun identifiant en dur.
+lier_dependance_faits_profil <- function(descripteur, projections) {
+  dependance <- champ_descripteur(descripteur, "comparison_scalar")
+  if (is.null(dependance) || !length(dependance) || is.na(dependance) ||
+      !nzchar(as.character(dependance)[[1L]]))
+    return(descripteur)
+  scalaire <- if (is.list(projections)) projections$scalar[[as.character(dependance)[[1L]]]] else NULL
+  if (is.null(scalaire)) return(descripteur)
+  descripteur$required_scalar_version <- version_faits_ressource(
+    REGISTRE_FORMES_RESSOURCE[["scalar"]], scalaire)
+  descripteur
+}
+
+lier_dependance_aucune <- function(descripteur, projections) descripteur
 
 faits_forme <- function(handler, projection) {
   if (!is.null(handler$champs_faits)) return(projection[handler$champs_faits])
@@ -238,6 +258,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # tables. projeter(artefact) -> scoped rows; remplacer(con, ...) applies
     # them inside the publication transaction. Defined in adaptateur_scalaire.R
     # (loaded before this file) and attached here as registry fields.
+    lier_dependance = lier_dependance_aucune,
     projeter = projeter_artefact_scalaire,
     remplacer = remplacer_scalaire),
   declared_profile = list(
@@ -249,7 +270,13 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL),
+    champ_faits_drift = NULL,
+    # Shape adapter (ADR-0049 seam, #1138): the ONLY writer of this shape's
+    # serving tables. Defined in adaptateur_profil_declare.R (loaded before
+    # this file) and attached here as registry fields.
+    lier_dependance = lier_dependance_faits_profil,
+    projeter = projeter_artefact_profil_declare,
+    remplacer = remplacer_profil_declare),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -259,7 +286,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL),
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -269,7 +296,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL),
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie)
@@ -281,7 +308,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL)
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune)
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
@@ -315,6 +342,10 @@ splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference =
       valider_identite_ressource(id)
       projection <- famille[[id]]
       descripteur <- projection[[handler$champ_descripteur]]
+      # Le handler de forme enregistre à la construction le jeton de dépendance
+      # déclarée (profil déclaré) depuis LA MÊME sortie ; les autres formes sont
+      # une identité. Aucune branche par forme, aucun identifiant en dur ici.
+      descripteur <- handler$lier_dependance(descripteur, projections)
       provenance <- projection[[handler$champ_provenance]]
       if (is.null(provenance))
         provenance <- data.frame(source_id = character(), vintage_id = character(),

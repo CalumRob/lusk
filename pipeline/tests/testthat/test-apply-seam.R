@@ -114,6 +114,26 @@ test_that("the DBI named-params audit fails on both named forms (proof)", {
   expect_error(verifier_params_dbi_positionnels(d), "named `params`")
 })
 
+test_that("one neutral writer owns source_dataset/source_vintage SQL (#1138 review)", {
+  racine <- racine_pipeline()
+  fichiers <- list.files(file.path(racine, "R"), pattern = "\\.R$", full.names = TRUE)
+  definitions <- function(motif) {
+    unlist(lapply(fichiers, function(f) {
+      l <- readLines(f, warn = FALSE)
+      trouvees <- l[grepl(motif, l)]
+      if (length(trouvees)) paste0(basename(f), ": ", trimws(trouvees)) else character()
+    }), use.names = FALSE)
+  }
+  ecritures <- definitions("^\\.ecrire_sources[A-Za-z_]*\\s*<-")
+  expect_length(ecritures, 1L)
+  expect_match(ecritures, "\\.ecrire_sources_serveur")
+  expect_match(ecritures, "ecriture_sources_serveur\\.R")
+  citations <- definitions("^\\.quoter_sql[A-Za-z_]*\\s*<-")
+  expect_length(citations, 1L)
+  expect_match(citations, "\\.quoter_sql_serveur")
+  expect_match(citations, "ecriture_sources_serveur\\.R")
+})
+
 test_that("apply delegates every serving write to the shape adapter", {
   racine <- racine_pipeline()
   lignes <- readLines(file.path(racine, "R", "apply_publication.R"), warn = FALSE)

@@ -48,6 +48,28 @@ schemas, mutex, runtime identity checks, cleanup opt-in; skips without the
 `lusk_it_contract` DSNs). Applying this DDL alone publishes nothing; no worker
 applies it to a serving database.
 
+## Migration 047 (#1138) — per-resource declared-profile comparison marker (additive)
+
+`047_profile_resource_comparison.sql` adds, **without changing any existing row,
+marker, constraint or grant**, `profile_resource_comparison_publication`: a
+per-indicator comparison clock for declared profiles, the exact counterpart of
+046's `scalar_resource_comparison_publication`. The group/territory/lineage rows
+remain keyed by `indicator_id`; only the global clock gains a per-resource form.
+
+**Expand-phase coexistence.** `table_publication['declared_profile']` and the
+`profile_comparison_publication` singleton are deliberately LEFT IN PLACE and
+are **not** written by the declared-profile shape adapter in this step: the
+current API keeps reading them until the reader cutover in step 4 (#1140).
+`schema.sql` carries the same contract for fresh installs; the fast DB-free
+contract is
+`api/tests/test_profile_resource_comparison_migration_contract.py`, and the
+guarded, non-retained populated-upgrade rehearsal is
+`api/tests/integration/test_profile_resource_comparison_migration.py` (own random
+schemas, mutex, runtime identity checks, cleanup opt-in; skips without the
+`lusk_it_contract` DSNs). Applying this DDL alone publishes nothing; no worker
+applies it to a serving database. The later contract migration (#1141) takes the
+next free number.
+
 ## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
 
 `045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication

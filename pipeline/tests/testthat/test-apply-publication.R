@@ -45,7 +45,8 @@ test_that("apply refuses an adapter-less closure member BEFORE any connection", 
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   # part_passoires (scalar, has an adapter) declares distribution_dpe through
-  # its comparison_scalar dependency; the profile shape has NO remplacer.
+  # its comparison_scalar dependency; the profile remplacer is removed locally
+  # so the adapter-less closure is still exercised after #1138.
   scalaire <- artefacts_fixture_scalar_indicator(
     "part_passoires", "dpe_22", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
   handler <- REGISTRE_FORMES_RESSOURCE[["scalar"]]
@@ -62,6 +63,11 @@ test_that("apply refuses an adapter-less closure member BEFORE any connection", 
     digests_lignage = digests_lignage_ressource(
       "profile_source", artefacts_fixture_digests("profile_source")), root = root)
 
+  # The production profile shape now HAS an adapter (#1138); this test keeps
+  # its adapter-less-closure meaning by removing only that field locally.
+  registre_sans_profil <- REGISTRE_FORMES_RESSOURCE
+  registre_sans_profil$declared_profile$remplacer <- NULL
+  local_mocked_bindings(REGISTRE_FORMES_RESSOURCE = registre_sans_profil)
   connexions <- 0L
   local_mocked_bindings(
     dbConnect = function(...) { connexions <<- connexions + 1L; stop("no connection expected") },

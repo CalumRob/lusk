@@ -43,6 +43,18 @@ version_artefact <- function(contenu) {
   scalar_content_version(contenu)
 }
 
+# Version des FAITS d'une ressource (#1135 token rule) : descripteur + faits +
+# provenance, comparaison exclue. UNE seule définition, partagée par le splitter
+# (`scalar_content_version` de la comparaison), par le liage déclaré du profil
+# enregistré à la construction et par `apply` (vérification de dépendance).
+version_faits_artefact <- function(artefact) {
+  if (!is.list(artefact) || !is.list(artefact$contenu))
+    stop("Facts version requires an Artefact de ressource", call. = FALSE)
+  contenu <- artefact$contenu
+  version_artefact(contenu_artefact(contenu$faits, contenu$descriptor,
+                                    contenu$provenance, NULL))
+}
+
 contenu_artefact <- function(faits, descripteur, provenance, comparaison = NULL) {
   list(faits = faits, descriptor = descripteur, provenance = provenance,
        comparison = comparaison)

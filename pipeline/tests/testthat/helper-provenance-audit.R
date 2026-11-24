@@ -358,12 +358,18 @@ verifier_params_dbi_positionnels <- function(racine) {
 TABLES_SERVICE_SCALAIRE <- paste0(
   "scalar_observation|scalar_descriptor|scalar_comparison_",
   "|comparison_source_lineage|scalar_resource_comparison_publication")
+TABLES_SERVICE_PROFIL <- paste0(
+  "profile_descriptor|profile_axis|profile_observation|profile_comparison_",
+  "|profile_resource_comparison_publication")
+TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL)
 MOTIF_ECRITURE_SERVEUR <- paste0(
-  "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE_SCALAIRE, ")",
-  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE_SCALAIRE, ")")
+  "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE, ")",
+  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE, ")")
 
 AUTORISATIONS_ECRITURE_SERVEUR <- list(
   list(fichier = "^R/adaptateur_scalaire\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/adaptateur_profil_declare\\.R$",
        raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
   list(fichier = "^R/publish_scalar\\.R$",
        raison = "producteur historique — retire in ADR-0049 step 4"),
@@ -374,6 +380,10 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
   list(fichier = "^scripts/smoke-profile-postgres\\.R$",
        raison = "smoke historique — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-habitat-reading-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-retained-baseline-postgres\\.R$",
        raison = "smoke historique — retire in ADR-0049 step 4")
 )
 
