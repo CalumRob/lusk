@@ -37,8 +37,8 @@ valider_identite_ressource <- function(ressource) {
   invisible(ressource)
 }
 
-# Même sémantique de hachage de contenu que scalar_content_version() : on
-# réutilise la fonction du producteur plutôt que de dupliquer sa sérialisation.
+# Seul nom de la « Version de ressource publiée » dans ce slice : délégation
+# explicite à scalar_content_version(), dont on garde la sémantique de hachage.
 version_artefact <- function(contenu) {
   scalar_content_version(contenu)
 }
@@ -51,7 +51,9 @@ contenu_artefact <- function(faits, descripteur, provenance, comparaison = NULL)
 # Les digests de lignage portent EXACTEMENT les source_id présents dans la
 # provenance de la ressource (ADR-0048/0049 : le gel ne vérifie que la lignage).
 # Un source_id sans empreinte dans source-digests.json est consigné comme absent
-# — jamais tu, jamais remplacé par une autre source.
+# (sha256 = NA, absent = TRUE) — jamais tu, jamais remplacé par une autre source.
+# Le Plan de publication (#1136) s'appuie sur ces entrées explicites pour refuser
+# une ressource dont le lignage ne peut être vérifié.
 digests_lignage_ressource <- function(source_ids, digests = list()) {
   ids <- sort(unique(as.character(source_ids[!is.na(source_ids)])))
   if (!length(ids)) return(list())

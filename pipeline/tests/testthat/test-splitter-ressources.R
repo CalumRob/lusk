@@ -211,6 +211,19 @@ test_that("le contrat des fichiers canoniques AEDAR appartient au producteur et 
                      lire(file.path(racine, "R", "splitter_ressources.R")), fixed = TRUE))
 })
 
+test_that("le vocabulaire et le nommage suivent CONTEXT.md", {
+  racine <- testthat::test_path("..", "..")
+  lire <- function(chemin) paste(readLines(chemin, warn = FALSE), collapse = "\n")
+  splitteur <- lire(file.path(racine, "R", "splitter_ressources.R"))
+  expect_false(grepl("Pont temporaire", splitteur))
+  expect_true(grepl("Splitter par thème", splitteur, fixed = TRUE))
+  expect_true(grepl("étape 3", splitteur, fixed = TRUE))
+  magasin <- lire(file.path(racine, "R", "artefact_ressource.R"))
+  expect_true(grepl("Seul nom de la « Version de ressource publiée »", magasin, fixed = TRUE))
+  expect_true(grepl("absent = TRUE", magasin, fixed = TRUE))
+  expect_true(grepl("#1136", magasin, fixed = TRUE))
+})
+
 test_that("aucune connexion à la base de service n'est introduite dans ce slice", {
   racine <- testthat::test_path("..", "..")
   fichiers <- c(
