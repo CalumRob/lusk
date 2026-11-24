@@ -63,7 +63,8 @@ remplacer_aedar <- function(con, ressource, rows = NULL, version = NULL,
     # Les deux écrivains existants écrivent TOUTES les tables de service AEDAR ;
     # la référence injectée vient de l'artefact, aucune lecture de
     # territory_reference vivant ici (le préflight de apply l'a déjà vérifiée).
-    publish_aedar_aggregates(rows$projection, con, reference_version = reference)
+    publish_aedar_aggregates(rows$projection, con, reference_version = reference,
+                             version = comparison$aedar_content_version)
     ecrire_aedar_comparaison_rows(con, comparison, comparison$groups,
                                   comparison$density_rows, comparison$littoral_rows)
     ecrire_registre_ressource(con, ressource, "aedar", rows$version,

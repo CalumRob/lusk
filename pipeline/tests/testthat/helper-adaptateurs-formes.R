@@ -25,20 +25,20 @@ adaptateur_series_projection <- function(dataset_id = "artif_par_habitant",
   territories <- territories[territories$territory_type == "commune", , drop = FALSE]
   axes <- c("M2", "M3")
   points <- do.call(rbind, lapply(axes, function(axis) data.frame(
-    dataset_id = dataset_id, indicator_id = "artif_par_habitant",
+    dataset_id = dataset_id, indicator_id = dataset_id,
     territory_id = territories$territory_id, territory_type = "commune",
     axis_value = axis, observation_period = "2019-2020",
     value = value + if (identical(axis, "M3")) 1 else 0,
     status = "measured", stringsAsFactors = FALSE)))
   projection <- list(dataset_id = dataset_id,
-    descriptor = list(dataset_id = dataset_id, indicator_id = "artif_par_habitant",
+    descriptor = list(dataset_id = dataset_id, indicator_id = dataset_id,
       axis_kind = "state_role", axis_values = axes, completeness = "may_be_missing",
       comparison_point = NULL, label = "Artificialisation", unit = "m2/hab",
       direction = "none", allowed_levels = c("commune", "epci"),
       descriptor_version = "artif-par-habitant-v1", theme_id = "milieux"),
     points = points, provenance = revision,
     point_provenance = unique(data.frame(dataset_id = dataset_id,
-      indicator_id = "artif_par_habitant", territory_id = points$territory_id,
+      indicator_id = dataset_id, territory_id = points$territory_id,
       axis_value = points$axis_value,
       provenance_revision_id = revision$provenance_revision_id[[1L]],
       stringsAsFactors = FALSE)))

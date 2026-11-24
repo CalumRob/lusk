@@ -2275,7 +2275,7 @@ read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
 # adapter never reads the live territory_reference for its comparison; the
 # expand-phase producer path still reads it here and stays allowlisted.
 publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
-                                     reference_pairs = NULL) {
+                                     reference_pairs = NULL, version = NULL) {
   progress_started <- proc.time()[[3L]]
   timing <- new.env(parent=emptyenv())
   timing$commit_started <- NA_real_
@@ -2304,7 +2304,8 @@ publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
     if (any(!vapply(by_territory,function(axis) length(axis)==length(typequ_axis)&&setequal(axis,typequ_axis),logical(1))))
       stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
   }
-  version <- aedar_aggregate_content_version(projection)
+  version <- if (is.null(version)) aedar_aggregate_content_version(projection) else
+    as.character(version)[[1L]]
   summary_facts <- project_aedar_territory_summary(facts,projection$source)
   summary_version <- paste(as.character(openssl::sha256(serialize(summary_facts,NULL))),collapse="")
   published_columns <- c("territory_type","territory_id","typequ","typequ_label","typequ_hierarchy_label",
@@ -2346,8 +2347,8 @@ publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
     "AND expected.typequ=stored.typequ)")
   result <- publication_transaction(db, {
     progress("begin-transaction")
-    DBI::dbExecute(db,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     injecte <- !is.null(reference_version)
+    if (!injecte) DBI::dbExecute(db,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     reference <- if (!injecte) DBI::dbGetQuery(db,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'") else
       data.frame(content_version=as.character(reference_version)[[1L]],stringsAsFactors=FALSE)
     if (nrow(reference)!=1L) stop("AEDAR publication requires published territory reference",call.=FALSE)
