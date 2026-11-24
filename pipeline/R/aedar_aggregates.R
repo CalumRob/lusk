@@ -2108,12 +2108,16 @@ validate_aedar_comparison_manifest_membership <- function(manifest,territory_ref
 # forme lui fournit les mêmes lignes depuis l'Artefact de ressource (aucune
 # lecture de territory_reference vivante, aucun SQL dupliqué).
 ecrire_aedar_comparaison_rows <- function(con, x, groups, density_rows,
-                                           littoral_rows = NULL) {
+                                           littoral_rows = NULL, chunk_size = 20000L) {
   DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
   DBI::dbExecute(con,"DELETE FROM aedar_density_class_summary")
   DBI::dbExecute(con,"DELETE FROM aedar_littoral_summary")
   DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
-  DBI::dbWriteTable(con,"aedar_comparison_group",groups,append=TRUE,row.names=FALSE)
+  if (nrow(groups)) for (debut in seq.int(1L,nrow(groups),by=chunk_size)) {
+    fin <- min(debut+chunk_size-1L,nrow(groups))
+    DBI::dbWriteTable(con,"aedar_comparison_group",groups[debut:fin,,drop=FALSE],
+      append=TRUE,row.names=FALSE)
+  } else DBI::dbWriteTable(con,"aedar_comparison_group",groups,append=TRUE,row.names=FALSE)
   tokens <- c("comparison_content_version"=x$content_version,
     "aedar_content_version"=x$aedar_content_version,
     "reference_content_version"=x$reference_content_version,
@@ -2234,7 +2238,9 @@ publish_aedar_comparisons <- function(x,con) {
         if(part_index %% 25L == 0L) progress("replacement-partitions",done=part_index,total=length(x$parts))
        }
        group_payload <- if(length(group_buffer)) do.call(rbind,group_buffer) else data.frame()
-       ecrire_aedar_comparaison_rows(con, x, group_payload, read_density_summaries(), littoral_summaries)
+       chunk_size<-20000L
+       ecrire_aedar_comparaison_rows(con, x, group_payload, read_density_summaries(),
+         littoral_summaries, chunk_size=chunk_size)
        transaction_result <- list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,
          territory_row_count=x$territory_row_count,density_summary_row_count=x$density_class_summaries$row_count,
          littoral_summary_row_count=x$littoral_summaries$row_count)

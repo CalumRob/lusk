@@ -64,6 +64,22 @@
   schema
 }
 
+# Scalar artefact for the cross-shape snapshot (the scalar apply itself is
+# proven by test-apply-scalar-db.R; here it is only an "other resource").
+.guarded_shapes_scalar_artefact <- function(root, indicator, values) {
+  projection <- artefacts_fixture_scalar_indicator(indicator, paste0("src_", indicator), values)
+  reference <- artefacts_fixture_reference()
+  comparison <- comparaison_scalaire_ressource(projection, indicator, reference)
+  contenu <- contenu_artefact(
+    faits_forme(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection),
+    projection$descriptors, projection$provenance, comparison)
+  ecrit <- ecrire_artefact_ressource(indicator, "scalar", contenu,
+    digests_lignage = digests_lignage_ressource(
+      sources_provenance_ressource(projection$provenance),
+      artefacts_fixture_digests(paste0("src_", indicator))), root = root)
+  lire_artefact_ressource(indicator, ecrit$version, root = root)
+}
+
 .guarded_shapes_lock <- function(sources) {
   stats::setNames(lapply(as.character(sources), function(source)
     list(sha256 = paste0("sha256-", source), acquired_at = "2026-01-01")),
@@ -95,8 +111,8 @@ test_that("guarded: applying one owned series leaves every other resource byte-i
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  a <- adaptateur_series_artefact(root, "artif_par_habitant", 10)
-  b <- adaptateur_series_artefact(root, "prix_m2", 20)
+  adaptateur_series_artefact(root, "artif_par_habitant", 10)
+  adaptateur_series_artefact(root, "prix_m2", 20)
   lock <- .guarded_shapes_lock(c("ocsge"))
   tables <- c("series_dataset_publication", "series_dataset_descriptor",
               "series_dataset_observation", "series_observation_provenance",
@@ -121,8 +137,8 @@ test_that("guarded: applying one observed collection leaves every other resource
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  a <- adaptateur_collection_artefact(root, "acv", 5)
-  b <- adaptateur_collection_artefact(root, "acv_b", 9)
+  adaptateur_collection_artefact(root, "acv", 5)
+  adaptateur_collection_artefact(root, "acv_b", 9)
   lock <- .guarded_shapes_lock("programme_source")
   tables <- c("observed_collection_publication", "observed_collection_descriptor",
               "observed_collection_category", "period_detail_observation",
@@ -151,7 +167,7 @@ test_that("guarded: AEDAR apply passes the deferred validator, with and without 
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
   lock <- .guarded_shapes_lock("aedar_bretagne")
-  sans <- adaptateur_aedar_artefact(root, with_littoral = FALSE)
+  adaptateur_aedar_artefact(root, with_littoral = FALSE)
   # The deferred check_aedar_comparison_publication trigger fires at the commit
   # of apply's outer transaction: a failure here is an apply error.
   expect_no_error(apply_publication("aedar", root = root, registre = lock, con = con))
@@ -161,7 +177,7 @@ test_that("guarded: AEDAR apply passes the deferred validator, with and without 
   expect_equal(marqueur$littoral_summary_row_count[[1L]], 0L)
   expect_equal(nrow(DBI::dbGetQuery(con, "SELECT * FROM aedar_littoral_summary")), 0L)
 
-  avec <- adaptateur_aedar_artefact(root, with_littoral = TRUE)
+  adaptateur_aedar_artefact(root, with_littoral = TRUE)
   expect_no_error(apply_publication("aedar", root = root, registre = lock, con = con))
   marqueur2 <- DBI::dbGetQuery(con,
     "SELECT littoral_summary_row_count FROM aedar_comparison_publication")
@@ -179,13 +195,21 @@ test_that("guarded: applying AEDAR leaves every scalar, series and collection by
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  # Seed a series and a collection first; their rows must survive an AEDAR apply.
-  series <- adaptateur_series_artefact(root, "artif_par_habitant", 10)
-  collection <- adaptateur_collection_artefact(root, "acv", 5)
-  lock <- .guarded_shapes_lock(c("ocsge", "programme_source", "aedar_bretagne"))
+  # Seed a scalar, a series and a collection first; their rows must survive an
+  # AEDAR apply byte-for-byte.
+  scalaire <- .guarded_shapes_scalar_artefact(root, "densite",
+    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  adaptateur_series_artefact(root, "artif_par_habitant", 10)
+  adaptateur_collection_artefact(root, "acv", 5)
+  lock <- .guarded_shapes_lock(c("src_densite", "ocsge", "programme_source", "aedar_bretagne"))
+  apply_publication("densite", root = root, registre = lock, con = con)
   apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
   apply_publication("acv", root = root, registre = lock, con = con)
-  tables <- c("series_dataset_publication", "series_dataset_descriptor",
+  tables <- c("scalar_descriptor", "scalar_descriptor_source", "scalar_observation",
+              "scalar_observation_source", "scalar_comparison_group",
+              "scalar_comparison_territory", "comparison_source_lineage",
+              "scalar_resource_comparison_publication",
+              "series_dataset_publication", "series_dataset_descriptor",
               "series_dataset_observation", "series_observation_provenance",
               "observed_collection_publication", "observed_collection_descriptor",
               "observed_collection_category", "period_detail_observation")

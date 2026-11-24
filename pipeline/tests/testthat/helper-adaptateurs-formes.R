@@ -149,8 +149,12 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
     aedar_aggregate_content_version(projection), reference_version,
     density_group_facts = NULL, input_hashes = c(artefact = "aedar-fixture"),
     littoral_group_facts = littoral_facts)
-  x$groups$typequ <- x$groups$TYPEQU
-  x$groups$TYPEQU <- NULL
+  # Le contrat DB ne porte que les colonnes de grain (les jetons de version
+  # vivent dans les colonnes dédiées de la table de publication).
+  x$groups <- as.data.frame(x$groups[, AEDAR_COMPARISON_GROUP_COLUMNS, drop = FALSE],
+    stringsAsFactors = FALSE)
+  names(x$groups)[names(x$groups) == "TYPEQU"] <- "typequ"
+  rownames(x$groups) <- NULL
   mesures <- unique(x$groups$measure)
  groupes_du_contexte <- function(context)
     unique(x$groups$group_id[x$groups$comparison_context == context])
@@ -173,6 +177,8 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
     measure_count = if (with_littoral) 1L else 0L,
     row_count = if (with_littoral) nrow(littoral) else 0L)
   x$publication_mode <- "reference_only"
+  x$group_row_count <- nrow(x$groups)
+  x$territory_row_count <- 0L
   x
 }
 
