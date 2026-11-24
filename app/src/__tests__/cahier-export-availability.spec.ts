@@ -79,7 +79,7 @@ describe('availability capture for the Cahier PDF action (#1165)', () => {
     })
     const input: CahierSectionCaptureInput = {
       ...inputFor('couverture-du-territoire'),
-      section: { ...section, evidence: evidence as unknown as ContentEvidence },
+      section: { ...section, evidence } as unknown as typeof section,
     }
     const seen: CahierPdfActivation[] = []
     const stop = effect(() => {

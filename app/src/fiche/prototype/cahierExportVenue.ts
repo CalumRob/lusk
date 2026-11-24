@@ -46,9 +46,14 @@ export type CahierExportCaptureBuilder = (
   publications: readonly CahierExportPublication[],
 ) => CahierExportCapture | null
 
+export type CahierExportAvailabilityBuilder = (
+  sectionKey: string,
+  publications: readonly CahierExportPublication[],
+) => CahierExportAvailability | null
+
 export function provideCahierExportVenue(
   build: CahierExportCaptureBuilder,
-  buildAvailability?: CahierExportCaptureBuilder,
+  buildAvailability?: CahierExportAvailabilityBuilder,
 ): CahierExportVenue {
   const registry: CahierExportRegistry = { sections: new Map(), order: [] }
   const publicationsFor = (sectionKey: string): CahierExportPublication[] =>

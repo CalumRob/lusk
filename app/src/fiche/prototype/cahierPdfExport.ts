@@ -253,7 +253,7 @@ function comparisonBlockReason(
  * settled, so it must never strand the action.
  */
 function overviewRanksPending(
-  capture: CahierExportCapture,
+  capture: CahierExportAvailability,
   comparison: CahierCaptureComparison,
 ): boolean {
   if (!comparisonRelevant(comparison)) return false
@@ -289,7 +289,7 @@ function figureResourceFailures(figure: CahierCaptureFigure): FigureResourceFail
 }
 
 function figureBlockReason(
-  capture: CahierExportCapture,
+  capture: CahierExportAvailability,
   comparison: CahierCaptureComparison,
 ): CahierPdfActivationReason | null {
   for (const figure of capture.figures) {
