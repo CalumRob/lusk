@@ -36,6 +36,26 @@
   con
 }
 
+# Publish the fixture territory reference through the EXISTING reference
+# publisher, exactly as the retained path does. `apply` never publishes the
+# reference itself (E-class release, ADR-0049) — it only READS its marker.
+.guarded_apply_publish_reference <- function(con) {
+  reference <- artefacts_fixture_reference()
+  rows <- reference$rows
+  # The fixture carries identity/level columns; the publisher's projection
+  # contract also needs name/department/littoral. Inert values are fine: the
+  # reference CHECK permits NULL littoral on every row.
+  rows$name <- rows$territory_id
+  rows$department_id <- rep(NA_character_, nrow(rows))
+  rows$density_class_label <- rows$density_class_code
+  rows$littoral_code <- rep(NA_character_, nrow(rows))
+  rows$littoral_classement_source <- rep(NA_character_, nrow(rows))
+  projection <- list(rows = rows, content_version = reference$content_version)
+  publish_territory_reference_projection(projection,
+    territory_reference_postgres_adapter(con))
+  invisible(projection$content_version)
+}
+
 .guarded_apply_schema <- function(con) {
   schema <- paste0("it_apply_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
   DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
@@ -43,6 +63,7 @@
   sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
                          warn = FALSE), collapse = "\n")
   for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
+  .guarded_apply_publish_reference(con)
   schema
 }
 
