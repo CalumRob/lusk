@@ -2305,7 +2305,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
     cursor = conn.execute(
         """SELECT """ + ", ".join(scalar_projection) + """,
                   d.label, d.unit, d.direction, d.comparison_facet, d.descriptor_version,
-                  p.content_version,
+                  %s AS content_version,
                   (SELECT json_agg(json_build_object('source_id', os.source_id,
                       'name', sd.name, 'vintage_id', os.vintage_id,
                       'version', sv.version, 'reference_date', sv.reference_date,
@@ -2317,10 +2317,9 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                    WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id) AS sources
            FROM scalar_observation o
            JOIN scalar_descriptor d USING (indicator_id)
-           JOIN resource_publication p ON p.resource_id = o.indicator_id AND NOT p.retired
            WHERE o.indicator_id = %s AND o.territory_id = %s
              AND o.territory_type = %s AND o.territory_type = ANY(d.allowed_levels)""",
-        (indicator_id, territory_id, territory_type),
+        (publication.content_version, indicator_id, territory_id, territory_type),
     )
     row = cursor.fetchone()
     if row is None:
