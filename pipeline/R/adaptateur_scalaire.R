@@ -45,6 +45,7 @@ projeter_artefact_scalaire <- function(artefact) {
     as.character(if (is.null(valeur)) NA_character_ else valeur[[1L]])
   }), champs), stringsAsFactors = FALSE, optional = TRUE)
   descriptor$indicator_id <- id
+  declarations <- extraire_declaration_ressource(ligne)
 
   provenance_brute <- contenu$provenance
   if (is.null(provenance_brute)) provenance_brute <- data.frame(
@@ -109,7 +110,8 @@ projeter_artefact_scalaire <- function(artefact) {
                  stringsAsFactors = FALSE)),
     sources = sources, vintages = vintages,
     observations = observations, provenance = provenance,
-    comparison = comparison, digests_lignage = artefact$digests_lignage
+    comparison = comparison, declarations = declarations,
+    digests_lignage = artefact$digests_lignage
   )
 }
 
@@ -174,6 +176,7 @@ remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
 
     ecrire_registre_ressource(con, ressource, "scalar", rows$version,
       reference_content_version = reference_content_version, retired = FALSE)
+    ecrire_descripteurs_ressource(con, ressource, rows$version, rows$declarations)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

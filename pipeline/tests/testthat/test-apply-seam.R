@@ -87,7 +87,7 @@ test_that("a planted write to any new shape's serving table fails (proof)", {
   ecritures <- c("series_dataset_observation", "ordered_series_comparison_group",
                  "observed_collection_publication", "period_detail_observation",
                  "aedar_comparison_publication", "aedar_littoral_summary",
-                 "resource_publication")
+                 "resource_publication", "resource_publication_descriptor")
   writeLines(c("foo <- function(con) {",
     vapply(ecritures, function(t) paste0("  DBI::dbExecute(con, 'DELETE FROM ", t, "')"),
            character(1)),

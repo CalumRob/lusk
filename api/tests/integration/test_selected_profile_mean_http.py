@@ -27,6 +27,7 @@ import pytest
 
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _dsn_with_schema)
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 pytestmark = pytest.mark.integration
 
@@ -273,7 +274,7 @@ def _client(db):
                                        open=True, kwargs={"autocommit": True})
     repository = main.ReadRepository(pool)
     main.app.dependency_overrides[main.get_repository] = lambda: repository
-    main.app.dependency_overrides[main.get_resource_catalogue] = main.default_resource_catalogue
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
     return TestClient(main.app), pool
 
 

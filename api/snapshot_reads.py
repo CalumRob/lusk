@@ -16,6 +16,9 @@ from api.observed_collections import (collection_comparison, collection_comparis
     collection_descriptors, collection_marker, collection_snapshot)
 from api.profile_reads import focal_profiles
 from api.publication_outcomes import publication_unavailable
+from api.resource_publication import (live_resource_publication,
+                                       live_resource_publications,
+                                       live_territory_reference_version)
 from api.typed_reading_snapshots import (
     _demographic_reading_cloud, _demographic_reading_marker,
     _milieux_reading_cloud, _milieux_reading_marker,
@@ -342,7 +345,9 @@ def _published_comparison_sources(conn, *, family, context, group_id, cohort_typ
     result = _comparison_sources_by_indicator(rows)
     counts = {facet: 0 for facet in facets}
     for row in rows:
-        if row[7] != content_version:
+        expected_version = (content_version.get(row[0]) if isinstance(content_version, dict)
+                            else content_version)
+        if row[7] != expected_version:
             raise HTTPException(503, "Published comparison provenance is stale")
         counts[row[0]] += 1
     if counts != expected_counts or any(counts[k] and k not in result for k in facets):
@@ -404,31 +409,35 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
             _comparison_sources_by_indicator(detail_sources))
 
 
-def _profile_comparison_publication_marker(conn, family="profile"):
-    installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
+def _profile_comparison_publication_marker(conn, family="profile", resource_ids=None):
+    """Return compatible per-resource declared-profile comparison markers."""
+    installed = conn.execute(
+        "SELECT to_regclass('profile_resource_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published profile comparison is unavailable")
-    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.profile_content_version,p.reference_content_version,
-        p.group_row_count,p.territory_row_count,d.content_version,t.content_version
-        FROM profile_comparison_publication p
-        JOIN table_publication d ON d.table_name='declared_profile'
-        JOIN table_publication t ON t.table_name='territory_reference' WHERE p.singleton""").fetchone()
-    if not marker or not marker[0]:
-        own = conn.execute("""SELECT content_version FROM profile_comparison_publication
-            WHERE singleton""").fetchone()
-        if not own or not own[0]:
-            publication_unavailable(family, "Published profile comparison is stale or incompatible")
-        dependencies = conn.execute("""SELECT d.content_version,t.content_version
-            FROM table_publication d JOIN table_publication t
-              ON t.table_name='territory_reference'
-            WHERE d.table_name='declared_profile'""").fetchone()
-        if not dependencies or not dependencies[0] or not dependencies[1]:
+    if resource_ids is None:
+        resource_ids = [row[0] for row in _execute_comparison_publication_read(
+            conn, "SELECT indicator_id FROM profile_resource_comparison_publication").fetchall()]
+    resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
+    publications = live_resource_publications(conn, resource_ids, family)
+    rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
+        profile_content_version,reference_content_version,group_row_count,territory_row_count,
+        lineage_row_count FROM profile_resource_comparison_publication
+        WHERE indicator_id=ANY(%s)""", (resource_ids,)).fetchall()
+    markers = {row[0]: row[1:] for row in rows}
+    if len(markers) != len(resource_ids):
+        publication_unavailable(family, "Published profile comparison is stale or incompatible")
+    marker_references = {marker[2] for marker in markers.values()}
+    if len(marker_references) != 1:
+        raise HTTPException(503, "Published profile comparison is stale or incompatible")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(marker_references)))
+    for resource_id, marker in markers.items():
+        if (not marker[0] or not marker[1] or marker[2] != reference_version
+                or publications[resource_id].reference_content_version != marker[2]
+                or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published profile comparison is stale or incompatible")
-        raise HTTPException(503, "Published profile comparison is stale or incompatible")
-    if (marker[1] != marker[5] or marker[2] != marker[6]
-            or marker[3] < 1 or marker[4] < 1):
-        raise HTTPException(503, "Published profile comparison is stale or incompatible")
-    return marker
+    return markers
 
 
 def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_type, members, territory_id,
@@ -445,9 +454,11 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         return {}
     selected = _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS-{"mean","mean_curve"})
-    marker = _profile_comparison_publication_marker(
-        conn, family=publication_family or "profile")
     ids = [p["indicator"] for p in details]
+    markers = _profile_comparison_publication_marker(
+        conn, family=publication_family or "profile", resource_ids=ids)
+    comparison_versions = {indicator_id: marker[0]
+                           for indicator_id, marker in markers.items()}
     # Peer-rank arrays can be cohort-sized. Preserve the existing compact default
     # response and load them only when callers explicitly request that field.
     selected = (_COMPARISON_RESULT_FIELDS - {"member_ranks"}) if selected is None else set(selected)
@@ -517,7 +528,7 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         raise HTTPException(503, "Published profile comparison has missing or duplicate results")
     source_map = _published_comparison_sources(conn, family="profile", context=context,
         group_id=group_id, cohort_type=cohort_type,
-        facets={profile["indicator"] for profile in details}, content_version=marker[0],
+        facets={profile["indicator"] for profile in details}, content_version=comparison_versions,
         expected_counts={profile["indicator"]: next((r[8] for r in groups if r[0] == profile["indicator"]), 0)
                          for profile in details})
     output = {}
@@ -529,9 +540,10 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
             raise HTTPException(503, "Published profile comparison is incomplete")
         _, _, _, stat, med, member_count, eligible, missing, lineage_count, pv, rv, median_valid = group
         _, _, _, _, value, status, rank, ties, rank_size, tpv, trv, result_valid = row
+        resource_marker = markers[profile["indicator"]]
         if (stat != "median" or member_count != len(members) or eligible < 0 or missing < 0
-                or eligible + missing != member_count or pv != marker[1] or rv != marker[2]
-                or tpv != marker[1] or trv != marker[2]
+                or eligible + missing != member_count or pv != resource_marker[1] or rv != resource_marker[2]
+                or tpv != resource_marker[1] or trv != resource_marker[2]
                 or not median_valid or not result_valid
                 or status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
                 ):
@@ -561,7 +573,7 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
             for member_id in members:
                 peer_status, peer_rank, peer_ties, peer_size, peer_pv, peer_rv, peer_valid = rows[member_id]
                 if (peer_status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
-                        or peer_pv != marker[1] or peer_rv != marker[2] or not peer_valid
+                        or peer_pv != resource_marker[1] or peer_rv != resource_marker[2] or not peer_valid
                         or (peer_status == "measured" and peer_size != eligible)):
                     raise HTTPException(503, "Published profile comparison peer rank is invalid")
                 peer_eligible += peer_status == "measured"
@@ -893,34 +905,35 @@ def _selected_scalar_comparison_inputs(conn, *, theme_id, indicator_id, cohort_t
     return observations, _comparison_sources_by_indicator(source_rows)
 
 
-def _scalar_comparison_publication_marker(conn, family="scalar"):
-    """Return a compatible fixed-scalar comparison marker from this snapshot."""
-    installed = conn.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()
+def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=None):
+    """Return compatible per-resource fixed-scalar comparison markers."""
+    installed = conn.execute(
+        "SELECT to_regclass('scalar_resource_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published scalar comparison is unavailable")
-    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.scalar_content_version,p.reference_content_version,
-            p.group_row_count,p.territory_row_count,s.content_version,s.reference_content_version,
-            t.content_version
-        FROM scalar_comparison_publication p
-        JOIN table_publication s ON s.table_name='scalar_observation'
-        JOIN table_publication t ON t.table_name='territory_reference'
-        WHERE p.singleton""").fetchone()
-    if not marker or not marker[0]:
-        own = conn.execute("""SELECT content_version FROM scalar_comparison_publication
-            WHERE singleton""").fetchone()
-        if not own or not own[0]:
-            publication_unavailable(family, "Published scalar comparison is stale or incompatible")
-        dependencies = conn.execute("""SELECT s.content_version,t.content_version
-            FROM table_publication s JOIN table_publication t
-              ON t.table_name='territory_reference'
-            WHERE s.table_name='scalar_observation'""").fetchone()
-        if not dependencies or not dependencies[0] or not dependencies[1]:
+    if resource_ids is None:
+        resource_ids = [row[0] for row in _execute_comparison_publication_read(
+            conn, "SELECT indicator_id FROM scalar_resource_comparison_publication").fetchall()]
+    resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
+    publications = live_resource_publications(conn, resource_ids, family)
+    rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
+        scalar_content_version,reference_content_version,group_row_count,territory_row_count,
+        lineage_row_count FROM scalar_resource_comparison_publication
+        WHERE indicator_id=ANY(%s)""", (resource_ids,)).fetchall()
+    markers = {row[0]: row[1:] for row in rows}
+    if len(markers) != len(resource_ids):
+        publication_unavailable(family, "Published scalar comparison is stale or incompatible")
+    marker_references = {marker[2] for marker in markers.values()}
+    if len(marker_references) != 1:
+        raise HTTPException(503, "Published scalar comparison is stale or incompatible")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(marker_references)))
+    for resource_id, marker in markers.items():
+        if (not marker[0] or not marker[1] or marker[2] != reference_version
+                or publications[resource_id].reference_content_version != marker[2]
+                or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published scalar comparison is stale or incompatible")
-        raise HTTPException(503, "Published scalar comparison is stale or incompatible")
-    if (marker[1] != marker[5] or marker[2] != marker[7]
-            or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
-        raise HTTPException(503, "Published scalar comparison is stale or incompatible")
-    return marker
+    return markers
 
 
 def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
@@ -933,9 +946,11 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
     if not comparable:
         return {}
-    marker = _scalar_comparison_publication_marker(
-        conn, family=publication_family or "scalar")
     indicator_ids = [row[0] for row in comparable]
+    markers = _scalar_comparison_publication_marker(
+        conn, family=publication_family or "scalar", resource_ids=indicator_ids)
+    comparison_versions = {indicator_id: marker[0]
+                           for indicator_id, marker in markers.items()}
     selected = (_COMPARISON_RESULT_FIELDS - {"member_ranks"}) if selected_fields is None else set(selected_fields)
     groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,
         CASE WHEN %s THEN median ELSE NULL::double precision END,member_count,eligible_count,missing_count,lineage_source_count,
@@ -998,7 +1013,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             raise HTTPException(503, "Published scalar comparison result is invalid")
     sources = _published_comparison_sources(conn, family="scalar", context=context,
         group_id=group_id, cohort_type=cohort_type, facets=set(indicator_ids),
-        content_version=marker[0], expected_counts={indicator: group_by_indicator[indicator][5]
+        content_version=comparison_versions, expected_counts={indicator: group_by_indicator[indicator][5]
             for indicator in indicator_ids})
     results = {}
     for indicator_id in indicator_ids:
@@ -1118,19 +1133,19 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     milieux_marker = _milieux_reading_marker(conn) if theme_id == "milieux" else None
     if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not milieux_marker:
         raise HTTPException(404, "No published facts for this theme")
-    reference = conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-    ).fetchone()
-    if not reference or not reference[0]:
-        raise HTTPException(503, "Territory reference publication is unavailable")
+    reference_version = live_territory_reference_version(conn)
     scalar_marker = None
     if scalar_descriptors:
-        scalar_marker = conn.execute(
-            """SELECT content_version,reference_content_version FROM table_publication
-               WHERE table_name='scalar_observation'"""
-        ).fetchone()
-        if not scalar_marker or not scalar_marker[0] or scalar_marker[1] != reference[0]:
-            raise HTTPException(503, "Scalar publication is unavailable or incompatible")
+        publications = live_resource_publications(
+            conn, [row[0] for row in scalar_descriptors], "scalar",
+            reference_content_version=reference_version)
+        versions = {publication.content_version for publication in publications.values()}
+        if len(versions) != 1:
+            raise HTTPException(503, "Scalar publication versions are not uniform")
+        scalar_marker = (next(iter(versions)), reference_version)
+    profile_publications = live_resource_publications(
+        conn, [profile["indicator"] for profile in (profiles or [])], "profile",
+        reference_content_version=reference_version)
     cohort_type, members, scope = _comparison_cohort_in_snapshot(
         conn, territory_type, territory_id, selection, snapshot_state)
     if preflight_only:
@@ -1142,21 +1157,24 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             published_profile_context = (None if comparison_statistic == "mean"
                                          else fixed_context)
             if profile_coordinates:
-                profile_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
-                    t.content_version FROM table_publication p LEFT JOIN table_publication t
-                    ON t.table_name='territory_reference' WHERE p.table_name='declared_profile'""").fetchone()
-                if (not profile_marker or not profile_marker[0] or not profile_marker[1]
-                        or profile_marker[1] != profile_marker[2]):
+                if len(profile_publications) != 1:
+                    raise HTTPException(503, "Profile publication is unavailable or incompatible")
+                profile_marker = next(iter(profile_publications.values()))
+                if (not profile_marker.content_version
+                        or profile_marker.reference_content_version != reference_version):
                     raise HTTPException(503, "Profile publication is unavailable or incompatible")
             elif published_profile_context:
                 _profile_comparison_publication_marker(
-                    conn, family=publication_family or "profile")
+                    conn, family=publication_family or "profile",
+                    resource_ids=[p["indicator"] for p in profiles if not p["comparison_scalar"]])
         scalar_backed_profiles = [p for p in (profiles or []) if p["comparison_scalar"]]
         comparable_scalars = [row for row in scalar_descriptors
             if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
         if fixed_context and (comparable_scalars or scalar_backed_profiles):
+            scalar_ids = [row[0] for row in comparable_scalars] + [
+                p["comparison_scalar"] for p in scalar_backed_profiles]
             _scalar_comparison_publication_marker(
-                conn, family=publication_family or "scalar")
+                conn, family=publication_family or "scalar", resource_ids=scalar_ids)
         if include_owned_series and owned_descriptors:
             routes = [(dataset_id,theme_id,False,indicator,None)
                       for dataset_id,indicator in owned_descriptors]
@@ -1313,7 +1331,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             for dataset_id, marker in owned_markers.items()},
         "service_publication_id": None,
         "building_publication_id": None,
-        "reference_content_version": reference[0],
+        "reference_content_version": reference_version,
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
         "scope": {**scope, "member_count": len(members)} if scope else None,
@@ -1449,14 +1467,14 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
     """Read one active owned series, its focal points and named references in the caller snapshot."""
     selection = normalize_field_selection(fields, {"value", "status"})
     project_value = selection is None or "value" in selection
+    publication = live_resource_publication(conn, dataset_id, "ordered_series")
     marker = conn.execute("""SELECT content_version,reference_content_version,row_count,published_at
         FROM series_dataset_publication WHERE dataset_id=%s""", (dataset_id,)).fetchone()
     if not marker or not marker[0]:
         publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
-    reference = conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-    ).fetchone()
-    if not reference or not reference[0] or marker[1] != reference[0]:
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    if marker[1] != reference_version:
         raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
         direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind,
@@ -1576,13 +1594,14 @@ def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, i
     dataset_id, theme_id, _is_reference, owner_indicator, reference_id = route
     selection=normalize_field_selection(fields,{"value","status"})
     project_value=selection is None or "value" in selection
+    publication = live_resource_publication(conn, dataset_id, "named_reference")
     marker=conn.execute("""SELECT content_version,reference_content_version,row_count
         FROM series_dataset_publication WHERE dataset_id=%s""",(dataset_id,)).fetchone()
     if not marker or not marker[0]:
         publication_unavailable("named_reference", "Owned named-reference publication is unavailable or stale")
-    reference=conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-    if not reference or not reference[0] or marker[1]!=reference[0]:
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    if marker[1] != reference_version:
         raise HTTPException(503,"Owned named-reference publication is unavailable or stale")
     if reference_target_id is None:
         territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -1652,13 +1671,14 @@ def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, i
 
 def _owned_reference_comparison_result(conn, route, territory_type, territory_id, indicator_id, selection):
     dataset_id,theme_id,_is_reference,owner_indicator,reference_id=route
+    publication = live_resource_publication(conn, dataset_id, "named_reference")
     marker=conn.execute("""SELECT content_version,reference_content_version
         FROM series_dataset_publication WHERE dataset_id=%s""",(dataset_id,)).fetchone()
     if not marker or not marker[0]:
         publication_unavailable("named_reference", "Owned analytical-reference publication is unavailable or stale")
-    reference=conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-    if not reference or not reference[0] or marker[1]!=reference[0]:
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    if marker[1] != reference_version:
         raise HTTPException(503,"Owned analytical-reference publication is unavailable or stale")
     territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                            (territory_id,)).fetchone()
@@ -1691,15 +1711,24 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         cohort_type,members,scope)
     datasets=list(dict.fromkeys(route[0] for route in routes))
     indicators=list(dict.fromkeys(route[3] for route in routes))
-    markers=conn.execute("""SELECT p.dataset_id,p.content_version,p.reference_content_version,
-        t.content_version FROM series_dataset_publication p LEFT JOIN table_publication t
-          ON t.table_name='territory_reference' WHERE p.dataset_id=ANY(%s)""",(datasets,)).fetchall()
+    publications = live_resource_publications(conn, datasets, "ordered_series")
+    reference_versions = {publication.reference_content_version
+                          for publication in publications.values()}
+    if len(reference_versions) != 1:
+        raise HTTPException(503, "Owned-series publication is unavailable or stale")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(reference_versions)))
+    markers=conn.execute("""SELECT p.dataset_id,p.content_version,p.reference_content_version
+        FROM series_dataset_publication p WHERE p.dataset_id=ANY(%s)""",(datasets,)).fetchall()
+    markers = [(*row, reference_version) for row in markers]
     marker_by_dataset={row[0]:row for row in markers}
     if any(row[3] is None or not row[3] for row in markers):
         raise HTTPException(503,"Owned-series publication is unavailable or stale")
     if len(marker_by_dataset)!=len(datasets) or any(not row[1] for row in markers):
         publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
     if any(row[2]!=row[3] for row in markers):
+        raise HTTPException(503,"Owned-series publication is stale or unavailable")
+    if any(publications[row[0]].reference_content_version != row[2] for row in markers):
         raise HTTPException(503,"Owned-series publication is stale or unavailable")
     ids=list(dict.fromkeys([*members,territory_id]))
     descriptors=conn.execute("""SELECT d.dataset_id,d.indicator_id,d.theme_id,d.comparison_point,d.label,d.unit,
@@ -1735,12 +1764,11 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             if valid_fixed:
                 publication = _execute_comparison_publication_read(conn, """SELECT p.content_version,
                     p.ordered_series_content_version,p.reference_content_version,
-                    p.group_row_count,p.territory_row_count,s.content_version,t.content_version
+                    p.group_row_count,p.territory_row_count,s.content_version,%s AS territory_version
                     FROM ordered_series_comparison_publication p
                     JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
-                    JOIN table_publication t ON t.table_name='territory_reference'
                     WHERE p.dataset_id=%s AND p.indicator_id=%s""",
-                    (route[0], route[3])).fetchone()
+                    (route[0], route[3], reference_version)).fetchone()
                 if (not publication or not publication[0] or publication[1] != marker_by_dataset[route[0]][1]
                         or publication[2] != marker_by_dataset[route[0]][3]
                         or publication[5] != marker_by_dataset[route[0]][1]
@@ -1812,11 +1840,10 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if valid and fixed_context is not None:
             publication=_execute_comparison_publication_read(conn, """SELECT p.content_version,p.ordered_series_content_version,
                 p.reference_content_version,p.group_row_count,p.territory_row_count,
-                s.content_version,t.content_version,p.comparison_axes
+                s.content_version,%s AS territory_version,p.comparison_axes
               FROM ordered_series_comparison_publication p
               JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
-              JOIN table_publication t ON t.table_name='territory_reference'
-              WHERE p.dataset_id=%s AND p.indicator_id=%s""",(dataset_id,indicator_id)).fetchone()
+              WHERE p.dataset_id=%s AND p.indicator_id=%s""",(dataset_id,indicator_id,reference_version)).fetchone()
             if (not publication or not publication[0] or publication[1]!=content_version or
                     publication[2]!=territory_version or publication[5]!=content_version or
                     publication[6]!=territory_version or publication[3]<1 or publication[4]<1):
@@ -2067,13 +2094,10 @@ def _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_
 def _scalar_facet_snapshot(conn, territory_type, territory_id, indicator_id, fields=None, *,
                            preflight_only=False, expected_theme_id=None):
     """Read the native scalar facet without changing the ordered-series envelope."""
-    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
-        FROM table_publication p LEFT JOIN table_publication t
-          ON t.table_name='territory_reference' WHERE p.table_name='scalar_observation'""").fetchone()
-    if not marker or not marker[0]:
-        publication_unavailable("scalar", "Scalar facet publication is stale or incompatible")
-    if not marker[1] or not marker[2] or marker[1] != marker[2]:
-        raise HTTPException(503, "Scalar facet publication is stale or incompatible")
+    publication = live_resource_publication(conn, indicator_id, "scalar")
+    live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    marker = (publication.content_version, publication.reference_content_version)
     descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_id)
     territory = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                              (territory_id,)).fetchone()
@@ -2215,13 +2239,10 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                     "supported_fields": set()}
         scalar_selection = normalize_field_selection(
             fields, {"value", "support_count", "denominator_count", "status"})
-        marker = conn.execute("""SELECT scalar.content_version,scalar.reference_content_version,
-            territory.content_version FROM table_publication scalar LEFT JOIN table_publication territory
-            ON territory.table_name='territory_reference' WHERE scalar.table_name='scalar_observation'""").fetchone()
-        if not marker or not marker[0]:
-            publication_unavailable("scalar", "Scalar publication is stale or incompatible")
-        if not marker[1] or marker[1] != marker[2]:
-            raise HTTPException(503, "Scalar publication is stale or incompatible")
+        publication = live_resource_publication(conn, indicator_id, "scalar")
+        live_territory_reference_version(
+            conn, expected_content_version=publication.reference_content_version)
+        marker = (publication.content_version, publication.reference_content_version)
         descriptor = ((resource.scalar_descriptor[1],) if snapshot_state is not None else
                       conn.execute("SELECT allowed_levels FROM scalar_descriptor WHERE indicator_id=%s",
                                    (indicator_id,)).fetchone())
@@ -2258,20 +2279,10 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
         return _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, fields=fields)
     # Scalar route: focal observation only. Comparison reads use the
     # dedicated bounded theme comparison endpoint.
-    marker = conn.execute(
-        """SELECT scalar.content_version,
-                  scalar.reference_content_version,
-                  territory.content_version AS territory_version
-           FROM table_publication scalar
-           LEFT JOIN table_publication territory
-             ON territory.table_name = 'territory_reference'
-           WHERE scalar.table_name = 'scalar_observation'"""
-    ).fetchone()
-    if marker is None:
-        publication_unavailable("scalar", "Scalar publication is unavailable")
-    if (not marker[0] or not marker[0].strip() or marker[1] is None
-            or marker[2] is None or marker[1] != marker[2]):
-        raise HTTPException(503, "Scalar publication is stale or incompatible")
+    publication = live_resource_publication(conn, indicator_id, "scalar")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    marker = (publication.content_version, publication.reference_content_version, reference_version)
     scalar_columns = {"value": "o.value", "support_count": "o.support_count",
                       "denominator_count": "o.denominator_count"}
     scalar_selection = normalize_field_selection(fields, set(scalar_columns) | {"status"})
@@ -2286,7 +2297,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
     cursor = conn.execute(
         """SELECT """ + ", ".join(scalar_projection) + """,
                   d.label, d.unit, d.direction, d.comparison_facet, d.descriptor_version,
-                  p.content_version,
+                  %s AS content_version,
                   (SELECT json_agg(json_build_object('source_id', os.source_id,
                       'name', sd.name, 'vintage_id', os.vintage_id,
                       'version', sv.version, 'reference_date', sv.reference_date,
@@ -2298,10 +2309,9 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                    WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id) AS sources
            FROM scalar_observation o
            JOIN scalar_descriptor d USING (indicator_id)
-           JOIN table_publication p ON p.table_name = 'scalar_observation'
            WHERE o.indicator_id = %s AND o.territory_id = %s
              AND o.territory_type = %s AND o.territory_type = ANY(d.allowed_levels)""",
-        (indicator_id, territory_id, territory_type),
+        (publication.content_version, indicator_id, territory_id, territory_type),
     )
     row = cursor.fetchone()
     if row is None:
@@ -2320,6 +2330,7 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
     # Compatibility fallback for the legacy series_descriptor store only.
     # Current owned-series routes use _owned_series_comparison_results; do not
     # move this retired request-time path without naming a live legacy consumer.
+    publication = live_resource_publication(conn, indicator_id, "ordered_series")
     marker = conn.execute(
         """SELECT s.content_version,s.reference_content_version,t.content_version
            FROM table_publication s LEFT JOIN table_publication t
@@ -2328,7 +2339,8 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
     ).fetchone()
     if not marker or not marker[0]:
         publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
-    if not marker[1] or not marker[2] or marker[1] != marker[2]:
+    if (not marker[1] or not marker[2] or marker[1] != marker[2]
+            or publication.reference_content_version != marker[1]):
         raise HTTPException(503, "Series publication is unavailable or incompatible")
     descriptor = conn.execute(
         """SELECT comparison_point,label,unit,direction,allowed_levels,descriptor_version,
@@ -2493,7 +2505,7 @@ def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indica
         "scope": comparison["scope"], "result": result}
     if comparison["_fixed_context"] is not None:
         facet["comparison_content_version"] = _scalar_comparison_publication_marker(
-            conn, family=publication_family)[0]
+            conn, family=publication_family, resource_ids=[indicator_id])[indicator_id][0]
     return facet
 
 
@@ -2784,14 +2796,18 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
 def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, fields=None):
     selection = normalize_field_selection(fields, {"value", "status"})
     project_value = selection is None or "value" in selection
-    marker = conn.execute(
-        """SELECT s.content_version,s.reference_content_version,t.content_version
-           FROM table_publication s LEFT JOIN table_publication t ON t.table_name='territory_reference'
-           WHERE s.table_name='ordered_series'"""
+    publication = live_resource_publication(conn, indicator_id, "ordered_series")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    row = conn.execute(
+        """SELECT s.content_version,s.reference_content_version
+           FROM table_publication s WHERE s.table_name='ordered_series'"""
     ).fetchone()
+    marker = (row[0], row[1], reference_version) if row else None
     if not marker or not marker[0]:
         publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
-    if not marker[1] or not marker[2] or marker[1] != marker[2]:
+    if (not marker[1] or not marker[2] or marker[1] != marker[2]
+            or publication.reference_content_version != marker[1]):
         raise HTTPException(503, "Series publication is unavailable or incompatible")
     descriptor = conn.execute(
         """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,

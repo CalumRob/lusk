@@ -17,29 +17,29 @@ normally returns `422`; an unknown territory/resource/indicator is generally
 `404`; an absent, stale or incompatible publication dependency fails closed
 with `503`. Individual operations may have additional documented errors.
 
-A resource is declared by the producer catalogue independently of whether its
-publication is currently present. On the v1 contract a declared resource whose
-published descriptor or required publication dependency is absent fails closed
-with `503` for every intent it declares — `facts`, `fixed_comparison` and
-`selected_comparison` alike, single or batch — rather than being reported as an
-unknown identity with `404`. A v2 batch instead reports that item as
-`status: "publication_unavailable"` with a closed reason/family, while keeping
-one correlated result per item; see `batch-read-contract.md`. Unknown resource
-identities, territories and comparison members keep their existing `422`/`404`
-validation semantics, and hard validation, SQL/service, global-clock, provenance
-and snapshot failures still reject the whole request in both versions, so a
-publication gap and a malformed or unknown request are never conflated.
+A known resource whose live `resource_publication` row, published descriptor or
+required publication dependency is absent fails closed with `503` for every
+intent it declares — `facts`, `fixed_comparison` and `selected_comparison`
+alike, single or batch — rather than returning an empty successful result. A v2
+batch instead reports that item as `status: "publication_unavailable"` with a
+closed reason/family, while keeping one correlated result per item; see
+`batch-read-contract.md`. Unknown resource identities, territories and
+comparison members keep their existing `422`/`404` validation semantics, and
+hard validation, SQL/service, reference-clock, provenance and snapshot failures
+still reject the whole request in both versions, so a publication gap and a
+malformed or unknown request are never conflated.
 
-`GET /api/resources` is the producer-derived retained-resource catalogue. It
-does not connect to PostgreSQL; its inventory and logical shape declarations
-come from the pipeline's checked-in theme producer descriptors. Excluded
-legacy accessibility declarations are validated for accounting but are not
-returned. This contract describes declared resources, not whether every
-resource currently has a successful publication. Each resource's `sources`
-contains its declared native source identities, including producer-declared
-vintage IDs when one editorial source record covers multiple territorial source
-snapshots; callers bind response provenance to these identities, not to a page's
-editorial source list.
+`GET /api/resources` is the live catalogue: image-owned semantic grammar ×
+live, non-retired `resource_publication` rows × version-bound
+`resource_publication_descriptor` rows. It opens a read-only repeatable-read
+PostgreSQL snapshot. Retirement or a new publication appears on the next request
+without rebuilding the image; `theme-metadata` is not an API image input. A
+retired resource is omitted from discovery but remains admissible by name so its
+read returns the classified `503` above. Each resource's `sources` contains its
+declared native source identities, including producer-declared vintage IDs when
+one editorial source record covers multiple territorial source snapshots;
+callers bind response provenance to these identities, not to a page's editorial
+source list.
 
 Each indicator resource also returns two additive producer capabilities:
 
@@ -183,11 +183,11 @@ comparison, while any other declared point (for example `t_km_1000` or
 from its committed published cells, with the same median, direction-aware
 rank/ties, missingness, unit and lineage as an identical explicit selection.
 That request-scoped point creates no publication row. Its fail-closed authority
-is the `declared_profile` and `territory_reference` generations plus the
-cohort's per-cell provenance — not the default comparison publication
-generation: a missing/stale `profile_comparison_publication` fails the published
-default read closed while the alternate point still serves from the same
-committed cells, which is intentional. A scalar-backed profile keeps its
+is the profile's live `resource_publication` row, the `territory_reference`
+generation and the cohort's per-cell provenance — not the default comparison
+publication generation: a missing/stale `profile_resource_comparison_publication`
+fails the published default read closed while the alternate point still serves
+from the same committed cells, which is intentional. A scalar-backed profile keeps its
 linked scalar facet: `fixed_comparison` rejects its profile coordinates with
 `422`, while `selected_comparison` keeps its existing coordinate semantics.
 Fixed profile comparisons (published default or alternate declared point) also
@@ -355,7 +355,8 @@ Reports process health only; it does not certify publication readiness.
 
 ### `GET /api/resources`
 
-Returns the producer-derived catalogue without opening a database connection.
+Returns grammar × live non-retired registry rows × version-bound published
+descriptors from one read-only repeatable-read database snapshot.
 
 ### `POST /api/resources/read`
 
@@ -375,8 +376,8 @@ only a classified absent publication with `status: "publication_unavailable"`,
 Searches the retained published territory reference with bounded query inputs.
 
 - The generated inventory above is authoritative for paths, request schemas and
-  bounds. `GET /api/resources` returns the producer-derived retained catalogue;
-  it does not connect to PostgreSQL.
+  bounds. `GET /api/resources` returns the live database catalogue; the API
+  image carries semantic shape grammar, not the producer resource inventory.
 - `POST /api/resources/read` and `/api/resources/read-batch` use the same typed
   item grammar. Resource identity, target, coordinates, fields and intent are
   validated against producer declarations. Comparisons preflight the complete
@@ -447,7 +448,7 @@ Searches the retained published territory reference with bounded query inputs.
 Theme/family-specific facts and comparisons, direct indicator/profile/series
 reads, owned-dataset reads, legacy scalar-specific cohorts, building-access, essential-services,
 the legacy AEDAR GET compatibility routes, and the legacy `/api/read-batch`
-request grammar have been retired. Use the producer-derived catalogue and
+request grammar have been retired. Use the live database catalogue and
 semantic single/batch read routes for retained resources. Legacy
 building/service accessibility and Mobility snapshot-derived read models are
 excluded, not aliases for AEDAR resources. This backend change records the

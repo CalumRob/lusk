@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from api.main import get_semantic_resource_reader
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 from api import snapshot_reads
 from api.snapshot_reads import _complete_owned_mean_curve
@@ -62,6 +62,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             self.calls = []
             self.reference_version = reference_version
             self.territory_type = territory_type
+            self.registry_calls = 0
         def execute(self, sql, params=()):
             sql = " ".join(sql.split())
             self.calls.append((sql, params))
@@ -85,10 +86,14 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
                 return Cursor([])
             if "WHERE reference_indicator_id=%s LIMIT 1" in sql:
                 return Cursor([])
+            if "FROM resource_publication" in sql:
+                self.registry_calls += 1
+                version = "series-v2" if self.registry_calls == 1 else "scalar-v4"
+                return Cursor([(params[0][0], "owned_series", version, "ref-v8")])
             if "FROM series_dataset_publication WHERE dataset_id=%s" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
                                 "2026-10-01T00:00:00Z")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor([("ref-v8",)])
             if "WHERE p.table_name='scalar_observation'" in sql:
                 return Cursor([("scalar-v4", "ref-v8", "ref-v8")])
@@ -202,7 +207,11 @@ def test_owned_series_selected_comparison_uses_median_and_independent_publicatio
         def execute(self, sql, params=()):
             sql = " ".join(sql.split())
             self.calls.append((sql, params))
-            if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
+            if "FROM resource_publication" in sql:
+                return Cursor([("dvf_prix_m2", "owned_series", "owner-v17", "reference-v9")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor([("reference-v9", 1)])
+            if "FROM series_dataset_publication p WHERE" in sql:
                 return Cursor([("dvf_prix_m2", "owner-v17", "reference-v9", "reference-v9")])
             if "FROM series_dataset_descriptor d WHERE" in sql:
                 return Cursor([("dvf_prix_m2", "prix_m2", "theme", "2025", "Price", "€/m²",

@@ -368,6 +368,10 @@ splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference =
       # déclarée (profil déclaré) depuis LA MÊME sortie ; les autres formes sont
       # une identité. Aucune branche par forme, aucun identifiant en dur ici.
       descripteur <- handler$lier_dependance(descripteur, projections)
+      # La déclaration de découverte fait partie du descripteur de l'artefact :
+      # elle est donc hachée avec cette Version de ressource publiée et publiée
+      # par l'adaptateur dans la même transaction que le registre (#1140).
+      descripteur <- attacher_declaration_ressource(descripteur, id, metadata_directory)
       provenance <- projection[[handler$champ_provenance]]
       if (is.null(provenance))
         provenance <- data.frame(source_id = character(), vintage_id = character(),

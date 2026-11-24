@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.resource_catalogue import (default_resource_catalogue,
-                                    discover_indicator_resources,
-                                    validate_resource_item)
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue, discover_indicator_resources
 from api.resource_requests import ResourceReadItem
 from api import main
 
@@ -139,73 +138,31 @@ def test_retirement_receipts_outside_the_roster_do_not_break_discovery():
                for key in receipts)
 
 
-def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(monkeypatch, tmp_path):
-    """Mirror only the producer metadata COPY inputs from api/deploy/Dockerfile."""
+def test_declared_docker_payload_loads_grammar_without_theme_metadata(monkeypatch, tmp_path):
+    """The API image carries shape grammar, never the producer resource inventory."""
     root = Path(__file__).parents[2]
     source = root / "pipeline/inst/extdata"
     dockerfile = (root / "api/deploy/Dockerfile").read_text(encoding="utf-8")
-    assert "COPY pipeline/inst/extdata/theme-metadata /app/pipeline/inst/extdata/theme-metadata" in dockerfile
+    theme_copy = "COPY pipeline/inst/extdata/theme-metadata /app/pipeline/inst/extdata/theme-metadata"
+    assert theme_copy not in dockerfile
     assert "COPY pipeline/inst/extdata/semantic-resource-contracts.json /app/pipeline/inst/extdata/semantic-resource-contracts.json" in dockerfile
     assert "COPY pipeline/inst/extdata/aedar-typequ-universe.json /app/pipeline/inst/extdata/aedar-typequ-universe.json" in dockerfile
     image_payload = tmp_path / "pipeline/inst/extdata"
-    shutil.copytree(source / "theme-metadata", image_payload / "theme-metadata")
+    image_payload.mkdir(parents=True)
     shutil.copy2(source / "semantic-resource-contracts.json", image_payload)
     shutil.copy2(source / "aedar-typequ-universe.json", image_payload)
     monkeypatch.setenv("LUSK_PRODUCER_METADATA_DIR", str(image_payload))
 
-    from api.resource_catalogue import default_resource_catalogue
-    catalogue = default_resource_catalogue.__wrapped__()
-    # The full catalogue is exactly the declared payload: producer indicators,
-    # the two AEDAR semantic contracts, and the four declared typed readings.
-    indicator_catalogue = discover_indicator_resources(image_payload / "theme-metadata")
-    contracts = json.loads((image_payload / "semantic-resource-contracts.json").read_text(encoding="utf-8"))
-    theme_metadata = [json.loads(path.read_text(encoding="utf-8"))
-                      for path in sorted((image_payload / "theme-metadata").glob("theme_*.json"))]
-    declared_keys = [key for metadata in theme_metadata for key in metadata["indicator_keys"]]
-    typed_readings = [resource["resource_id"] for metadata in theme_metadata
-                      for resource in metadata.get("semantic_resources") or []]
-    # Independent of discover_indicator_resources: after #1048 slice 2 the raw
-    # producer roster carries 36 indicators (the 29 snapshot ids are audit-only
-    # receipts, no longer keys), including the #962 supply pages.
-    assert len(declared_keys) == 36
-    assert {"stations_service", "stations_service_1000", "bornes_recharge_1000"} <= set(declared_keys)
-    expected_ids = ({resource.resource_id for resource in indicator_catalogue.resources}
-                    | {resource["resource_id"] for resource in contracts["resources"]}
-                    | set(typed_readings))
-    assert len(expected_ids) == 42
-    catalogue_ids = [resource.resource_id for resource in catalogue.resources]
-    # Set equality alone would accept duplicate ids; the count guard rejects them.
-    assert len(catalogue_ids) == len(set(catalogue_ids))
-    assert set(catalogue_ids) == expected_ids
-    # In the Docker payload too, the retired receipts are tolerated but never
-    # discovered: no excluded declarations and no retired id in the resources.
-    assert catalogue.excluded == ()
-    retired_ids = _snapshot_indicator_ids()[1]
-    assert retired_ids.isdisjoint(set(catalogue_ids))
-    assert "aedar_territorial_aggregate" in catalogue.resources_by_id
-    summary = catalogue.resources_by_id["aedar_territory_summary"]
-    assert summary.resource_kind == "aedar_territory_summary"
-    assert summary.allowed_levels == ("commune", "epci", "departement", "region")
-    assert summary.axes == ("horizon", "mode", "kind") and summary.dynamic_axes == ("measure",)
-    assert summary.intents == ("facts", "fixed_comparison", "selected_comparison")
-    assert {"value", "status", "n_typequ", "n_addresses", "n_observed",
-            "coverage_status", "source_id", "vintage_id"} <= set(summary.fields)
-    typed = {resource_id: catalogue.resources_by_id[resource_id] for resource_id in (
-        "demographie_selected_reading", "economie_selected_reading",
-        "habitat_selected_reading", "milieux_selected_reading")}
-    assert all(resource.resource_kind == "typed_reading" for resource in typed.values())
-    assert all(resource.map_eligible is None and not resource.counts_available
-               for resource in typed.values())
-    assert typed["economie_selected_reading"].side_relations[0]["storage_relation"] == "economy_activity_evidence"
-    assert typed["milieux_selected_reading"].side_relations[0]["storage_relation"] == "milieux_reading_absence"
-    public_contract = next(item for item in catalogue.discovery_payload()["resources"]
-                           if item["resource_id"] == "economie_selected_reading")
-    assert "ranked_activities" in public_contract["fields"]
-    assert "storage_relation" not in public_contract
-    assert "side_relations" not in public_contract
-    assert public_contract["evidence"] == [{"field": "ranked_activities", "fields": [
-        "territory_id", "territory_type", "groupe", "rank", "activity_code",
-        "activity_label", "lq", "establishment_count", "park_share", "source_id", "vintage_id"]}]
+    from api.resource_catalogue import default_resource_grammar
+
+    grammar = default_resource_grammar.__wrapped__()
+    assert set(grammar.semantic_by_id) == {
+        "aedar_territorial_aggregate", "aedar_territory_summary"}
+    assert grammar.semantic_by_id["aedar_territorial_aggregate"]["publication_resource_id"] == "aedar"
+    assert (image_payload / "aedar-typequ-universe.json").is_file()
+    assert not (image_payload / "theme-metadata").exists()
+    with pytest.raises(ValueError, match="No producer theme metadata"):
+        default_resource_catalogue.__wrapped__()
 
 
 def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
@@ -511,7 +468,7 @@ def test_discovery_fails_closed_on_unaccounted_producer_declaration(tmp_path):
         discover_indicator_resources(tmp_path)
 
 
-def test_public_discovery_is_producer_derived_and_database_free():
+def test_legacy_public_discovery_override_is_producer_derived():
     catalogue = discover_indicator_resources(METADATA)
     main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
     try:

@@ -60,6 +60,10 @@ class ProjectionConnection:
             if "series_observation_provenance" in inner:
                 return Cursor(row=(len(MEMBERS) * len(AXES),))
             raise AssertionError(f"Unexpected bounded count: {sql}")
+        if "FROM resource_publication" in sql:
+            return Cursor(rows=[("owned-v1", "owned_series", "series-v1", "ref-v1")])
+        if "SELECT content_version" in sql and "territory_reference" in sql:
+            return Cursor(rows=[("ref-v1", 1)])
         if "SELECT d.dataset_id,d.axis_kind,d.axis_values" in sql:
             if self.stale == "descriptor_missing":
                 return Cursor()
@@ -269,7 +273,7 @@ def test_selected_comparison_keeps_the_existing_unique_commune_min_two_policy():
 def test_reader_projection_is_requested_only_and_default_reads_stay_unchanged(monkeypatch):
     """Without the opt-in field the shared reader never enters the projection."""
     from api.semantic_resource_reader import SemanticResourceReader
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     def fail_projection(*_args, **_kwargs):
         raise AssertionError("Unrequested reads must not reach the comparison projection")

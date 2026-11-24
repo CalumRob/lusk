@@ -3,6 +3,7 @@
 from fastapi import HTTPException
 
 from api.publication_outcomes import publication_unavailable
+from api.resource_publication import live_territory_reference_version
 
 
 def typed_reading_fact_fields(resource, requested_fields):
@@ -89,15 +90,18 @@ def _demographic_reading_marker(conn):
     if not conn.execute("SELECT to_regclass('demographic_typed_reading')").fetchone()[0]:
         return None
     marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
-        t.content_version,d.descriptor_version,d.source_id,sd.name,sv.vintage_id,sv.version,
+        d.descriptor_version,d.source_id,sd.name,sv.vintage_id,sv.version,
         sv.reference_date,sv.publication_date,d.rate_unit
-        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+        FROM table_publication p
         JOIN demographic_reading_descriptor d ON d.singleton
         JOIN source_dataset sd ON sd.source_id=d.source_id
         JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
         WHERE p.table_name='demographic_typed_reading'""").fetchone()
     if marker is None:
         return None
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=marker[2])
+    marker = (marker[0], marker[1], marker[2], reference_version, *marker[3:])
     if (not marker[0] or marker[1] < 1 or marker[2] != marker[3] or
             marker[0] != marker[4] or not marker[5] or not marker[7] or not marker[11]):
         raise HTTPException(503, "Demographic reading publication is unavailable or incompatible")
@@ -142,16 +146,15 @@ def _milieux_reading_marker(conn):
     """Pin the typed Milieux reading and shared territory reference in this snapshot."""
     if not conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]:
         return None
-    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version,
-        p.content_version FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+    row = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+        p.content_version FROM table_publication p
         WHERE p.table_name='milieux_typed_reading'""").fetchone()
-    if not marker:
-        reference = conn.execute(
-            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-        ).fetchone()
-        if not reference or not reference[0]:
-            raise HTTPException(503, "Milieux reading publication is unavailable")
+    if not row:
+        live_territory_reference_version(conn)
         publication_unavailable("typed_reading", "Milieux reading publication is unavailable")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=row[2])
+    marker = (row[0], row[1], row[2], reference_version, row[3])
     if not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
         raise HTTPException(503, "Milieux reading publication is unavailable or incompatible")
     absence_exists = conn.execute("SELECT to_regclass('milieux_reading_absence')").fetchone()[0]

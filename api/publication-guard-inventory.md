@@ -70,17 +70,15 @@ Boundary notes for reviewers:
 | `unavailable` | `cohort_reads.py` | `_owned_series_context` | `ordered_series` | Owned-series publication is stale or unavailable |
 | `unavailable` | `cohort_reads.py` | `_profile_context` | `profile` | Declared profile publication is unavailable |
 | `unavailable` | `cohort_reads.py` | `_profile_context` | `profile` | Declared profile publication is unavailable |
-| `unavailable` | `cohort_reads.py` | `_profile_context` | `profile` | Profile publication is unavailable or incompatible |
 | `unavailable` | `cohort_reads.py` | `_scalar_contract` | `scalar` | Declared scalar publication is unavailable |
-| `unavailable` | `cohort_reads.py` | `_scalar_contract` | `scalar` | Scalar publication is stale or incompatible |
 | `unavailable` | `cohort_reads.py` | `_typed_reading_context` | `typed_reading` | Selected-reading publication is inconsistent |
 | `unavailable` | `cohort_reads.py` | `_typed_reading_context` | `typed_reading` | Typed-reading evidence publication is unavailable or stale |
 | `unavailable` | `cohort_reads.py` | `_typed_reading_context` | `typed_reading` | Typed-reading publication is unavailable or stale |
 | `unavailable` | `observed_collections.py` | `_published_collection_comparison` | `collection` | Observed collection comparison publication is missing or incompatible |
 | `unavailable` | `observed_collections.py` | `collection_comparison_preflight` | `collection` | Observed collection comparison publication is missing or incompatible |
 | `unavailable` | `observed_collections.py` | `collection_marker` | `collection` | Observed collection publication is missing or incompatible |
-| `unavailable` | `profile_reads.py` | `focal_profiles` | `profile` | Profile publication is unavailable or incompatible |
-| `unavailable` | `profile_reads.py` | `focal_profiles` | `profile` | Profile scalar dependency is stale or incompatible |
+| `unavailable` | `resource_publication.py` | `live_resource_publications` | `?` | Resource publication is unavailable |
+| `unavailable` | `resource_publication.py` | `live_resource_publications` | `?` | Resource publication is unavailable |
 | `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `profile` | Profile coordinate descriptor is unavailable |
 | `unavailable` | `semantic_resource_reader.py` | `_coordinate_values` | `?` | Series coordinate descriptor is unavailable |
 | `unavailable` | `semantic_resource_reader.py` | `_require_dual_series_route` | `ordered_series` | Declared ordered-series facet publication is unavailable or incompatible |
@@ -102,8 +100,6 @@ Boundary notes for reviewers:
 | `unavailable` | `snapshot_reads.py` | `_indicator_comparison_snapshot` | `ordered_series` | Declared ordered-series facet publication is unavailable |
 | `unavailable` | `snapshot_reads.py` | `_indicator_comparison_snapshot` | `?` | Declared resource publication is unavailable |
 | `unavailable` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `?` | Declared resource publication is unavailable |
-| `unavailable` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `scalar` | Scalar publication is stale or incompatible |
-| `unavailable` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `scalar` | Scalar publication is unavailable |
 | `unavailable` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `ordered_series` | Series publication is unavailable or incompatible |
 | `unavailable` | `snapshot_reads.py` | `_owned_named_reference_snapshot` | `named_reference` | Owned named-reference publication is unavailable or stale |
 | `unavailable` | `snapshot_reads.py` | `_owned_reference_comparison_result` | `named_reference` | Owned analytical-reference publication is unavailable or stale |
@@ -113,13 +109,10 @@ Boundary notes for reviewers:
 | `unavailable` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `?` | Published profile comparison is stale or incompatible |
 | `unavailable` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `?` | Published scalar comparison is stale or incompatible |
 | `unavailable` | `snapshot_reads.py` | `_scalar_facet_descriptor` | `scalar` | Declared scalar facet descriptor is unavailable or incompatible |
-| `unavailable` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `scalar` | Scalar facet publication is stale or incompatible |
 | `unavailable` | `snapshot_reads.py` | `_series_comparison_snapshot` | `ordered_series` | Series publication is unavailable or incompatible |
 | `unavailable` | `typed_reading_snapshots.py` | `_milieux_reading_marker` | `typed_reading` | Milieux reading publication is unavailable |
 | `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
 | `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
-| `fatal` | `aedar_reads.py` | `_aedar_aggregate_publication_marker` | `—` | AEDAR territorial publication is unavailable or incompatible |
-| `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR comparison publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_comparison_marker` | `—` | AEDAR littoral publication is incomplete |
@@ -142,12 +135,12 @@ Boundary notes for reviewers:
 | `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
-| `fatal` | `aedar_reads.py` | `_aedar_summary_publication_marker` | `—` | AEDAR territory summary publication is unavailable or stale |
 | `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR TYPEQU metadata publication is incomplete |
 | `fatal` | `aedar_reads.py` | `_aedar_territorial_aggregate_snapshot` | `—` | AEDAR measure publication is incomplete for the requested projection |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary contains an invalid reading |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary is incomplete for the requested projection |
 | `fatal` | `aedar_reads.py` | `_aedar_territory_summary_snapshot` | `—` | AEDAR territory summary provenance is inconsistent |
+| `fatal` | `aedar_reads.py` | `aedar_publication_resource_id` | `—` | AEDAR publication resource identity is unavailable |
 | `fatal` | `cohort_reads.py` | `_aedar_cohort_marker` | `—` | AEDAR publication is inconsistent with the cohort reference |
 | `fatal` | `cohort_reads.py` | `_aedar_pin` | `—` | AEDAR publication changed within the batch snapshot |
 | `fatal` | `cohort_reads.py` | `_aedar_summary_cohort_values` | `—` | AEDAR territory cohort contains an invalid reading |
@@ -168,13 +161,10 @@ Boundary notes for reviewers:
 | `fatal` | `cohort_reads.py` | `_profile_context` | `—` | Profile detail units are unavailable |
 | `fatal` | `cohort_reads.py` | `_profile_context` | `—` | Profile detail units are unavailable |
 | `fatal` | `cohort_reads.py` | `_profile_context` | `—` | Profile publication is unavailable or incompatible |
-| `fatal` | `cohort_reads.py` | `_scalar_contract` | `—` | Scalar publication is stale or incompatible |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Selected-reading publication is inconsistent |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading evidence publication is incompatible |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading evidence publication is unavailable or stale |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading evidence storage is unavailable |
-| `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading publication is unavailable or stale |
-| `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading publication is unavailable or stale |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading publication is unavailable or stale |
 | `fatal` | `cohort_reads.py` | `_typed_reading_context` | `—` | Typed-reading storage is unavailable |
 | `fatal` | `cohort_reads.py` | `preflight_cohort` | `—` | Cohort facts are unavailable for this published resource shape |
@@ -203,7 +193,6 @@ Boundary notes for reviewers:
 | `fatal` | `cohort_reads.py` | `read_typed_reading_cohort` | `—` | Typed-reading evidence provenance is unavailable |
 | `fatal` | `cohort_reads.py` | `read_typed_reading_cohort` | `—` | Typed-reading source differs from its published descriptor |
 | `fatal` | `cohort_reads.py` | `read_typed_reading_cohort` | `—` | Typed-reading source provenance is unavailable |
-| `fatal` | `cohort_reads.py` | `resolve_territory_cohort` | `—` | Territory reference publication is unavailable |
 | `fatal` | `cohort_reads.py` | `validate_typed_reading_integrity.checked_count` | `—` | Typed-reading publication row count is inconsistent |
 | `fatal` | `main.py` | `pool` | `—` | DATABASE_URL is not configured |
 | `fatal` | `observed_collections.py` | `_published_collection_comparison` | `—` | Observed collection comparison lineage is not complete |
@@ -226,11 +215,17 @@ Boundary notes for reviewers:
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile detail units are unavailable |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication is incomplete |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication is unavailable or incompatible |
+| `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication versions are not uniform |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile scalar dependency is stale or incompatible |
-| `fatal` | `repository.py` | `search_territories` | `—` | No territory reference has been published |
+| `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile scalar dependency is stale or incompatible |
 | `fatal` | `repository.py` | `search_territories` | `—` | Territory reference exceeds search scan bound |
+| `fatal` | `resource_catalogue.py` | `database_resource_catalogue` | `—` | Published resource descriptor is invalid |
+| `fatal` | `resource_catalogue.py` | `database_resource_catalogue` | `—` | Resource publication catalogue is unavailable |
 | `fatal` | `resource_execution.py` | `_read_snapshot` | `—` | Resource admission returned an invalid work estimate |
 | `fatal` | `resource_execution.py` | `_read_snapshot` | `—` | Resource preflight returned an invalid work estimate |
+| `fatal` | `resource_publication.py` | `live_resource_publications` | `—` | Resource publication is stale or incompatible |
+| `fatal` | `resource_publication.py` | `live_territory_reference_version` | `—` | Territory reference publication is stale or incompatible |
+| `fatal` | `resource_publication.py` | `live_territory_reference_version` | `—` | Territory reference publication is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `_coordinate_values` | `—` | Series coordinate descriptor is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `_filter_coordinates` | `—` | Published resource does not expose its declared coordinate rows |
 | `fatal` | `semantic_resource_reader.py` | `_require_dual_series_route` | `—` | Declared ordered-series facet publication is unavailable or incompatible |
@@ -238,15 +233,12 @@ Boundary notes for reviewers:
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `—` | Typed-reading evidence publication is incompatible |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `—` | Typed-reading evidence publication is stale |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `—` | Typed-reading evidence publication is unavailable or stale |
-| `fatal` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `—` | Typed-reading publication is unavailable or stale |
-| `fatal` | `semantic_resource_reader.py` | `_typed_reading_preflight` | `—` | Typed-reading publication is unavailable or stale |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_read` | `—` | Milieux reading is missing or overlaps its source-absence evidence |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_read` | `—` | Typed-reading evidence provenance is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_read` | `—` | Typed-reading publication is unavailable or stale |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_read` | `—` | Typed-reading source differs from its published descriptor |
 | `fatal` | `semantic_resource_reader.py` | `_typed_reading_read` | `—` | Typed-reading source provenance is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `admit` | `—` | Required publication storage relation is unavailable |
-| `fatal` | `semantic_resource_reader.py` | `admit` | `—` | Territory reference publication is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `preflight` | `—` | Named reference publication is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `read` | `—` | Declared profile publication is unavailable |
 | `fatal` | `semantic_resource_reader.py` | `read` | `—` | Named reference publication is unavailable |
@@ -285,8 +277,6 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_indicator_comparison_snapshot` | `—` | Indicator theme metadata is unavailable |
 | `fatal` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `—` | Indicator has ambiguous collection/storage declarations |
 | `fatal` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `—` | Indicator has ambiguous published storage shapes |
-| `fatal` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `—` | Scalar publication is stale or incompatible |
-| `fatal` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `—` | Scalar publication is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_indicator_facts_snapshot` | `—` | Series publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_owned_named_reference_snapshot` | `—` | Analytical-reference provenance is incomplete |
 | `fatal` | `snapshot_reads.py` | `_owned_named_reference_snapshot` | `—` | Owned analytical-reference route is unavailable |
@@ -312,6 +302,8 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series focal comparison result is incomplete or invalid |
 | `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series publication is stale or unavailable |
 | `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series publication is stale or unavailable |
+| `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series publication is stale or unavailable |
+| `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series publication is unavailable or stale |
 | `fatal` | `snapshot_reads.py` | `_owned_series_comparison_results` | `—` | Owned-series publication is unavailable or stale |
 | `fatal` | `snapshot_reads.py` | `_owned_series_context` | `—` | Series context parent reference is ambiguous |
 | `fatal` | `snapshot_reads.py` | `_owned_series_route` | `—` | Indicator has ambiguous active owned-series routes |
@@ -325,7 +317,6 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_owned_series_snapshot` | `—` | Required owned named reference is empty |
 | `fatal` | `snapshot_reads.py` | `_owned_series_snapshot` | `—` | Required owned named reference is incomplete |
 | `fatal` | `snapshot_reads.py` | `_owned_series_snapshot.lineage` | `—` | Owned series provenance is incomplete |
-| `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is unavailable |
@@ -358,7 +349,6 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_published_scalar_comparison_results` | `—` | Published scalar comparison result is invalid |
 | `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is stale or incompatible |
-| `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is unavailable |
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_comparison_preflight` | `—` | Declared scalar facet comparison is incompatible |
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_comparison_preflight` | `—` | Published scalar facet comparison is incomplete |
@@ -369,13 +359,12 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `—` | Dense scalar facet observation is missing |
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `—` | Scalar facet observation provenance is incomplete |
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `—` | Scalar facet observation provenance is incomplete |
-| `fatal` | `snapshot_reads.py` | `_scalar_facet_snapshot` | `—` | Scalar facet publication is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_series_comparison_snapshot` | `—` | Series comparison point is not a declared axis |
 | `fatal` | `snapshot_reads.py` | `_series_comparison_snapshot` | `—` | Series publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
+| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Published scalar comparison omits a declared indicator |
-| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Scalar publication is unavailable or incompatible |
-| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Territory reference publication is unavailable |
+| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Scalar publication versions are not uniform |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Demographic cloud reading identity is ambiguous or absent |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Selected demographic cloud facts are unavailable or incompatible |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Selected demographic cloud members have missing reading facts |
@@ -388,7 +377,6 @@ Boundary notes for reviewers:
 | `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_cloud` | `—` | Milieux source-absence publication is stale or incomplete |
 | `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_cloud` | `—` | Selected Milieux cloud members have missing reading facts |
 | `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_cloud` | `—` | Selected Milieux members have undeclared or invalid reading absence |
-| `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_marker` | `—` | Milieux reading publication is unavailable |
 | `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_marker` | `—` | Milieux reading publication is unavailable or incompatible |
 | `fatal` | `typed_reading_snapshots.py` | `_milieux_reading_marker` | `—` | Milieux source-absence publication is stale or incompatible |
 | `fatal` | `typed_reading_snapshots.py` | `typed_reading_descriptor` | `—` | Demographic reading descriptor is unavailable or stale |

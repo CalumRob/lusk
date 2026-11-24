@@ -241,6 +241,8 @@ def test_explicit_mean_never_reads_the_published_fixed_projection(monkeypatch):
                 return Cursor(rows=[])
             if "to_regclass('series_dataset_descriptor')" in sql:
                 return Cursor(row=(None,))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[(params[0][0], "declared_profile", "profile-v1", "ref-v1")])
             if "table_name='territory_reference'" in sql:
                 return Cursor(row=("ref-v1",))
             raise AssertionError(sql)

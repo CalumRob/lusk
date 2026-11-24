@@ -11,7 +11,9 @@ from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_c
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
 from api.publication_outcomes import family_for_resource, publication_unavailable
-from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
+from api.resource_catalogue import (ResourceCatalogue, database_resource_catalogue,
+                                     default_resource_grammar)
+from api.resource_publication import live_territory_reference_version
 
 
 class SemanticResourceReader:
@@ -182,7 +184,7 @@ class SemanticResourceReader:
         request-local cache reuses that resolution for the same cohort target.
         v1 never calls this method.
         """
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         identities = []
         cohort_targets = {}
         relation_groups = []
@@ -221,11 +223,7 @@ class SemanticResourceReader:
             if not any(seen_relations[relation] for relation in group):
                 raise HTTPException(503, "Required publication storage relation is unavailable")
         if needs_reference:
-            reference = conn.execute(
-                "SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'"
-            ).fetchone()
-            if (not reference or not reference[0] or int(reference[1]) < 1):
-                raise HTTPException(503, "Territory reference publication is unavailable")
+            live_territory_reference_version(conn)
         if identities:
             ids = sorted({identity for identity, _type, _role in identities})
             rows = conn.execute(
@@ -367,7 +365,7 @@ class SemanticResourceReader:
 
     def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None,
                    *, work_budget: int = 200_000, snapshot_state=None) -> int:
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
@@ -610,7 +608,7 @@ class SemanticResourceReader:
         return None
 
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
@@ -748,14 +746,10 @@ class SemanticResourceReader:
             raise HTTPException(422, "Territory target type does not match")
         marker = conn.execute("""SELECT content_version,row_count,reference_content_version
             FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
-        reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
         if not marker or not marker[0]:
             publication_unavailable("typed_reading",
                 "Typed-reading publication is unavailable or stale")
-        if not reference or not reference[0]:
-            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
-        if marker[2] != reference[0]:
-            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        live_territory_reference_version(conn, expected_content_version=marker[2])
         if resource.publication_table == "selected_reading":
             owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
                 FROM selected_reading_publication WHERE theme_id=%s""",
@@ -784,7 +778,7 @@ class SemanticResourceReader:
             if not side_marker or not side_marker[0]:
                 publication_unavailable("typed_reading",
                     "Typed-reading evidence publication is unavailable or stale")
-            if side_marker[1] != reference[0]:
+            if side_marker[1] != marker[2]:
                 raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
             if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")

@@ -507,6 +507,28 @@ $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='apply-profile-db', stop_on_failure=TRUE)"
 ```
 
+### Per-resource API readers and database discovery (#1140)
+
+`test_resource_descriptor_migration.py` rehearses additive migration 048 on a
+populated registry, proves the old registry/global marker rows survive, checks
+descriptor object/FK behaviour and replay, and compares the new relation and
+index with a fresh `schema.sql`. `test_per_resource_publication_http.py` uses a
+fresh random schema and documented SQL fixtures to exercise the real read-role
+SQL/HTTP path: scalar and profile reads use their resource versions while old
+global markers remain; publishing B does not stale A; retirement disappears
+from `/api/resources` and returns typed `503` (including a v2 item outcome); a
+new registry descriptor appears without an image change; and a grammar-known
+resource with no registry row fails closed rather than being reported unknown.
+Both proofs hold `Local\LuskIntegrationContractDb`, verify the exact documented
+database/roles before DDL, require the cleanup opt-in, create only their own
+schemas and drop them in `finally`. Without guarded DSNs they skip before any
+connection.
+
+```powershell
+python -m pytest api/tests/integration/test_resource_descriptor_migration.py -q
+python -m pytest api/tests/integration/test_per_resource_publication_http.py -q
+```
+
 ### Owned series, observed collection and AEDAR adapters (#1139)
 
 The companion shape-adapter proof (`pipeline/tests/testthat/test-apply-shapes-db.R`,

@@ -2,6 +2,8 @@
 from fastapi import HTTPException
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
+from api.resource_publication import (live_resource_publications,
+                                       live_territory_reference_version)
 
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True,
@@ -15,33 +17,47 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         ORDER BY indicator_id""", (theme_id, theme_id, indicator_id, indicator_id, territory_type)).fetchall()
     if not descriptors:
         return [], None
-    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
-        FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
-        WHERE p.table_name='declared_profile'""").fetchone()
-    if not marker or not marker[0]:
-        publication_unavailable("profile", "Profile publication is unavailable or incompatible")
-    if not marker[1] or not marker[2] or marker[1] != marker[2]:
+    publications = live_resource_publications(
+        conn, [d[0] for d in descriptors], "profile")
+    reference_versions = {publication.reference_content_version
+                          for publication in publications.values()}
+    if len(reference_versions) != 1:
         raise HTTPException(503, 'Profile publication is unavailable or incompatible')
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(reference_versions)))
+    versions = {publication.content_version for publication in publications.values()}
+    if len(versions) != 1:
+        raise HTTPException(503, 'Profile publication versions are not uniform')
+    version = next(iter(versions))
+    marker = (version, reference_version)
     dependencies = [d[8] for d in descriptors if d[8] is not None]
     if dependencies:
-        scalar_marker = conn.execute("""SELECT content_version,reference_content_version
-            FROM table_publication WHERE table_name='scalar_observation'""").fetchone()
-        if not scalar_marker or not scalar_marker[0]:
-            publication_unavailable("profile", "Profile scalar dependency is stale or incompatible")
+        scalar_publications = live_resource_publications(
+            conn, dependencies, "profile", reference_content_version=reference_version)
+        try:
+            scalar_markers = {row[0]: row[1] for row in conn.execute(
+                """SELECT indicator_id,scalar_content_version
+                   FROM scalar_resource_comparison_publication
+                   WHERE indicator_id=ANY(%s)""", (dependencies,)).fetchall()}
+        except Exception as error:
+            if getattr(error, "sqlstate", None) in ("42P01", "42703"):
+                raise HTTPException(503, 'Profile scalar dependency is stale or incompatible') from error
+            raise
         scalar_descriptors = {r[0]: r[1:] for r in conn.execute("""SELECT indicator_id,unit,direction,
             allowed_levels,comparison_facet FROM scalar_descriptor WHERE indicator_id=ANY(%s)""", (dependencies,)).fetchall()}
         for d in descriptors:
             if d[8] is None:
                 continue
             facet = scalar_descriptors.get(d[8])
-            if (scalar_marker[0] != d[9] or scalar_marker[1] != marker[2]
+            if (scalar_markers.get(d[8]) != d[9]
+                    or scalar_publications[d[8]].reference_content_version != reference_version
                     or not facet or facet[0] != d[2] or facet[1] != d[7]
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')
     if not include_cells:
         return [{'indicator': d[0], 'comparison_scalar': d[8],
-                 'reference_content_version': marker[1]} for d in descriptors
-                if include_all_descriptors or d[8]], marker[0]
+                 'reference_content_version': publications[d[0]].reference_content_version}
+                for d in descriptors if include_all_descriptors or d[8]], version
     ids = [d[0] for d in descriptors]
     axes_by_id = {}
     for row in conn.execute("""SELECT indicator_id,axis_name,axis_key,label,ordinal,unit FROM profile_axis
@@ -104,7 +120,8 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                 cell['value'] = cells[(detail,sex)][2]
             cell_results.append(cell)
         profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
-            'content_version': marker[0], 'reference_content_version': marker[1],
+            'content_version': publications[d[0]].content_version,
+            'reference_content_version': publications[d[0]].reference_content_version,
             'comparison_scalar': d[8], 'required_scalar_version': d[9],
             'allowed_levels': d[3],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7], 'unit': comparison_unit},

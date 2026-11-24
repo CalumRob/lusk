@@ -23,7 +23,7 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
     psycopg = pytest.importorskip("psycopg")
     from fastapi.testclient import TestClient
     from api.main import ReadRepository, app, get_repository, get_resource_catalogue, pool
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     root = Path(__file__).resolve().parents[3]
     schema = "it_" + uuid.uuid4().hex[:20]

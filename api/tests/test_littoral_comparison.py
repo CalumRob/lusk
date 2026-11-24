@@ -167,11 +167,15 @@ def test_littoral_fixed_context_reads_published_group_without_peer_facts():
 
     class PublishedConnection:
         def execute(self, sql, params=None):
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
-                return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 2,
-                    "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[("population", "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
+                return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
+                    "scalar-v1", "reference-v1", "reference-v1")])
             if "FROM scalar_comparison_group" in sql:
                 assert params[1] == "littoral" and params[2] == "C"
                 return Cursor(rows=[("population", "median", 5.0, 2, 2, 0, 1, True)])
@@ -204,14 +208,18 @@ def test_absent_littoral_publication_fails_closed_without_borrowed_statistics(ab
 
         def execute(self, sql, params=None):
             self.sql.append((sql, params))
-            if "to_regclass('scalar_comparison_publication')" in sql:
+            if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
-            if "FROM scalar_comparison_publication p" in sql:
+            if "FROM resource_publication" in sql:
+                return Cursor(rows=[("population", "scalar", "scalar-v1", "reference-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("reference-v1",))
+            if "FROM scalar_resource_comparison_publication" in sql:
                 marker = ["comparison-v1", "scalar-v1", "reference-v1", 1, 2,
                           "scalar-v1", "reference-v1", "reference-v1"]
                 if absence == "stale_generation":
-                    marker[1] = "older-scalar-generation"
-                return Cursor(tuple(marker))
+                    marker[2] = "older-reference-generation"
+                return Cursor(rows=[("population", *marker)])
             if "FROM scalar_comparison_group" in sql:
                 assert params[1] == "littoral" and params[2] == "C"
                 return Cursor(rows=[] if absence == "missing_group" else [
@@ -229,7 +237,9 @@ def test_absent_littoral_publication_fails_closed_without_borrowed_statistics(ab
             "commune", ("c1", "c2"), "c1",
         )
     assert raised.value.status_code == 503
-    assert "scalar comparison" in raised.value.detail.lower()
+    expected = ("territory reference publication" if absence == "stale_generation"
+                else "scalar comparison")
+    assert expected in raised.value.detail.lower()
     # Every published read was addressed at the littoral context only: no
     # density/Bretagne group or focal statistic was fetched as a substitute.
     assert connection.sql

@@ -23,6 +23,7 @@ DYNAMIC_FAMILY_GUARDS = {
     ("snapshot_reads.py", "_profile_comparison_publication_marker"),
     ("snapshot_reads.py", "_scalar_comparison_publication_marker"),
     ("semantic_resource_reader.py", "_coordinate_values"),
+    ("resource_publication.py", "live_resource_publications"),
 }
 
 

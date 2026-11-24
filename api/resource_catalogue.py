@@ -1,8 +1,8 @@
-"""Producer-derived semantic resource metadata for API discovery.
+"""Semantic resource grammar and database-backed API discovery.
 
-The theme metadata files are the pipeline's producer declarations.  This module
-projects their declared serving shapes; it does not maintain an API-side list of
-indicator IDs or physical table names.
+The pipeline publishes producer declarations with each resource version. This
+module projects those declarations and the image-owned shape grammar; it never
+reads theme metadata files or maintains an API-side resource inventory.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -11,6 +11,8 @@ import itertools
 import json
 import os
 from pathlib import Path
+
+from fastapi import HTTPException
 
 
 # Producer-owned serving disposition (#1048): retired ids stay in the metadata
@@ -70,10 +72,14 @@ class ResourceCatalogue:
     declarations: tuple[IndicatorDeclaration, ...]
     resources: tuple[IndicatorResource, ...]
     excluded: tuple[IndicatorDeclaration, ...]
+    # DB discovery may hide a retired/stale resource while reads must still
+    # admit its known identity so the registry guard can return typed 503.
+    admission_resources: tuple[IndicatorResource, ...] | None = None
 
     @property
     def resources_by_id(self) -> dict[str, IndicatorResource]:
-        return {resource.resource_id: resource for resource in self.resources}
+        admitted = self.resources if self.admission_resources is None else self.admission_resources
+        return {resource.resource_id: resource for resource in admitted}
 
     def discovery_payload(self) -> dict:
         """Public, bounded description of producer-declared retained resources."""
@@ -94,12 +100,36 @@ class ResourceCatalogue:
         }
 
 
+@dataclass(frozen=True)
+class ResourceGrammar:
+    """Image-owned shape grammar; resource identities come from the database."""
+
+    contract_path: Path
+    contract: dict
+
+    @property
+    def semantic_by_id(self):
+        return {declaration["resource_id"]: declaration
+                for declaration in self.contract.get("resources", ())}
+
+
 @lru_cache(maxsize=1)
-def default_resource_catalogue() -> ResourceCatalogue:
+def default_resource_grammar() -> ResourceGrammar:
     root = Path(__file__).resolve().parents[1]
     producer = Path(os.environ.get("LUSK_PRODUCER_METADATA_DIR", root / "pipeline" / "inst" / "extdata"))
-    metadata = producer / "theme-metadata"
-    return discover_indicator_resources(metadata, producer / "semantic-resource-contracts.json")
+    path = producer / "semantic-resource-contracts.json"
+    contract = json.loads(path.read_text(encoding="utf-8"))
+    if contract.get("contract") != "producer-semantic-resources-v1":
+        raise ValueError("Invalid producer semantic resource contract")
+    declarations = contract.get("resources")
+    if not isinstance(declarations, list):
+        raise ValueError("Invalid producer semantic resource declarations")
+    ids = [declaration.get("resource_id") for declaration in declarations]
+    if any(not isinstance(resource_id, str) or not resource_id for resource_id in ids):
+        raise ValueError("Invalid producer semantic resource identity")
+    if len(ids) != len(set(ids)):
+        raise ValueError("Duplicate producer semantic resource identity")
+    return ResourceGrammar(path, contract)
 
 
 _SHAPE_DECLARATIONS = (
@@ -607,7 +637,7 @@ def _validate_aedar_address(resource, coordinates, intent_kind):
 
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
-    resources = {resource.resource_id: resource for resource in catalogue.resources}
+    resources = catalogue.resources_by_id
     resource = resources.get(item.resource)
     if resource is None:
         raise ValueError("unknown semantic resource")
@@ -753,26 +783,21 @@ def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
     return facets
 
 
-def discover_indicator_resources(metadata_directory: str | Path,
-                                 semantic_contract_path: str | Path | None = None) -> ResourceCatalogue:
-    """Validate and project all theme-scoped indicator declarations.
-
-    A retained indicator must be covered by at least one producer-declared
-    serving shape and a page descriptor. Explicitly excluded legacy source
-    declarations stay visible in the audit result but never enter discovery.
-    """
+def project_resource_catalogue(metadata_by_theme: dict,
+                               semantic_contract_path: str | Path | None = None) -> ResourceCatalogue:
+    """Project already-published producer declarations; never read metadata files."""
     declarations = []
     resources = []
     by_key = {}
-    metadata_files = sorted(Path(metadata_directory).glob("theme_*.json"))
-    if not metadata_files:
-        raise ValueError("No producer theme metadata files found")
+    loaded_metadata = [(f"{theme}.json", metadata)
+                       for theme, metadata in metadata_by_theme.items()]
+    if not loaded_metadata and semantic_contract_path is None:
+        raise ValueError("No producer resource descriptors found")
 
-    for path in metadata_files:
-        metadata = json.loads(path.read_text(encoding="utf-8"))
+    for name, metadata in loaded_metadata:
         theme_id = metadata.get("theme")
         if not isinstance(theme_id, str) or not theme_id:
-            raise ValueError(f"{path.name}: missing producer theme identity")
+            raise ValueError(f"{name}: missing producer theme identity")
         source_records = metadata.get("source_records") or {}
         source_map = metadata.get("sources") or {}
         pages = metadata.get("indicator_pages") or {}
@@ -884,8 +909,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
 
     # A source-declared key cannot silently disappear because another map was
     # edited independently. The inventory is exact at (theme, indicator) grain.
-    for path in metadata_files:
-        metadata = json.loads(path.read_text(encoding="utf-8"))
+    for _name, metadata in loaded_metadata:
         for indicator_id in metadata.get("sources", {}):
             if (metadata["theme"], indicator_id) not in by_key:
                 raise ValueError(f"unaccounted producer indicator source: {metadata['theme']}/{indicator_id}")
@@ -899,10 +923,9 @@ def discover_indicator_resources(metadata_directory: str | Path,
         cellule_declarations = contract.get("cellule_declarations") or {}
         _aedar_families_disjoint(cellule_declarations)
         semantic_declarations = list(contract.get("resources", []))
-        metadata_by_theme = {}
-        for path in metadata_files:
-            theme_metadata = json.loads(path.read_text(encoding="utf-8"))
-            metadata_by_theme[theme_metadata["theme"]] = theme_metadata
+        semantic_metadata = {}
+        for _name, theme_metadata in loaded_metadata:
+            semantic_metadata[theme_metadata["theme"]] = theme_metadata
             for declaration in theme_metadata.get("semantic_resources", []):
                 semantic_declarations.append({**declaration, "theme_id": theme_metadata["theme"]})
         for declaration in semantic_declarations:
@@ -910,7 +933,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
             kind = declaration["kind"]
             axes = tuple(declaration.get("axes", ()))
             theme_id = declaration.get("theme_id", "")
-            theme_metadata = metadata_by_theme.get(theme_id, {})
+            theme_metadata = semantic_metadata.get(theme_id, {})
             groups = tuple(declaration.get("groups", ()))
             if kind == "typed_reading":
                 axes = ("groupe",)
@@ -989,3 +1012,91 @@ def discover_indicator_resources(metadata_directory: str | Path,
     excluded = tuple(item for item in declarations
                      if item.disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY)
     return ResourceCatalogue(tuple(declarations), tuple(resources), excluded)
+
+
+def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatalogue:
+    """Intersect image grammar, live registry rows and version-bound descriptors.
+
+    One storage resource may project more than one grammar identity (AEDAR's
+    aggregate and summary); that mapping is declared by the grammar, never by an
+    API literal. Retirement and descriptor-version mismatch disappear on the
+    next request without rebuilding the image.
+    """
+    try:
+        rows = conn.execute(
+            """SELECT p.resource_id,p.content_version,d.resource_id,d.descriptor,
+                      COALESCE(p.content_version=d.content_version AND NOT p.retired,false) AS live
+               FROM resource_publication_descriptor d
+               LEFT JOIN resource_publication p
+                 ON d.publication_resource_id=p.resource_id
+                AND d.content_version=p.content_version
+               ORDER BY p.resource_id,d.resource_id"""
+        ).fetchall()
+    except Exception as error:
+        if getattr(error, "sqlstate", None) in ("42P01", "42703"):
+            raise HTTPException(503, "Resource publication catalogue is unavailable") from error
+        raise
+
+    semantic_by_id = grammar.semantic_by_id
+    resources = []
+    declarations = []
+    admission = []
+    seen_live = set()
+    seen_admission = set()
+    semantic_projection = None
+    try:
+        # Grammar identities remain admissible even when their registry row is
+        # absent, so a named read reaches the typed registry 503. They are not
+        # discovered until a live version-bound descriptor exists.
+        semantic_projection = project_resource_catalogue({}, grammar.contract_path)
+        admission.extend(semantic_projection.resources)
+        seen_admission.update(resource.resource_id for resource in admission)
+        for publication_id, content_version, resource_id, raw_descriptor, live in rows:
+            descriptor = (json.loads(raw_descriptor)
+                          if isinstance(raw_descriptor, str) else raw_descriptor)
+            if not isinstance(descriptor, dict):
+                raise ValueError("published resource descriptor must be an object")
+            kind = descriptor.get("kind")
+            if resource_id in semantic_by_id:
+                expected = semantic_by_id[resource_id]
+                if (kind != expected.get("kind") or
+                        expected.get("publication_resource_id", resource_id) != publication_id):
+                    raise ValueError(f"published semantic descriptor disagrees with grammar: {resource_id}")
+                matches = [resource for resource in semantic_projection.resources
+                           if resource.resource_id == resource_id]
+                if len(matches) != 1:
+                    raise ValueError(f"published semantic descriptor is not projectable: {resource_id}")
+                resource = matches[0]
+            elif kind == "indicator":
+                metadata = descriptor.get("metadata")
+                if not isinstance(metadata, dict):
+                    raise ValueError("indicator discovery metadata is missing")
+                projected = project_resource_catalogue({metadata["theme"]: metadata})
+                matches = [item for item in projected.resources
+                           if item.resource_id == resource_id]
+                if len(matches) != 1:
+                    raise ValueError(f"published indicator descriptor is not projectable: {resource_id}")
+                if resource_id != publication_id:
+                    route = (metadata.get("owned_series_routes") or {}).get(publication_id)
+                    if (not isinstance(route, dict) or not route.get("reference_read_route")
+                            or route.get("reference_indicator") != resource_id):
+                        raise ValueError(f"published indicator descriptor disagrees with registry: {resource_id}")
+                resource = matches[0]
+                declarations.extend(projected.declarations)
+            else:
+                raise ValueError(f"published resource shape is not registered: {resource_id}")
+            if not content_version:
+                raise ValueError("published resource descriptor has no content version")
+            if resource_id not in seen_admission:
+                admission.append(resource)
+                seen_admission.add(resource_id)
+            if live and resource_id not in seen_live:
+                resources.append(resource)
+                seen_live.add(resource_id)
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(503, "Published resource descriptor is invalid") from error
+
+    resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
+    admission.sort(key=lambda item: (item.theme_id, item.indicator_id))
+    return ResourceCatalogue(tuple(declarations), tuple(resources), (),
+                             admission_resources=tuple(admission))

@@ -37,9 +37,9 @@ marker, constraint or grant**:
 
 **Expand-phase coexistence.** `table_publication['scalar_observation']` and the
 `scalar_comparison_publication` singleton are deliberately LEFT IN PLACE and
-are **not** written by `apply` in this step: the current API keeps reading them
-until the reader cutover in step 4 (#1140). Migration 047 (contract) removes the
-global markers and typed-reading tables in a separate owner-approved window.
+are **not** written by `apply`. The #1140 API reads the registry and per-resource
+markers instead; the later contract migration (#1141) removes the global
+markers and typed-reading tables in a separate owner-approved window.
 `schema.sql` carries the same contract for fresh installs; the fast DB-free
 contract is `api/tests/test_resource_publication_migration_contract.py`, and the
 guarded, non-retained populated-upgrade rehearsal is
@@ -58,8 +58,8 @@ remain keyed by `indicator_id`; only the global clock gains a per-resource form.
 
 **Expand-phase coexistence.** `table_publication['declared_profile']` and the
 `profile_comparison_publication` singleton are deliberately LEFT IN PLACE and
-are **not** written by the declared-profile shape adapter in this step: the
-current API keeps reading them until the reader cutover in step 4 (#1140).
+are **not** written by the declared-profile shape adapter. The #1140 API reads
+the registry and per-resource markers instead.
 `schema.sql` carries the same contract for fresh installs; the fast DB-free
 contract is
 `api/tests/test_profile_resource_comparison_migration_contract.py`, and the
@@ -68,7 +68,28 @@ guarded, non-retained populated-upgrade rehearsal is
 schemas, mutex, runtime identity checks, cleanup opt-in; skips without the
 `lusk_it_contract` DSNs). Applying this DDL alone publishes nothing; no worker
 applies it to a serving database. The later contract migration (#1141) takes the
-next free number.
+next free number after 048.
+
+## Migration 048 (#1140) — version-bound resource discovery descriptors (additive)
+
+`048_resource_publication_descriptor.sql` adds
+`resource_publication_descriptor(resource_id, publication_resource_id,
+content_version, descriptor, published_at)`. Shape adapters write the producer
+declaration in the same transaction as the registry row. `resource_id` is the
+semantic API identity; `publication_resource_id` binds it to the storage
+resource (the two AEDAR grammar identities share the aggregate's publication).
+The API joins on both publication identity and content version and excludes
+retired rows, so a stale descriptor cannot advertise a newer resource version.
+
+The migration changes no existing row, global marker, serving descriptor,
+constraint or grant. `schema.sql` carries the fresh-install contract. The fast
+DB-free parity contract is
+`api/tests/test_resource_descriptor_migration_contract.py`; the guarded
+non-retained rehearsal is
+`api/tests/integration/test_resource_descriptor_migration.py` (own random
+schemas, mutex, exact test database/role checks, cleanup opt-in; skips without
+the guarded DSNs). Applying this DDL alone publishes no descriptor. No worker
+applies it to a serving database.
 
 ## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
 

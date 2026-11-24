@@ -16,9 +16,12 @@ from fastapi.testclient import TestClient
 
 from api.aedar_models import AEDAR_SUMMARY_FAMILY, AEDAR_PER_CELL_FAMILY
 from api.publication_outcomes import PublicationUnavailable
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 from api.semantic_resource_reader import SemanticResourceReader
+
+pytestmark = pytest.mark.usefixtures("legacy_resource_catalogue")
 
 AGGREGATE = "aedar_territorial_aggregate"
 SUMMARY = "aedar_territory_summary"
@@ -95,13 +98,15 @@ class _Conn:
             return None
         if "SELECT to_regclass(%s)" in s:
             return _Rows([], [(True,)])
+        if "FROM resource_publication" in s:
+            return _Rows([], [("aedar", "aedar", "aedar-v1", self.ref_version)])
         if "SELECT content_version,row_count FROM table_publication" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version, self.ref_count)])
         if "SELECT territory_id,territory_type,name FROM territory_reference" in s:
             territory_type, limit = params[0], params[-1]
             rows = [member for member in self.members if member[1] == territory_type]
             return _Rows([], rows[:limit])
-        if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in s:
+        if "SELECT content_version" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version,)])
         if "s.table_name='aedar_territory_summary'" in s:
             if self.summary_marker == "absent":

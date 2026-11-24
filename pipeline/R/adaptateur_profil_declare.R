@@ -43,6 +43,7 @@ projeter_artefact_profil_declare <- function(artefact) {
   valider_identite_ressource(id)
   contenu <- artefact$contenu
   descriptor <- .profil_liste(contenu$descriptor, id)
+  declarations <- extraire_declaration_ressource(descriptor)
   grain <- contenu$faits
   if (is.null(grain)) grain <- list()
   extraire <- function(nom) {
@@ -67,7 +68,7 @@ projeter_artefact_profil_declare <- function(artefact) {
   list(ressource = id, forme = "declared_profile", version = artefact$version,
        descriptor = descriptor, axes = axes, facts = facts, provenance = provenance,
        datasets = datasets, vintages = vintages, comparison = contenu$comparison,
-       digests_lignage = artefact$digests_lignage)
+       declarations = declarations, digests_lignage = artefact$digests_lignage)
 }
 
 # Vérification STRICTE de la dépendance déclarée (#1138 review) : le profil a
@@ -185,6 +186,7 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
 
     ecrire_registre_ressource(con, ressource, "declared_profile", rows$version,
       reference_content_version = reference, retired = FALSE)
+    ecrire_descripteurs_ressource(con, ressource, rows$version, rows$declarations)
     invisible(list(ressource = ressource, operation = "apply", version = rows$version))
   })
 }

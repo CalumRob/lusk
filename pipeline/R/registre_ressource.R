@@ -111,6 +111,174 @@ chemin_recettes_locales <- function(dir = NULL) {
   path.expand(dir)
 }
 
+# Déclaration de découverte publiée AVEC la Version de ressource publiée (#1140).
+# L'API ne reçoit plus theme-metadata : elle intersecte le grammaire de forme
+# embarqué dans l'image avec ces déclarations producteur et le registre vivant.
+.repertoire_metadata_ressource <- function(metadata_directory = NULL) {
+  if (is.null(metadata_directory))
+    system.file("extdata", "theme-metadata", package = "lusk") else metadata_directory
+}
+
+.champ_nomme <- function(valeur, nom) {
+  if (is.null(valeur) || is.null(valeur[[nom]])) NULL else
+    stats::setNames(list(valeur[[nom]]), nom)
+}
+
+declaration_ressource_metadata <- function(ressource, metadata_directory = NULL) {
+  valider_identite_ressource(ressource)
+  repertoire <- .repertoire_metadata_ressource(metadata_directory)
+  fichiers <- sort(list.files(repertoire, pattern = "^theme_.*\\.json$", full.names = TRUE))
+  for (chemin in fichiers) {
+    metadata <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+    ids <- as.character(unlist(metadata$indicator_keys, use.names = FALSE))
+    if (!ressource %in% ids) next
+
+    aliases <- list()
+    for (proprietaire in names(metadata$owned_series_routes %||% list())) {
+      route <- metadata$owned_series_routes[[proprietaire]]
+      if (isTRUE(route$reference_read_route) && !is.null(route$reference_indicator))
+        aliases[[route$reference_indicator]] <- proprietaire
+    }
+    parent <- aliases[[ressource]]
+    collection <- (metadata$observed_collection_contracts %||% list())[[ressource]]
+    page <- (metadata$indicator_pages %||% list())[[ressource]] %||%
+      if (!is.null(parent)) (metadata$indicator_pages %||% list())[[parent]] else NULL
+    page <- page %||% collection
+    source_id <- (metadata$sources %||% list())[[ressource]]
+    source_keys <- unique(c(source_id, as.character(unlist(page$sources, use.names = FALSE))))
+    source_keys <- source_keys[!is.na(source_keys) & nzchar(source_keys)]
+    records <- metadata$source_records %||% list()
+    source_records <- records[intersect(source_keys, names(records))]
+
+    # Self-contained one-resource producer declaration. Optional empty maps are
+    # omitted rather than emitted as JSON arrays where Python expects objects.
+    declaration <- list(
+      theme = metadata$theme,
+      indicator_keys = list(ressource),
+      sources = stats::setNames(list(source_id), ressource),
+      source_records = source_records)
+    declaration$indicator_pages <- if (!is.null(parent))
+      .champ_nomme(metadata$indicator_pages, parent) else
+      .champ_nomme(metadata$indicator_pages, ressource)
+    if (is.null(declaration$indicator_pages) && !is.null(collection))
+      declaration$indicator_pages <- stats::setNames(list(collection), ressource)
+    for (nom in c("indicator_labels", "scalar_contracts", "profile_contracts",
+                  "distribution_contracts", "observed_collection_contracts",
+                  "detail_labels", "map_layers")) {
+      valeur <- .champ_nomme(metadata[[nom]], ressource)
+      if (!is.null(valeur)) declaration[[nom]] <- valeur
+    }
+    proprietaire <- if (!is.null(parent)) parent else ressource
+    route <- .champ_nomme(metadata$owned_series_routes, proprietaire)
+    if (!is.null(route)) declaration$owned_series_routes <- route
+    return(declaration)
+  }
+  NULL
+}
+
+declarations_semantiques_publication <- function(publication_resource_id,
+                                                 metadata_directory = NULL) {
+  valider_identite_ressource(publication_resource_id)
+  repertoire <- .repertoire_metadata_ressource(metadata_directory)
+  chemin <- if (is.null(metadata_directory))
+    system.file("extdata", "semantic-resource-contracts.json", package = "lusk") else
+    file.path(dirname(repertoire), "semantic-resource-contracts.json")
+  if (!nzchar(chemin) || !file.exists(chemin)) return(list())
+  contrat <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+  ressources <- contrat$resources %||% list()
+  noms <- vapply(ressources, `[[`, character(1), "resource_id")
+  garder <- vapply(ressources, function(declaration)
+    identical(declaration$publication_resource_id %||% declaration$resource_id,
+              publication_resource_id), logical(1))
+  declarations <- ressources[garder]
+  stats::setNames(lapply(declarations, function(declaration)
+    list(kind = declaration$kind, declaration = declaration)), noms[garder])
+}
+
+declarations_decouverte_ressource <- function(ressource, metadata_directory = NULL) {
+  indicateur <- declaration_ressource_metadata(ressource, metadata_directory)
+  if (is.null(indicateur))
+    return(declarations_semantiques_publication(ressource, metadata_directory))
+  declarations <- stats::setNames(list(list(kind = "indicator", metadata = indicateur)),
+                                  ressource)
+  # Une route de série peut publier un alias sémantique de référence nommée.
+  # L'identité de stockage reste le dataset propriétaire ; les deux déclarations
+  # sont liées au même registre vivant, sans liste d'identifiants côté API.
+  repertoire <- .repertoire_metadata_ressource(metadata_directory)
+  fichiers <- sort(list.files(repertoire, pattern = "^theme_.*\\.json$", full.names = TRUE))
+  for (chemin in fichiers) {
+    metadata <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
+    for (proprietaire in names(metadata$owned_series_routes %||% list())) {
+      if (!identical(proprietaire, ressource)) next
+      route <- metadata$owned_series_routes[[proprietaire]]
+      alias <- route$reference_indicator
+      if (!isTRUE(route$reference_read_route) || is.null(alias) || alias %in% names(declarations))
+        next
+      declaration <- declaration_ressource_metadata(alias, metadata_directory)
+      if (!is.null(declaration))
+        declarations[[alias]] <- list(kind = "indicator", metadata = declaration)
+    }
+  }
+  declarations
+}
+
+attacher_declaration_ressource <- function(descripteur, ressource, metadata_directory = NULL) {
+  declarations <- declarations_decouverte_ressource(ressource, metadata_directory)
+  json <- jsonlite::toJSON(declarations, auto_unbox = TRUE, null = "null", digits = 17)
+  if (is.data.frame(descripteur)) {
+    if (!nrow(descripteur)) stop("Resource descriptor must carry at least one row", call. = FALSE)
+    descripteur$discovery <- json
+  } else if (is.list(descripteur)) {
+    descripteur$discovery <- json
+  } else {
+    stop("Resource descriptor is invalid", call. = FALSE)
+  }
+  descripteur
+}
+
+extraire_declaration_ressource <- function(descripteur) {
+  ligne <- if (is.data.frame(descripteur)) as.list(descripteur[1L, , drop = FALSE]) else descripteur
+  json <- ligne$discovery
+  if (is.null(json) || !length(json) || is.na(json[[1L]])) return(list())
+  if (length(json) != 1L || !is.character(json)) stop("Resource discovery declaration is invalid", call. = FALSE)
+  jsonlite::fromJSON(json, simplifyVector = FALSE)
+}
+
+# Appelable directement avec un Artefact de ressource pour l'adoption (#1142) :
+# `ecrire_descripteurs_ressource(con, artefact)`. La ligne de registre doit déjà
+# exister (FK 048). Les adaptateurs conservent leur forme positionnelle historique.
+ecrire_descripteurs_ressource <- function(con, publication_resource_id, version = NULL,
+                                          declarations = NULL) {
+  if (is.list(publication_resource_id) && !is.null(publication_resource_id$contenu)) {
+    if (!is.null(version) || !is.null(declarations))
+      stop("An artefact supplies its own descriptor version and declarations", call. = FALSE)
+    artefact <- publication_resource_id
+    publication_resource_id <- artefact$ressource
+    version <- artefact$version
+    declarations <- extraire_declaration_ressource(artefact$contenu$descriptor)
+  }
+  if (is.null(declarations)) declarations <- list()
+  valider_identite_ressource(publication_resource_id)
+  if (!is.character(version) || length(version) != 1L || is.na(version) || !nzchar(version))
+    stop("Resource descriptor version is invalid", call. = FALSE)
+  if (!is.list(declarations) || (length(declarations) && is.null(names(declarations))))
+    stop("Resource discovery declarations must be named by semantic resource", call. = FALSE)
+  DBI::dbExecute(con,
+    "DELETE FROM resource_publication_descriptor WHERE publication_resource_id=$1",
+    params = list(as.character(publication_resource_id)))
+  for (ressource in names(declarations)) {
+    valider_identite_ressource(ressource)
+    json <- jsonlite::toJSON(declarations[[ressource]], auto_unbox = TRUE,
+      null = "null", digits = 17)
+    DBI::dbExecute(con, paste0(
+      "INSERT INTO resource_publication_descriptor(resource_id,publication_resource_id,",
+      "content_version,descriptor) VALUES($1,$2,$3,$4::jsonb)"),
+      params = list(as.character(ressource), as.character(publication_resource_id),
+                    as.character(version), as.character(json)))
+  }
+  invisible(TRUE)
+}
+
 # Copie JSON locale, écrite APRÈS LE COMMIT par apply (jamais dans la transaction).
 ecrire_recette_locale <- function(recette, dir = NULL) {
   dossier <- chemin_recettes_locales(dir)

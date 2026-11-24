@@ -1091,7 +1091,7 @@ def test_fixed_aggregate_batch_reads_summaries_without_typequ_expansion(aedar_ht
 
 def test_fixed_aggregate_all_40_ranks_have_independent_fixture_expectations(aedar_rank_http):
     from api.aedar_models import AEDAR_AGGREGATE_READINGS
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     measures = list(AEDAR_AGGREGATE_READINGS)
     items = [{"id": f"complete-rank-{index}", **_aggregate_item(

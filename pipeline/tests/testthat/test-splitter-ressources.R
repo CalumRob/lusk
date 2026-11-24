@@ -12,6 +12,14 @@ test_that("le splitter produit une Artefact de ressource par ressource, puis un 
   expect_setequal(premier$ressource, c("densite", "offre_tc", "distribution_dpe", "prix_m2",
     "acv", "aedar"))
   expect_true(all(premier$statut == "new"))
+  version_densite <- premier$version[premier$ressource == "densite"]
+  artefact <- lire_artefact_ressource("densite", version_densite, root = root)
+  expect_identical(names(extraire_declaration_ressource(artefact$contenu$descriptor)),
+                   "densite")
+  version_aedar <- premier$version[premier$ressource == "aedar"]
+  artefact_aedar <- lire_artefact_ressource("aedar", version_aedar, root = root)
+  expect_setequal(names(extraire_declaration_ressource(artefact_aedar$contenu$descriptor)),
+                  c("aedar_territorial_aggregate", "aedar_territory_summary"))
 
   second <- splitter_sortie(tempfile("sortie-"), root = root, projections = projections,
     reference = reference, digests = digests)
@@ -56,8 +64,7 @@ test_that("la comparaison d'un artefact scalaire est celle de l'indicateur seul 
   # Jeton explicite : la comparaison porte la version des FAITS de CETTE
   # ressource (descripteur + faits + provenance, comparaison exclue), jamais le
   # jeton scalaire global calculé sur le snapshot de tous les indicateurs.
-  attendu <- version_artefact(contenu_artefact(artefact$contenu$faits,
-    artefact$contenu$descriptor, artefact$contenu$provenance, NULL))
+  attendu <- version_faits_artefact(artefact)
   expect_identical(comparaison$scalar_content_version, attendu)
   projections <- artefacts_fixture_scalar_projections()
   global <- version_artefact(contenu_artefact(
@@ -74,8 +81,7 @@ test_that("la comparaison d'un artefact scalaire est celle de l'indicateur seul 
   expect_false(any(autre$contenu$comparison$groups$indicator_id == "densite"))
   expect_identical(autre$contenu$comparison$reference_content_version, "reference-territoriale-v2")
   expect_identical(autre$contenu$comparison$scalar_content_version,
-    version_artefact(contenu_artefact(autre$contenu$faits, autre$contenu$descriptor,
-      autre$contenu$provenance, NULL)))
+    version_faits_artefact(autre))
 })
 
 test_that("l'artefact d'un profil déclaré garde comparison_scalar et required_scalar_version", {
@@ -107,8 +113,7 @@ test_that("les jetons d'une comparaison non scalaire lient aussi les faits de sa
   version <- resultat$version[resultat$ressource == "distribution_dpe"]
   artefact <- lire_artefact_ressource("distribution_dpe", version, root = root)
   expect_identical(artefact$contenu$comparison$scalar_content_version,
-    version_artefact(contenu_artefact(artefact$contenu$faits, artefact$contenu$descriptor,
-      artefact$contenu$provenance, NULL)))
+    version_faits_artefact(artefact))
   expect_identical(artefact$contenu$comparison$reference_content_version,
     "reference-profil-v3")
 

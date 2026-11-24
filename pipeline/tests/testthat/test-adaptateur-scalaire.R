@@ -10,9 +10,10 @@ artefact_scalaire_fixture <- function(indicator = "densite") {
   digests <- artefacts_fixture_digests(c("census_densite", "bpe_offer"))
   comparaison <- comparaison_scalaire_ressource(
     projection, indicator, artefacts_fixture_reference())
+  descripteur <- attacher_declaration_ressource(projection$descriptors, indicator)
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection),
-    projection$descriptors, projection$provenance, comparaison)
+    descripteur, projection$provenance, comparaison)
   ecrit <- ecrire_artefact_ressource(indicator, "scalar", contenu,
     digests_lignage = digests_lignage_ressource(
       sources_provenance_ressource(projection$provenance), digests), root = racine)
@@ -104,6 +105,7 @@ test_that("remplacer scopes every delete to one indicator and spares global mark
                            executes, perl = TRUE)))
   # Registry row written; the two scoped serving tables plus comparison rows.
   expect_true(any(grepl("INSERT INTO resource_publication", executes)))
+  expect_true(any(grepl("INSERT INTO resource_publication_descriptor", executes)))
   expect_true(all(c("scalar_observation", "scalar_observation_source") %in% writes))
   expect_true(any(grepl("INSERT INTO scalar_descriptor\\(", executes)))
   # The real SQL-building path sends ONLY unnamed positional params.

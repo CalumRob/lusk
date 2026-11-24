@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from api.main import app
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 
 API = Path(__file__).parents[1]

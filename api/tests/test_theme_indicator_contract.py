@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 
 def test_mobility_producer_pages_declare_retained_levels_and_canonical_curve():
