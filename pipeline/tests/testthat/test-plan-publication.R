@@ -41,6 +41,10 @@ test_that("un listing live identique au build ne marque aucun changement", {
   expect_false(any(plan$ressources$change))
   expect_identical(plan$changees, character())
   expect_identical(plan$cascade, character())
+  # Même version => même artefact : dérive nulle par construction, pas "unknown".
+  expect_true(all(plan$ressources$drift_disponible))
+  expect_true(all(plan$ressources$drift_nb == 0L))
+  expect_true(all(!plan$ressources$definition))
 })
 
 # -- Cascade -------------------------------------------------------------------
@@ -423,6 +427,7 @@ test_that("la commande plan imprime live, built, cascadance, gel et vérificatio
   expect_true(any(grepl("^ressource=offre_tc .*live=", sortie, fixed = FALSE)))
   expect_true(any(grepl("adoption=adopted", sortie, fixed = TRUE)))
   expect_true(any(grepl("status=unchanged", sortie, fixed = TRUE)))
+  expect_true(any(grepl("drift=0", sortie, fixed = TRUE)))
   expect_true(any(grepl("^changed=", sortie)))
   expect_true(any(grepl("^cascade=", sortie)))
   expect_true(any(grepl("^freeze=ok", sortie)))

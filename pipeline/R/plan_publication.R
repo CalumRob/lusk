@@ -274,7 +274,13 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     artefact <- artefacts[[id]]
     precedent <- artefacts_live[[id]]
 
-    drift <- if (is.null(precedent)) {
+    # Une version live égale à la version construite est le MÊME artefact :
+    # la dérive est nulle par construction, quelle que soit la forme (y compris
+    # celles dont le grain de faits n'a pas de tableau territory_id/value).
+    versions_identiques <- !is.na(lives[[i]]) && identical(lives[[i]], versions[[i]])
+    drift <- if (versions_identiques) {
+      list(disponible = TRUE, nombre = 0L, territoires = character())
+    } else if (is.null(precedent)) {
       list(disponible = FALSE, nombre = NA_integer_, territoires = character())
     } else resume_derive_ressource(precedent, artefact, as.character(artefact$forme))
     drift_disponible[[i]] <- drift$disponible
@@ -390,10 +396,10 @@ plan_publication <- function(root = NULL, builds = NULL, live = NULL, lock = NUL
     forme <- if ("forme" %in% names(builds)) as.character(builds$forme[[i]]) else NULL
     artefacts[[id]] <- lire_artefact_ressource(id, version, root = root, forme = forme)
     version_live <- version_live_ressource(id, live)
-    if (!is.na(version_live) && !identical(version_live, version)) {
-      artefacts_live[[id]] <- tryCatch(
-        lire_artefact_ressource(id, version_live, root = root, forme = forme),
-        error = function(e) NULL)
+    if (!is.na(version_live)) {
+      artefacts_live[[id]] <- if (identical(version_live, version)) artefacts[[id]] else
+        tryCatch(lire_artefact_ressource(id, version_live, root = root, forme = forme),
+                 error = function(e) NULL)
     }
   }
   assembler_plan_publication(builds, artefacts, artefacts_live, live, registre,
