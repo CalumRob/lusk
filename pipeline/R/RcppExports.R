@@ -4,3 +4,4 @@
 csa_multi_target <- function(rides, walks, origins, destination_sets, window_start, window_end, rules) {
     .Call(`_lusk_csa_multi_target`, rides, walks, origins, destination_sets, window_start, window_end, rules)
 }
+

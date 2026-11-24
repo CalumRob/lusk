@@ -286,7 +286,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune),
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
+    # Shape adapter (ADR-0049 seam, #1139): one resource per dataset. The OCS-GE
+    # state series (artif_par_habitant) publishes through this adapter, so no
+    # typed-reading code is needed to keep it live.
+    projeter = projeter_artefact_series,
+    remplacer = remplacer_series),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
