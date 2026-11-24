@@ -14,10 +14,13 @@ import type {
   CahierExportPublication,
   CahierExportPublicationState,
 } from './cahierExportCapture'
+import type { CahierExportAvailability } from './cahierPdfExport'
 
 export interface CahierExportVenue {
   /** Capture the current effective state of one mounted section, or null when absent. */
   captureSection(sectionKey: string): CahierExportCapture | null
+  /** Cheap reactive availability read for one section, without cloning its evidence. */
+  captureAvailability(sectionKey: string): CahierExportAvailability | null
   /** Capture every mounted section, in mount order. */
   captureAll(): readonly CahierExportCapture[]
   /** Section keys currently mounted on the shared path. */
@@ -43,7 +46,10 @@ export type CahierExportCaptureBuilder = (
   publications: readonly CahierExportPublication[],
 ) => CahierExportCapture | null
 
-export function provideCahierExportVenue(build: CahierExportCaptureBuilder): CahierExportVenue {
+export function provideCahierExportVenue(
+  build: CahierExportCaptureBuilder,
+  buildAvailability?: CahierExportCaptureBuilder,
+): CahierExportVenue {
   const registry: CahierExportRegistry = { sections: new Map(), order: [] }
   const publicationsFor = (sectionKey: string): CahierExportPublication[] =>
     [...(registry.sections.get(sectionKey)?.entries() ?? [])].map(([slot, read]) => ({
@@ -54,6 +60,7 @@ export function provideCahierExportVenue(build: CahierExportCaptureBuilder): Cah
     build(sectionKey, publicationsFor(sectionKey))
   const venue: CahierExportVenue = {
     captureSection: captureFor,
+    captureAvailability: (sectionKey) => (buildAvailability ?? build)(sectionKey, publicationsFor(sectionKey)),
     captureAll: () => registry.order
       .map((sectionKey) => captureFor(sectionKey))
       .filter((capture): capture is CahierExportCapture => capture !== null),

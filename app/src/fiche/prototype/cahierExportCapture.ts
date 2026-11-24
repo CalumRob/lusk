@@ -628,7 +628,25 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value)
 }
 
+/**
+ * Read the owner-observed inputs of one section without copying them (#1165).
+ *
+ * Only the PDF generation capture needs an immutable, screen-independent copy
+ * of the evidence, native render and published equipment state. The mounted
+ * action reads availability on every reactive change: passing those heavy
+ * values through by reference keeps the very same reactive dependency tracking
+ * (the activation policy still reads each owner state it gates on) without
+ * walking Vue proxies to clone values it never consults.
+ */
+export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportCapture {
+  return sectionCapture(input, false)
+}
+
 export function captureCahierSection(input: CahierSectionCaptureInput): CahierExportCapture {
+  return deepFreeze(deepPlain(sectionCapture(input, true)))
+}
+
+function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): CahierExportCapture {
   const section = input.section
   const evidence = section.evidence
   const family = evidence ? cahierCaptureFamily(evidence.kind) : null
@@ -655,7 +673,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
     ? explorer.state.state.typequ ?? null
     : null
   const capture: CahierExportCapture = {
-    ...(input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
+    ...(immutable && input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
     nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
       modes: [...(input.aedar?.modes ?? [])] },
     identity: {
@@ -679,7 +697,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
     capabilities: {
       selectableSeries: captureSelectableSeries(family, input.aedar),
       selectedSeries: captureSelectedSeries(family, input.aedar),
-      maps: captureMaps({ family, evidence, publications }),
+      maps: captureMaps({ family, evidence, publications, immutable }),
     },
     comparison: {
       status: comparisonStatus,
@@ -702,12 +720,14 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
       }),
     },
     sources: captureSources(evidence),
-    aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
+    aedar: evidence && family?.startsWith('aedar-')
+      ? (immutable ? deepPlain(input.aedar) : input.aedar)
+      : null,
     figures: evidence && family
       ? captureFigures({ evidence, family, input, publications })
       : [],
   }
-  return deepFreeze(deepPlain(capture))
+  return capture
 }
 
 const FAMILY_HAS_COMPARISON_EVIDENCE: Readonly<Record<CahierCaptureFamily, boolean>> = {
@@ -1165,8 +1185,9 @@ function captureMaps(options: {
   family: CahierCaptureFamily | null
   evidence: ContentEvidence | null
   publications: readonly CahierExportPublication[]
+  immutable: boolean
 }): CahierCaptureMaps {
-  const { family, evidence, publications } = options
+  const { family, evidence, publications, immutable } = options
   const published = publications.filter((publication) => publication.state.owner === 'map-availability')
   if (published.length === 0) {
     return hasMapSurface(family, evidence)
@@ -1184,8 +1205,8 @@ function captureMaps(options: {
   return {
     status: mapStatus(items),
     legend,
-    items: deepPlain(items),
-    legendDetail: legendDetail ? deepPlain(legendDetail) : null,
+    items: immutable ? deepPlain(items) : items,
+    legendDetail: legendDetail ? (immutable ? deepPlain(legendDetail) : legendDetail) : null,
   }
 }
 

@@ -14,6 +14,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import type { CahierExportCapture } from './cahierExportCapture'
 import { CAHIER_EXPORT_MAX_MODES } from './cahierExportCapture'
+import type { CahierExportAvailability } from './cahierPdfExport'
 import CahierActionButton from './CahierActionButton.vue'
 import CahierDialog from './CahierDialog.vue'
 import { CahierPdfExportController, cleIdentite } from './cahierPdfExportController'
@@ -25,11 +26,14 @@ const props = withDefaults(defineProps<{
   sectionLabel: string
   identite: CahierPdfScopeIdentity
   capture: () => CahierExportCapture | null
+  /** Cheap reactive read for button state; generation still uses `capture`. */
+  availability?: () => CahierExportAvailability | null
   generator?: CahierPdfGenerator | null
-}>(), { generator: null })
+}>(), { generator: null, availability: undefined })
 
 const controller = new CahierPdfExportController({
   capture: () => props.capture(),
+  availability: () => props.availability ? props.availability() : props.capture(),
   generator: props.generator,
   identite: () => props.identite,
 })

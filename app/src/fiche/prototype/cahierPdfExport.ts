@@ -55,6 +55,19 @@ export type CahierPdfActivation =
       readonly message: string
     }
 
+/**
+ * The part of a section capture the activation policy actually reads (#1165).
+ *
+ * The mounted PDF action re-evaluates this on every reactive change, so its
+ * source may pass owner values through by reference instead of building the
+ * frozen, screen-independent generation capture. Every field below is still
+ * read from the live owner, which keeps the button's dependency tracking.
+ */
+export type CahierExportAvailability = Pick<
+  CahierExportCapture,
+  'readiness' | 'capabilities' | 'comparison' | 'figures'
+>
+
 const MESSAGES: Readonly<Record<CahierPdfActivationReason, string>> = {
   'section-pending': 'Les données de cette section sont encore en cours de chargement.',
   'section-error': 'Les données de cette section n’ont pas pu être chargées.',
@@ -300,7 +313,7 @@ function figureBlockReason(
  * required map/legend surfaces, the acquired equipment, then the requested
  * comparison and its direct reference. The first unmet required state wins.
  */
-export function evaluerDisponibiliteExportPdf(capture: CahierExportCapture): CahierPdfActivation {
+export function evaluerDisponibiliteExportPdf(capture: CahierExportAvailability): CahierPdfActivation {
   switch (capture.readiness.status) {
     case 'pending':
       return bloque('section-pending')

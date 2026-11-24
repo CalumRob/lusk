@@ -53,12 +53,18 @@ import type { CahierPdfGenerator } from './cahierPdfExportController'
 import CahierExportScope from './CahierExportScope.vue'
 import { CahierSectionBody } from './cahierSectionRenderers'
 import { provideAedarSectionContext } from './aedarSectionContext'
-import { cahierCaptureConsumesReference, cahierCaptureFamily, captureCahierSection } from './cahierExportCapture'
+import {
+  cahierCaptureConsumesReference,
+  cahierCaptureFamily,
+  captureCahierSection,
+  captureCahierSectionAvailability,
+} from './cahierExportCapture'
 import type {
   CahierAedarCaptureState,
   CahierCaptureReadiness,
   CahierExportCapture,
   CahierExportPublication,
+  CahierSectionCaptureInput,
 } from './cahierExportCapture'
 import { provideCahierExportVenue } from './cahierExportVenue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
@@ -211,15 +217,15 @@ function captureComparisonControl() {
   }
 }
 
-function buildExportCapture(
+function captureInput(
   sectionKey: string,
   publications: readonly CahierExportPublication[],
-): CahierExportCapture | null {
+): CahierSectionCaptureInput | null {
   const record = captureSections.value.get(sectionKey)
   if (!record || !record.body) return null
   const family = record.section.evidence ? cahierCaptureFamily(record.section.evidence.kind) : null
   const aedarEvidence = family?.startsWith('aedar-') ?? false
-  return captureCahierSection({
+  return {
     ...(!nativeRender && supportsStagedNativeRender(record.section.evidence?.kind) ? {
       nativeRender: {
         content: {
@@ -251,10 +257,27 @@ function buildExportCapture(
     control: captureComparisonControl(),
     aedar: captureAedarState(),
     publications,
-  })
+  }
 }
 
-const exportVenue = provideCahierExportVenue(buildExportCapture)
+function buildExportCapture(
+  sectionKey: string,
+  publications: readonly CahierExportPublication[],
+): CahierExportCapture | null {
+  const input = captureInput(sectionKey, publications)
+  return input ? captureCahierSection(input) : null
+}
+
+// The button reads this on every reactive change: no frozen evidence copy.
+function buildAvailabilityCapture(
+  sectionKey: string,
+  publications: readonly CahierExportPublication[],
+) {
+  const input = captureInput(sectionKey, publications)
+  return input ? captureCahierSectionAvailability(input) : null
+}
+
+const exportVenue = provideCahierExportVenue(buildExportCapture, buildAvailabilityCapture)
 defineExpose({
   captureSection: exportVenue.captureSection,
   captureAll: exportVenue.captureAll,
@@ -600,6 +623,7 @@ onBeforeUnmount(() => {
                     sectionKey: section.key,
                   }"
                   :capture="() => exportVenue.captureSection(section.key)"
+                  :availability="() => exportVenue.captureAvailability(section.key)"
                   :generator="props.pdfGenerator ?? null"
                 />
               </div>

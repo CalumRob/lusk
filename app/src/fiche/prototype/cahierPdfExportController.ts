@@ -23,7 +23,7 @@ import {
   evaluerDisponibiliteExportPdf,
   messageActivationPdf,
 } from './cahierPdfExport'
-import type { CahierPdfActivation } from './cahierPdfExport'
+import type { CahierExportAvailability, CahierPdfActivation } from './cahierPdfExport'
 
 export interface CahierPdfArtifact {
   readonly blob: Blob
@@ -77,6 +77,11 @@ export function cleIdentite(identity: CahierPdfScopeIdentity): string {
 export interface CahierPdfExportControllerOptions {
   /** Synchronous immutable capture of the mounted section, or null when absent. */
   readonly capture: () => CahierExportCapture | null
+  /**
+   * Cheap reactive read used only for button availability (#1165). Defaults to
+   * `capture`; generation always reads the full frozen capture above.
+   */
+  readonly availability?: () => CahierExportAvailability | null
   /** Null until the real browser composer is wired by integration lot E. */
   readonly generator: CahierPdfGenerator | null
   /**
@@ -101,6 +106,7 @@ export class CahierPdfExportController {
     this.nombreChoix.value > 0 && this.nombreChoix.value <= CAHIER_EXPORT_MAX_MODES)
 
   private readonly captureSource: () => CahierExportCapture | null
+  private readonly availabilitySource: () => CahierExportAvailability | null
   private readonly identiteSource: (() => CahierPdfScopeIdentity | null) | null
   private generator: CahierPdfGenerator | null
   private generateurEnAttente: CahierPdfGenerator | null = null
@@ -119,6 +125,7 @@ export class CahierPdfExportController {
 
   constructor(options: CahierPdfExportControllerOptions) {
     this.captureSource = options.capture
+    this.availabilitySource = options.availability ?? options.capture
     this.identiteSource = options.identite ?? null
     this.generator = options.generator
     this.disponibilite = computed(() => {
@@ -130,15 +137,15 @@ export class CahierPdfExportController {
           message: messageActivationPdf('generator-unavailable'),
         }
       }
-      const capture = this.lireCapture()
-      if (!capture) {
+      const availability = this.lireDisponibilite()
+      if (!availability) {
         return {
           ready: false as const,
           reason: 'capture-unavailable' as const,
           message: messageActivationPdf('capture-unavailable'),
         }
       }
-      return evaluerDisponibiliteExportPdf(capture)
+      return evaluerDisponibiliteExportPdf(availability)
     })
     this.peutActiver = computed(() => {
       const disponibilite = this.disponibilite.value
@@ -309,6 +316,14 @@ export class CahierPdfExportController {
   private lireCapture(): CahierExportCapture | null {
     try {
       return this.captureSource()
+    } catch {
+      return null
+    }
+  }
+
+  private lireDisponibilite(): CahierExportAvailability | null {
+    try {
+      return this.availabilitySource()
     } catch {
       return null
     }
