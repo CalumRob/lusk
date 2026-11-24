@@ -53,7 +53,7 @@ export type CahierExportAvailabilityBuilder = (
 
 export function provideCahierExportVenue(
   build: CahierExportCaptureBuilder,
-  buildAvailability?: CahierExportAvailabilityBuilder,
+  buildAvailability: CahierExportAvailabilityBuilder,
 ): CahierExportVenue {
   const registry: CahierExportRegistry = { sections: new Map(), order: [] }
   const publicationsFor = (sectionKey: string): CahierExportPublication[] =>
@@ -65,7 +65,7 @@ export function provideCahierExportVenue(
     build(sectionKey, publicationsFor(sectionKey))
   const venue: CahierExportVenue = {
     captureSection: captureFor,
-    captureAvailability: (sectionKey) => (buildAvailability ?? build)(sectionKey, publicationsFor(sectionKey)),
+    captureAvailability: (sectionKey) => buildAvailability(sectionKey, publicationsFor(sectionKey)),
     captureAll: () => registry.order
       .map((sectionKey) => captureFor(sectionKey))
       .filter((capture): capture is CahierExportCapture => capture !== null),

@@ -27,13 +27,13 @@ const props = withDefaults(defineProps<{
   identite: CahierPdfScopeIdentity
   capture: () => CahierExportCapture | null
   /** Cheap reactive read for button state; generation still uses `capture`. */
-  availability?: () => CahierExportAvailability | null
+  availability: () => CahierExportAvailability | null
   generator?: CahierPdfGenerator | null
-}>(), { generator: null, availability: undefined })
+}>(), { generator: null })
 
 const controller = new CahierPdfExportController({
   capture: () => props.capture(),
-  availability: () => props.availability ? props.availability() : props.capture(),
+  availability: () => props.availability(),
   generator: props.generator,
   identite: () => props.identite,
 })

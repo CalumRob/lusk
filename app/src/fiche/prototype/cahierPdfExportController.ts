@@ -78,10 +78,10 @@ export interface CahierPdfExportControllerOptions {
   /** Synchronous immutable capture of the mounted section, or null when absent. */
   readonly capture: () => CahierExportCapture | null
   /**
-   * Cheap reactive read used only for button availability (#1165). Defaults to
-   * `capture`; generation always reads the full frozen capture above.
+   * Cheap reactive read used only for button availability (#1165); generation
+   * always reads the full frozen capture above.
    */
-  readonly availability?: () => CahierExportAvailability | null
+  readonly availability: () => CahierExportAvailability | null
   /** Null until the real browser composer is wired by integration lot E. */
   readonly generator: CahierPdfGenerator | null
   /**
@@ -125,7 +125,7 @@ export class CahierPdfExportController {
 
   constructor(options: CahierPdfExportControllerOptions) {
     this.captureSource = options.capture
-    this.availabilitySource = options.availability ?? options.capture
+    this.availabilitySource = options.availability
     this.identiteSource = options.identite ?? null
     this.generator = options.generator
     this.disponibilite = computed(() => {
