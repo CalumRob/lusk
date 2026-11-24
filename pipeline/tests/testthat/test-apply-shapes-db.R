@@ -127,6 +127,19 @@
   spec
 }
 
+# Le snapshot doit toujours représenter UNE AUTRE ressource que celle appliquée
+# entre les deux lectures ; sans ce garde, une ressource qui n'existait pas avant
+# l'apply apparaît dans le « avant » et le test échoue à tort.
+.verifier_snapshot_hors_ressource <- function(spec, applique) {
+  fautes <- names(spec)[vapply(spec, function(s)
+    !is.null(s$valeur) && identical(as.character(s$valeur), as.character(applique)),
+    logical(1))]
+  if (length(fautes))
+    stop("Guarded snapshot is filtered on the applied resource: ",
+         paste(fautes, collapse = ","), call. = FALSE)
+  invisible(TRUE)
+}
+
 .guarded_shapes_snapshot <- function(con, spec) {
   out <- lapply(names(spec), function(t)
     .guarded_shapes_lignes(con, t, spec[[t]]$colonne, spec[[t]]$valeur))
@@ -168,6 +181,7 @@ test_that("guarded: applying one owned series leaves every other series byte-ide
   adaptateur_series_artefact(root, "prix_m2", 20)
   lock <- .guarded_shapes_lock("ocsge")
   spec <- .guarded_shapes_spec(c(TABLES_SERIE, "resource_publication"), "prix_m2")
+  .verifier_snapshot_hors_ressource(spec, "artif_par_habitant")
   apply_publication("prix_m2", root = root, registre = lock, con = con)
   avant_b <- .guarded_shapes_snapshot(con, spec)
   apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
@@ -193,6 +207,7 @@ test_that("guarded: applying one observed collection leaves every other collecti
   adaptateur_collection_artefact(root, "acv_b", 9)
   lock <- .guarded_shapes_lock("programme_source")
   spec <- .guarded_shapes_spec(c(TABLES_COLLECTION, "resource_publication"), "acv_b")
+  .verifier_snapshot_hors_ressource(spec, "acv")
   apply_publication("acv_b", root = root, registre = lock, con = con)
   avant_b <- .guarded_shapes_snapshot(con, spec)
   apply_publication("acv", root = root, registre = lock, con = con)
@@ -255,7 +270,9 @@ test_that("guarded: applying one series leaves scalar, collection and AEDAR byte
 
   autres <- c(TABLES_SCALAIRES, TABLES_COLLECTION, TABLES_AEDAR,
     intersect(TABLES_SERIE, setdiff(TABLES_SERIE, character())))  # toutes les tables série
-  spec <- .guarded_shapes_spec(autres, "prix_m2")  # l'autre série est préservée aussi
+  # On applique prix_m2 : le snapshot doit filtrer l'AUTRE série.
+  spec <- .guarded_shapes_spec(autres, "artif_par_habitant")
+  .verifier_snapshot_hors_ressource(spec, "prix_m2")
   # Les tables scalar/collection sont filtrées sur LEUR ressource, pas sur prix_m2.
   for (t in c(TABLES_SCALAIRES, TABLES_COLLECTION)) spec[[t]]$valeur <-
     if (t %in% TABLES_SCALAIRES) "densite" else "acv"
@@ -289,7 +306,9 @@ test_that("guarded: applying one collection leaves scalar, series and AEDAR byte
 
   autres <- c(TABLES_SCALAIRES, TABLES_SERIE, TABLES_AEDAR,
     intersect(TABLES_COLLECTION, setdiff(TABLES_COLLECTION, character())))
-  spec <- .guarded_shapes_spec(autres, "acv_b")  # l'autre collection est préservée aussi
+  # On applique acv_b : le snapshot doit filtrer l'AUTRE collection.
+  spec <- .guarded_shapes_spec(autres, "acv")
+  .verifier_snapshot_hors_ressource(spec, "acv_b")
   for (t in c(TABLES_SCALAIRES, TABLES_SERIE)) spec[[t]]$valeur <-
     if (t %in% TABLES_SCALAIRES) "densite" else "artif_par_habitant"
   avant <- .guarded_shapes_snapshot(con, spec)
@@ -320,6 +339,7 @@ test_that("guarded: applying AEDAR leaves every scalar, series and collection by
   spec <- .guarded_shapes_spec(tables, "densite")
   for (t in c(TABLES_SERIE, TABLES_COLLECTION)) spec[[t]]$valeur <-
     if (t %in% TABLES_SERIE) "artif_par_habitant" else "acv"
+  .verifier_snapshot_hors_ressource(spec, "aedar")
   avant <- .guarded_shapes_snapshot(con, spec)
   adaptateur_aedar_artefact(root, with_littoral = FALSE)
   expect_no_error(apply_publication("aedar", root = root, registre = lock, con = con))
