@@ -103,17 +103,15 @@ only (rendered/element rules are not exercised by that pass).
 
 ### App tests (`app/`) — how to run them
 
-- `npm test` = the `unit` Vitest project: happy-dom only, **no real browser**, no Playwright/Chromium
-  import reachable. Config lives in `app/vitest.config.ts` (never in `vite.config.ts`).
-- During iteration run filtered: `npx vitest run --project unit <file-or-regex>`. Run the full
-  `npm test` **once, before handoff** — not after every edit.
-- `npm run test:browser` = the `browser` project (`*.browser.spec.ts`): the Cahier PDF specs that need a
-  real layout engine. It starts ONE Chromium and ONE Vite bundle for the whole run
-  (`src/__tests__/browser/globalSetup.ts`); spec files reach it through a loopback bridge and never
-  launch a browser. Needs Chrome (`LUSK_CHROME_PATH` or the system install). Run it **only** when
-  touching the Cahier PDF composer / native paint / DOM painter, or `cahierPdf*` test helpers —
-  and before merging such a ticket. It is not part of `npm test`.
-- A spec that needs real layout is named `*.browser.spec.ts`; do not add Chromium to the unit project.
+- `npm test` = `vitest run`, the **only automated suite**: happy-dom only, **no browser anywhere in it**,
+  and no Playwright/Chromium import reachable. Config lives in `app/vitest.config.ts` (never in
+  `vite.config.ts`).
+- During iteration run filtered: `npx vitest run <file-or-regex>`. Run the full `npm test` **once,
+  before handoff** — not after every edit.
+- Browser-level PDF/layout verification lives only in the `app/scripts/verify-*.mjs` acceptance scripts,
+  notably `verify:cahier-pdf-production`, `verify:mobile-cahier-overflow` and `verify:rank-circles`.
+  The orchestrator runs the relevant scripts when a ticket touches the Cahier PDF composer / native
+  paint / DOM painter; the UI/UX visual gate above still applies.
 - `npm ci` first on a fresh checkout/worktree (missing `jspdf` / `pdfjs-dist` breaks module loading).
   `node_modules` must be a real directory per checkout — never a junction to another checkout.
 

@@ -94,9 +94,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      // svg2pdf's UMD `main` cannot consume jsPDF's ESM exports under Vitest's
-      // SSR resolver. The package's own ES build is the browser build; pin it
-      // explicitly so tests and the production bundle run the same module.
+      // svg2pdf's UMD `main` cannot consume jsPDF's ESM exports. The package's
+      // own ES build is the browser build; pin it explicitly for the app bundle.
       'svg2pdf.js': path.join(racineDependances, 'svg2pdf.js/dist/svg2pdf.es.min.js'),
     },
   },
