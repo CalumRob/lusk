@@ -65,12 +65,19 @@
 }
 
 .adopt_db_profile_projection <- function(source, id, reference, scalar_version = NULL,
-                                         comparison_scalar = NULL) {
+                                         comparison_scalar = NULL, scalar_descriptor = NULL) {
   descriptor <- source$descriptor
   descriptor$indicator_id <- id
   descriptor$required_scalar_version <- scalar_version
   descriptor$comparison_scalar <- comparison_scalar
   if (!is.null(comparison_scalar)) {
+    if (is.null(scalar_descriptor) || nrow(scalar_descriptor) != 1L)
+      stop("DPE-like fixture requires its scalar descriptor", call. = FALSE)
+    scalaire <- as.list(scalar_descriptor[1L, , drop = FALSE])
+    descriptor$unit <- as.character(scalaire$unit)[[1L]]
+    descriptor$comparison_direction <- as.character(scalaire$direction)[[1L]]
+    descriptor$levels <- as.character(unlist(scalaire$allowed_levels, use.names = FALSE))
+    descriptor$comparison_scalar <- as.character(scalaire$indicator_id)[[1L]]
     descriptor$comparison_detail <- NA_character_
     descriptor$comparison_sex <- NA_character_
   }
@@ -219,7 +226,8 @@
   structure_age <- .adopt_db_profile_projection(structure_source, "structure_age", reference)
   dpe_source <- project_dpe_profile(habitat, lire_theme_metadata("habitat"), scalar_version)
   dpe <- .adopt_db_profile_projection(dpe_source, "distribution_dpe", reference,
-    scalar_version = scalar_version, comparison_scalar = "part_passoires")
+    scalar_version = scalar_version, comparison_scalar = "part_passoires",
+    scalar_descriptor = passoires$descriptors)
   write_profile_serving_artifact(structure_age,
     file.path(sortie, "profile-serving", "structure_age"))
   write_profile_serving_artifact(dpe, file.path(sortie, "profile-serving", "distribution_dpe"),
@@ -317,6 +325,31 @@
     receipts = DBI::dbGetQuery(con,
       "SELECT * FROM resource_publication_event ORDER BY event_id")), NULL)
 }
+
+test_that("DPE-like fixture derives its semantic contract from the scalar descriptor", {
+  reference <- artefacts_fixture_reference()
+  source <- list(descriptor = list(indicator_id = "distribution_dpe", unit = "wrong",
+      comparison_direction = "low", levels = "commune"),
+    axes = data.frame(axis_name = "detail", axis_key = "d1", label = "D1",
+      ordinal = 0L, unit = "wrong", stringsAsFactors = FALSE),
+    provenance = data.frame(source_id = "s", vintage_id = "v", stringsAsFactors = FALSE),
+    datasets = data.frame(source_id = "s", name = "S", stringsAsFactors = FALSE),
+    vintages = data.frame(source_id = "s", vintage_id = "v", version = "v",
+      reference_date = as.Date("2020-01-01"), publication_date = as.Date("2021-01-01"),
+      stringsAsFactors = FALSE))
+  scalar <- data.frame(indicator_id = "part_passoires", unit = "count",
+    direction = "high", comparison_facet = "part_passoires",
+    allowed_levels = I(list(c("commune", "epci", "departement", "region"))),
+    stringsAsFactors = FALSE)
+  profile <- .adopt_db_profile_projection(source, "distribution_dpe", reference,
+    scalar_version = "facts-v1", comparison_scalar = "part_passoires",
+    scalar_descriptor = scalar)
+  expect_identical(profile$descriptor$unit, scalar$unit)
+  expect_identical(profile$descriptor$comparison_direction, scalar$direction)
+  expect_identical(profile$descriptor$comparison_scalar, scalar$comparison_facet)
+  expect_true(all(profile$descriptor$levels %in%
+    as.character(scalar$allowed_levels[[1L]])))
+})
 
 test_that("guarded: real full-path publication adopts every shape with unchanged data and plan", {
   con <- .adopt_db_connect()
