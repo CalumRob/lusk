@@ -162,9 +162,10 @@ test_that("le registre des formes est l'unique source de vérité des formes de 
   for (forme in names(registre)) {
     handler <- registre[[forme]]
     expect_true(all(c("lire", "champs_faits", "champ_descripteur", "champ_provenance",
-      "champ_comparaison", "comparaison") %in% names(handler)), info = forme)
+      "champ_comparaison", "comparaison", "lier_dependance") %in% names(handler)), info = forme)
     expect_true(is.function(handler$lire), info = forme)
     expect_true(is.function(handler$comparaison), info = forme)
+    expect_true(is.function(handler$lier_dependance), info = forme)
   }
   expect_false(exists("FORMES_RESSOURCE", inherits = TRUE))
   code <- paste(readLines(testthat::test_path("..", "..", "R", "splitter_ressources.R"),
