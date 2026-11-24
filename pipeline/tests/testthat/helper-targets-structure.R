@@ -42,6 +42,11 @@ avec_environnement_graphe_structure <- function(entree, code) {
                  list(LUSK_CACHE = entree$chemins$cache,
                       LUSK_SORTIE = entree$chemins$sortie))
   do.call(withr::local_envvar, variables)
+  # _targets.R reloads the already-loaded package for standalone builds. A
+  # structural read needs its functions, not that namespace-changing side effect;
+  # suppressing it lets targets evaluate in-process without polluting test mocks.
+  testthat::local_mocked_bindings(load_all = function(...) invisible(NULL),
+                                  .package = "pkgload")
   force(code)
 }
 
@@ -52,9 +57,10 @@ lire_graphe_structure <- function(kind) {
   if (!exists(slot, cache, inherits = FALSE)) {
     valeur <- avec_environnement_graphe_structure(entree, tryCatch(
       if (identical(kind, "manifest")) {
-        targets::tar_manifest()
+        targets::tar_manifest(callr_function = NULL)
       } else {
-        reseau <- targets::tar_network(store = entree$chemins$store)
+        reseau <- targets::tar_network(store = entree$chemins$store,
+                                       callr_function = NULL)
         attr(reseau, "store_structure") <- entree$chemins$store
         reseau
       },

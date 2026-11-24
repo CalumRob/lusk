@@ -15,7 +15,8 @@ test_that("one memoised manifest serves each effective graph environment", {
 
   appels <- 0L
   local_mocked_bindings(
-    tar_manifest = function(...) {
+    tar_manifest = function(callr_function = NULL, ...) {
+      expect_null(callr_function)
       appels <<- appels + 1L
       data.frame(name = c("a", "b"), command = c("a()", "b()"),
                  stringsAsFactors = FALSE)
@@ -55,7 +56,8 @@ test_that("one memoised network uses an isolated store and reuses it", {
 
   appels <- 0L
   local_mocked_bindings(
-    tar_network = function(store, ...) {
+    tar_network = function(store, callr_function = NULL, ...) {
+      expect_null(callr_function)
       appels <<- appels + 1L
       expect_false(identical(normalizePath(store, mustWork = FALSE),
                              normalizePath(file.path(projet, "_targets"),
