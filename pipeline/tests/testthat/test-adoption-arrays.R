@@ -1,3 +1,11 @@
+test_that("absent SQL arrays are NULL rather than an empty array literal", {
+  expect_true(is.na(litteral_tableau_postgres(NULL)))
+  expect_true(is.na(litteral_tableau_postgres(NA_character_)))
+  expect_true(is.na(litteral_tableau_postgres(character())))
+  expect_true(is.na(litteral_tableau_postgres(c("commune", NA_character_))))
+  expect_identical(litteral_tableau_postgres(c("commune", "epci")), "{commune,epci}")
+})
+
 test_that("every persisted SQL array column is a PostgreSQL array literal", {
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
