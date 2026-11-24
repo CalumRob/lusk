@@ -508,6 +508,143 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   }, function(projection, db, version) db$replace(projection, version))
 }
 
+# Shared per-table writers for the declared-profile shape (ADR-0049 step 2,
+# #1138). BOTH the wholesale publisher below AND the shape adapter
+# (adaptateur_profil_declare.R) call THESE functions: neither reimplements the
+# other's SQL. The adapter scopes every write to one indicator (the wholesale
+# publisher deletes the whole shape first); all quoting goes through
+# DBI::dbQuoteString and every `params` list is UNNAMED and positional —
+# RPostgres rejects named params, and a mocked DBI call must not hide that.
+.profil_liste <- function(descripteur, ressource = NULL) {
+  if (is.data.frame(descripteur)) {
+    if (nrow(descripteur) != 1L)
+      stop("Declared profile descriptor must carry exactly one profile", call. = FALSE)
+    d <- as.list(descripteur[1L, , drop = FALSE])
+  } else if (is.list(descripteur)) {
+    d <- descripteur
+  } else {
+    stop("Declared profile descriptor is invalid", call. = FALSE)
+  }
+  if (!is.null(ressource)) d$indicator_id <- ressource
+  if (is.null(d$indicator_id) || length(d$indicator_id) < 1L ||
+      is.na(d$indicator_id) || !nzchar(as.character(d$indicator_id)[[1L]]))
+    stop("Declared profile descriptor has no indicator_id", call. = FALSE)
+  d
+}
+
+.profil_champ <- function(d, nom, defaut = NULL) {
+  v <- d[[nom]]
+  if (is.null(v) || (length(v) == 1L && is.na(v))) return(defaut)
+  v
+}
+
+.profil_quote_sql <- function(con, x) {
+  if (length(x) == 1L && is.na(x)) return("NULL")
+  as.character(DBI::dbQuoteString(con, as.character(x)))
+}
+
+.ecrire_sources_profil <- function(con, datasets, vintages) {
+  sql_source <- paste0("INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ",
+    "ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name")
+  sql_vintage <- paste0("INSERT INTO source_vintage(source_id,vintage_id,version,",
+    "reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ",
+    "ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,",
+    "reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date")
+  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) DBI::dbExecute(con, sql_source,
+    params = unname(as.list(datasets[i, c("source_id", "name")])))
+  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) DBI::dbExecute(con, sql_vintage,
+    params = unname(as.list(vintages[i, c("source_id", "vintage_id", "version",
+      "reference_date", "publication_date")])))
+  invisible(TRUE)
+}
+
+.ecrire_profil_descriptor <- function(con, descriptor, indicator_id = NULL,
+                                      required_scalar_version = NULL) {
+  d <- .profil_liste(descriptor, indicator_id)
+  id <- as.character(d$indicator_id)[[1L]]
+  if (!is.null(required_scalar_version)) d$required_scalar_version <- required_scalar_version
+  completeness <- as.character(.profil_champ(d, "completeness", "dense_complete"))[[1L]]
+  if (!identical(completeness, "dense_complete"))
+    stop("Profile completeness contract is missing or unsupported", call. = FALSE)
+  levels <- as.character(unlist(.profil_champ(d, "levels", "commune"), use.names = FALSE))
+  if (!length(levels)) levels <- "commune"
+  levels_sql <- paste0("ARRAY[",
+    paste(vapply(levels, function(x) .profil_quote_sql(con, x), character(1)),
+          collapse = ","), "]::text[]")
+  params <- list(
+    id,
+    as.character(.profil_champ(d, "label", id))[[1L]],
+    as.character(.profil_champ(d, "unit", ""))[[1L]],
+    completeness,
+    as.character(.profil_champ(d, "descriptor_version", "v1"))[[1L]],
+    .profil_champ(d, "comparison_detail", NA_character_),
+    .profil_champ(d, "comparison_sex", NA_character_),
+    as.character(.profil_champ(d, "comparison_direction", "none"))[[1L]],
+    .profil_champ(d, "theme_id", NA_character_),
+    .profil_champ(d, "comparison_scalar", NA_character_),
+    .profil_champ(d, "required_scalar_version", NA_character_),
+    .profil_champ(d, "denominator_semantics", NA_character_),
+    isTRUE(.profil_champ(d, "detail_units_required", FALSE)))
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,",
+    "completeness,descriptor_version,comparison_detail,comparison_sex,",
+    "comparison_direction,theme_id,comparison_scalar,required_scalar_version,",
+    "denominator_semantics,detail_units_required) VALUES($1,$2,$3,",
+    levels_sql, ",$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"), params = params)
+  for (source_id in as.character(unlist(.profil_champ(d, "source", character()),
+                                        use.names = FALSE)))
+    DBI::dbExecute(con,
+      "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
+      params = list(id, source_id))
+  invisible(TRUE)
+}
+
+.ecrire_profil_axes_observations <- function(con, projection, descriptor) {
+  id <- as.character(projection$indicator_id)[[1L]]
+  axes <- projection$axes
+  if (is.null(axes)) axes <- data.frame(axis_name = character(), axis_key = character(),
+    label = character(), ordinal = integer(), unit = character(), stringsAsFactors = FALSE)
+  if (!"unit" %in% names(axes)) axes$unit <- NA_character_
+  DBI::dbWriteTable(con, "profile_axis",
+    transform(axes, indicator_id = id), append = TRUE, row.names = FALSE)
+  obs <- projection$facts
+  names(obs)[names(obs) == "detail"] <- "detail_key"
+  names(obs)[names(obs) == "sex"] <- "sex_key"
+  sexes <- .profil_champ(descriptor, "sexes", character())
+  obs$sex_axis_name <- if (length(sexes)) "sex" else NA_character_
+  DBI::dbWriteTable(con, "profile_observation",
+    transform(obs, indicator_id = id), append = TRUE, row.names = FALSE)
+  DBI::dbWriteTable(con, "profile_observation_source", projection$provenance,
+    append = TRUE, row.names = FALSE)
+  actual_rows <- DBI::dbGetQuery(con,
+    "SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1",
+    params = list(id))$n[[1L]]
+  if (actual_rows != nrow(projection$facts))
+    stop("Published profile row count differs from validated projection", call. = FALSE)
+  invisible(TRUE)
+}
+
+.ecrire_comparaison_profil <- function(con, comparison, content_version = NULL) {
+  if (is.null(comparison)) return(invisible(NULL))
+  groups <- comparison$groups; territories <- comparison$territories
+  lineage <- comparison$lineage
+  if (is.data.frame(groups) && nrow(groups))
+    DBI::dbWriteTable(con, "profile_comparison_group", groups, append = TRUE, row.names = FALSE)
+  if (is.data.frame(territories) && nrow(territories))
+    DBI::dbWriteTable(con, "profile_comparison_territory", territories,
+      append = TRUE, row.names = FALSE)
+  if (is.data.frame(lineage) && nrow(lineage)) {
+    version_cmp <- if (is.null(content_version)) comparison$content_version else content_version
+    lineage$comparison_family <- "profile"
+    lineage$comparison_content_version <- version_cmp
+    colonnes <- c("comparison_family", "comparison_context", "group_id", "territory_type",
+      "facet_id", "source_id", "vintage_id", "comparison_content_version")
+    DBI::dbWriteTable(con, "comparison_source_lineage", lineage[colonnes],
+      append = TRUE, row.names = FALSE)
+  }
+  invisible(TRUE)
+}
+
 profile_postgres_adapter <- function(con, artifact_directory = NULL) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   comparison_artifact <- NULL
@@ -582,48 +719,14 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor")
       for (projection in profiles) {
-      for (i in seq_len(nrow(projection$datasets))) DBI::dbExecute(con,
-        "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-        params=unname(as.list(projection$datasets[i,])))
-      for (i in seq_len(nrow(projection$vintages))) DBI::dbExecute(con,
-        "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-        params=unname(as.list(projection$vintages[i,])))
-      d <- projection$descriptor
-      levels_sql <- paste(as.character(DBI::dbQuoteString(con, as.character(d$levels))), collapse=",")
-      if (is.null(d$completeness) || !identical(d$completeness, "dense_complete"))
-        stop("Profile completeness contract is missing or unsupported", call.=FALSE)
-      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version,denominator_semantics,detail_units_required) VALUES($1,$2,$3,ARRAY[",
-        levels_sql,
-        "]::text[],$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"),
-        params=list(d$indicator_id, d$label, d$unit, d$completeness, d$descriptor_version,
-          d$comparison_detail, d$comparison_sex, d$comparison_direction, d$theme_id,
-          if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
-          if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version,
-          if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics,
-          if (is.null(d$detail_units_required)) FALSE else isTRUE(d$detail_units_required)))
-      for (source_id in d$source) DBI::dbExecute(con,
-        "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)", params=list(d$indicator_id,source_id))
-      axes <- projection$axes
-      if (!"unit" %in% names(axes)) axes$unit <- NA_character_
-      DBI::dbWriteTable(con,"profile_axis",transform(axes,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
-      obs <- projection$facts
-      names(obs)[names(obs)=="detail"] <- "detail_key"
-      names(obs)[names(obs)=="sex"] <- "sex_key"
-      obs$sex_axis_name <- if (length(d$sexes)) "sex" else NA_character_
-      DBI::dbWriteTable(con,"profile_observation",transform(obs,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
-      DBI::dbWriteTable(con,"profile_observation_source",projection$provenance,append=TRUE,row.names=FALSE)
-      actual_rows <- DBI::dbGetQuery(con,
-        "SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1", params=list(d$indicator_id))$n[[1L]]
-      if (actual_rows != nrow(projection$facts))
-        stop("Published profile row count differs from validated projection", call.=FALSE)
+        .ecrire_sources_profil(con, projection$datasets, projection$vintages)
+        .ecrire_profil_descriptor(con, projection$descriptor)
+        .ecrire_profil_axes_observations(con, list(
+          indicator_id = projection$descriptor$indicator_id,
+          axes = projection$axes, facts = projection$facts,
+          provenance = projection$provenance), projection$descriptor)
       }
-      DBI::dbWriteTable(con, "profile_comparison_group", comparisons$groups, append=TRUE, row.names=FALSE)
-      DBI::dbWriteTable(con, "profile_comparison_territory", comparisons$territories, append=TRUE, row.names=FALSE)
-      lineage <- comparisons$lineage
-      lineage$comparison_family <- "profile"
-      lineage$comparison_content_version <- comparison_version
-      DBI::dbWriteTable(con,"comparison_source_lineage",lineage[c("comparison_family","comparison_context",
-        "group_id","territory_type","facet_id","source_id","vintage_id","comparison_content_version")],append=TRUE,row.names=FALSE)
+      .ecrire_comparaison_profil(con, comparisons, comparison_version)
       DBI::dbExecute(con, "INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,published_at) VALUES(true,$1,$2,$3,$4,$5,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,profile_content_version=EXCLUDED.profile_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(comparison_version, version, reference_version, nrow(comparisons$groups), nrow(comparisons$territories)))
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")

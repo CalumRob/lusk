@@ -200,8 +200,11 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
           " — zéro écriture.")))
       old <- version_live_ressource(ressource, live)
       rows <- if (isTRUE(retire)) NULL else handler$projeter(artefact)
+      # The closure's artefact versions travel with the apply so a shape adapter
+      # can bind a declared dependency to its RESOURCE version in this same
+      # transaction (the DPE profile's required_scalar_version, #1138).
       handler$remplacer(con, ressource, rows, as.character(artefact$version),
-                        retire = isTRUE(retire))
+                        retire = isTRUE(retire), artefacts = plan$artefacts)
       operation <- if (isTRUE(retire)) "retire" else "apply"
       ecrire_recette_ressource(con = con, ressource = ressource,
         forme = as.character(artefact$forme), operation = operation,

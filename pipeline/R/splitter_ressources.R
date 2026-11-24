@@ -249,7 +249,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL),
+    champ_faits_drift = NULL,
+    # Shape adapter (ADR-0049 seam, #1138): the ONLY writer of this shape's
+    # serving tables. Defined in adaptateur_profil_declare.R (loaded before
+    # this file) and attached here as registry fields.
+    projeter = projeter_artefact_profil_declare,
+    remplacer = remplacer_profil_declare),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
