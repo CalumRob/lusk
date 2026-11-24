@@ -292,7 +292,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # this file) and attached here as registry fields.
     lier_dependance = lier_dependance_faits_profil,
     projeter = projeter_artefact_profil_declare,
-    remplacer = remplacer_profil_declare),
+    remplacer = remplacer_profil_declare,
+    lire_live = lire_live_profil_declare,
+    champs_live = c("descriptor", "axes", "facts", "provenance", "comparison"),
+    colonnes_stockage = list(),
+    champs_comparaison = c("groups", "territories", "lineage")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -307,7 +311,13 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # state series (artif_par_habitant) publishes through this adapter, so no
     # typed-reading code is needed to keep it live.
     projeter = projeter_artefact_series,
-    remplacer = remplacer_series),
+    remplacer = remplacer_series,
+    lire_live = lire_live_series,
+    champs_live = c("projection", "comparison"),
+    colonnes_stockage = list(),
+    champs_comparaison = c("groups", "territories", "lineage", "zero_reasons",
+                           "content_version", "ordered_series_content_version",
+                           "reference_content_version", "axis_values")),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -320,7 +330,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per collection.
     projeter = projeter_artefact_collection,
-    remplacer = remplacer_collection),
+    remplacer = remplacer_collection,
+    lire_live = lire_live_collection,
+    champs_live = c("projection", "comparison"),
+    colonnes_stockage = list(),
+    champs_comparaison = c("groups", "territories", "lineage",
+                           "collection_content_version", "reference_content_version")),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie, reference)
@@ -337,7 +352,13 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # aggregate, TYPEQU metadata, comparison, density and littoral summaries in
     # one transaction, plus the registry row.
     projeter = projeter_artefact_aedar,
-    remplacer = remplacer_aedar)
+    remplacer = remplacer_aedar,
+    lire_live = lire_live_aedar,
+    champs_live = c("descriptor", "projection", "summary", "comparison"),
+    colonnes_stockage = list(),
+    champs_comparaison = c("groups", "territories", "density_rows", "littoral_rows",
+      "content_version", "aedar_content_version", "reference_content_version",
+      "input_content_version", "input_identity", "source_snapshot_id", "publication_mode"))
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {
