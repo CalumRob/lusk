@@ -4,14 +4,6 @@
 # connexion à la base de service, AUCUNE écriture : ce module ne fait que
 # calculer et imprimer un verdict. `apply` (slice suivante) consommera ce plan.
 
-# Les huit champs sémantiques de la décision 4 d'ADR-0044. `descriptor_version`
-# n'en fait PAS partie : un changement de formulation seul n'est pas un
-# changement de définition (CONTEXT.md « Plan de publication »).
-CHAMPS_DEFINITION_RESSOURCE <- c(
-  "label", "unit", "direction", "facet", "levels", "sources",
-  "completeness", "denominator_semantics"
-)
-
 # -- Lecture du magasin (sélecteur de build courant) ---------------------------
 
 construites_depuis_magasin <- function(root = NULL) {
@@ -70,38 +62,12 @@ champ_descripteur <- function(descripteur, nom) {
   NULL
 }
 
-normaliser_valeur_definition <- function(x) {
-  if (is.null(x)) return(NULL)
-  if (is.factor(x)) x <- as.character(x)
-  if (is.list(x)) x <- unlist(x, use.names = FALSE)
-  if (length(x) == 1L && is.na(x)) return(NULL)
-  x <- as.character(x)
-  x <- x[!is.na(x) & nzchar(x)]
-  if (!length(x)) return(NULL)
-  sort(unique(x))
-}
-
-valeur_champ_definition <- function(descripteur, champ) {
-  alias <- switch(champ,
-    facet = c("facet", "comparison_facet"),
-    levels = c("levels", "allowed_levels"),
-    sources = c("sources", "allowed_sources"),
-    champ)
-  for (nom in alias) {
-    brut <- champ_descripteur(descripteur, nom)
-    if (!is.null(brut)) return(normaliser_valeur_definition(brut))
-  }
-  NULL
-}
-
-changement_definition_ressource <- function(live, built) {
-  modifies <- character()
-  for (champ in CHAMPS_DEFINITION_RESSOURCE) {
-    avant <- valeur_champ_definition(live, champ)
-    apres <- valeur_champ_definition(built, champ)
-    if (!identical(avant, apres)) modifies <- c(modifies, champ)
-  }
-  list(change = length(modifies) > 0L, champs = modifies)
+# La sémantique de définition n'a qu'UNE source : SCALAR_DESCRIPTOR_SEMANTICS
+# et identical_scalar_descriptor() (publish_scalar_scope.R). Le module n'a ni
+# liste de champs ni règle d'ordre propres : il délègue au handler de forme, qui
+# compose ce garde canonique. `descriptor_version` en est exclu par construction.
+changement_definition_ressource <- function(live, built, forme = "scalar") {
+  REGISTRE_FORMES_RESSOURCE[[forme]]$comparer_definition(live, built)
 }
 
 # -- Cascade à partir des dépendances déclarées --------------------------------
@@ -287,7 +253,8 @@ assembler_plan_publication <- function(builds, artefacts, artefacts_live = list(
     changement <- if (is.null(precedent)) {
       list(change = FALSE, champs = character())
     } else changement_definition_ressource(precedent$contenu$descriptor,
-                                           artefact$contenu$descriptor)
+                                           artefact$contenu$descriptor,
+                                           as.character(artefact$forme))
     definition[[i]] <- changement$change
     definition_champs[[i]] <- changement$champs
 

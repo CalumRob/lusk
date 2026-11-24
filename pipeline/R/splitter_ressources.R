@@ -177,6 +177,50 @@ faits_forme <- function(handler, projection) {
 #   comparaison(projection, ressource, reference) -> comparaison de la ressource.
 # Ajouter une forme = ajouter UNE entrée ici ; le splitter n'a aucune branche
 # conditionnelle par forme.
+# Definition semantique d'un descripteur — UNE seule source : les constantes et
+# identical_scalar_descriptor() de publish_scalar_scope.R (deja partagees avec
+# publish_serving_bridge.R). Aucun champ n'est repertorie ici : on projette le
+# descripteur de la forme sur LE jeu canonique, puis on delegue au garde
+# canonique. Son ordre de listes est conserve (un reordonnancement est un
+# changement de definition, conservateur).
+projeter_description_canonique <- function(descripteur) {
+  champs <- SCALAR_DESCRIPTOR_SEMANTICS
+  ligne <- lapply(champs, function(champ) {
+    valeur <- if ((is.list(descripteur) || is.data.frame(descripteur)) &&
+                  champ %in% names(descripteur)) descripteur[[champ]] else NULL
+    if (champ %in% SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS) {
+      I(list(if (is.null(valeur)) NA_character_ else
+        as.character(unlist(valeur, use.names = FALSE))))
+    } else {
+      if (is.null(valeur)) NA_character_ else as.character(valeur)[[1L]]
+    }
+  })
+  names(ligne) <- champs
+  as.data.frame(ligne, stringsAsFactors = FALSE, optional = TRUE)
+}
+
+noms_definition_modifiee <- function(canonical_live, canonical_built) {
+  SCALAR_DESCRIPTOR_SEMANTICS[vapply(SCALAR_DESCRIPTOR_SEMANTICS, function(champ) {
+    avant <- canonical_live[[champ]]
+    apres <- canonical_built[[champ]]
+    if (champ %in% SCALAR_DESCRIPTOR_SEMANTIC_LIST_FIELDS) {
+      !identical(as.character(unlist(avant, use.names = FALSE)),
+                 as.character(unlist(apres, use.names = FALSE)))
+    } else {
+      !identical(as.character(avant[[1L]]), as.character(apres[[1L]]))
+    }
+  }, logical(1))]
+}
+
+comparer_definition_canonique <- function(projeter = projeter_description_canonique) {
+  function(live, built) {
+    avant <- projeter(live)
+    apres <- projeter(built)
+    champs <- noms_definition_modifiee(avant, apres)
+    list(change = !identical_scalar_descriptor(avant, apres), champs = champs)
+  }
+}
+
 REGISTRE_FORMES_RESSOURCE <- list(
   scalar = list(
     lire = function(sortie, reference, metadata_directory)
@@ -185,7 +229,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptors",
     champ_provenance = "provenance",
     champ_comparaison = NULL,
-    comparaison = comparaison_scalaire_ressource),
+    comparaison = comparaison_scalaire_ressource,
+    comparer_definition = comparer_definition_canonique()),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -193,7 +238,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison")),
+    comparaison = comparaison_persistee("comparison"),
+    comparer_definition = comparer_definition_canonique()),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -201,7 +247,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison")),
+    comparaison = comparaison_persistee("comparison"),
+    comparer_definition = comparer_definition_canonique()),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -209,7 +256,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison")),
+    comparaison = comparaison_persistee("comparison"),
+    comparer_definition = comparer_definition_canonique()),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie)
@@ -219,7 +267,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "source",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"))
+    comparaison = comparaison_persistee("comparison"),
+    comparer_definition = comparer_definition_canonique())
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

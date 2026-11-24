@@ -139,14 +139,24 @@ test_that("sans artefact live, la dérive est inconnue", {
 
 # -- Definition change ---------------------------------------------------------
 
-test_that("les champs de définition suivent la décision 4 d'ADR-0044", {
-  expect_setequal(CHAMPS_DEFINITION_RESSOURCE,
-    c("label", "unit", "direction", "facet", "levels", "sources",
-      "completeness", "denominator_semantics"))
+test_that("la définition n'a qu'une source : le garde canonique du scalaire", {
+  expect_false(exists("CHAMPS_DEFINITION_RESSOURCE", inherits = TRUE))
+  expect_false(exists("valeur_champ_definition", inherits = TRUE))
+  code_plan <- paste(readLines(testthat::test_path("..", "..", "R", "plan_publication.R"),
+                               warn = FALSE), collapse = "\n")
+  code_registre <- paste(readLines(testthat::test_path("..", "..", "R",
+                                                       "splitter_ressources.R"),
+                                   warn = FALSE), collapse = "\n")
+  expect_true(grepl("identical_scalar_descriptor", code_registre, fixed = TRUE))
+  expect_true(grepl("SCALAR_DESCRIPTOR_SEMANTICS", code_registre, fixed = TRUE))
+  expect_true(grepl("comparer_definition", code_plan, fixed = TRUE))
+  expect_true(all(vapply(REGISTRE_FORMES_RESSOURCE,
+    function(h) is.function(h$comparer_definition), logical(1))))
 })
 
 plan_descriptor_definition <- function() {
-  list(label = "Ancien libellé", unit = "count", direction = "high",
+  list(indicator_id = "offre_tc", theme_id = "mobilite",
+       label = "Ancien libellé", unit = "count", direction = "high",
        comparison_facet = "offre_tc", allowed_levels = c("commune", "epci"),
        allowed_sources = "bpe_offer", completeness = "sparse",
        denominator_semantics = "count", descriptor_version = "v1")
@@ -174,14 +184,16 @@ test_that("unité et dénominateur sont des changements de définition", {
   expect_true("denominator_semantics" %in% r$champs)
 })
 
-test_that("l'ordre des niveaux et sources n'est pas un changement de définition", {
+test_that("l'ordre des niveaux et sources est un changement de définition (règle canonique)", {
   v1 <- plan_descriptor_definition()
   v2 <- v1
   v2$allowed_levels <- rev(v2$allowed_levels)
+  r <- changement_definition_ressource(v1, v2)
+  expect_identical(r$change, TRUE)
+  expect_true("allowed_levels" %in% r$champs)
+  v2 <- v1
   v2$allowed_sources <- c("bpe_offer", "autre")
   expect_identical(changement_definition_ressource(v1, v2)$change, TRUE)
-  v2$allowed_sources <- v1$allowed_sources
-  expect_identical(changement_definition_ressource(v1, v2)$change, FALSE)
 })
 
 test_that("le descripteur data.frame d'un scalaire est comparé comme une liste", {
