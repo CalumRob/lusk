@@ -255,34 +255,6 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
 # et l'adaptateur de forme (adaptateur_collection.R) appellent CES fonctions ;
 # aucun SQL n'est dupliqué. Toutes les valeurs passent par des params positionnels.
 
-.ecrire_collection_sources <- function(con, datasets, vintages, conflict = c("update", "nothing")) {
-  conflict <- match.arg(conflict)
-  sql_dataset <- if (identical(conflict, "update"))
-    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name"
-  else
-    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO NOTHING"
-  sql_vintage <- if (identical(conflict, "update"))
-    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date"
-  else
-    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING"
-  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) {
-    r <- datasets[i, , drop = FALSE]
-    DBI::dbExecute(con, sql_dataset, params = unname(as.list(r[c("source_id", "name")])))
-  }
-  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) {
-    r <- vintages[i, , drop = FALSE]
-    DBI::dbExecute(con, sql_vintage,
-      params = unname(as.list(r[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
-    same <- DBI::dbGetQuery(con, paste0("SELECT version,reference_date,publication_date ",
-      "FROM source_vintage WHERE source_id=$1 AND vintage_id=$2"),
-      params = list(r$source_id[[1L]], r$vintage_id[[1L]]))
-    if (!isTRUE(all.equal(same, r[c("version", "reference_date", "publication_date")],
-                          check.attributes = FALSE)))
-      stop("Observed source vintage conflicts with an existing publication", call. = FALSE)
-  }
-  invisible(TRUE)
-}
-
 .ecrire_collection_base <- function(con, projection, version, reference_version) {
   d <- projection$descriptor; indicator <- d$indicator_id
   DBI::dbExecute(con, "DELETE FROM observed_collection_publication WHERE indicator_id=$1",
@@ -407,10 +379,23 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
     artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
       write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
     if (changed) {
-      # source_dataset.name is the current mutable label; the shared writer keeps
-      # the vintage identity/date contract strict below it.
-      .ecrire_collection_sources(con, projection$datasets, projection$vintages,
-                                 conflict = "update")
+      # source_dataset.name is the current mutable label (update); vintage rows
+      # are immutable (nothing) and their clock is checked below. Both go through
+      # the single shared source writer (#1138 review).
+      .ecrire_sources_serveur(con, projection$datasets, vintages = NULL,
+                              conflict = "update")
+      .ecrire_sources_serveur(con, datasets = NULL, projection$vintages,
+                              conflict = "nothing")
+      for (i in seq_len(nrow(projection$vintages))) {
+        r <- projection$vintages[i, , drop = FALSE]
+        same <- DBI::dbGetQuery(con, paste0(
+          "SELECT version,reference_date,publication_date FROM source_vintage ",
+          "WHERE source_id=$1 AND vintage_id=$2"),
+          params = list(r$source_id[[1L]], r$vintage_id[[1L]]))
+        if (!isTRUE(all.equal(same, r[c("version", "reference_date", "publication_date")],
+                              check.attributes = FALSE)))
+          stop("Observed source vintage conflicts with an existing publication", call. = FALSE)
+      }
       .ecrire_collection_base(con, projection, version, ref$content_version[[1L]])
     }
     if (identical(d$kind,"period_detail") && (changed || comparison_stale)) {

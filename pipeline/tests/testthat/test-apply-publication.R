@@ -125,6 +125,7 @@ fixture_apply_definition_run <- function(root, ids, builds, live, registre,
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   err <- NULL
@@ -270,6 +271,7 @@ test_that("apply writes one resource, one transaction, DB + local receipts", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
 
@@ -302,6 +304,7 @@ test_that("apply refuses a definition change with ZERO writes and transaction", 
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   err <- tryCatch(apply_publication("densite", root = root,
@@ -328,6 +331,7 @@ test_that("apply refuses an absent live reference with zero writes", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = function(con, sql, params = list()) {
       if (grepl("table_publication WHERE table_name='territory_reference'", sql,
                 fixed = TRUE)) return(data.frame(content_version = character()))
@@ -359,6 +363,7 @@ test_that("apply refuses a divergent live reference with zero writes", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = function(con, sql, params = list()) {
       if (grepl("table_publication WHERE table_name='territory_reference'", sql,
                 fixed = TRUE)) return(data.frame(content_version = "other-reference"))
@@ -395,6 +400,7 @@ test_that("apply --retire removes rows via the adapter and leaves a receipt", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   resultat <- apply_publication("densite", retire = TRUE, root = root,
@@ -476,6 +482,7 @@ test_that("apply @version selects that artefact for rollback", {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = fixture_dbget_reference(),
     .package = "DBI")
   apply_publication(paste0("densite@", version0), root = root,

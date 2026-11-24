@@ -62,7 +62,8 @@ test_that("remplacer writes only this collection and the registry row", {
   rows <- projeter_artefact_collection(artefact)
   capture <- adaptateur_collection_con(function(con)
     remplacer_collection(con, "acv", rows, rows$version,
-                         reference_content_version = rows$reference_content_version))
+                         reference_content_version = rows$reference_content_version,
+                         reference_rows = adaptateur_reference_rows()))
 
   executes <- capture$executes
   deletes <- executes[grepl("^DELETE", executes)]

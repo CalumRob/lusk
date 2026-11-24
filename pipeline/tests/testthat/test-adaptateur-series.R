@@ -79,7 +79,8 @@ test_that("remplacer writes only this dataset and the registry row", {
   rows <- projeter_artefact_series(artefact)
   capture <- adaptateur_series_con(function(con)
     remplacer_series(con, "artif_par_habitant", rows, rows$version,
-                     reference_content_version = rows$reference_content_version))
+                     reference_content_version = rows$reference_content_version,
+                     reference_rows = adaptateur_reference_rows()))
 
   executes <- capture$executes
   deletes <- executes[grepl("^DELETE", executes)]
@@ -117,7 +118,8 @@ test_that("OCS-GE state series applies through the adapter without typed-reading
   rows <- projeter_artefact_series(artefact)
   capture <- adaptateur_series_con(function(con)
     remplacer_series(con, "artif_par_habitant", rows, rows$version,
-                     reference_content_version = rows$reference_content_version))
+                     reference_content_version = rows$reference_content_version,
+                     reference_rows = adaptateur_reference_rows()))
   # The OCS-GE dataset's genuine serving tables are written; no typed-reading
   # publisher/route is on this path.
   expect_true(any(grepl("INSERT INTO series_dataset_publication", capture$executes)))

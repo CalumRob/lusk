@@ -97,10 +97,26 @@ verifier_adaptateurs_apply <- function(cibles, artefacts, retire = FALSE) {
 
 # Référence territoriale : `apply` ne la publie JAMAIS (changement de classe E,
 # ADR-0049) — il la LIT sous le verrou du producteur de référence, dans sa
-# propre transaction et AVANT tout write. Un artefact est lié à la version de
-# référence portée par sa comparaison ; lire une autre version (ou aucune)
-# doit refuser avec une raison NOMMÉE, jamais une erreur de trigger SQL.
-verifier_reference_live_apply <- function(con, artefacts, cibles) {
+# propre transaction et AVANT tout write. Une SEULE lecture live, partagée par
+# TOUS les adaptateurs qui ont besoin des lignes de référence (série,
+# collection, AEDAR) : les adaptateurs ne rouvrent jamais la lecture.
+lire_reference_live_apply <- function(con) {
+  version <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
+  version_live <- if (is.data.frame(version) && nrow(version) &&
+                      !is.na(version$content_version[[1L]]))
+    as.character(version$content_version[[1L]]) else NA_character_
+  rows <- DBI::dbGetQuery(con, paste0(
+    "SELECT territory_id,territory_type,epci_id,density_class_code,",
+    "littoral_code,littoral_classement_source FROM territory_reference"))
+  list(version = version_live, rows = rows)
+}
+
+# Un artefact est lié à la version de référence portée par sa comparaison ;
+# lire une autre version (ou aucune) doit refuser avec une raison NOMMÉE,
+# jamais une erreur de trigger SQL. La référence déjà lue dans la transaction
+# est passée par `reference` : aucune seconde lecture.
+verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NULL) {
   attendus <- unique(unlist(lapply(cibles, function(id) {
     artefact <- artefacts[[id]]
     comparaison <- if (is.list(artefact)) artefact$contenu$comparison else NULL
@@ -113,11 +129,8 @@ verifier_reference_live_apply <- function(con, artefacts, cibles) {
     stop(erreur_apply("reference_divergente", paste0(
       "apply : reference_divergente: artefacts liés à plusieurs références (",
       paste(attendus, collapse = ","), ") — zéro écriture.")))
-  live <- DBI::dbGetQuery(con,
-    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
-  version_live <- if (is.data.frame(live) && nrow(live) &&
-                      !is.na(live$content_version[[1L]]))
-    as.character(live$content_version[[1L]]) else NA_character_
+  version_live <- if (is.null(reference)) NULL else reference$version
+  if (is.null(version_live)) version_live <- lire_reference_live_apply(con)$version
   if (is.na(version_live) || !nzchar(version_live))
     stop(erreur_apply("reference_absente", paste0(
       "apply : reference_absente: aucune référence territoriale publiée ",
@@ -183,11 +196,15 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
 
   recettes <- list()
   with_publication_transaction(con, {
+    # Un seul niveau d'isolement pour TOUTE la transaction (comme le producteur
+    # AEDAR le faisait) : il est positionné AVANT la première requête, ici.
+    DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     # Verrou du producteur de référence (593, 1) : la version live ne peut pas
-    # bouger entre la lecture et nos écritures. Puis garde NOMMÉ, avant tout
-    # write : une référence absente ou divergente refuse la publication entière.
+    # bouger entre la lecture et nos écritures. Une SEULE lecture des lignes de
+    # référence, partagée avec les adaptateurs, puis garde NOMMÉ avant tout write.
     DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
-    verifier_reference_live_apply(con, plan$artefacts, cibles)
+    reference <- lire_reference_live_apply(con)
+    verifier_reference_live_apply(con, plan$artefacts, cibles, reference = reference)
     for (ressource in cibles) {
       artefact <- plan$artefacts[[ressource]]
       if (is.null(artefact))
@@ -204,7 +221,9 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
       # can bind a declared dependency to its RESOURCE version in this same
       # transaction (the DPE profile's required_scalar_version, #1138).
       handler$remplacer(con, ressource, rows, as.character(artefact$version),
-                        retire = isTRUE(retire), artefacts = plan$artefacts)
+                        retire = isTRUE(retire), artefacts = plan$artefacts,
+                        reference_content_version = reference$version,
+                        reference_rows = reference$rows)
       operation <- if (isTRUE(retire)) "retire" else "apply"
       ecrire_recette_ressource(con = con, ressource = ressource,
         forme = as.character(artefact$forme), operation = operation,
