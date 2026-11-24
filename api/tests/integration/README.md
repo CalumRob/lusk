@@ -479,6 +479,17 @@ connection.
 python -m pytest api/tests/integration/test_profile_resource_comparison_migration.py -q
 ```
 
+**Coexistence with the legacy full path (expand phase).** Once a per-resource
+apply has rebound the DPE profile's `required_scalar_version` to
+`part_passoires`'s **facts** version (the `scalar_content_version` of
+`scalar_resource_comparison_publication`), the legacy full publication path
+refuses atomically at the Habitat typed reading:
+`publish_typed_readings.R:356` compares that column against the **global**
+`table_publication['scalar_observation'].content_version`, which is a different
+token. The legacy path stays green until #1141 retires typed readings.
+Consequently **per-resource apply must not be used on the serving database
+before the #1143 rollout**; no worker applies it to `lusk`.
+
 The end-to-end cascade proof lives with the R code
 (`pipeline/tests/testthat/test-apply-profile-db.R`). It uses the
 `LUSK_SCALAR_TEST_*` variables plus `LUSK_SCALAR_TEST_CLEANUP=1`, one random
