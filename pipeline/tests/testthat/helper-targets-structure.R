@@ -67,10 +67,12 @@ lire_graphe_structure <- function(kind) {
   if (!exists(slot, cache, inherits = FALSE)) {
     valeur <- avec_environnement_graphe_structure(entree, tryCatch(
       if (identical(kind, "manifest")) {
-        targets::tar_manifest(callr_function = NULL)
+        targets::tar_manifest(callr_function = NULL,
+                              envir = new.env(parent = globalenv()))
       } else {
         reseau <- targets::tar_network(store = entree$chemins$store,
-                                       callr_function = NULL)
+                                       callr_function = NULL,
+                                       envir = new.env(parent = globalenv()))
         attr(reseau, "store_structure") <- entree$chemins$store
         reseau
       },
