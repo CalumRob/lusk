@@ -19,8 +19,7 @@ EXCEPTIONS_BUDGET <- data.frame(
     "test-lock-attribution.R",
     "test-targets-raccordement.R",
     "test-targets-raccordement.R",
-    "test-offre-tc-bridge.R",
-    "test-scalar-scope.R"
+    "test-offre-tc-bridge.R"
   ),
   test = c(
     NA_character_,
@@ -29,8 +28,7 @@ EXCEPTIONS_BUDGET <- data.frame(
     NA_character_,
     "discipline de cue : un second appel SAUTE tout, une entrée touchée n'invalide que la chaîne",
     "LE CRON SAUTE LA CHAÎNE : après l'amorçage, plus JAMAIS un recalcul",
-    NA_character_,
-    "le graphe d'imports du namespace lusk reste acyclique (#1071)"
+    NA_character_
   ),
   raison = c(
     "initial whole-repo parse-data seam and DBI audits; later structural audits reuse the cache",
@@ -39,8 +37,7 @@ EXCEPTIONS_BUDGET <- data.frame(
     "one full targets network construction for report dependency edges; later files reuse it",
     "execution is the contract: cue discipline across repeated makes; cron retirement leaves it unchanged",
     "execution is the contract: cron never recomputes after bootstrap; #1129 leaves it unchanged",
-    "ADR-0049 step 4 retires the offre_tc bridge; its 78 transaction contracts are deliberately left unchanged",
-    "whole-namespace import DAG audit; acyclicity protects the scoped-publication retirement boundary"
+    "ADR-0049 step 4 retires the offre_tc bridge; its 78 transaction contracts are deliberately left unchanged"
   ),
   stringsAsFactors = FALSE
 )
