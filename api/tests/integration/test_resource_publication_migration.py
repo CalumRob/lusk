@@ -120,14 +120,28 @@ def test_migration_046_upgrade_preserves_every_existing_row_and_marker():
             connection.execute(MIGRATION.read_text(encoding="utf-8"))
             assert connection.execute("SELECT count(*) FROM resource_publication_event").fetchone()[0] == 0
 
-            # Receipts are append-only: UPDATE and DELETE are refused by trigger.
+            # Receipts are append-only: assert BEHAVIOUR. The test publisher role
+            # OWNS the schema it creates, so it holds every privilege including
+            # UPDATE/DELETE/TRUNCATE by ownership — grants cannot prove anything
+            # here. The BEFORE triggers are the real protection.
             connection.execute(
                 "INSERT INTO resource_publication_event(resource_id,shape,operation,"
                 "new_content_version) VALUES ('a','scalar','apply','v1')")
-            with pytest.raises(Exception):
-                connection.execute("UPDATE resource_publication_event SET new_content_version='v2'")
-            with pytest.raises(Exception):
-                connection.execute("DELETE FROM resource_publication_event")
+            assert connection.execute(
+                "SELECT new_content_version FROM resource_publication_event").fetchone()[0] == "v1"
+            for forbidden in (
+                "UPDATE resource_publication_event SET new_content_version='v2'",
+                "DELETE FROM resource_publication_event",
+                "TRUNCATE resource_publication_event",
+            ):
+                with pytest.raises(Exception):
+                    connection.execute(forbidden)
+            # INSERT and SELECT still work after the three refusals.
+            connection.execute(
+                "INSERT INTO resource_publication_event(resource_id,shape,operation,"
+                "new_content_version) VALUES ('b','scalar','apply','v2')")
+            assert connection.execute(
+                "SELECT count(*) FROM resource_publication_event").fetchone()[0] == 2
 
             # Fresh-install parity for the three new relations.
             connection.execute(f'SET search_path TO "{fresh}"')
@@ -135,14 +149,15 @@ def test_migration_046_upgrade_preserves_every_existing_row_and_marker():
             for table in NEW_TABLES:
                 assert _columns(connection, upgraded, table) == _columns(connection, fresh, table)
 
-            # Explicit grant model: publisher can INSERT/SELECT the receipt, but
-            # has no UPDATE/DELETE/TRUNCATE grant on it.
-            grants = {row[0] for row in connection.execute("""
-                SELECT privilege_type FROM information_schema.role_table_grants
-                WHERE table_schema=%s AND table_name='resource_publication_event'
-                  AND grantee='lusk_it_contract_pub'""", (fresh,)).fetchall()}
-            assert {"INSERT", "SELECT"} <= grants
-            assert not ({"UPDATE", "DELETE", "TRUNCATE"} & grants)
+            # Grant model for the NAMED serving roles is a static contract of
+            # migration 046 and schema.sql (the test owner role is exempt — see
+            # the behavioural proof above). The named roles are not provisioned
+            # in this disposable test database, so assert the DDL text instead.
+            for ddl in (MIGRATION.read_text(encoding="utf-8"),
+                        SCHEMA.read_text(encoding="utf-8")):
+                assert "GRANT SELECT, INSERT ON resource_publication_event TO lusk_publisher;" in ddl
+                assert "REVOKE UPDATE, DELETE, TRUNCATE ON resource_publication_event FROM lusk_publisher;" in ddl
+                assert "GRANT SELECT ON resource_publication, resource_publication_event," in ddl
     finally:
         with psycopg.connect(publish_dsn, autocommit=True) as cleanup:
             for schema in (upgraded, fresh):
