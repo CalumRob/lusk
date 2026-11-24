@@ -631,7 +631,12 @@ function deepFreeze<T>(value: T): T {
 
 type CahierCaptureOwner = <T>(value: T) => T
 
-/** One clone-or-reference decision for every live owner value in either capture. */
+/**
+ * The generation path applies this clone-or-reference choice to native-render
+ * input, AEDAR state, map items and legend detail. Figure models and the other
+ * assembled capture fields rely on the outer `deepPlain(capture)` below, not on
+ * this helper; availability passes its values through by reference.
+ */
 function captureOwner(immutable: boolean): CahierCaptureOwner {
   return immutable ? deepPlain : (value) => value
 }
