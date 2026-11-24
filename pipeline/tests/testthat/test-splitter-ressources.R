@@ -78,6 +78,24 @@ test_that("la comparaison d'un artefact scalaire est celle de l'indicateur seul 
       autre$contenu$provenance, NULL)))
 })
 
+test_that("l'artefact d'un profil déclaré garde comparison_scalar et required_scalar_version", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  reference <- artefacts_fixture_reference()
+  resultat <- splitter_sortie(tempfile("sortie-"), root = root,
+    projections = artefacts_fixture_all_projections(reference$content_version),
+    reference = reference, digests = artefacts_fixture_all_digests())
+  version <- resultat$version[resultat$ressource == "distribution_dpe"]
+  artefact <- lire_artefact_ressource("distribution_dpe", version, root = root)
+
+  expect_identical(artefact$contenu$descriptor$comparison_scalar, "part_passoires")
+  expect_identical(artefact$contenu$descriptor$required_scalar_version, "part-passoires-v1")
+  # Le splitter ne réécrit PAS la dépendance : elle vient du descripteur produit.
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "splitter_ressources.R"),
+    warn = FALSE), collapse = "\n")
+  expect_false(grepl("part_passoires", code, fixed = TRUE))
+})
+
 test_that("les jetons d'une comparaison non scalaire lient aussi les faits de sa ressource et la référence", {
   root <- artefacts_fixture_root()
   root_invalide <- artefacts_fixture_root()

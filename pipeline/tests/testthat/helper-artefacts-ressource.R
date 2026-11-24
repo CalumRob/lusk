@@ -64,7 +64,10 @@ artefacts_fixture_scalar_projections <- function() {
 
 artefacts_fixture_profile_projections <- function(reference_version = "reference-v1") {
   projection <- list(
-    descriptor = list(indicator_id = "distribution_dpe", theme_id = "habitat"),
+    # Modélisé sur le profil déclaré réel : la comparaison scalaire dont il
+    # dépend est une déclaration du producteur, pas un littéral du splitter.
+    descriptor = list(indicator_id = "distribution_dpe", theme_id = "habitat",
+      comparison_scalar = "part_passoires", required_scalar_version = "part-passoires-v1"),
     facts = data.frame(indicator_id = "distribution_dpe", territory_id = "c1",
       value = 1, stringsAsFactors = FALSE),
     provenance = data.frame(source_id = "profile_source", vintage_id = "v1",
