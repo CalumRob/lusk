@@ -138,6 +138,15 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   }
   verifier_adaptateurs_apply(cibles, artefacts_pre, retire = retire)
 
+  # Gel de lignage (noyau partagé) AU SEUIL DE LA CONNEXION (ADR-0048 §5
+  # amendée) : le garde est évalué ici, avant le dbConnect ci-dessous, et avant
+  # toute écriture. Le plan porte le même verdict pour l'affichage ; c'est ce
+  # garde-ci que l'audit structurel reconnaît sur le site d'ouverture.
+  for (ressource in cibles) {
+    verifier_gel_lignage_ressource(artefacts_pre[[ressource]],
+                                   registre = registre, lock = lock)
+  }
+
   owns_con <- FALSE
   if (is.null(con)) {
     config <- configuration_service_postgres()

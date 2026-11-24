@@ -9,10 +9,9 @@ BLOCS_OUVRANTS <- "function\\s*\\(|\\bif\\s*\\(|\\bfor\\s*\\(|\\bwhile\\s*\\("
 # autorisations : liste de listes (fichier, raison) — fichier peut être un regex.
 # Les chemins historiques sont autorisés EN ATTENDANT l'étape 4 (ADR-0049) :
 # ils sont explicitement marqués « retire in ADR-0049 step 4 ». Le SEUL nouveau
-# chemin autorisé est `apply`, la couture de publication (step 2, #1137).
+# `apply` n'est PAS allowlisté : son ouverture porte le garde de gel de lignage
+# (verifier_gel_lignage_ressource) au site même du dbConnect — voir #1137.
 AUTORISATIONS_DB <- list(
-  list(fichier = "^R/apply_publication\\.R$",
-       raison = "ADR-0049 step 2 (#1137) : apply est la SEULE couture de connexion de service ; refus avant toute écriture"),
   list(fichier = "^R/publish_serving_bridge\\.R$",
        raison = "pont offre_tc #1072 — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/smoke-.*\\.R$",
@@ -59,7 +58,8 @@ auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_servic
       garde <- FALSE
       if (length(debut)) {
         for (j in debut) {
-          if (any(grepl("verifier_gel_release\\(", lignes[j:i]))) {
+          if (any(grepl("(verifier_gel_release|verifier_gel_lignage_ressource)\\(",
+                        lignes[j:i]))) {
             garde <- TRUE
             break
           }
@@ -86,7 +86,7 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
   if (nrow(fautes)) {
     stop(
       "Structural guard audit — ", nrow(fautes),
-      " serving-DB call site(s) without verifier_gel_release() and without an allowlist reason:\n",
+      " serving-DB call site(s) without a freeze guard (verifier_gel_release() / verifier_gel_lignage_ressource()) and without an allowlist reason:\n",
       paste0("  ", fautes$fichier, ":", fautes$ligne, "  ", trimws(fautes$source),
              collapse = "\n"),
       call. = FALSE

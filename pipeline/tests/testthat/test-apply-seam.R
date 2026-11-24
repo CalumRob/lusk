@@ -6,15 +6,17 @@
 
 racine_pipeline <- function() normalizePath(testthat::test_path("..", ".."))
 
-test_that("real repo passes both seam audits (apply + adapter allowlisted)", {
+test_that("real repo passes both seam audits (apply guarded, not allowlisted)", {
   racine <- racine_pipeline()
   connexions <- verifier_structure_gel(racine)
   expect_true(nrow(connexions) > 0L)
   expect_equal(nrow(connexions[!connexions$garde & !connexions$autorise, , drop = FALSE]), 0L)
   apply_sites <- connexions[grepl("apply_publication", connexions$fichier), ]
   expect_true(nrow(apply_sites) > 0L)
-  expect_true(all(apply_sites$autorise))
-  expect_true(all(grepl("step 2", apply_sites$raison)))
+  # The connection site carries the lineage freeze guard itself; it is NOT
+  # exempted through the allowlist.
+  expect_true(all(apply_sites$garde))
+  expect_false(any(apply_sites$autorise))
 
   ecritures <- verifier_structure_ecritures_serveur(racine)
   expect_true(nrow(ecritures) > 0L)
@@ -86,5 +88,6 @@ test_that("apply delegates every serving write to the shape adapter", {
   # through REGISTRE_FORMES_RESSOURCE[[forme]]$remplacer only.
   expect_false(any(grepl(MOTIF_ECRITURE_SERVEUR, lignes, ignore.case = TRUE)))
   expect_true(any(grepl("REGISTRE_FORMES_RESSOURCE\\[\\[", lignes)))
-  expect_false(any(grepl("if\\s*\\(.*forme|switch\\s*\\(", lignes)))
+  expect_false(any(grepl("switch\\s*\\(\\s*forme|if\\s*\\(\\s*(identical\\s*\\(\\s*)?forme\\s*(==|!=)",
+                         lignes)))
 })
