@@ -87,7 +87,7 @@ An expensive computation read by several resources — the OSM network, OCS-GE s
 _Avoid_: brut du thème, payload (the theme-sized blocks it replaces)
 
 **Plan de publication** (ADR-0049):
-The read-only comparison, per resource, of the built version against the live version, with drift, check status and the dependency cascade. `apply` publishes an explicit list of resources from it (or `--all-changed`), adds the declared cascade, refuses on a code regression, requires `--confirm-definition <ressource>` when a descriptor's meaning changes, and writes an append-only receipt. Retiring a resource is an `apply` too. The only path that opens a serving-database connection.
+The read-only comparison, per resource, of the built version against the live version, with drift, check status and the dependency cascade. `apply` publishes an explicit list of resources from it (or `--all-changed`), adds the declared cascade, refuses on a code regression, requires `--confirm-definition <ressource>` when a descriptor's meaning changes, and writes an append-only receipt. Retiring a resource is an `apply` too. `adopt` proves an existing live database equal to its kept artefacts before adding registry rows and `adopted` receipts; `--dry-run` opens the same read session (snapshot and reference lock) but writes nothing. The only serving-database connection code is the shared plan/apply/adopt session seam.
 _Avoid_: publication complète, publication ciblée (both pre-ADR-0049 paths), pont (the #1072 one-off)
 
 **Matérialisation scalaire ciblée**:
