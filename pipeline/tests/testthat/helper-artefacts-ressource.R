@@ -121,3 +121,23 @@ artefacts_fixture_all_digests <- function() {
   artefacts_fixture_digests(c("census_densite", "bpe_offer", "profile_source",
     "series_source", "collection_source", "aedar_source", "unrelated_source"))
 }
+
+# Une sortie minimale RÉELLE (artefact scalaire de producteur + référence
+# territoriale + digests de run) pour le test de bout en bout de la commande.
+artefacts_fixture_sortie_scalaire <- function() {
+  sortie <- tempfile("sortie-scalaire-")
+  dir.create(sortie, recursive = TRUE)
+  payload <- compute_payload_test(load_fixture())
+  metadata <- jsonlite::fromJSON(testthat::test_path("..", "..", "inst", "extdata",
+    "theme-metadata", "theme_demographie.json"), simplifyVector = FALSE)
+  projection <- project_fixture_scalar(payload, metadata, completeness = "dense_complete",
+    indicator_id = "densite")
+  write_scalar_serving_artifact(projection,
+    file.path(sortie, "scalar-serving", "demographie"))
+  nanoparquet::write_parquet(as.data.frame(payload$territoires),
+    file.path(sortie, "territoires.parquet"))
+  source_id <- metadata$indicator_pages$densite$sources[[1L]]
+  jsonlite::write_json(list(list(source_id = source_id, sha256 = "sha256-fixture",
+    bytes = 10L)), file.path(sortie, "source-digests.json"), auto_unbox = TRUE)
+  sortie
+}
