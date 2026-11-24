@@ -244,8 +244,20 @@ extraire_declaration_ressource <- function(descripteur) {
   jsonlite::fromJSON(json, simplifyVector = FALSE)
 }
 
-ecrire_descripteurs_ressource <- function(con, publication_resource_id, version,
-                                          declarations = list()) {
+# Appelable directement avec un Artefact de ressource pour l'adoption (#1142) :
+# `ecrire_descripteurs_ressource(con, artefact)`. La ligne de registre doit déjà
+# exister (FK 048). Les adaptateurs conservent leur forme positionnelle historique.
+ecrire_descripteurs_ressource <- function(con, publication_resource_id, version = NULL,
+                                          declarations = NULL) {
+  if (is.list(publication_resource_id) && !is.null(publication_resource_id$contenu)) {
+    if (!is.null(version) || !is.null(declarations))
+      stop("An artefact supplies its own descriptor version and declarations", call. = FALSE)
+    artefact <- publication_resource_id
+    publication_resource_id <- artefact$ressource
+    version <- artefact$version
+    declarations <- extraire_declaration_ressource(artefact$contenu$descriptor)
+  }
+  if (is.null(declarations)) declarations <- list()
   valider_identite_ressource(publication_resource_id)
   if (!is.character(version) || length(version) != 1L || is.na(version) || !nzchar(version))
     stop("Resource descriptor version is invalid", call. = FALSE)

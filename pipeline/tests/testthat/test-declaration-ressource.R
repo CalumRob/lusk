@@ -45,6 +45,30 @@ test_that("l'écrivain partagé lie chaque déclaration à la ressource et à sa
   expect_identical(params_vus[[3L]][[1L]], "resource_b")
 })
 
+test_that("l'adoption écrit les déclarations directement depuis un Artefact de ressource", {
+  metadata <- testthat::test_path("..", "..", "inst", "extdata", "theme-metadata")
+  descriptor <- attacher_declaration_ressource(
+    data.frame(indicator_id = "densite", stringsAsFactors = FALSE), "densite", metadata)
+  artefact <- list(ressource = "densite", version = "a-v1",
+                   contenu = list(descriptor = descriptor))
+  executes <- character(); params_vus <- list()
+  local_mocked_bindings(
+    dbExecute = function(con, sql, params = list()) {
+      executes <<- c(executes, sql)
+      params_vus[[length(params_vus) + 1L]] <<- params
+      1L
+    }, .package = "DBI")
+
+  ecrire_descripteurs_ressource(structure(list(), class = "mock"), artefact)
+
+  expect_true(any(grepl("DELETE FROM resource_publication_descriptor", executes)))
+  expect_identical(params_vus[[1L]], list("densite"))
+  expect_identical(params_vus[[2L]][[1L]], "densite")
+  expect_identical(params_vus[[2L]][[2L]], "densite")
+  expect_identical(params_vus[[2L]][[3L]], "a-v1")
+  expect_true(grepl('"kind":"indicator"', params_vus[[2L]][[4L]], fixed = TRUE))
+})
+
 test_that("un dataset publie aussi son alias de référence nommée vers le même registre", {
   metadata <- testthat::test_path("..", "..", "inst", "extdata", "theme-metadata")
   declarations <- declarations_decouverte_ressource("raccordement_courbe", metadata)
