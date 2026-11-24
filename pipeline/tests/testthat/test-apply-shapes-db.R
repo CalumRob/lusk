@@ -86,6 +86,21 @@
     as.character(sources))
 }
 
+# Each snapshot is scoped to ONE resource: never a whole-table snapshot, which
+# would mix the applied resource's new rows into the "other resource" baseline.
+.guarded_shapes_colonne <- function(table) {
+  if (identical(table, "resource_publication")) return("resource_id")
+  if (identical(table, "comparison_source_lineage")) return("facet_id")
+  if (identical(table, "series_provenance_revision")) return(NA_character_) # immuable, partagé
+  if (grepl("^series_dataset_|^series_observation_provenance$|^ordered_series_comparison_", table))
+    return("dataset_id")
+  if (grepl("^observed_collection_|^period_detail_observation$|^anchored_membership$", table))
+    return("indicator_id")
+  if (grepl("^scalar_descriptor|^scalar_observation|^scalar_resource_comparison", table))
+    return("indicator_id")
+  NA_character_  # AEDAR: tables globales (une seule ressource)
+}
+
 .guarded_shapes_lignes <- function(con, table, colonne = NULL, valeur = NULL) {
   champs <- DBI::dbListFields(con, table)
   if (!is.null(colonne) && colonne %in% champs) {
@@ -96,13 +111,45 @@
   }
 }
 
-.guarded_shapes_snapshot <- function(con, tables) {
-  out <- lapply(tables, .guarded_shapes_lignes, con = con)
-  names(out) <- tables
+.guarded_shapes_spec <- function(tables, ressource) {
+  spec <- lapply(tables, function(t) {
+    colonne <- .guarded_shapes_colonne(t)
+    if (is.na(colonne)) list(colonne = NULL, valeur = NULL) else
+      list(colonne = colonne, valeur = ressource)
+  })
+  names(spec) <- tables
+  spec
+}
+
+.guarded_shapes_snapshot <- function(con, spec) {
+  out <- lapply(names(spec), function(t)
+    .guarded_shapes_lignes(con, t, spec[[t]]$colonne, spec[[t]]$valeur))
+  names(out) <- names(spec)
   out
 }
 
-test_that("guarded: applying one owned series leaves every other resource byte-identical", {
+.guarded_shapes_marqueurs <- function(con) {
+  DBI::dbGetQuery(con, paste0(
+    "SELECT table_name,content_version,row_count,reference_content_version ",
+    "FROM table_publication WHERE table_name LIKE 'aedar%' OR ",
+    "table_name='territory_reference' ORDER BY table_name"))
+}
+
+TABLES_SERIE <- c("series_dataset_publication", "series_dataset_descriptor",
+  "series_dataset_observation", "series_observation_provenance",
+  "series_provenance_revision", "ordered_series_comparison_publication")
+TABLES_COLLECTION <- c("observed_collection_publication", "observed_collection_descriptor",
+  "observed_collection_category", "period_detail_observation",
+  "observed_collection_comparison_publication", "observed_collection_comparison_group",
+  "observed_collection_comparison_territory", "observed_collection_comparison_lineage")
+TABLES_SCALAIRES <- c("scalar_descriptor", "scalar_descriptor_source", "scalar_observation",
+  "scalar_observation_source", "scalar_comparison_group", "scalar_comparison_territory",
+  "comparison_source_lineage", "scalar_resource_comparison_publication")
+TABLES_AEDAR <- c("aedar_territorial_aggregate", "aedar_territory_summary",
+  "aedar_comparison_publication", "aedar_comparison_group",
+  "aedar_density_class_summary", "aedar_littoral_summary")
+
+test_that("guarded: applying one owned series leaves every other series byte-identical", {
   con <- .guarded_shapes_connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   schema <- .guarded_shapes_schema(con)
@@ -113,22 +160,20 @@ test_that("guarded: applying one owned series leaves every other resource byte-i
 
   adaptateur_series_artefact(root, "artif_par_habitant", 10)
   adaptateur_series_artefact(root, "prix_m2", 20)
-  lock <- .guarded_shapes_lock(c("ocsge"))
-  tables <- c("series_dataset_publication", "series_dataset_descriptor",
-              "series_dataset_observation", "series_observation_provenance",
-              "series_provenance_revision", "ordered_series_comparison_publication")
+  lock <- .guarded_shapes_lock("ocsge")
+  spec <- .guarded_shapes_spec(c(TABLES_SERIE, "resource_publication"), "prix_m2")
   apply_publication("prix_m2", root = root, registre = lock, con = con)
-  avant_b <- .guarded_shapes_snapshot(con, tables)
+  avant_b <- .guarded_shapes_snapshot(con, spec)
   apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
-  apres_b <- .guarded_shapes_snapshot(con, tables)
-  for (t in tables) expect_identical(apres_b[[t]], avant_b[[t]])
+  apres_b <- .guarded_shapes_snapshot(con, spec)
+  for (t in names(spec)) expect_identical(apres_b[[t]], avant_b[[t]], info = t)
   expect_equal(nrow(DBI::dbGetQuery(con,
     "SELECT * FROM series_dataset_publication WHERE dataset_id='artif_par_habitant' AND retired=false")), 1L)
   expect_equal(nrow(DBI::dbGetQuery(con,
     "SELECT * FROM resource_publication WHERE resource_id='artif_par_habitant' AND retired=false")), 1L)
 })
 
-test_that("guarded: applying one observed collection leaves every other resource byte-identical", {
+test_that("guarded: applying one observed collection leaves every other collection byte-identical", {
   con <- .guarded_shapes_connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
   schema <- .guarded_shapes_schema(con)
@@ -140,17 +185,12 @@ test_that("guarded: applying one observed collection leaves every other resource
   adaptateur_collection_artefact(root, "acv", 5)
   adaptateur_collection_artefact(root, "acv_b", 9)
   lock <- .guarded_shapes_lock("programme_source")
-  tables <- c("observed_collection_publication", "observed_collection_descriptor",
-              "observed_collection_category", "period_detail_observation",
-              "observed_collection_comparison_publication",
-              "observed_collection_comparison_group",
-              "observed_collection_comparison_territory",
-              "observed_collection_comparison_lineage")
+  spec <- .guarded_shapes_spec(c(TABLES_COLLECTION, "resource_publication"), "acv_b")
   apply_publication("acv_b", root = root, registre = lock, con = con)
-  avant_b <- .guarded_shapes_snapshot(con, tables)
+  avant_b <- .guarded_shapes_snapshot(con, spec)
   apply_publication("acv", root = root, registre = lock, con = con)
-  apres_b <- .guarded_shapes_snapshot(con, tables)
-  for (t in tables) expect_identical(apres_b[[t]], avant_b[[t]])
+  apres_b <- .guarded_shapes_snapshot(con, spec)
+  for (t in names(spec)) expect_identical(apres_b[[t]], avant_b[[t]], info = t)
   expect_equal(nrow(DBI::dbGetQuery(con,
     "SELECT * FROM observed_collection_publication WHERE indicator_id='acv'")), 1L)
   expect_equal(nrow(DBI::dbGetQuery(con,
@@ -186,6 +226,73 @@ test_that("guarded: AEDAR apply passes the deferred validator, with and without 
                marqueur2$littoral_summary_row_count[[1L]])
 })
 
+test_that("guarded: applying one series leaves scalar, collection and AEDAR byte-identical", {
+  con <- .guarded_shapes_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .guarded_shapes_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
+
+  .guarded_shapes_scalar_artefact(root, "densite", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  adaptateur_collection_artefact(root, "acv", 5)
+  adaptateur_aedar_artefact(root, with_littoral = FALSE)
+  adaptateur_series_artefact(root, "artif_par_habitant", 10)
+  adaptateur_series_artefact(root, "prix_m2", 20)
+  lock <- .guarded_shapes_lock(c("src_densite", "programme_source", "aedar_bretagne", "ocsge"))
+  apply_publication("densite", root = root, registre = lock, con = con)
+  apply_publication("acv", root = root, registre = lock, con = con)
+  apply_publication("aedar", root = root, registre = lock, con = con)
+  apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
+
+  autres <- c(TABLES_SCALAIRES, TABLES_COLLECTION, TABLES_AEDAR,
+    intersect(TABLES_SERIE, setdiff(TABLES_SERIE, character())))  # toutes les tables série
+  spec <- .guarded_shapes_spec(autres, "prix_m2")  # l'autre série est préservée aussi
+  # Les tables scalar/collection sont filtrées sur LEUR ressource, pas sur prix_m2.
+  for (t in c(TABLES_SCALAIRES, TABLES_COLLECTION)) spec[[t]]$valeur <-
+    if (t %in% TABLES_SCALAIRES) "densite" else "acv"
+  avant <- .guarded_shapes_snapshot(con, spec)
+  marqueurs_avant <- .guarded_shapes_marqueurs(con)
+  apply_publication("prix_m2", root = root, registre = lock, con = con)
+  apres <- .guarded_shapes_snapshot(con, spec)
+  for (t in names(spec)) expect_identical(apres[[t]], avant[[t]], info = t)
+  expect_identical(.guarded_shapes_marqueurs(con), marqueurs_avant)
+})
+
+test_that("guarded: applying one collection leaves scalar, series and AEDAR byte-identical", {
+  con <- .guarded_shapes_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .guarded_shapes_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
+
+  .guarded_shapes_scalar_artefact(root, "densite", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  adaptateur_series_artefact(root, "artif_par_habitant", 10)
+  adaptateur_aedar_artefact(root, with_littoral = FALSE)
+  adaptateur_collection_artefact(root, "acv", 5)
+  adaptateur_collection_artefact(root, "acv_b", 9)
+  lock <- .guarded_shapes_lock(c("src_densite", "ocsge", "aedar_bretagne", "programme_source"))
+  apply_publication("densite", root = root, registre = lock, con = con)
+  apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
+  apply_publication("aedar", root = root, registre = lock, con = con)
+  apply_publication("acv", root = root, registre = lock, con = con)
+
+  autres <- c(TABLES_SCALAIRES, TABLES_SERIE, TABLES_AEDAR,
+    intersect(TABLES_COLLECTION, setdiff(TABLES_COLLECTION, character())))
+  spec <- .guarded_shapes_spec(autres, "acv_b")  # l'autre collection est préservée aussi
+  for (t in c(TABLES_SCALAIRES, TABLES_SERIE)) spec[[t]]$valeur <-
+    if (t %in% TABLES_SCALAIRES) "densite" else "artif_par_habitant"
+  avant <- .guarded_shapes_snapshot(con, spec)
+  marqueurs_avant <- .guarded_shapes_marqueurs(con)
+  apply_publication("acv_b", root = root, registre = lock, con = con)
+  apres <- .guarded_shapes_snapshot(con, spec)
+  for (t in names(spec)) expect_identical(apres[[t]], avant[[t]], info = t)
+  expect_identical(.guarded_shapes_marqueurs(con), marqueurs_avant)
+})
+
 test_that("guarded: applying AEDAR leaves every scalar, series and collection byte-identical", {
   con <- .guarded_shapes_connect()
   on.exit(DBI::dbDisconnect(con), add = TRUE)
@@ -195,27 +302,20 @@ test_that("guarded: applying AEDAR leaves every scalar, series and collection by
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE, after = FALSE)
 
-  # Seed a scalar, a series and a collection first; their rows must survive an
-  # AEDAR apply byte-for-byte.
-  scalaire <- .guarded_shapes_scalar_artefact(root, "densite",
-    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  .guarded_shapes_scalar_artefact(root, "densite", c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
   adaptateur_series_artefact(root, "artif_par_habitant", 10)
   adaptateur_collection_artefact(root, "acv", 5)
   lock <- .guarded_shapes_lock(c("src_densite", "ocsge", "programme_source", "aedar_bretagne"))
   apply_publication("densite", root = root, registre = lock, con = con)
   apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
   apply_publication("acv", root = root, registre = lock, con = con)
-  tables <- c("scalar_descriptor", "scalar_descriptor_source", "scalar_observation",
-              "scalar_observation_source", "scalar_comparison_group",
-              "scalar_comparison_territory", "comparison_source_lineage",
-              "scalar_resource_comparison_publication",
-              "series_dataset_publication", "series_dataset_descriptor",
-              "series_dataset_observation", "series_observation_provenance",
-              "observed_collection_publication", "observed_collection_descriptor",
-              "observed_collection_category", "period_detail_observation")
-  avant <- .guarded_shapes_snapshot(con, tables)
-  sup <- adaptateur_aedar_artefact(root, with_littoral = FALSE)
+  tables <- c(TABLES_SCALAIRES, TABLES_SERIE, TABLES_COLLECTION)
+  spec <- .guarded_shapes_spec(tables, "densite")
+  for (t in c(TABLES_SERIE, TABLES_COLLECTION)) spec[[t]]$valeur <-
+    if (t %in% TABLES_SERIE) "artif_par_habitant" else "acv"
+  avant <- .guarded_shapes_snapshot(con, spec)
+  adaptateur_aedar_artefact(root, with_littoral = FALSE)
   expect_no_error(apply_publication("aedar", root = root, registre = lock, con = con))
-  apres <- .guarded_shapes_snapshot(con, tables)
-  for (t in tables) expect_identical(apres[[t]], avant[[t]])
+  apres <- .guarded_shapes_snapshot(con, spec)
+  for (t in names(spec)) expect_identical(apres[[t]], avant[[t]], info = t)
 })
