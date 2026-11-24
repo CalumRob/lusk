@@ -1,3 +1,11 @@
+# Slow tier (#1172): the complete Milieux Histoire fixture protects the two source clocks,
+# M2/M3 state law, annual rate, four readings and sign invariant over the full territory fixture.
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 # test-theme-milieux-histoire ---------------------------------------------------
 # L'Histoire « Se densifier, s'étaler, ou s'en aller » (issue #174, pivotée par
 # #238 — ADR-0017) : la lecture du territoire contre sa terre, re-keyée sur les
@@ -615,4 +623,6 @@ test_that("chemin rétro-compatible : sans archives OCS-GE, le nouveau schéma e
   expect_true(all(is.na(p$histoires$classification)))
   expect_true(all(is.na(p$histoires$artif_m2)))
   expect_true(all(is.na(p$histoires$periode_artif)))
+})
+
 })

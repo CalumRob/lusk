@@ -43,6 +43,30 @@ test_that("one memoised manifest serves each effective graph environment", {
   expect_identical(appels, 2L)
 })
 
+test_that("a structural read restores targets options changed by _targets.R", {
+  projet <- tempfile("graphe-cache-options-")
+  dir.create(projet)
+  on.exit(unlink(projet, recursive = TRUE), add = TRUE)
+  writeLines("list()", file.path(projet, "_targets.R"))
+  withr::local_dir(projet)
+  withr::local_envvar(
+    LUSK_THEMES = "", LUSK_MODE = "full", LUSK_PUBLISH_DB = "",
+    LUSK_PUBLISH_PROFILE = "", LUSK_SCALAR_SCOPE = ""
+  )
+  targets::tar_option_with({
+    targets::tar_option_set(imports = "before_structural_read")
+    local_mocked_bindings(
+      tar_manifest = function(callr_function = NULL, ...) {
+        targets::tar_option_set(imports = "changed_by_targets_script")
+        data.frame(name = "a", command = "a()", stringsAsFactors = FALSE)
+      },
+      .package = "targets"
+    )
+    manifeste_graphe()
+    expect_identical(targets::tar_option_get("imports"), "before_structural_read")
+  })
+})
+
 test_that("one memoised network uses an isolated store and reuses it", {
   projet <- tempfile("graphe-cache-reseau-")
   dir.create(projet)

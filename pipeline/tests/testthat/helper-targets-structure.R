@@ -47,6 +47,16 @@ avec_environnement_graphe_structure <- function(entree, code) {
   # suppressing it lets targets evaluate in-process without polluting test mocks.
   testthat::local_mocked_bindings(load_all = function(...) invisible(NULL),
                                   .package = "pkgload")
+  tar_option_set_original <- targets::tar_option_set
+  noms_options <- setdiff(names(formals(tar_option_set_original)),
+                          "trust_object_timestamps")
+  options_precedentes <- lapply(noms_options, targets::tar_option_get)
+  names(options_precedentes) <- noms_options
+  on.exit({
+    do.call(tar_option_set_original, options_precedentes)
+    targets::tar_option_unset(noms_options[vapply(options_precedentes, is.null,
+                                                  logical(1))])
+  }, add = TRUE)
   force(code)
 }
 
