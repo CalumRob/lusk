@@ -140,9 +140,11 @@ references_structure <- function(source, noms) {
   if (is.null(donnees)) return(vide)
   noeuds <- donnees[donnees$terminal & donnees$text %in% noms, , drop = FALSE]
   if (!nrow(noeuds)) return(vide)
-  noeuds$fonction <- noeuds$text
-  noeuds$package <- NA_character_
-  noeuds
+  data.frame(
+    id = noeuds$id, fonction = noeuds$text, package = NA_character_,
+    line1 = noeuds$line1, col1 = noeuds$col1, line2 = noeuds$line2,
+    col2 = noeuds$col2, parent = noeuds$parent, stringsAsFactors = FALSE
+  )
 }
 
 ancetres_noeud <- function(id, source) {

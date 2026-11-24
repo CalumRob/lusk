@@ -90,7 +90,6 @@ auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_servic
         !is.na(argument) && appel_descendant_de(id, argument, source)
       }, logical(1)))
     }, logical(1)), , drop = FALSE]
-    references <- references[names(sites)]
     sites <- rbind(sites, references)
     sites <- sites[!duplicated(paste(sites$fonction, sites$line1, sites$col1)), ,
                    drop = FALSE]
@@ -245,7 +244,6 @@ auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) 
         !is.na(argument) && appel_descendant_de(id, argument, source)
       }, logical(1)))
     }, logical(1)), , drop = FALSE]
-    references <- references[names(sites)]
     sites <- rbind(sites, references)
     sites <- sites[!duplicated(paste(sites$fonction, sites$line1, sites$col1)), ,
                    drop = FALSE]
