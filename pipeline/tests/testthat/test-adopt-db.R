@@ -169,8 +169,27 @@
 .adopt_db_fixture <- function() {
   sortie <- tempfile("adopt-sortie-")
   root <- artefacts_fixture_root()
+  metadata_directory <- tempfile("adopt-metadata-")
   aedar_dir <- NULL
   dir.create(sortie, recursive = TRUE)
+  dir.create(metadata_directory, recursive = TRUE)
+  file.copy(list.files(system.file("extdata", "theme-metadata", package = "lusk"),
+    pattern = "^theme_.*\\.json$", full.names = TRUE), metadata_directory)
+  jsonlite::write_json(list(theme = "programmes", indicator_keys = list("membres", "acv"),
+    sources = list(membres = "programme_source", acv = "programme_source"),
+    source_records = list(programme_source = list(name = "Programmes")),
+    observed_collection_contracts = list(membres = list(kind = "anchored_membership"),
+      acv = list(kind = "period_detail")),
+    indicator_pages = list(membres = list(sources = list("programme_source")),
+      acv = list(sources = list("programme_source")))),
+    file.path(metadata_directory, "theme_programmes_fixture.json"), auto_unbox = TRUE,
+    null = "null", pretty = TRUE)
+  jsonlite::write_json(list(theme = "mobilite", indicator_keys = list("aedar"),
+    sources = list(aedar = "aedar_bretagne"),
+    source_records = list(aedar_bretagne = list(name = "AEDAR")),
+    indicator_pages = list(aedar = list(sources = list("aedar_bretagne")))),
+    file.path(metadata_directory, "theme_mobilite_fixture.json"), auto_unbox = TRUE,
+    null = "null", pretty = TRUE)
   base <- artefacts_fixture_reference()$rows
   canonical <- data.frame(territoire = base$territory_id, type = base$territory_type,
     nom = base$territory_id, departement = rep(NA_character_, nrow(base)),
@@ -210,6 +229,8 @@
   period <- adaptateur_collection_projection()
   membres <- .adopt_db_anchored_collection(reference)
   aedar <- adaptateur_aedar_projection()
+  aedar$descriptor <- list(indicator_id = "aedar",
+    theme_id = lire_theme_metadata("mobilite")$theme)
   aedar_manifest <- .adopt_db_aedar_manifest(aedar, reference)
   aedar_dir <- aedar_manifest$directory
   projections <- list(
@@ -228,7 +249,8 @@
   typed$hits <- integer()
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
     scalar_version = scalar_version, lock = digests, projections = projections,
-    aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir, typed = typed)
+    aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir,
+    metadata_directory = metadata_directory, typed = typed)
 }
 
 .adopt_db_publish_all <- function(con, fixture) {
@@ -273,7 +295,8 @@
 .adopt_db_digest <- function(con) {
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ",
-    "AND tablename NOT IN ('resource_publication','resource_publication_event') ",
+    "AND tablename NOT IN ('resource_publication','resource_publication_descriptor',",
+    "'resource_publication_event') ",
     "ORDER BY tablename"))$tablename
   out <- lapply(tables, function(table) {
     champs <- DBI::dbListFields(con, table)
@@ -289,6 +312,8 @@
   serialize(list(
     registry = DBI::dbGetQuery(con,
       "SELECT * FROM resource_publication ORDER BY resource_id"),
+    descriptors = DBI::dbGetQuery(con,
+      "SELECT * FROM resource_publication_descriptor ORDER BY publication_resource_id,resource_id"),
     receipts = DBI::dbGetQuery(con,
       "SELECT * FROM resource_publication_event ORDER BY event_id")), NULL)
 }
@@ -300,14 +325,14 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir), recursive = TRUE),
-          add = TRUE, after = FALSE)
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_all(con, fixture)
   avant <- .adopt_db_digest(con)
 
   resultat <- adopter_ressources(fixture$sortie, root = fixture$root,
     lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
-    con = con)
+    metadata_directory = fixture$metadata_directory, con = con)
   attendus <- c("densite", "part_passoires", "structure_age", "distribution_dpe",
     "artif_par_habitant", "acv", "membres", "aedar")
   expect_setequal(resultat$adopted, attendus)
@@ -317,6 +342,13 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
     "ORDER BY resource_id"))
   expect_setequal(pub$resource_id, attendus)
   expect_false(any(pub$retired))
+  descriptors <- DBI::dbGetQuery(con, paste0(
+    "SELECT d.publication_resource_id,d.content_version,p.content_version AS registry_version ",
+    "FROM resource_publication_descriptor d JOIN resource_publication p ",
+    "ON p.resource_id=d.publication_resource_id ORDER BY d.publication_resource_id"))
+  expect_equal(nrow(descriptors), length(attendus))
+  expect_setequal(descriptors$publication_resource_id, attendus)
+  expect_identical(descriptors$content_version, descriptors$registry_version)
   expect_equal(nrow(DBI::dbGetQuery(con, paste0(
     "SELECT * FROM resource_publication_event WHERE operation='adopted'"))), length(attendus))
 
@@ -335,8 +367,8 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir), recursive = TRUE),
-          add = TRUE, after = FALSE)
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_all(con, fixture)
   cas <- list(
     list(ressource = "densite", table = "scalar_observation", colonne = "value",
@@ -362,7 +394,7 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     registre_avant <- .adopt_db_registry_digest(con)
     err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
       lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
-      con = con), error = identity)
+      metadata_directory = fixture$metadata_directory, con = con), error = identity)
     expect_s3_class(err, "erreur_adoption", info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
@@ -382,8 +414,8 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
   on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
           add = TRUE, after = FALSE)
   fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir), recursive = TRUE),
-          add = TRUE, after = FALSE)
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_all(con, fixture)
   avant <- .adopt_db_digest(con)
   registre_avant <- .adopt_db_registry_digest(con)
@@ -393,7 +425,7 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
   }, .package = "lusk")
   err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
     lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
-    con = con), error = identity)
+    metadata_directory = fixture$metadata_directory, con = con), error = identity)
   expect_match(conditionMessage(err), "forced adoption receipt failure", fixed = TRUE)
   expect_identical(.adopt_db_digest(con), avant)
   expect_identical(.adopt_db_registry_digest(con), registre_avant)

@@ -101,6 +101,9 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
           ecrire_registre_ressource(con, id, as.character(artefact$forme),
             as.character(artefact$version),
             reference_content_version = reference$version, retired = FALSE)
+          # Migration 048: discovery descriptors are version-bound to the
+          # registry row and travel through the SAME shared writer as apply.
+          ecrire_descripteurs_ressource(con, artefact)
           ecrire_recette_ressource(con = con, ressource = id,
             forme = as.character(artefact$forme), operation = "adopted",
             old_version = NULL, new_version = as.character(artefact$version),

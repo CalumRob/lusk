@@ -53,7 +53,7 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
                               value = if (ressource == "a") live_a else live_b)),
     colonnes_stockage = list(),
     remplacer = function(...) stop("adoption must never replace serving rows"))
-  ecritures <- 0L; recettes <- 0L; locales <- 0L
+  ecritures <- 0L; descripteurs <- 0L; recettes <- 0L; locales <- 0L
   local_mocked_bindings(
     REGISTRE_FORMES_RESSOURCE = list(scalar = handler),
     verifier_gel_lignage_ressource = function(...) TRUE,
@@ -61,6 +61,7 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
       list(version = "reference-v1", rows = data.frame()),
     verifier_reference_live_apply = function(...) TRUE,
     ecrire_registre_ressource = function(...) { ecritures <<- ecritures + 1L },
+    ecrire_descripteurs_ressource = function(...) { descripteurs <<- descripteurs + 1L },
     ecrire_recette_ressource = function(...) { recettes <<- recettes + 1L },
     ecrire_recette_locale = function(...) { locales <<- locales + 1L })
   local_mocked_bindings(
@@ -69,8 +70,8 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
     dbGetQuery = function(...) data.frame(), .package = "DBI")
   resultat <- tryCatch(adopter_artefacts(builds, artefacts, dry_run = dry_run,
     con = structure(list(), class = "mock")), error = identity)
-  list(resultat = resultat, ecritures = ecritures, recettes = recettes,
-       locales = locales)
+  list(resultat = resultat, ecritures = ecritures, descripteurs = descripteurs,
+       recettes = recettes, locales = locales)
 }
 
 test_that("adoption refuses every mismatching resource before any registry or receipt write", {
@@ -83,6 +84,7 @@ test_that("adoption refuses every mismatching resource before any registry or re
   expect_identical(run$resultat$comparaisons$parties, c("facts", "facts"))
   expect_false(any(run$resultat$comparaisons$identique))
   expect_identical(run$ecritures, 0L)
+  expect_identical(run$descripteurs, 0L)
   expect_identical(run$recettes, 0L)
   expect_identical(run$locales, 0L)
 })
@@ -91,6 +93,7 @@ test_that("adoption writes only registry rows and adopted receipts, and dry-run 
   run <- fixture_adoption_run()
   expect_identical(run$resultat$adopted, c("a", "b"))
   expect_identical(run$ecritures, 2L)
+  expect_identical(run$descripteurs, 2L)
   expect_identical(run$recettes, 2L)
   expect_identical(run$locales, 2L)
   expect_identical(vapply(run$resultat$receipts, `[[`, character(1), "operation"),
@@ -99,6 +102,7 @@ test_that("adoption writes only registry rows and adopted receipts, and dry-run 
   sec <- fixture_adoption_run(dry_run = TRUE)
   expect_identical(sec$resultat$adopted, character())
   expect_identical(sec$ecritures, 0L)
+  expect_identical(sec$descripteurs, 0L)
   expect_identical(sec$recettes, 0L)
   expect_identical(sec$locales, 0L)
 })

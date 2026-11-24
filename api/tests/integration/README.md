@@ -607,25 +607,30 @@ proof. It uses the same `LUSK_SCALAR_TEST_*` variables, exact
 opt-in and runtime identity checks as the shape proofs. It skips before any connection without
 that configuration and drops only its own random `it_adopt_*` schema.
 
-The fixture calls the normal `publish_retained_backend_snapshot(atomic=TRUE)`
-entry point. Territory reference, scalar snapshot, declared profile and their
-comparisons use the real publishers. At fixture scale the four typed-reading
-families are no-op stubs because adoption explicitly ignores them and complete
-canonical typed-reading fixtures are unavailable; no expected serving rows are
-SQL-seeded. The proof adopts from the same sortie, requires the whole-schema data
-digest to stay byte-identical apart from registry/receipts, refuses one altered
-live row with zero writes and the resource named, checks `plan` reports every
-resource unchanged, and forces a receipt failure to prove transaction rollback.
+The fixture calls the normal `publish_retained_backend_snapshot(atomic=TRUE,
+companion_profiles=TRUE)` entry point for territory reference, scalar and declared
+profiles (including a DPE-like `comparison_scalar` binding). Owned series use
+`publish_owned_series_projection`, period-detail and anchored collections use
+`publish_observed_collection`, and AEDAR uses `publish_aedar_aggregates` plus
+`publish_aedar_comparisons`. At fixture scale the four typed-reading families are
+namespace-bound no-op stubs because adoption explicitly ignores them and complete
+canonical typed-reading fixtures are unavailable; the proof asserts every stub was
+hit. No expected serving rows are SQL-seeded. The proof adopts all eight resources,
+requires the whole-schema data digest to stay byte-identical apart from
+registry/receipt/descriptor rows, asserts one version-bound discovery descriptor per
+resource, refuses one altered live row in each shape with zero writes and the
+resource/table named, checks `plan` reports every resource unchanged, and forces a
+receipt failure to prove transaction rollback.
 
 ```powershell
 $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='adopt-db', stop_on_failure=TRUE)"
 ```
 
-The default-suite comparison/orchestration contracts live in
-`test-adoption.R`; the full five-shape projection proof is in the explicit slow
-tier (`slow-tests/test-adoption-shape-projections.R`). A skip is not a guarded
-pass: the orchestrator runs the proof on the PR's final head.
+The default-suite persisted-row comparison/orchestration contracts live in
+`test-adoption.R`. The real-writer proof is the guarded DB tier above, not an
+artefact-vs-itself comparison. A skip is not a guarded pass: the orchestrator runs
+the proof on the PR's final head.
 
 ## Current retained model and migration selectors
 
