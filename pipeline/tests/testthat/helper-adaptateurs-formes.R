@@ -243,23 +243,28 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
     stringsAsFactors = FALSE)
   names(x$groups)[names(x$groups) == "TYPEQU"] <- "typequ"
   rownames(x$groups) <- NULL
-  mesures <- unique(x$groups$measure)
+  mesures <- aedar_aggregate_reading_bindings()$measure
  groupes_du_contexte <- function(context)
     unique(x$groups$group_id[x$groups$comparison_context == context])
   classes <- groupes_du_contexte("density_class")
   summariser <- function(ids) {
-    do.call(rbind, lapply(ids, function(id) data.frame(
-      group_id = id, measure = mesures[[1L]], value = NA_real_,
-      status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
-      n_observed = NA_integer_, coverage_status = NA_character_,
-      stringsAsFactors = FALSE)))
+    do.call(rbind, lapply(ids, function(id) do.call(rbind, lapply(mesures,
+      function(mesure) data.frame(group_id = id, measure = mesure, value = NA_real_,
+        status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
+        n_observed = NA_integer_, coverage_status = "unavailable",
+        source_id = projection$source$source_id, vintage = projection$source$vintage,
+        source_url = projection$source$url, licence = projection$source$licence,
+        attribution = projection$source$attribution,
+        reference_date = as.Date(projection$source$reference_date),
+        publication_date = as.Date(projection$source$publication_date),
+        stringsAsFactors = FALSE)))))
   }
   density <- summariser(classes)
   littoral <- if (with_littoral) summariser(groupes_du_contexte("littoral")) else NULL
   x$density_rows <- density
   x$littoral_rows <- littoral
   x$density_class_summaries <- list(class_count = length(classes),
-    measure_count = 1L, typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
+    measure_count = length(mesures), typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
     row_count = nrow(density))
   x$littoral_summaries <- list(status_count = if (with_littoral) length(groupes_du_contexte("littoral")) else 0L,
     measure_count = if (with_littoral) 1L else 0L,
