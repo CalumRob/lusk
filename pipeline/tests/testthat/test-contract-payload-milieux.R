@@ -1,10 +1,3 @@
-# Slow tier (#1172): the complete Milieux payload fixture protects table shape, territory coverage, M2/M3 states, annual series, provenance and reading-law contracts.
-# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
-
-local({
-  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
-  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
-
 # test-contract-payload-milieux -------------------------------------------------
 # Le SEAM de test du payload Milieux (issue #171, étendu par #172, pivoté par
 # #239 — ADR-0017) : même fixture -> même payload, pour toujours. L'INDICATEUR
@@ -20,7 +13,7 @@ local({
 # en m²/habitant (le bracket de population : RP 2017 pour l'état initial,
 # RP 2023 pour l'état final), la trajectoire par habitant et la classification
 # re-keyée sur le signe pair (Δpopulation × trajectoire).
-# Le fixture est celui du câblage territorial OCS-GE (#237) — sept communes,
+# Le fixture est celui du câblage territorial OCS-GE (#237) — cinq communes,
 # trois EPCIs (dont le transfrontalier 35+56), quatre départements et la
 # région — pour que les états existent (les valeurs m² sont prouvées bout en
 # bout : 22001 publie 0,5 m²/hab à l'état final = 1200 m² / 2400 habitants) et
@@ -31,12 +24,23 @@ local({
 # EST sa consommation en hectares, vérifiée à la main). L'Aperçu reste VIDE
 # mais présent (la forme du contrat).
 
+# Five-commune contract fixture: retain mono-département 22/29 cases and the
+# transfrontalier 35+56 EPCI, while dropping two communes that add no new law.
+communes_fixture_payload_milieux <- local({
+  source <- NULL
+  function() {
+    if (is.null(source)) source <<- communes_fixture_milieux_ocsge()
+    source[source$code %in% c("22001", "29001", "29003", "35001", "56001"), ,
+           drop = FALSE]
+  }
+})
+
 test_that("le payload Milieux couvre chaque territoire du fixture", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   territoires_attendus <- c(
-    "22001", "22002", "29001", "29002", "29003", "35001", "56001", # communes
+    "22001", "29001", "29003", "35001", "56001", # communes
     "200000001", "200000002", "200000003",                          # EPCIs
     "22", "29", "35", "56",                                         # départements
     "53"                                                            # région
@@ -48,7 +52,7 @@ test_that("le payload Milieux couvre chaque territoire du fixture", {
 })
 
 test_that("la forme des quatre tables est le contrat (payload Milieux)", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
@@ -85,7 +89,7 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
 })
 
 test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuelle 2011-2024 — les deux clés vivantes", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   # les DEUX clés du thème (issue #239) — l'état par habitant (multiplicité 2)
@@ -93,8 +97,8 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   # sont mortes avec les flux
   expect_setequal(unique(payload$indicateurs$key),
                   c("artif_par_habitant", "conso_enaf_annuel"))
-  # 15 territoires x 2 (l'état M2/M3) + 15 x 14 (la série annuelle) = 240 lignes
-  expect_equal(nrow(payload$indicateurs), 15 * 2 + 15 * 14)
+  # 13 territoires x 2 (l'état M2/M3) + 13 x 14 (la série annuelle) = 208 lignes
+  expect_equal(nrow(payload$indicateurs), 13 * 2 + 13 * 14)
 
   etat <- function(code, detail) {
     valeur_payload(payload, code, "artif_par_habitant", detail)
@@ -106,38 +110,33 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   # DEUX états strictement positifs, jamais un 0 (le bug flux-et-état).
   expect_equal(etat("22001", "2021")$value, 400 / 2200)
   expect_equal(etat("22001", "2025")$value, 1200 / 2400)
-  expect_equal(etat("22002", "2021")$value, 400 / 1200)
-  expect_equal(etat("22002", "2025")$value, 800 / 1300)
   expect_equal(etat("29001", "2021")$value, 800 / 3100)
   expect_equal(etat("29001", "2024")$value, 1200 / 2950)
-  expect_equal(etat("29002", "2021")$value, 800 / 920)
-  expect_equal(etat("29002", "2024")$value, 800 / 910)
   expect_equal(etat("29003", "2021")$value, 500 / 500)
   expect_equal(etat("29003", "2024")$value, 700 / 500)
   expect_equal(etat("35001", "2020")$value, 400 / 4800)
   expect_equal(etat("35001", "2023")$value, 400 / 5200)
   expect_equal(etat("56001", "2022")$value, 800 / 2900)  # la renaturation
   expect_equal(etat("56001", "2024")$value, 600 / 3100)  # MESURÉE (M3 < M2)
-  # les agrégats : les états somment (EPCI X = 22001 + 22002 -> M2 800 m²,
-  # M3 2000 m²), l'intensité se lit sur la population du niveau (RP 2017 =
-  # 2200 + 1200 pour M2, RP 2023 = 2400 + 1300 pour M3)
-  expect_equal(etat("200000001", "2021")$value, 800 / 3400)
-  expect_equal(etat("200000001", "2025")$value, 2000 / 3700)
-  expect_equal(etat("22", "2021")$value, 800 / 3400)
-  expect_equal(etat("22", "2025")$value, 2000 / 3700)
+  # les agrégats : les états somment (EPCI X = 22001 -> M2 400 m²,
+  # M3 1200 m²), l'intensité se lit sur la population du niveau.
+  expect_equal(etat("200000001", "2021")$value, 400 / 2200)
+  expect_equal(etat("200000001", "2025")$value, 1200 / 2400)
+  expect_equal(etat("22", "2021")$value, 400 / 2200)
+  expect_equal(etat("22", "2025")$value, 1200 / 2400)
   expect_equal(etat("35", "2020")$value, 400 / 4800)
   expect_equal(etat("35", "2023")$value, 400 / 5200)
   expect_equal(etat("56", "2022")$value, 800 / 2900)
   expect_equal(etat("56", "2024")$value, 600 / 3100)
-  # EPCI Y / département 29 : 29001 + 29002 + 29003 (toutes portent leurs
-  # états depuis l'amendement #243)
-  expect_equal(etat("200000002", "2021")$value, 2100 / 4520)
-  expect_equal(etat("200000002", "2024")$value, 2700 / 4360)
-  expect_equal(etat("29", "2021")$value, 2100 / 4520)
-  expect_equal(etat("29", "2024")$value, 2700 / 4360)
-  # la région : les sept communes
-  expect_equal(etat("53", "M2")$value, 4100 / 15620)
-  expect_equal(etat("53", "M3")$value, 5700 / 16360)
+  # EPCI Y / département 29 : 29001 + 29003 (toutes portent leurs états
+  # depuis l'amendement #243)
+  expect_equal(etat("200000002", "2021")$value, 1300 / 3600)
+  expect_equal(etat("200000002", "2024")$value, 1900 / 3450)
+  expect_equal(etat("29", "2021")$value, 1300 / 3600)
+  expect_equal(etat("29", "2024")$value, 1900 / 3450)
+  # la région : les cinq communes
+  expect_equal(etat("53", "M2")$value, 2900 / 13500)
+  expect_equal(etat("53", "M3")$value, 4100 / 14150)
   # l'unité du contrat : m²/hab pour l'état, partout
   expect_true(all(valeur_payload(payload, "22001",
                                  "artif_par_habitant")$unit == "m²/hab"))
@@ -174,9 +173,9 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   somme_fenetre <- sum(annuel("22001")$value[
     annuel("22001")$detail %in% c("2021", "2022", "2023", "2024")])
   expect_equal(somme_fenetre, 233202 / 10000)
-  # un agrégat somme les annuels de ses communes (EPCI X, 2021 : 6 + 2 ha)
+  # un agrégat somme les annuels de ses communes (EPCI X, 2021 : 6 ha)
   expect_equal(annuel("200000001")$value[
-    annuel("200000001")$detail == "2021"], 8)
+    annuel("200000001")$detail == "2021"], 6)
   # la commune sans donnée garde ses 14 annuels NA (jamais des 0 inventés)
   expect_equal(nrow(annuel("29003")), 14L)
   expect_true(all(is.na(annuel("29003")$value)))
@@ -185,7 +184,7 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
 })
 
 test_that("la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   # aucune ligne des deux clés retirées (#63) dans le payload
@@ -197,7 +196,7 @@ test_that("la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence PAR LIGNE (le couple département × millésime, jamais une archive uniforme)", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   v <- vintages_milieux()
@@ -254,7 +253,7 @@ test_that("chaque indicateur est estampillé depuis sa source de référence PAR
 })
 
 test_that("les territoires multi-départements (EPCI transfrontalier, région) portent une estampille SPAN — jamais un couple unique inventé", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
   etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
 
@@ -294,7 +293,7 @@ test_that("les territoires multi-départements (EPCI transfrontalier, région) p
 })
 
 test_that("le payload Milieux passe la validation générique (forme, territoires, vintages)", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   # la validation générique avec les tables déclaratives du thème — un payload
@@ -309,7 +308,7 @@ test_that("le payload Milieux passe la validation générique (forme, territoire
 })
 
 test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   # une consommation annuelle négative (une dérive du fichier source) — la
@@ -325,7 +324,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
   )
 
   # une intensité d'état négative — la validation de VALEUR du thème l'attrape
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
   payload$indicateurs$value[payload$indicateurs$key == "artif_par_habitant"][1] <- -1
   expect_error(
@@ -338,7 +337,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
   )
 
   # une clé fantôme non déclarée — la validation GÉNÉRIQUE l'attrape
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
   payload$indicateurs$key[1] <- "lq"
   expect_error(
@@ -352,7 +351,7 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
 })
 
 test_that("la garde « toute commune a un état > 0 » : un état nul ou NA est une corruption (amendement #243)", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),
+  payload <- compute_payload_test(communes_fixture_payload_milieux(),
                              theme = theme_milieux())
 
   # un état initial nul (le bug flux-et-état — les 102 communes à M2 = 0 du
@@ -390,6 +389,4 @@ test_that("la garde « toute commune a un état > 0 » : un état nul ou NA est 
                      validations = validations_milieux,
                      apercu = APERCU_MILIEUX)
   )
-})
-
 })
