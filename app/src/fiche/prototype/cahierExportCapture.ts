@@ -629,30 +629,69 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value)
 }
 
+type CahierCaptureOwner = <T>(value: T) => T
+
+/** One clone-or-reference decision for every live owner value in either capture. */
+function captureOwner(immutable: boolean): CahierCaptureOwner {
+  return immutable ? deepPlain : (value) => value
+}
+
 /**
- * Read the owner-observed inputs of one section without copying them (#1165).
+ * Read only the owner-observed inputs the activation policy consumes (#1165).
  *
- * Only the PDF generation capture needs an immutable, screen-independent copy
- * of the evidence, native render and published equipment state. The mounted
- * action reads availability on every reactive change: passing those heavy
- * values through by reference keeps the very same reactive dependency tracking
- * (the activation policy still reads each owner state it gates on) without
- * walking Vue proxies to clone values it never consults.
+ * The mounted action re-evaluates on every reactive change. Passing heavy values
+ * through by reference keeps the same dependency tracking without walking Vue
+ * proxies to clone them, and no generation-only identity/source/native-render
+ * field is built or retained on this path.
  */
 export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportAvailability {
-  const { readiness, capabilities, comparison, figures } = sectionCapture(input, false)
-  return { readiness, capabilities, comparison, figures }
+  return captureActivation(input, captureOwner(false))
 }
 
 export function captureCahierSection(input: CahierSectionCaptureInput): CahierExportCapture {
-  return deepFreeze(deepPlain(sectionCapture(input, true)))
+  const own = captureOwner(true)
+  const { readiness, capabilities, comparison, figures } = captureActivation(input, own)
+  const section = input.section
+  const evidence = section.evidence
+  const family = evidence ? cahierCaptureFamily(evidence.kind) : null
+  const explorer = input.publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
+  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
+    ? explorer.state.state.typequ ?? null
+    : null
+  const capture: CahierExportCapture = {
+    ...(input.nativeRender ? { nativeRender: own(input.nativeRender) } : {}),
+    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
+      modes: [...(input.aedar?.modes ?? [])] },
+    identity: {
+      sectionKey: section.key,
+      evidenceKind: evidence?.kind ?? null,
+      sectionLabel: section.label,
+      sectionAvailability: section.availability,
+      unit: { key: input.unit.key, label: input.unit.label },
+      territory: {
+        type: input.territory.type,
+        code: input.territory.code,
+        name: input.territory.name,
+      },
+    },
+    generation: captureGeneration(evidence),
+    readiness,
+    capabilities,
+    comparison,
+    sources: captureSources(evidence),
+    aedar: evidence && family?.startsWith('aedar-')
+      ? own(input.aedar)
+      : null,
+    figures,
+  }
+  return deepFreeze(deepPlain(capture))
 }
 
-function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): CahierExportCapture {
-  // One ownership decision for every live owner value. Adding another heavy
-  // field must use `own` too, so the availability and generation captures cannot
-  // silently disagree about whether that field is copied.
-  const own: <T>(value: T) => T = immutable ? deepPlain : (value) => value
+/** The single construction path for every field the PDF activation policy reads. */
+function captureActivation(
+  input: CahierSectionCaptureInput,
+  own: CahierCaptureOwner,
+): CahierExportAvailability {
   const section = input.section
   const evidence = section.evidence
   const family = evidence ? cahierCaptureFamily(evidence.kind) : null
@@ -674,27 +713,7 @@ function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): C
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus === undefined ? 'unobserved' : input.referenceStatus)
     : null
-  const explorer = publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
-  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
-    ? explorer.state.state.typequ ?? null
-    : null
-  const capture: CahierExportCapture = {
-    ...(immutable && input.nativeRender ? { nativeRender: own(input.nativeRender) } : {}),
-    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
-      modes: [...(input.aedar?.modes ?? [])] },
-    identity: {
-      sectionKey: section.key,
-      evidenceKind: evidence?.kind ?? null,
-      sectionLabel: section.label,
-      sectionAvailability: section.availability,
-      unit: { key: input.unit.key, label: input.unit.label },
-      territory: {
-        type: input.territory.type,
-        code: input.territory.code,
-        name: input.territory.name,
-      },
-    },
-    generation: captureGeneration(evidence),
+  return {
     readiness: {
       status: input.readiness.status,
       reason: input.readiness.reason,
@@ -725,15 +744,10 @@ function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): C
         referenceStatus,
       }),
     },
-    sources: captureSources(evidence),
-    aedar: evidence && family?.startsWith('aedar-')
-      ? own(input.aedar)
-      : null,
     figures: evidence && family
       ? captureFigures({ evidence, family, input, publications })
       : [],
   }
-  return capture
 }
 
 const FAMILY_HAS_COMPARISON_EVIDENCE: Readonly<Record<CahierCaptureFamily, boolean>> = {
