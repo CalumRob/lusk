@@ -26,6 +26,24 @@ test_that("real repo passes both seam audits (apply guarded, not allowlisted)", 
   expect_false(any(grepl("apply_publication", ecritures$fichier)))
 })
 
+test_that("allowlists name exact files — no broad regex can admit a new file", {
+  motifs <- c(vapply(AUTORISATIONS_DB, function(a) a$fichier, character(1)),
+              vapply(AUTORISATIONS_ECRITURE_SERVEUR, function(a) a$fichier, character(1)))
+  expect_false(any(grepl("\\.\\*", motifs)))
+  # A brand-new file whose name resembles a legacy publisher must still fail.
+  d <- tempfile("seam-exact-")
+  dir.create(file.path(d, "R"), recursive = TRUE)
+  on.exit(unlink(d, recursive = TRUE), add = TRUE)
+  writeLines(c("foo <- function(con) {",
+               "  con <- DBI::dbConnect(RPostgres::Postgres(), dbname='lusk')",
+               "}"), file.path(d, "R", "publish_new_trick.R"))
+  expect_error(verifier_structure_gel(d), "serving-DB call site")
+  writeLines(c("foo <- function(con) {",
+               "  DBI::dbExecute(con, 'DELETE FROM scalar_observation')",
+               "}"), file.path(d, "R", "publish_new_trick.R"))
+  expect_error(verifier_structure_ecritures_serveur(d), "outside a shape adapter")
+})
+
 test_that("legacy writers carry the step-4 retirement reason", {
   for (a in AUTORISATIONS_ECRITURE_SERVEUR) {
     if (grepl("publish|aggregates|scripts", a$fichier))

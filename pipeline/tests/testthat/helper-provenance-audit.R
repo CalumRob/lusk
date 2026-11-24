@@ -14,8 +14,6 @@ BLOCS_OUVRANTS <- "function\\s*\\(|\\bif\\s*\\(|\\bfor\\s*\\(|\\bwhile\\s*\\("
 AUTORISATIONS_DB <- list(
   list(fichier = "^R/publish_serving_bridge\\.R$",
        raison = "pont offre_tc #1072 — retire in ADR-0049 step 4"),
-  list(fichier = "^scripts/smoke-.*\\.R$",
-       raison = "tests de fumée ciblent des schémas lusk_it_* jetables — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/publish-aedar-aggregates\\.R$",
        motif = "reference_connection",
        raison = "branche --check READ ONLY — retire in ADR-0049 step 4"),
@@ -23,7 +21,35 @@ AUTORISATIONS_DB <- list(
        motif = "configuration_service_postgres\\(\\) # fail before any upstream compute",
        raison = "branche --targets : validation de configuration seulement — retire in ADR-0049 step 4"),
   list(fichier = "^R/publish_postgres_configuration\\.R$",
-       raison = "configuration_service_postgres() n'ouvre aucune connexion — retire in ADR-0049 step 4")
+       raison = "configuration_service_postgres() n'ouvre aucune connexion — retire in ADR-0049 step 4"),
+  # Chaque smoke est nommé EXACTEMENT : un nouveau fichier ne peut pas entrer
+  # dans l'allowlist par un motif large.
+  list(fichier = "^scripts/smoke-comparison-lineage-fixture\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-demographic-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-fiche-series-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-habitat-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-housing-economy-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-littoral-reference\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-milieux-reading-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-profile-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-programme-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-retained-baseline-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-retained-territory-reference\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-series-postgres\\.R$",
+       raison = "retire in ADR-0049 step 4")
 )
 
 relatif_sous <- function(chemin, racine) {
@@ -337,14 +363,18 @@ MOTIF_ECRITURE_SERVEUR <- paste0(
   "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE_SCALAIRE, ")")
 
 AUTORISATIONS_ECRITURE_SERVEUR <- list(
-  list(fichier = "^R/adaptateur_.*\\.R$",
+  list(fichier = "^R/adaptateur_scalaire\\.R$",
        raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
-  list(fichier = "^R/publish.*\\.R$",
+  list(fichier = "^R/publish_scalar\\.R$",
+       raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^R/publish_profile\\.R$",
        raison = "producteur historique — retire in ADR-0049 step 4"),
   list(fichier = "^R/aedar_aggregates\\.R$",
        raison = "producteur historique — retire in ADR-0049 step 4"),
-  list(fichier = "^scripts/.*\\.R$",
-       raison = "smoke/producteur historique — retire in ADR-0049 step 4")
+  list(fichier = "^scripts/smoke-profile-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4")
 )
 
 auditer_ecritures_serveur <- function(racine,
