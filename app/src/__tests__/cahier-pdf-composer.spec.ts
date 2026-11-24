@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
+import { composerCahierPdf, composerDocumentAvecCorpsNatif } from '@/fiche/prototype/cahierPdfComposer'
+import { formatMobiliteBarValue } from '@/fiche/prototype/cahierMobiliteReadings'
+import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
 import { MARQUE_LUSK_ERMINE, REMPLISSAGES_MARQUE_LUSK } from '@/components/luskBrandMark'
 import { COULEUR_CYCLE_PARTAGE } from '@/styles/editorialPageRoles'
 import { sousTitreComparaison, texteSousTitre } from '@/fiche/prototype/cahierPdfComparaison'
@@ -17,7 +19,7 @@ import { visibleGroupedBarSeries } from '@/fiche/prototype/cahierFigureReadings'
 import type { CahierTableColumn, CahierTableRow } from '@/fiche/prototype/cahierExportAdapters'
 import type { CahierCaptureComparison } from '@/fiche/prototype/cahierExportCapture'
 import type { MesureTexte } from '@/fiche/prototype/cahierPdfMesure'
-import { chargeurPoliceTest, requetePour } from './helpers/cahierPdfRuntime'
+import { chargeurPoliceTest, lirePdf, policesEmbarquees, requetePour } from './helpers/cahierPdfRuntime'
 import { captureBarresDense, captureCourbeDense, capturePdfFixture } from './helpers/cahierPdfFixtures'
 
 const signal = () => new AbortController().signal
@@ -103,11 +105,74 @@ describe('scènes natives peuplées — géométrie partagée écran/PDF', () =>
 
 describe('compositeur PDF Cahier — refus explicites', () => {
 
+  it('refuse une famille non prise en charge', async () => {
+    const request = requetePour('aedar-access')
+    const capture = {
+      ...request.capture,
+      figures: [{ ...request.capture.figures[0]!, family: 'waffle-inconnu' }],
+    } as any
+    await expect(composerDocumentAvecCorpsNatif({ ...request, capture }, options(), []))
+      .rejects.toMatchObject({ code: 'unsupported-family' })
+  })
+
   it('refuse une carte déclarée non observée comme erreur d’actif', async () => {
     const capture: any = structuredClone(capturePdfFixture('aedar-car-overview'))
     capture.capabilities.maps.items[0].loaded = false
     await expect(composerCahierPdf({ ...requetePour('aedar-car-overview'), capture }, options()))
       .rejects.toMatchObject({ code: 'asset' })
+  })
+
+  it('charge les polices par le chemin de production (fetch des actifs bundlés)', async () => {
+    const original = globalThis.fetch
+    const dossier = resolve(process.cwd(), 'src/assets/fonts/pdf')
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const nom = url.split('/').pop()
+      if (nom?.endsWith('.ttf')) {
+        const bytes = readFileSync(resolve(dossier, nom))
+        return new Response(bytes, { status: 200 })
+      }
+      return original(input)
+    })
+    globalThis.fetch = fetchSpy as typeof fetch
+    try {
+      const artifact = await composerDocumentAvecCorpsNatif(requetePour('aedar-access'), {
+        signal: signal(),
+        urlPublique: 'https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access',
+        urlAccueil: 'https://lusk.test/',
+      }, [])
+      const lecture = await lirePdf(artifact.blob)
+      expect(fetchSpy.mock.calls.filter(([input]) => String(input).endsWith('.ttf'))).toHaveLength(POLICES_PDF.length)
+      expect(await policesEmbarquees(lecture.octets)).toBeGreaterThanOrEqual(6)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('ne crée aucune URL objet (le compositeur ne fait pas la livraison)', async () => {
+    const spy = vi.spyOn(URL, 'createObjectURL')
+    try {
+      await composerDocumentAvecCorpsNatif(requetePour('aedar-access'), options(), [])
+      expect(spy).not.toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('un nombre corrompu reste fidèlement le nombre corrompu', () => {
+    const request = requetePour('reseaux')
+    const capture = structuredClone(request.capture)
+    const figure = capture.figures.find((candidate) => candidate.family === 'mobilite-bars')!
+    if (figure.family !== 'mobilite-bars') throw new Error('famille inattendue')
+    figure.model.figure.categories[0]!.value.fact.value = 10.94466
+    expect(formatMobiliteBarValue(10.94466)).toBe('10,94')
+
+    const displays = projeterRequeteExportFigures({ ...request, capture })
+      .flatMap((projection) => projection.tables)
+      .flatMap((table) => table.rows)
+      .flatMap((row) => row.cells.map((cell) => cell.display))
+    expect(displays).toContain('10,94')
+    expect(displays).not.toContain('10,93')
   })
 
 

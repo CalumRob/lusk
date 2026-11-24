@@ -7,9 +7,47 @@ import { describe, expect, it } from 'vitest'
 import { CAHIER_FIGURE_ROW } from '@/fiche/prototype/cahierFigureNativeGeometry'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
-import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
+import { projeterRequeteExportFigures, projectShare } from '@/fiche/prototype/cahierExportAdapters'
 import { mesurePdfTest } from './helpers/cahierPdfRuntime'
-import { captureBarresStationnement } from './helpers/cahierPdfFixtures'
+import { captureBarresStationnement, capturePartDense } from './helpers/cahierPdfFixtures'
+
+describe('#1024 — rang de la colonne « Près d’un arrêt » (table, pas de pastille de figure)', () => {
+  it('peint le rang servi de la comparaison dans la colonne Rang du tableau', () => {
+    const capture = capturePartDense()
+    const figure = capture.figures.find((candidate) => candidate.family === 'mobilite-share')!
+    if (figure.family !== 'mobilite-share') throw new Error('famille inattendue')
+    const servi = figure.model.value.fact.comparison
+    if (!servi) throw new Error('comparaison servie absente')
+    expect(servi.rank).toEqual({ position: 1, size: 38, ties: null })
+    expect(servi.scope).toEqual({ kind: 'communes-epci', label: 'communes de EPCI X' })
+
+    const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
+    const projection = projeterRequeteExport(capture, offered.slice(0, 3))
+    if (projection.status !== 'ready') throw new Error(projection.reason)
+    const share = projectShare(projection.request.capture, figure)
+    expect(share.comparisonRank).toEqual(servi.rank)
+    expect(share.comparisonRankDisplay).toBe('1er/38')
+
+    const table = share.tables[0]!
+    const rang = table.columns.findIndex((column) => column.kind === 'comparison')
+    expect(rang).toBeGreaterThanOrEqual(0)
+    expect(table.rows[0]!.cells[rang]!.rankDisplay).toBe('1er/38')
+  })
+
+  it('n’invente aucun rang quand la comparaison n’en sert pas', () => {
+    const capture: any = structuredClone(capturePartDense())
+    const figure = capture.figures.find((candidate: any) => candidate.family === 'mobilite-share')
+    figure.model.value.fact.comparison.rank = { position: 1, size: 1, ties: null }
+    const share = projectShare(capture, figure)
+    expect(share.comparisonRank).toBeNull()
+    expect(share.comparisonRankDisplay).toBeNull()
+    const table = share.tables[0]!
+    const rang = table.columns.findIndex((column) => column.kind === 'comparison')
+    expect(rang).toBeGreaterThanOrEqual(0)
+    expect(table.rows[0]!.cells[rang]!.rankDisplay).toBeNull()
+    expect(JSON.stringify(share)).not.toContain('1er/1')
+  })
+})
 
 describe('#1024 — rangée appairée : la source, pas un littéral transplanté', () => {
   it('déclare la grammaire native de la rangée et son viewport de lecture', () => {

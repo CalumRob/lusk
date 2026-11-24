@@ -3,15 +3,21 @@
  * exercises the same behaviour through the shared native path or the pure
  * production helpers the composer uses (no second painter).
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import { enregistrerPolices, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
 import { CAHIER_SHARE_COLOUR } from '@/styles/editorialPageRoles'
+import { POLICE_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { PALETTE_PDF, couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
 import { capturePdfFixture } from './helpers/cahierPdfFixtures'
 import { chargeurPoliceTest } from './helpers/cahierPdfRuntime'
-import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
+import { composerCahierPdf, composerDocumentAvecCorpsNatif } from '@/fiche/prototype/cahierPdfComposer'
+import { CAHIER_EXPORT_PUBLIC_URL } from '@/fiche/prototype/cahierExportUrls'
+import { lirePdf } from './helpers/cahierPdfRuntime'
 
 function requete(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly string[]) {
   const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
@@ -120,6 +126,35 @@ describe('Cahier PDF natif — contrats remplacés', () => {
   it('lit la couleur du propriétaire de partage, pas une copie', () => {
     expect(couleurPdf(CAHIER_SHARE_COLOUR.fond)).toBe(PALETTE_PDF.shareTrackGround)
     expect(couleurPdf(CAHIER_SHARE_COLOUR.filet)).toBe(PALETTE_PDF.shareTrackBorder)
+  })
+
+  it('conserve les accents et les glyphes embarqués', async () => {
+    const { doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+    doc.setFont(POLICE_PDF.displayStrong, 'normal')
+    doc.setFontSize(20)
+    doc.text('DIVERSITÉ DE L’OFFRE', 10, 20)
+    doc.text('COMMUNE A1', 10, 30)
+    const lecture = await lirePdf(doc.output('blob'))
+    expect(lecture.texteComplet).toContain('COMMUNE A1')
+    expect(lecture.texteComplet).toContain('DIVERSITÉ DE L’OFFRE')
+    expect(lecture.texteComplet).not.toMatch(/\ufffd/)
+  })
+
+  it('an export from a non-production host still links the owned canonical public host', async () => {
+    expect(CAHIER_EXPORT_PUBLIC_URL).toBe('https://lusk.calumrobertson.fr/')
+    const artifact = await composerDocumentAvecCorpsNatif(
+      requete(capturePdfFixture('aedar-car-overview')),
+      { signal: new AbortController().signal, chargerPolice: chargeurPoliceTest },
+      [],
+    )
+    const lecture = await lirePdf(artifact.blob)
+    expect(lecture.texteComplet).toContain('lusk.calumrobertson.fr')
+    expect(lecture.liens.some((lien) => lien.includes('lusk.calumrobertson.fr'))).toBe(true)
+    expect(lecture.liens.some((lien) => /lusk\.test|lusk-pdf-native|preview/.test(lien))).toBe(false)
+
+    const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierExportUrls.ts'), 'utf8')
+    const code = source.split('\n').filter((line) => !/^\s*(\*|\/\*)/.test(line)).join('\n')
+    expect(code).not.toMatch(/\blocation\b|\.origin\b/)
   })
 
 })

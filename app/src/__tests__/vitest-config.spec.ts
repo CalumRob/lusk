@@ -19,8 +19,9 @@ describe('Vitest configuration', () => {
     expect(viteConfigSource).toContain('css: { include: [/tokens\\.css/] }')
   })
 
-  it('makes npm test the only automated Vitest suite', () => {
+  it('makes npm test the only automated Vitest suite and exposes the browser acceptance script', () => {
     expect(packageJson.scripts.test).toBe('vitest run')
     expect(packageJson.scripts).not.toHaveProperty('test:browser')
+    expect(packageJson.scripts['verify:cahier-pdf-browser']).toBe('node scripts/verify-cahier-pdf-browser.mjs')
   })
 })
