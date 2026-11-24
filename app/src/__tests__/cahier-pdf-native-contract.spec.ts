@@ -3,16 +3,30 @@
  * exercises the same behaviour through the shared native path or the pure
  * production helpers the composer uses (no second painter).
  */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+
+import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
+import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
+import { texteNatifPourPdf } from '@/fiche/prototype/cahierNativeDomPaint'
+import { routes } from '@/router'
+import type { Payload } from '@/payload/types'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
 import { construireTableauxPdf } from '@/fiche/prototype/cahierPdfTableau'
 import { enregistrerPolices, mesurePdfProduction } from '@/fiche/prototype/cahierPdfComposer'
 import { CAHIER_SHARE_COLOUR } from '@/styles/editorialPageRoles'
+import { POLICE_PDF } from '@/fiche/prototype/cahierPdfFonts'
 import { PALETTE_PDF, couleurPdf } from '@/fiche/prototype/cahierPdfPalette'
 import { capturePdfFixture } from './helpers/cahierPdfFixtures'
 import { chargeurPoliceTest } from './helpers/cahierPdfRuntime'
-import { composerCahierPdfNativedansNavigateur } from './helpers/cahierPdfNativeRuntime'
+import { composerCahierPdf, composerDocumentAvecCorpsNatif } from '@/fiche/prototype/cahierPdfComposer'
+import { CAHIER_EXPORT_PUBLIC_URL } from '@/fiche/prototype/cahierExportUrls'
+import { lirePdf } from './helpers/cahierPdfRuntime'
 
 function requete(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly string[]) {
   const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
@@ -22,23 +36,11 @@ function requete(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly
 }
 
 async function generer(capture: ReturnType<typeof capturePdfFixture>, modes?: readonly string[]) {
-  const result = await composerCahierPdfNativedansNavigateur(requete(capture, modes), { signal: new AbortController().signal })
+  const result = await composerCahierPdf(requete(capture, modes), { signal: new AbortController().signal })
   return new Uint8Array(await result.blob.arrayBuffer())
 }
 
-async function textOf(bytes: Uint8Array) {
-  const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
-  const page = await pdf.getPage(1)
-  return ((await page.getTextContent()).items as any[]).map((item) => item.str ?? '').join(' ')
-}
-
 describe('Cahier PDF natif — contrats remplacés', () => {
-  it('conserve les accents et les glyphes embarqués', async () => {
-    const text = await textOf(await generer(capturePdfFixture('aedar-access')))
-    expect(text).toContain('COMMUNE A1')
-    expect(text).toContain('DIVERSITÉ DE L’OFFRE')
-    expect(text).not.toMatch(/\ufffd/)
-  })
 
   it('exerce le vrai point d’entrée de production (import paresseux, annulation, code)', async () => {
     const production = await import('../fiche/prototype/cahierPdfComposer')
@@ -54,44 +56,7 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(typeof production.creerGenerateurCahierPdf).toBe('function')
   })
 
-  it('paints the dense waffle as many small native tiles, without CTA or fixture host', async () => {
-    const { captureProfilRangsDense } = await import('./helpers/cahierPdfFixtures')
-    const dense: any = captureProfilRangsDense()
-    dense.nativeRender.content.units[0].sections[0].evidence.facts = dense.figures
-      .find((figure: any) => figure.family === 'aedar-equipment-profile').model.facts
-    const projection = projeterRequeteExport(dense, [])
-    if (projection.status !== 'ready') throw new Error(projection.reason)
-    const result = await composerCahierPdfNativedansNavigateur(projection.request, {
-      signal: new AbortController().signal, urlAccueil: 'https://lusk.test/',
-    })
-    const bytes = new Uint8Array(await result.blob.arrayBuffer())
-    const { cheminsPdf } = await import('./helpers/cahierPdfRuntime')
-    const pdf = await getDocument({ data: Uint8Array.from(bytes) }).promise
-    const paths = await cheminsPdf(bytes, pdf.numPages)
-    const tiles = paths.filter((chemin: any) => chemin.kind === 'fill'
-      && chemin.width > 20 && chemin.width < 100 && chemin.height > 20 && chemin.height < 100)
-    expect(tiles.length, 'native waffle tiles').toBeGreaterThanOrEqual(30)
-    const text = await textOf(bytes)
-    expect(text).not.toContain('Parcourir les équipements')
-    expect(text).not.toContain('lusk-pdf-native.test')
-    expect(text).toContain('sur lusk.test')
-  })
 
-  it('gèle l’équipement et l’horizon sélectionnés dans la capture', async () => {
-    const { captureExplorerRangs } = await import('./helpers/cahierPdfFixtures')
-    const capture: any = structuredClone(captureExplorerRangs())
-    capture.nativeSelection.typequ = 'T001'
-    capture.nativeSelection.horizonMinutes = 30
-    const projection = projeterRequeteExport(capture)
-    if (projection.status !== 'ready') throw new Error(projection.reason)
-    expect(projection.request.capture.nativeSelection).toMatchObject({ typequ: 'T001', horizonMinutes: 30 })
-    const text = await textOf(await generer(capture))
-    const defaultText = await textOf(await generer(structuredClone(captureExplorerRangs())))
-    expect(text).toContain('TEMPS DE TRAJET')
-    // The frozen non-default selection changes the rendered figure, not just
-    // the capture object.
-    expect(text).not.toBe(defaultText)
-  })
 
   it('mappe chaque raison native vers un code et un message français', async () => {
     const { codeErreurNativePdf, messageErreurNativePdf } = await import('@/fiche/prototype/cahierNativePdf')
@@ -119,7 +84,7 @@ describe('Cahier PDF natif — contrats remplacés', () => {
   it('respecte une annulation avant la génération', async () => {
     const controller = new AbortController()
     controller.abort()
-    await expect(composerCahierPdfNativedansNavigateur(
+    await expect(composerCahierPdf(
       requete(capturePdfFixture('aedar-access'), ['car']),
       { signal: controller.signal },
     )).rejects.toMatchObject({ name: 'AbortError' })
@@ -172,24 +137,83 @@ describe('Cahier PDF natif — contrats remplacés', () => {
     expect(couleurPdf(CAHIER_SHARE_COLOUR.filet)).toBe(PALETTE_PDF.shareTrackBorder)
   })
 
+  it('conserve les accents et les glyphes embarqués', async () => {
+    const capture = capturePdfFixture('aedar-access')
+    if (!capture.nativeRender) throw new Error('capture native absente')
+    const content = capture.nativeRender.content
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: cahierPaginationFor({} as Payload, content, true),
+        showAllUnits: true,
+        presentation: 'plain',
+        layoutVariant: 'indexed-sections',
+        aedarAccessEnabled: true,
+        aedarChapterActive: true,
+        aedarStatus: 'ready',
+        comparisonStatus: 'ready',
+        nativeComparisonStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+    await nextTick()
+    const axis = wrapper.get('[data-section="aedar-access"] .cahier-figure-axis-title--y')
+    const label = axis.text().trim()
+    expect(label).toBe('Diversité de l’offre')
+    const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
+    const labelRule = /\.type-figure-label,\s*\.type-figure-column\s*\{([^}]*)\}/u.exec(tokens)?.[1]
+    expect(labelRule).toContain('text-transform: uppercase')
+    const heading = texteNatifPourPdf(label, { textTransform: 'uppercase' })
+    expect(heading).toBe('DIVERSITÉ DE L’OFFRE')
+
+    const artifact = await composerDocumentAvecCorpsNatif(
+      requete(capture),
+      { signal: new AbortController().signal, chargerPolice: chargeurPoliceTest },
+      [],
+    )
+    const lecture = await lirePdf(artifact.blob)
+    expect(lecture.texteComplet).toContain('COMMUNE A1')
+    expect(lecture.texteComplet).not.toMatch(/\ufffd/)
+
+    const { doc } = await mesurePdfProduction({ chargerPolice: chargeurPoliceTest })
+    doc.setFont(POLICE_PDF.displayStrong, 'normal')
+    doc.setFontSize(20)
+    doc.text(heading, 10, 20)
+    doc.text(capture.identity.territory.name.toLocaleUpperCase('fr-FR'), 10, 30)
+    const fontLecture = await lirePdf(doc.output('blob'))
+    expect(fontLecture.texteComplet).toContain('DIVERSITÉ DE L’OFFRE')
+    expect(fontLecture.texteComplet).toContain('COMMUNE A1')
+    expect(fontLecture.texteComplet).not.toMatch(/\ufffd/)
+  })
+
   it('an export from a non-production host still links the owned canonical public host', async () => {
-    const { CAHIER_EXPORT_PUBLIC_URL } = await import('../fiche/prototype/cahierExportUrls')
-    const { lirePdf } = await import('./helpers/cahierPdfRuntime')
-    const { readFileSync } = await import('node:fs')
-    const { resolve } = await import('node:path')
     expect(CAHIER_EXPORT_PUBLIC_URL).toBe('https://lusk.calumrobertson.fr/')
-    // No urlAccueil/urlPublique override: the production default applies even
-    // though the generating process runs on a preview/test host.
-    const lecture = await lirePdf((await composerCahierPdfNativedansNavigateur(
+    const artifact = await composerDocumentAvecCorpsNatif(
       requete(capturePdfFixture('aedar-car-overview')),
-      { signal: new AbortController().signal },
-    )).blob)
+      { signal: new AbortController().signal, chargerPolice: chargeurPoliceTest },
+      [],
+    )
+    const lecture = await lirePdf(artifact.blob)
     expect(lecture.texteComplet).toContain('lusk.calumrobertson.fr')
     expect(lecture.liens.some((lien) => lien.includes('lusk.calumrobertson.fr'))).toBe(true)
     expect(lecture.liens.some((lien) => /lusk\.test|lusk-pdf-native|preview/.test(lien))).toBe(false)
-    // The URL owner must never read the runtime host.
-    const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype/cahierExportUrls.ts'), 'utf8')
-    const code = source.split('\n').filter((line) => !/^\s*(\*|\/\*)/.test(line)).join('\n')
-    expect(code).not.toMatch(/\blocation\b|\.origin\b/)
+
+    const codeSansCommentaires = (source: string) => source
+      .replace(/\/\*[\s\S]*?\*\//gu, '')
+      .replace(/(?<!:)\/\/.*$/gmu, '')
+    expect(codeSansCommentaires('// location\nconst host = window.location')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('// globalThis.location\n')).not.toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('const host = window.location // runtime host')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('const url = "https://example.test" // location')).not.toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('globalThis.location')).toMatch(/\blocation\b/)
+    expect(codeSansCommentaires('url?.origin')).toMatch(/\.origin\b/)
+    for (const file of ['cahierExportUrls.ts', 'cahierPdfComposer.ts']) {
+      const source = readFileSync(resolve(process.cwd(), 'src/fiche/prototype', file), 'utf8')
+      expect(codeSansCommentaires(source), file).not.toMatch(/\blocation\b|\.origin\b/)
+    }
   })
-}, 180000)
+
+})

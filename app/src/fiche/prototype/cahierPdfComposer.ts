@@ -517,7 +517,7 @@ function familySlots(projection: CahierFigureProjection): readonly string[] {
  * publishes one. Families without a comparison layer (profile, diversity loss)
  * publish no label: the note then falls back to the factual group identity.
  */
-function libelleComparaisonProjection(projection: CahierFigureProjection): string | null {
+export function libelleComparaisonProjection(projection: CahierFigureProjection): string | null {
   switch (projection.family) {
     case 'aedar-ramps':
     case 'aedar-car-overview':
@@ -1344,7 +1344,7 @@ function dessinerSources(
  * alone. A blank published label is a corrupt capture: the painter refuses it
  * rather than printing an empty statement.
  */
-function lignesPiedComparaison(
+export function lignesPiedComparaison(
   labels: readonly string[],
   capture: CahierExportCapture,
   mesure: MesureTexte,

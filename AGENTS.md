@@ -101,6 +101,23 @@ only (rendered/element rules are not exercised by that pass).
 - Keep the acquisition registry complete against `THEMES_CANONIQUES`; its contract test must fail when a canonical theme is omitted.
 - Domain vocabulary and owner decisions for this mode live in `CONTEXT.md` — « Acquisition par thème » (anciennement « Acquisition paresseuse par thème »).
 
+### App tests (`app/`) — how to run them
+
+- `npm test` = `vitest run`, the **only automated suite**: happy-dom only, **no browser anywhere in it**,
+  and no Playwright/Chromium import reachable. Config lives in `app/vitest.config.ts` (never in
+  `vite.config.ts`).
+- During iteration run filtered: `npx vitest run <file-or-regex>`. Run the full `npm test` **once,
+  before handoff** — not after every edit.
+- Browser-level PDF/layout verification lives only in the `app/scripts/verify-*.mjs` acceptance scripts,
+  notably `verify:cahier-pdf-production`, `verify:cahier-pdf-browser`, `verify:mobile-cahier-overflow`
+  and `verify:rank-circles`. Run one from the repository root with, for example,
+  `npm --prefix app run verify:cahier-pdf-browser`; `CAHIER_PDF_CHROMIUM`, `CAHIER_PDF_PORT` and
+  `CAHIER_PDF_EVIDENCE_DIR` configure that script. The orchestrator runs the relevant scripts when a
+  ticket touches the Cahier PDF composer / native paint / DOM painter; the UI/UX visual gate above
+  still applies.
+- `npm ci` first on a fresh checkout/worktree (missing `jspdf` / `pdfjs-dist` breaks module loading).
+  `node_modules` must be a real directory per checkout — never a junction to another checkout.
+
 ### R / renv in worktrees (pipeline) — READ BEFORE RUNNING ANY R
 
 The R pipeline (`pipeline/`) uses renv, which stores each project's package library at

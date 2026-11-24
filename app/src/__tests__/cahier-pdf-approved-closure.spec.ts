@@ -1,107 +1,25 @@
 /**
- * #1024 closure checks, calibrated on the approved generating source and on
- * R1–R3. Each assertion names the fact it protects; none reads a previous
- * output of the composer.
+ * #1024 closure checks for the production table builder, calibrated on the
+ * approved generating source and R1–R3. No rendered-browser harness is needed.
  */
 import { describe, expect, it } from 'vitest'
-import { aedarWaffleTitre } from '@/fiche/content/aedarAccessSection'
 
-import { composerCahierPdf, PAIRE_TABLEAUX_PT } from '@/fiche/prototype/cahierPdfComposer'
+import { PAIRE_TABLEAUX_PT } from '@/fiche/prototype/cahierPdfComposer'
 import {
   LARGEUR_CORPS_PT,
-  PAGE_APPROUVEE,
-  PADDING_SECTION_PT,
   ROLE_PDF,
-  ptDepuisCssPx,
 } from '@/fiche/prototype/cahierPdfGrammaire'
 import { construireTableauxPdf, CahierPdfTableLayoutError } from '@/fiche/prototype/cahierPdfTableau'
 import { projeterRequeteExport } from '@/fiche/prototype/cahierExportCapture'
-import type { CahierExportCapture } from '@/fiche/prototype/cahierExportCapture'
 import { projeterRequeteExportFigures } from '@/fiche/prototype/cahierExportAdapters'
-import {
-  chargeurImageTest,
-  chargeurPoliceTest,
-  cheminsPdf,
-  epaisseursTraitPdf,
-  lirePdf,
-  mesurePdfTest,
-  occurrences,
-  type LecturePdf,
-} from './helpers/cahierPdfRuntime'
-import {
-  captureExplorerRangs,
-  capturePdfFixture,
-  captureProfilRangsDense,
-  captureRampeRangs,
-} from './helpers/cahierPdfFixtures'
+import { mesurePdfTest } from './helpers/cahierPdfRuntime'
+import { capturePdfFixture } from './helpers/cahierPdfFixtures'
 
 const ptMm = (pt: number) => pt * 25.4 / 72
 const CORPS_PT = LARGEUR_CORPS_PT
-const CORPS_X_PT = PAGE_APPROUVEE.insetGauchePt + PADDING_SECTION_PT
 const PAIRE_PT = PAIRE_TABLEAUX_PT.largeur
-const GAP_PT = ptDepuisCssPx(24)
-
-function options() {
-  return {
-    signal: new AbortController().signal,
-    chargerPolice: chargeurPoliceTest,
-    chargerImage: chargeurImageTest,
-    urlPublique: 'https://lusk.test/territoire/commune/22001?theme=mobilite#section-aedar-access',
-    urlAccueil: 'https://lusk.test/',
-  }
-}
-
-async function generer(capture: CahierExportCapture, modes?: readonly string[]): Promise<LecturePdf> {
-  const offered = capture.capabilities.selectableSeries.map((serie) => serie.id)
-  const projection = projeterRequeteExport(capture, modes ?? offered.slice(0, 3))
-  if (projection.status !== 'ready') throw new Error(projection.reason)
-  const artifact = await composerCahierPdf(projection.request, options())
-  return lirePdf(artifact.blob)
-}
 
 describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes', () => {
-  it('peint l’espace explicite du préfixe de comparaison sur la même ligne de base', async () => {
-    const lecture = await generer(captureExplorerRangs())
-    const prefixe = lecture.textes.find((item) => item.str === 'Groupe comparé :')
-    expect(prefixe, 'le préfixe approuvé est peint').toBeTruthy()
-    const espace = lecture.textes.find((item) => item.str === ' '
-      && Math.abs(item.y - prefixe!.y) < 0.01
-      && item.x >= prefixe!.x + prefixe!.largeur - 0.01)
-    expect(espace, 'un espace explicite est peint dans la face du préfixe').toBeTruthy()
-    const nom = lecture.textes.find((item) => item.str === 'EPCI X')!
-    // The painted space advance separates the runs; the name starts exactly at
-    // the space's right edge like R2.
-    expect(Math.abs(nom.x - (espace!.x + espace!.largeur))).toBeLessThan(0.02)
-    expect(Math.abs(nom.y - prefixe!.y)).toBeLessThan(0.01)
-    expect(nom.taille).toBeCloseTo(13.5, 2)
-    // One explicit space only; the text is not double-spaced.
-    expect(lecture.texteComplet).toContain('Groupe comparé : EPCI X')
-    expect(lecture.texteComplet).not.toContain('Groupe comparé :  EPCI X')
-  })
-
-  it('apparie les deux tables d’accès sur la grille source (24 px, deux colonnes égales)', async () => {
-    const lecture = await generer(capturePdfFixture('aedar-access'))
-    const temps = lecture.textes.filter((item) => item.str === 'Temps'
-      && Math.abs(item.taille - ROLE_PDF.enteteTableauMode.taille) < 0.02
-      && item.page === 1)
-    expect(temps).toHaveLength(2)
-    // Same row, and the second table starts after one half column + the native
-    // 24 px gap (the source `display:grid; grid-template-columns:repeat(2…)`).
-    expect(Math.abs(temps[0]!.y - temps[1]!.y)).toBeLessThan(0.02)
-    expect(Math.abs((temps[1]!.x - temps[0]!.x) - (PAIRE_PT + GAP_PT))).toBeLessThan(0.4)
-    // Both table captions share one baseline and the heading is plural.
-    const heading = lecture.textes.find((item) => item.str === 'Valeurs des graphiques')!
-    const titres = lecture.textes.filter((item) => item.y < heading.y
-      && Math.abs(item.taille - ROLE_PDF.titreTableau.taille) < 0.02
-      && (item.str.startsWith('Diversité de l’offre') || item.str.startsWith('Établissements accessibles')))
-    expect(titres).toHaveLength(2)
-    expect(Math.abs(titres[0]!.y - titres[1]!.y)).toBeLessThan(0.02)
-    expect(lecture.texteComplet).toContain('Valeurs des graphiques')
-    // The caption/table geometry is the approved page box, not a per-section
-    // full-width stack: the left table starts at the section body inset.
-    expect(Math.abs(temps[0]!.x - (CORPS_X_PT + 1))).toBeLessThan(2.5)
-  })
-
   it('choisit une continuation mesurée plutôt que de réduire un nombre dans une demi-colonne', async () => {
     const mesure = await mesurePdfTest()
     const capture = capturePdfFixture('aedar-access')
@@ -132,71 +50,6 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
       nomTerritoire: capture.identity.territory.name,
       ownerDisplayed: true,
     })[0]!.rows[0]!.cells.some((cell) => cell.display === valeur)).toBe(true)
-  })
-
-
-  it('peint le séparateur de mode à la largeur CSS native (1 px), pas 0,2 pt', async () => {
-    const lecture = await generer(captureExplorerRangs())
-    const heading = lecture.textes.find((item) => item.str === 'Valeurs des graphiques')!
-    const hautTableaux = PAGE_APPROUVEE.hauteurPt - heading.y
-    const chemins = await cheminsPdf(lecture.octets, 1)
-    // Vertical rules inside the table block only (below the heading): the two
-    // legend-key boundaries of this two-table fixture.
-    const separateurs = chemins.filter((chemin) => chemin.kind === 'stroke'
-      && chemin.width < 0.5 && chemin.height > 10 && chemin.y > hautTableaux)
-    expect(separateurs.length).toBeGreaterThanOrEqual(2)
-    for (const separateur of separateurs) {
-      expect(separateur.largeur).not.toBeNull()
-      expect(Math.abs(separateur.largeur! - ptDepuisCssPx(1))).toBeLessThan(0.01)
-    }
-    // And the generic operator list carries the native width, not 0,2 pt/mm.
-    const epaisseurs = await epaisseursTraitPdf(lecture.octets, 0)
-    expect(epaisseurs.some((value) => Math.abs(value - ptDepuisCssPx(1)) < 0.01)).toBe(true)
-  })
-
-  it('marque ¹ une seule fois par cellule comparée, même quand l’en-tête est plié', async () => {
-    const lecture = await generer(captureRampeRangs())
-    // The paired flat header wraps `Groupe comparé` in two lines; the mark is
-    // appended once to the last line, with the approved flat space (`comparé ¹`).
-    expect(lecture.texteComplet).toContain('Groupe')
-    expect(lecture.texteComplet).toContain('comparé ¹')
-    expect(lecture.texteComplet).not.toContain('Groupe¹')
-    expect(lecture.texteComplet).not.toContain('¹comparé')
-    // Real in-document link to the page footer, two compared cells → two links.
-    const liensInternes = lecture.annotations.filter((annotation) => annotation.dest !== undefined)
-    expect(liensInternes).toHaveLength(2)
-    for (const lien of liensInternes) {
-      const dest = lien.dest as [{ num: number }, { name: string }, number, number, number]
-      expect(dest[1].name).toBe('XYZ')
-      expect(dest[3]).toBeCloseTo(38, 1)
-    }
-    // The footer the link targets is the served comparison sentence.
-    expect(occurrences(lecture, '¹ Groupe comparé : communes de EPCI X')).toBe(1)
-  })
-
-  // RETIRED (#1024 native switch): Pins the deleted hand-built per-family painter's calibrated glyph/figure geometry; the native section layout is now the only figure owner.
-  it('rend le cas groupé à trois modes (neuf colonnes) et un ¹ par groupe', async () => {
-    const capture = captureExplorerRangs()
-    const modes = ['car', 'bike_lts2', 'transit']
-    const lecture = await generer(capture, modes)
-    // Two tables × three groups → six compared cells and six marks/links.
-    expect(lecture.textes.filter((item) => item.str === 'Groupe¹')).toHaveLength(6)
-    expect(lecture.annotations.filter((annotation) => annotation.dest !== undefined)).toHaveLength(6)
-    // Nine value columns under the row dimension of each table.
-    const minimum = lecture.textes.find((item) => item.str === 'Minimum')!
-    const valeurs = lecture.textes.filter((item) => Math.abs(item.y - minimum.y) < 1.2
-      && item.x > minimum.x + 4).map((item) => item.str).filter((value) => value.trim().length > 0)
-    expect(valeurs).toHaveLength(9)
-    // The distribution groups follow the visible ramp order (approved
-    // `orderedBars`): Voiture, Vélo (LTS2), Transports en commun.
-    const groupes = lecture.textes.filter((item) => ['Voiture', 'Vélo (LTS2)', 'Transports en commun']
-      .includes(item.str) && Math.abs(item.taille - ROLE_PDF.enteteTableauMode.taille) < 0.02)
-    expect(groupes).toHaveLength(6)
-    const auDessus = groupes.filter((item) => item.y > minimum.y)
-    const yGroupeDistribution = Math.min(...auDessus.map((item) => item.y))
-    const distribution = auDessus.filter((item) => Math.abs(item.y - yGroupeDistribution) < 0.5)
-      .sort((a, b) => a.x - b.x)
-    expect(distribution.map((item) => item.str)).toEqual(['Voiture', 'Vélo (LTS2)', 'Transports en commun'])
   })
 
   it('mesure les en-têtes de groupe longs et augmente la hauteur, sans débordement', async () => {
@@ -231,41 +84,6 @@ describe('clôture #1024 — sous-titre, tables appairées, rail mesuré, notes'
     for (const ligne of groupe.labelLines) {
       expect(mesure.largeur(ligne, ROLE_PDF.enteteTableauMode.police, ROLE_PDF.enteteTableauMode.taille))
         .toBeLessThanOrEqual(groupe.width - 2 + 0.01)
-    }
-  })
-
-  it('abandonne le mot plein seulement quand la largeur mesurée le refuse, avec une seule explication', async () => {
-    const access = await generer(capturePdfFixture('aedar-access'))
-    expect(access.texteComplet).toContain('Indisp.')
-    expect(occurrences(access, 'Indisp. : valeur indisponible.')).toBe(1)
-    // A full-width grouped table keeps the earned full word: no global shrink.
-    const explorer = await generer(capturePdfFixture('aedar-equipment-explorer'))
-    expect(explorer.texteComplet).toContain('Indisponible')
-    expect(explorer.texteComplet).not.toContain('Indisp. :')
-  })
-
-  it('compte la continuation par identité de table et par page, pas sur tous les titres', async () => {
-    const lecture = await generer(captureProfilRangsDense())
-    expect(lecture.pages).toBeGreaterThanOrEqual(2)
-    const heading = lecture.textes.find((item) => item.page === 1
-      && item.str === 'Valeurs du graphique')!
-    for (let page = 1; page <= lecture.pages; page += 1) {
-      const textesPage = lecture.lignes.filter((ligne) => ligne.page === page)
-        .map((ligne) => ligne.texte).join(' ').replace(/[’']/g, "'")
-      // Exactly one table caption per page part. On page 1 the figure title
-      // carries the same wording; the gate counts the caption below the value
-      // heading, never every matching run on the page.
-      const captions = lecture.textes.filter((item) => item.page === page
-        && item.str.replace(/[’']/g, "'").startsWith(aedarWaffleTitre().replace(/[’']/g, "'"))
-        && Math.abs(item.taille - ROLE_PDF.titreTableau.taille) < 0.02
-        && (page > 1 || item.y < heading.y))
-      expect(captions).toHaveLength(1)
-      // …and exactly one continuation marker per continued part.
-      expect(textesPage.split('(suite)').length - 1).toBe(page === 1 ? 0 : 1)
-    }
-    // Every complete row is printed exactly once across the parts.
-    for (const label of ['Équipement 1 (T001)', 'Équipement 20 (T020)', 'Équipement 40 (T040)']) {
-      expect(occurrences(lecture, label)).toBe(1)
     }
   })
 })

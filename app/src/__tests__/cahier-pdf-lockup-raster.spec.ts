@@ -1,5 +1,5 @@
 /**
- * #1024 — independent lockup witness: the real screen raster vs the real PDF.
+ * #1024 — independent lockup witness: pinned real-screen and real-PDF rasters.
  *
  * The previous lockup check re-derived the painter's own inputs inside the test
  * (`ascensionEncreMotEm − ecartEncreMotErmineEm`, then compared the painter's
@@ -27,17 +27,6 @@ import { resolve } from 'node:path'
 import { inflateSync } from 'node:zlib'
 
 import { describe, expect, it } from 'vitest'
-
-import { MARQUE_LUSK_LOCKUP } from '@/components/luskBrandMark'
-import { composerCahierPdf } from '@/fiche/prototype/cahierPdfComposer'
-import { PAGE_APPROUVEE, ROLE_PDF } from '@/fiche/prototype/cahierPdfGrammaire'
-import {
-  chargeurPoliceTest,
-  cheminsPdfPage,
-  lirePdf,
-  requetePour,
-} from './helpers/cahierPdfRuntime'
-import { lirePoliceTtf } from './helpers/cahierPdfFontProbe'
 
 const DOSSIER = resolve(process.cwd(), 'src/__tests__/fixtures/lusk-lockup')
 const ECHELLE = 720
@@ -275,42 +264,4 @@ describe('#1024 — lockup réel écran vs PDF : deux rasters indépendants, enc
     expect(Math.abs(relatifEcran.ecartHautEm - relatifPdf.ecartHautEm)).toBeLessThan(0.05)
   })
 
-  it('lie le PDF courant au raster PDF pinné (la mesure vieillit, elle ne ment pas)', async () => {
-    const taille = ROLE_PDF.marqueMot.taille
-    const lecture = await lirePdf((await composerCahierPdf(requetePour('aedar-access'), {
-      signal: new AbortController().signal,
-      chargerPolice: chargeurPoliceTest,
-      urlAccueil: 'https://lusk.test/',
-      urlPublique: 'https://lusk.test/territoire/commune/22001',
-    })).blob)
-    const ermine = (await cheminsPdfPage(lecture.octets, 1)).filter((chemin) => (
-      chemin.kind === 'fill'
-      && chemin.y < 70
-      && chemin.x < 120
-      && chemin.width < 40
-      && chemin.height < 40
-    ))
-    expect(ermine.length).toBe(5)
-    const hauteur = (Math.max(...ermine.map((chemin) => chemin.y + chemin.height))
-      - Math.min(...ermine.map((chemin) => chemin.y))) / taille
-    expect(Math.abs(hauteur - relatifPdf.hauteurErmineEm)).toBeLessThanOrEqual(TOLERANCE_EM)
-    const mot = lecture.textes.find((item) => item.str === 'lusk')!
-    // The word pen follows the owner's box + gap ...
-    expect((mot.x - PAGE_APPROUVEE.insetGauchePt) / taille)
-      .toBeCloseTo(MARQUE_LUSK_LOCKUP.ermineEm + MARQUE_LUSK_LOCKUP.ecartPx * 531.28 / 1010.4 / taille, 2)
-    // ... and the *pinned raster* independently checks the resulting ink gap:
-    // the embedded face's `xMin == lsb` (pinned in the ink spec) makes the pen
-    // origin the word's ink left, so a wrong gap cannot hide behind the owner
-    // expression above.
-    const ermineDroite = Math.max(...ermine.map((chemin) => chemin.x + chemin.width))
-    // The word's ink left is the pen plus the face's `l` side bearing (the
-    // `xMin == lsb` contract is pinned in the ink spec); everything else is the
-    // measured PDF ink gap, so a wrong gap cannot hide behind the owner.
-    const font = lirePoliceTtf(new Uint8Array(readFileSync(
-      resolve(process.cwd(), 'src/assets/fonts/pdf/newsreader-600-italic.ttf'),
-    )))
-    const lsb = font.leftSideBearing('l')! / font.unitsPerEm
-    expect(Math.abs((mot.x + lsb * taille - ermineDroite) / taille - relatifPdf.ecartHorizontalEm))
-      .toBeLessThanOrEqual(TOLERANCE_EM)
-  })
 })

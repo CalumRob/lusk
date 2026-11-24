@@ -19,6 +19,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "verify:cahier-pdf-production": "node scripts/verify-cahier-pdf-production.mjs",
+    "verify:cahier-pdf-browser": "node scripts/verify-cahier-pdf-browser.mjs",
     "verify:detector": "npx --yes impeccable@4.9.2 detect src"
   },
   "dependencies": {

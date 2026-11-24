@@ -1,6 +1,11 @@
 import type { jsPDF } from 'jspdf'
 import { POLICES_PDF } from './cahierPdfFonts'
 
+/** The exact text run emitted by the native painter for a resolved CSS style. */
+export function texteNatifPourPdf(value: string, style: Pick<CSSStyleDeclaration, 'textTransform'>): string {
+  return style.textTransform === 'uppercase' ? value.toLocaleUpperCase('fr-FR') : value
+}
+
 /** Paint the browser-resolved boxes. The section, not this adapter, lays them out. */
 export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | readonly HTMLElement[],
   placement: { x: number; y: number; scale: number }, signal: AbortSignal): Promise<void> {
@@ -73,7 +78,7 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
         const matrix = new DOMMatrixReadOnly(s.transform)
         const cssAngle = Math.atan2(matrix.b, matrix.a) * 180 / Math.PI
         if (Math.abs(cssAngle) > 1 && node.parentElement) {
-          const text = s.textTransform === 'uppercase' ? node.data.toLocaleUpperCase('fr-FR') : node.data
+          const text = texteNatifPourPdf(node.data, s)
           // `getBoundingClientRect()` already includes the browser's full
           // transform (rotation about transform-origin plus the translate). Use
           // that mounted screen box directly — it sits in the figure's native
@@ -111,7 +116,7 @@ export async function paintCahierNativeDom(doc: jsPDF, roots: HTMLElement | read
         const rect = range.getBoundingClientRect()
         if (rect.width < .01 || rect.height < 1 || /[\n\r]/.test(char)) continue
         const pos = box(rect)
-        const drawn = s.textTransform === 'uppercase' ? char.toLocaleUpperCase('fr-FR') : char
+        const drawn = texteNatifPourPdf(char, s)
         const yText = pos.y + ascent * scale
         if (!once(pos.x, yText, drawn)) continue
         doc.text(drawn, pos.x, yText)
