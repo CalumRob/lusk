@@ -538,14 +538,98 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   v
 }
 
-.ecrire_profil_descriptor <- function(con, descriptor, indicator_id = NULL) {
+.lignes_profil_descriptor <- function(descriptor, indicator_id = NULL) {
   d <- .profil_liste(descriptor, indicator_id)
   id <- as.character(d$indicator_id)[[1L]]
   completeness <- as.character(.profil_champ(d, "completeness", "dense_complete"))[[1L]]
-  if (!identical(completeness, "dense_complete"))
-    stop("Profile completeness contract is missing or unsupported", call. = FALSE)
   levels <- as.character(unlist(.profil_champ(d, "levels", "commune"), use.names = FALSE))
   if (!length(levels)) levels <- "commune"
+  row <- data.frame(indicator_id = id,
+    label = as.character(.profil_champ(d, "label", id))[[1L]],
+    unit = as.character(.profil_champ(d, "unit", ""))[[1L]],
+    allowed_levels = I(list(levels)), completeness = completeness,
+    descriptor_version = as.character(.profil_champ(d, "descriptor_version", "v1"))[[1L]],
+    comparison_detail = .profil_champ(d, "comparison_detail", NA_character_),
+    comparison_sex = .profil_champ(d, "comparison_sex", NA_character_),
+    comparison_direction = as.character(.profil_champ(d, "comparison_direction", "none"))[[1L]],
+    theme_id = .profil_champ(d, "theme_id", NA_character_),
+    comparison_scalar = .profil_champ(d, "comparison_scalar", NA_character_),
+    required_scalar_version = .profil_champ(d, "required_scalar_version", NA_character_),
+    denominator_semantics = .profil_champ(d, "denominator_semantics", NA_character_),
+    detail_units_required = isTRUE(.profil_champ(d, "detail_units_required", FALSE)),
+    stringsAsFactors = FALSE)
+  sources <- as.character(unlist(.profil_champ(d, "source", character()), use.names = FALSE))
+  list(profile_descriptor = row, profile_descriptor_source = data.frame(
+    indicator_id = rep(id, length(sources)), source_id = sources, stringsAsFactors = FALSE))
+}
+
+.lignes_profil_axes_observations <- function(projection, descriptor) {
+  id <- as.character(projection$indicator_id %||% descriptor$indicator_id)[[1L]]
+  axes <- projection$axes
+  if (is.null(axes)) axes <- data.frame(axis_name = character(), axis_key = character(),
+    label = character(), ordinal = integer(), unit = character(), stringsAsFactors = FALSE)
+  if (!"unit" %in% names(axes)) axes$unit <- NA_character_
+  axes$indicator_id <- id
+  axes <- axes[c("indicator_id", "axis_name", "axis_key", "label", "ordinal", "unit")]
+  facts <- projection$facts
+  names(facts)[names(facts) == "detail"] <- "detail_key"
+  names(facts)[names(facts) == "sex"] <- "sex_key"
+  if (!"detail_axis_name" %in% names(facts)) facts$detail_axis_name <- "detail"
+  facts$indicator_id <- id
+  facts$sex_axis_name <- if (length(.profil_champ(descriptor, "sexes", character())))
+    "sex" else NA_character_
+  fields <- c("indicator_id", "territory_id", "territory_type", "detail_key", "sex_key",
+              "detail_axis_name", "sex_axis_name", "value", "status")
+  list(profile_axis = axes, profile_observation = facts[fields],
+       profile_observation_source = projection$provenance)
+}
+
+.lignes_comparaison_profil <- function(comparison) {
+  empty_groups <- data.frame(comparison_context = character(), group_id = character(),
+    territory_type = character(), indicator_id = character(), detail_key = character(),
+    sex_key = character(), statistic = character(), median = numeric(), member_count = integer(),
+    eligible_count = integer(), missing_count = integer(), lineage_source_count = integer(),
+    profile_content_version = character(), reference_content_version = character(),
+    stringsAsFactors = FALSE)
+  empty_territories <- data.frame(comparison_context = character(), group_id = character(),
+    territory_type = character(), indicator_id = character(), detail_key = character(),
+    sex_key = character(), territory_id = character(), value = numeric(), status = character(),
+    rank = integer(), tie_count = integer(), rank_size = integer(),
+    profile_content_version = character(), reference_content_version = character(),
+    stringsAsFactors = FALSE)
+  groups <- if (is.null(comparison$groups)) empty_groups else
+    as.data.frame(comparison$groups, stringsAsFactors = FALSE)
+  territories <- if (is.null(comparison$territories)) empty_territories else
+    as.data.frame(comparison$territories, stringsAsFactors = FALSE)
+  lineage <- comparison$lineage
+  if (is.null(lineage)) lineage <- data.frame(comparison_context = character(),
+    group_id = character(), territory_type = character(), facet_id = character(),
+    source_id = character(), vintage_id = character(), stringsAsFactors = FALSE)
+  lineage$comparison_family <- "profile"
+  lineage$comparison_content_version <- as.character(comparison$content_version)
+  list(profile_comparison_group = groups, profile_comparison_territory = territories,
+    comparison_source_lineage = lineage[c("comparison_family", "comparison_context",
+      "group_id", "territory_type", "facet_id", "source_id", "vintage_id",
+      "comparison_content_version")])
+}
+
+lignes_profil_persistees <- function(artefact) {
+  rows <- projeter_artefact_profil_declare(artefact)
+  comparison <- if (is.null(rows$comparison)) .lignes_comparaison_profil(list()) else
+    .lignes_comparaison_profil(rows$comparison)
+  c(.lignes_profil_descriptor(rows$descriptor),
+    .lignes_profil_axes_observations(rows, rows$descriptor),
+    list(source_dataset = rows$datasets, source_vintage = rows$vintages), comparison)
+}
+
+.ecrire_profil_descriptor <- function(con, descriptor, indicator_id = NULL) {
+  lignes <- .lignes_profil_descriptor(descriptor, indicator_id)
+  d <- as.list(lignes$profile_descriptor)
+  id <- as.character(d$indicator_id)[[1L]]
+  completeness <- as.character(d$completeness[[1L]])
+  if (!identical(completeness, "dense_complete"))
+    stop("Profile completeness contract is missing or unsupported", call. = FALSE)
+  levels <- as.character(d$allowed_levels[[1L]])
   levels_sql <- paste0("ARRAY[",
     paste(vapply(levels, function(x) .quoter_sql_serveur(con, x), character(1)),
           collapse = ","), "]::text[]")
@@ -569,8 +653,7 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
     "comparison_direction,theme_id,comparison_scalar,required_scalar_version,",
     "denominator_semantics,detail_units_required) VALUES($1,$2,$3,",
     levels_sql, ",$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"), params = params)
-  for (source_id in as.character(unlist(.profil_champ(d, "source", character()),
-                                        use.names = FALSE)))
+  for (source_id in lignes$profile_descriptor_source$source_id)
     DBI::dbExecute(con,
       "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
       params = list(id, source_id))
@@ -578,25 +661,12 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
 }
 
 .ecrire_profil_axes_observations <- function(con, projection, descriptor) {
-  id <- as.character(projection$indicator_id)[[1L]]
-  axes <- projection$axes
-  if (is.null(axes)) axes <- data.frame(axis_name = character(), axis_key = character(),
-    label = character(), ordinal = integer(), unit = character(), stringsAsFactors = FALSE)
-  if (!"unit" %in% names(axes)) axes$unit <- NA_character_
-  DBI::dbWriteTable(con, "profile_axis",
-    transform(axes, indicator_id = id), append = TRUE, row.names = FALSE)
-  obs <- projection$facts
-  names(obs)[names(obs) == "detail"] <- "detail_key"
-  names(obs)[names(obs) == "sex"] <- "sex_key"
-  sexes <- .profil_champ(descriptor, "sexes", character())
-  obs$sex_axis_name <- if (length(sexes)) "sex" else NA_character_
-  DBI::dbWriteTable(con, "profile_observation",
-    transform(obs, indicator_id = id), append = TRUE, row.names = FALSE)
-  DBI::dbWriteTable(con, "profile_observation_source", projection$provenance,
-    append = TRUE, row.names = FALSE)
+  lignes <- .lignes_profil_axes_observations(projection, descriptor)
+  for (table in names(lignes))
+    DBI::dbWriteTable(con, table, lignes[[table]], append = TRUE, row.names = FALSE)
   actual_rows <- DBI::dbGetQuery(con,
     "SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1",
-    params = list(id))$n[[1L]]
+    params = list(as.character(projection$indicator_id)[[1L]]))$n[[1L]]
   if (actual_rows != nrow(projection$facts))
     stop("Published profile row count differs from validated projection", call. = FALSE)
   invisible(TRUE)
@@ -604,22 +674,11 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
 
 .ecrire_comparaison_profil <- function(con, comparison, content_version = NULL) {
   if (is.null(comparison)) return(invisible(NULL))
-  groups <- comparison$groups; territories <- comparison$territories
-  lineage <- comparison$lineage
-  if (is.data.frame(groups) && nrow(groups))
-    DBI::dbWriteTable(con, "profile_comparison_group", groups, append = TRUE, row.names = FALSE)
-  if (is.data.frame(territories) && nrow(territories))
-    DBI::dbWriteTable(con, "profile_comparison_territory", territories,
-      append = TRUE, row.names = FALSE)
-  if (is.data.frame(lineage) && nrow(lineage)) {
-    version_cmp <- if (is.null(content_version)) comparison$content_version else content_version
-    lineage$comparison_family <- "profile"
-    lineage$comparison_content_version <- version_cmp
-    colonnes <- c("comparison_family", "comparison_context", "group_id", "territory_type",
-      "facet_id", "source_id", "vintage_id", "comparison_content_version")
-    DBI::dbWriteTable(con, "comparison_source_lineage", lineage[colonnes],
-      append = TRUE, row.names = FALSE)
-  }
+  if (!is.null(content_version)) comparison$content_version <- content_version
+  lignes <- .lignes_comparaison_profil(comparison)
+  for (table in names(lignes))
+    if (nrow(lignes[[table]]))
+      DBI::dbWriteTable(con, table, lignes[[table]], append = TRUE, row.names = FALSE)
   invisible(TRUE)
 }
 

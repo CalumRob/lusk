@@ -22,18 +22,16 @@ local({
       aedar = adaptateur_aedar_artefact(root))
     for (forme in names(artefacts)) {
       handler <- REGISTRE_FORMES_RESSOURCE[[forme]]
-      attendu <- handler$projeter(artefacts[[forme]])
-      expect_true(comparer_ressource_adoptation(attendu, attendu, handler)$identique,
+      attendu <- handler$lignes_persistees(artefacts[[forme]])
+      expect_true(comparer_lignes_persistees(attendu, attendu, handler)$identique,
                   info = forme)
       live <- attendu
-      if (!is.null(live$comparison$groups) && nrow(live$comparison$groups))
-        live$comparison$groups[1L, 1L] <- "changed"
-      else if (!is.null(live$projection$points) && nrow(live$projection$points))
-        live$projection$points$value[1L] <- live$projection$points$value[1L] + 1
-      else if (!is.null(live$projection$facts) && nrow(live$projection$facts))
-        live$projection$facts$value[1L] <- live$projection$facts$value[1L] + 1
-      else live$descriptor$label[1L] <- "changed"
-      expect_false(comparer_ressource_adoptation(attendu, live, handler)$identique,
+      table <- names(live)[vapply(live, function(rows)
+        is.data.frame(rows) && nrow(rows) > 0L && any(vapply(rows, is.numeric, logical(1))),
+        logical(1))][[1L]]
+      colonne <- names(live[[table]])[vapply(live[[table]], is.numeric, logical(1))][[1L]]
+      live[[table]][[colonne]][1L] <- live[[table]][[colonne]][1L] + 1
+      expect_false(comparer_lignes_persistees(attendu, live, handler)$identique,
                    info = forme)
     }
   })

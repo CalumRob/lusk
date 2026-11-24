@@ -310,20 +310,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lier_dependance = lier_dependance_aucune,
     projeter = projeter_artefact_scalaire,
     remplacer = remplacer_scalaire,
-    # Adoption reads the SAME projection the adapter writes. Storage-only
-    # columns are declared here, never special-cased in the adopt command.
+    # Adoption compares the writer's own persisted row builder, table by table.
     lire_live = lire_live_scalaire,
-    champs_live = c("descriptor", "eligible_territories", "observations", "provenance",
-                    "comparison"),
-    colonnes_stockage = list(observations = "published_at"),
-    champs_comparaison = c("groups", "territories", "lineage"),
-    # Today's normal publisher stamps the WHOLE scalar snapshot token. The
-    # per-resource artefact deliberately rebinds those two storage tokens to
-    # this resource; comparison facts and the reference clock remain exact.
-    colonnes_comparaison = list(
-      groups = c("scalar_content_version", "content_version"),
-      territories = c("scalar_content_version", "content_version"),
-      lineage = "comparison_content_version")),
+    lignes_persistees = lignes_scalaires_persistees,
+    colonnes_stockage = list(scalar_observation = "published_at",
+      comparison_source_lineage = "comparison_content_version")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -342,12 +333,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_profil_declare,
     lire_live = lire_live_profil_declare,
     normaliser_live = normaliser_live_profil,
-    champs_live = c("descriptor", "axes", "facts", "provenance", "datasets",
-                    "vintages", "eligible_territories", "comparison"),
-    colonnes_stockage = list(),
-    champs_comparaison = c("groups", "territories", "lineage"),
-    colonnes_comparaison = list(
-      groups = "profile_content_version", territories = "profile_content_version")),
+    lignes_persistees = lignes_profil_persistees,
+    colonnes_stockage = list(
+      profile_comparison_group = "profile_content_version",
+      profile_comparison_territory = "profile_content_version",
+      comparison_source_lineage = "comparison_content_version")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -368,10 +358,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     projeter = projeter_artefact_series,
     remplacer = remplacer_series,
     lire_live = lire_live_series,
-    champs_live = c("projection", "comparison"),
-    colonnes_stockage = list(),
-    champs_comparaison = c("groups", "territories", "lineage", "zero_reasons",
-                           "reference_content_version", "axis_values")),
+    lignes_persistees = lignes_series_persistees,
+    colonnes_stockage = list()),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -386,10 +374,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
     projeter = projeter_artefact_collection,
     remplacer = remplacer_collection,
     lire_live = lire_live_collection,
-    champs_live = c("projection", "comparison"),
-    colonnes_stockage = list(),
-    champs_comparaison = c("groups", "territories", "lineage",
-                           "collection_content_version", "reference_content_version")),
+    lignes_persistees = lignes_collection_persistees,
+    colonnes_stockage = list(
+      observed_collection_comparison_group = "collection_content_version",
+      observed_collection_comparison_territory = "collection_content_version",
+      observed_collection_comparison_lineage = "comparison_content_version")),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie, reference)
@@ -408,12 +397,9 @@ REGISTRE_FORMES_RESSOURCE <- list(
     projeter = projeter_artefact_aedar,
     remplacer = remplacer_aedar,
     lire_live = lire_live_aedar,
-    champs_live = c("descriptor", "projection", "summary", "comparison"),
+    lignes_persistees = lignes_aedar_persistees,
     colonnes_stockage = list(),
-    champs_comparaison = c("groups", "territories", "density_rows", "littoral_rows",
-      "content_version", "aedar_content_version", "reference_content_version",
-      "input_content_version", "input_identity", "source_snapshot_id", "publication_mode",
-      "group_row_count", "territory_row_count"))
+    colonnes_json = list(aedar_territorial_aggregate = c("identity", "measures")))
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

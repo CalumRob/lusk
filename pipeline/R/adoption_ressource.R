@@ -60,6 +60,28 @@ absence_comparaison <- function(x) {
     is.null(part) || (is.data.frame(part) && nrow(part) == 0L), logical(1))))
 }
 
+# Comparable form = named persisted tables. A missing/extra table is a
+# mismatch; within a table only writer-produced columns are supplied by the
+# registry's lignes_persistees(), and storage-only columns are ignored here.
+comparer_lignes_persistees <- function(attendu, live, handler) {
+  if (!is.list(attendu) || !is.list(live) || !length(attendu) ||
+      !setequal(names(attendu), names(live)))
+    return(list(identique = FALSE,
+                parties = c(setdiff(names(attendu), names(live)),
+                            setdiff(names(live), names(attendu)))))
+  parties <- names(attendu)[!vapply(names(attendu), function(table) {
+    ignore <- as.character(handler$colonnes_stockage[[table]] %||% character())
+    a <- attendu[[table]]; b <- live[[table]]
+    for (colonne in as.character(handler$colonnes_json[[table]] %||% character())) {
+      decoder <- function(x) I(lapply(x, function(value)
+        jsonlite::fromJSON(as.character(value), simplifyVector = FALSE)))
+      a[[colonne]] <- decoder(a[[colonne]]); b[[colonne]] <- decoder(b[[colonne]])
+    }
+    comparer_valeur_adoption(a, b, ignore)
+  }, logical(1))]
+  list(identique = !length(parties), parties = unique(parties))
+}
+
 comparer_ressource_adoptation <- function(attendu, live, handler) {
   if (!is.list(attendu) || !is.list(live) || !is.list(handler))
     stop("Adoption comparison requires projected live and artefact rows", call. = FALSE)

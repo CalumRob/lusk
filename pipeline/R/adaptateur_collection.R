@@ -48,8 +48,9 @@ projeter_artefact_collection <- function(artefact) {
   reference <- if (is.list(comparison) && !is.null(comparison$reference_content_version))
     as.character(comparison$reference_content_version)[[1L]] else NULL
   list(ressource = id, forme = "observed_collection", version = artefact$version,
-       projection = projection, reference_content_version = reference,
-       declarations = declarations, digests_lignage = artefact$digests_lignage)
+       projection = projection, comparison = contenu$comparison,
+       reference_content_version = reference, declarations = declarations,
+       digests_lignage = artefact$digests_lignage)
 }
 
 remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,

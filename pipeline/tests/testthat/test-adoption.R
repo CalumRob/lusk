@@ -12,31 +12,33 @@ test_that("adoption compares the real projected artefact rows and names each dif
     root = root)
   artefact <- lire_artefact_ressource("a", ecrit$version, root = root)
   handler <- REGISTRE_FORMES_RESSOURCE[["scalar"]]
-  attendu <- handler$projeter(artefact)
+  attendu <- handler$lignes_persistees(artefact)
 
-  equal <- comparer_ressource_adoptation(attendu, attendu, handler)
+  equal <- comparer_lignes_persistees(attendu, attendu, handler)
   expect_true(equal$identique)
   expect_length(equal$parties, 0L)
 
   # PostgreSQL storage clocks are not Artefact de ressource content.
   live <- attendu
-  live$observations$published_at <- as.POSIXct("2026-01-01", tz = "UTC")
-  live$observations <- live$observations[rev(seq_len(nrow(live$observations))), , drop = FALSE]
-  rownames(live$observations) <- paste0("storage-", seq_len(nrow(live$observations)))
-  expect_true(comparer_ressource_adoptation(attendu, live, handler)$identique)
+  live$scalar_observation$published_at <- as.POSIXct("2026-01-01", tz = "UTC")
+  live$scalar_observation <- live$scalar_observation[
+    rev(seq_len(nrow(live$scalar_observation))), , drop = FALSE]
+  rownames(live$scalar_observation) <- paste0("storage-",
+    seq_len(nrow(live$scalar_observation)))
+  expect_true(comparer_lignes_persistees(attendu, live, handler)$identique)
 
   live <- attendu
-  live$observations$value[1L] <- live$observations$value[1L] + 1
-  live$descriptor$label[1L] <- "Changed"
-  live$comparison$territories$rank[1L] <- 999L
-  different <- comparer_ressource_adoptation(attendu, live, handler)
+  live$scalar_observation$value[1L] <- live$scalar_observation$value[1L] + 1
+  live$scalar_descriptor$label[1L] <- "Changed"
+  live$scalar_comparison_territory$rank[1L] <- 999L
+  different <- comparer_lignes_persistees(attendu, live, handler)
   expect_false(different$identique)
-  expect_setequal(different$parties, c("observations", "descriptor",
-                                      "comparison.territories"))
+  expect_setequal(different$parties, c("scalar_observation", "scalar_descriptor",
+                                      "scalar_comparison_territory"))
 })
 
-fixture_adoption_run <- function(values_a = 1, values_b = 2, live_b = 2,
-                                 dry_run = FALSE) {
+fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
+                                 live_b = 2, dry_run = FALSE) {
   artefacts <- list(
     a = list(version = "va", forme = "scalar", digests_lignage = list(),
              rows = list(facts = data.frame(territory_id = "c1", value = values_a))),
@@ -45,10 +47,11 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_b = 2,
   builds <- data.frame(ressource = c("a", "b"), forme = "scalar",
                        version = c("va", "vb"), stringsAsFactors = FALSE)
   handler <- list(projeter = function(a) a$rows,
-    lire_live = function(con, ressource, reference)
+    lignes_persistees = function(a) a$rows,
+    lire_live = function(con, ressource, reference, attendu)
       list(facts = data.frame(territory_id = "c1",
-                              value = if (ressource == "a") values_a else live_b)),
-    champs_live = "facts", colonnes_stockage = list(), champs_comparaison = character(),
+                              value = if (ressource == "a") live_a else live_b)),
+    colonnes_stockage = list(),
     remplacer = function(...) stop("adoption must never replace serving rows"))
   ecritures <- 0L; recettes <- 0L; locales <- 0L
   local_mocked_bindings(
@@ -71,11 +74,11 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_b = 2,
 }
 
 test_that("adoption refuses every mismatching resource before any registry or receipt write", {
-  run <- fixture_adoption_run(live_b = 99)
+  run <- fixture_adoption_run(live_a = 9, live_b = 99)
   expect_s3_class(run$resultat, "erreur_adoption")
   expect_identical(run$resultat$refus, "ressource_divergente")
-  expect_match(conditionMessage(run$resultat), "b", fixed = TRUE)
-  expect_match(conditionMessage(run$resultat), "facts", fixed = TRUE)
+  expect_match(conditionMessage(run$resultat), "a (facts)", fixed = TRUE)
+  expect_match(conditionMessage(run$resultat), "b (facts)", fixed = TRUE)
   expect_identical(run$ecritures, 0L)
   expect_identical(run$recettes, 0L)
   expect_identical(run$locales, 0L)
@@ -97,6 +100,23 @@ test_that("adoption writes only registry rows and adopted receipts, and dry-run 
   expect_identical(sec$locales, 0L)
 })
 
+test_that("persisted-row comparison names every mismatching table and ignores declared storage columns", {
+  attendu <- list(
+    facts = data.frame(territory_id = c("c1", "c2"), value = c(1, 2),
+                       published_at = as.POSIXct(NA)),
+    descriptor = data.frame(indicator_id = "a", label = "A"),
+    comparison = data.frame(group_id = "g", median = 1))
+  live <- attendu
+  live$facts$value[1L] <- 9
+  live$facts$published_at <- as.POSIXct("2026-01-01", tz = "UTC")
+  live$descriptor$label <- "Changed"
+  live$comparison$median <- 2
+  handler <- list(colonnes_stockage = list(facts = "published_at"))
+  resultat <- comparer_lignes_persistees(attendu, live, handler)
+  expect_false(resultat$identique)
+  expect_setequal(resultat$parties, c("facts", "descriptor", "comparison"))
+})
+
 test_that("profile adoption accepts only the exact global-to-resource scalar binding chain", {
   dependance <- list(contenu = contenu_artefact(
     data.frame(territory_id = "c1", value = 1),
@@ -104,15 +124,17 @@ test_that("profile adoption accepts only the exact global-to-resource scalar bin
     data.frame(source_id = "s", vintage_id = "v"), NULL))
   artefacts <- list(part_passoires = dependance)
   facts_version <- version_faits_artefact(dependance)
-  rows <- list(descriptor = list(comparison_scalar = "part_passoires",
-                                  required_scalar_version = "global-scalar-token"),
-               global_scalar_token = "global-scalar-token")
+  rows <- list(profile_descriptor = data.frame(
+    comparison_scalar = "part_passoires",
+    required_scalar_version = "global-scalar-token", stringsAsFactors = FALSE))
+  attr(rows, "global_scalar_token") <- "global-scalar-token"
   normalise <- normaliser_live_profil(rows, artefacts, list())
-  expect_identical(normalise$descriptor$required_scalar_version, facts_version)
+  expect_identical(normalise$profile_descriptor$required_scalar_version, facts_version)
 
-  rows$global_scalar_token <- "another-global-token"
+  attr(rows, "global_scalar_token") <- "another-global-token"
   normalise <- normaliser_live_profil(rows, artefacts, list())
-  expect_identical(normalise$descriptor$required_scalar_version, "global-scalar-token")
+  expect_identical(normalise$profile_descriptor$required_scalar_version,
+                  "global-scalar-token")
 })
 
 test_that("splitter binds profile, series and collection comparisons to their resource facts", {

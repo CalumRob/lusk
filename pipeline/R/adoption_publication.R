@@ -15,7 +15,7 @@ verifier_lecteurs_adoption <- function(artefacts) {
     artefact <- artefacts[[id]]
     handler <- if (is.list(artefact)) REGISTRE_FORMES_RESSOURCE[[artefact$forme]] else NULL
     if (is.null(handler) || !is.function(handler$projeter) ||
-        !is.function(handler$lire_live) || !length(handler$champs_live))
+        !is.function(handler$lire_live) || !is.function(handler$lignes_persistees))
       manquants <- c(manquants, paste0(id, "(", artefact$forme, ")"))
   }
   if (length(manquants))
@@ -36,7 +36,7 @@ comparer_adoption_artefacts <- function(artefacts, lectures) {
       if (inherits(lectures[[id]], "error")) stop(lectures[[id]])
       live <- if (is.function(handler$normaliser_live))
         handler$normaliser_live(lectures[[id]], artefacts, lectures) else lectures[[id]]
-      comparer_ressource_adoptation(handler$projeter(artefact), live, handler)
+      comparer_lignes_persistees(handler$lignes_persistees(artefact), live, handler)
     }, error = function(e) list(identique = FALSE,
       parties = paste0("lecture: ", conditionMessage(e))))
     data.frame(ressource = id, forme = as.character(artefact$forme),
@@ -81,8 +81,10 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
       for (id in ids) {
         artefact <- artefacts[[id]]
         handler <- REGISTRE_FORMES_RESSOURCE[[artefact$forme]]
-        lectures[[id]] <- tryCatch(handler$lire_live(con, id, reference),
-          error = function(e) e)
+        lectures[[id]] <- tryCatch({
+          lignes_attendues <- handler$lignes_persistees(artefact)
+          handler$lire_live(con, id, reference, lignes_attendues)
+        }, error = function(e) e)
       }
       comparaisons <- comparer_adoption_artefacts(artefacts, lectures)
       if (!dry_run && any(!comparaisons$identique)) {

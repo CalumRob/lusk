@@ -751,12 +751,68 @@ publish_registered_scalar_comparison <- function(projection, db) {
 # functions; neither reimplements the other's SQL. All quoting goes through
 # DBI::dbQuoteString and every `params` list is UNNAMED positional — RPostgres
 # rejects named params, and a mocked DBI call must not hide that.
-.ecrire_descripteurs_scalaires <- function(con, descriptors) {
+.lignes_descripteurs_scalaires <- function(descriptors) {
   champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
               "comparison_facet", "denominator_semantics", "completeness",
               "descriptor_version")
-  for (i in seq_len(nrow(descriptors))) {
-    d <- descriptors[i, , drop = FALSE]
+  descriptor <- descriptors[, champs, drop = FALSE]
+  descriptor$allowed_levels <- I(lapply(descriptors$allowed_levels, as.character))
+  sources <- do.call(rbind, lapply(seq_len(nrow(descriptors)), function(i)
+    data.frame(indicator_id = descriptors$indicator_id[[i]],
+               source_id = as.character(descriptors$allowed_sources[[i]]),
+               stringsAsFactors = FALSE)))
+  list(scalar_descriptor = descriptor, scalar_descriptor_source = sources)
+}
+
+.lignes_comparaison_scalaire <- function(projection) {
+  group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "statistic", "median", "member_count", "eligible_count", "missing_count",
+    "lineage_source_count")
+  territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "territory_id", "value", "status", "rank", "tie_count", "rank_size")
+  empty <- function(fields, types = rep("character", length(fields)))
+    as.data.frame(setNames(lapply(types, function(type) switch(type,
+      character = character(), numeric = numeric(), integer = integer())), fields),
+      stringsAsFactors = FALSE)
+  groups <- if (is.null(projection$groups)) empty(group_fields,
+    c(rep("character", 5L), "numeric", rep("integer", 4L))) else
+    as.data.frame(projection$groups[group_fields], stringsAsFactors = FALSE)
+  territories <- if (is.null(projection$territories)) empty(territory_fields,
+    c(rep("character", 6L), "numeric", "character", rep("integer", 3L))) else
+    as.data.frame(projection$territories[territory_fields], stringsAsFactors = FALSE)
+  lineage <- projection$lineage
+  if (is.null(lineage)) lineage <- data.frame(comparison_context = character(),
+    group_id = character(), territory_type = character(), facet_id = character(),
+    source_id = character(), vintage_id = character(), stringsAsFactors = FALSE)
+  lineage$comparison_family <- "scalar"
+  lineage$comparison_content_version <- as.character(projection$content_version)
+  list(scalar_comparison_group = groups, scalar_comparison_territory = territories,
+    comparison_source_lineage = lineage[c("comparison_family", "comparison_context",
+      "group_id", "territory_type", "facet_id", "source_id", "vintage_id",
+      "comparison_content_version")])
+}
+
+# ONE comparable form for adoption and the real scalar writers. Publication
+# marker tables are metadata, not resource rows; published_at is storage-only.
+lignes_scalaires_persistees <- function(artefact) {
+  rows <- projeter_artefact_scalaire(artefact)
+  comparison <- if (is.null(rows$comparison)) list() else
+    .lignes_comparaison_scalaire(rows$comparison)
+  observations <- rows$observations
+  observations$published_at <- as.POSIXct(as.numeric(NA), origin = "1970-01-01", tz = "UTC")
+  c(.lignes_descripteurs_scalaires(rows$descriptor), list(
+    scalar_observation = observations,
+    scalar_observation_source = rows$provenance,
+    source_dataset = rows$sources, source_vintage = rows$vintages), comparison)
+}
+
+.ecrire_descripteurs_scalaires <- function(con, descriptors) {
+  lignes <- .lignes_descripteurs_scalaires(descriptors)
+  champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
+              "comparison_facet", "denominator_semantics", "completeness",
+              "descriptor_version")
+  for (i in seq_len(nrow(lignes$scalar_descriptor))) {
+    d <- lignes$scalar_descriptor[i, , drop = FALSE]
     levels <- as.character(d$allowed_levels[[1L]])
     array_sql <- paste0("ARRAY[", paste(vapply(levels, function(x)
       .quoter_sql_serveur(con, x), character(1)), collapse = ","), "]::text[]")
@@ -769,7 +825,8 @@ publish_registered_scalar_comparison <- function(projection, db) {
       paste(vapply(setdiff(champs, "indicator_id"), function(field)
         paste0(field, "=EXCLUDED.", field), character(1)), collapse = ","),
       ",allowed_levels=EXCLUDED.allowed_levels"))
-    for (source_id in as.character(d$allowed_sources[[1L]])) {
+    for (source_id in lignes$scalar_descriptor_source$source_id[
+      lignes$scalar_descriptor_source$indicator_id == d$indicator_id[[1L]]]) {
       DBI::dbExecute(con,
         "INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
         params = list(d$indicator_id[[1L]], source_id))
@@ -786,22 +843,10 @@ publish_registered_scalar_comparison <- function(projection, db) {
 }
 
 .ecrire_comparaison_scalaire <- function(con, projection) {
-  group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-    "statistic", "median", "member_count", "eligible_count", "missing_count",
-    "lineage_source_count")
-  territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-    "territory_id", "value", "status", "rank", "tie_count", "rank_size")
-  DBI::dbWriteTable(con, "scalar_comparison_group",
-    projection$groups[group_fields], append = TRUE, row.names = FALSE)
-  DBI::dbWriteTable(con, "scalar_comparison_territory",
-    projection$territories[territory_fields], append = TRUE, row.names = FALSE)
-  lineage <- projection$lineage
-  lineage$comparison_family <- "scalar"
-  lineage$comparison_content_version <- projection$content_version
-  DBI::dbWriteTable(con, "comparison_source_lineage",
-    lineage[c("comparison_family", "comparison_context", "group_id", "territory_type",
-      "facet_id", "source_id", "vintage_id", "comparison_content_version")],
-    append = TRUE, row.names = FALSE)
+  lignes <- .lignes_comparaison_scalaire(projection)
+  for (table in names(lignes))
+    if (nrow(lignes[[table]]))
+      DBI::dbWriteTable(con, table, lignes[[table]], append = TRUE, row.names = FALSE)
   invisible(TRUE)
 }
 
