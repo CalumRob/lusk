@@ -83,7 +83,8 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
         handler <- REGISTRE_FORMES_RESSOURCE[[artefact$forme]]
         lectures[[id]] <- tryCatch({
           lignes_attendues <- handler$lignes_persistees(artefact)
-          handler$lire_live(con, id, reference, lignes_attendues)
+          handler$lire_live(con, id, reference, lignes_attendues,
+                            handler$colonnes_tableau %||% list())
         }, error = function(e) e)
       }
       comparaisons <- comparer_adoption_artefacts(artefacts, lectures)

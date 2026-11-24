@@ -547,7 +547,7 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   row <- data.frame(indicator_id = id,
     label = as.character(.profil_champ(d, "label", id))[[1L]],
     unit = as.character(.profil_champ(d, "unit", ""))[[1L]],
-    allowed_levels = I(list(levels)), completeness = completeness,
+    allowed_levels = litteral_tableau_postgres(levels), completeness = completeness,
     descriptor_version = as.character(.profil_champ(d, "descriptor_version", "v1"))[[1L]],
     comparison_detail = .profil_champ(d, "comparison_detail", NA_character_),
     comparison_sex = .profil_champ(d, "comparison_sex", NA_character_),
@@ -629,7 +629,7 @@ lignes_profil_persistees <- function(artefact) {
   completeness <- as.character(d$completeness[[1L]])
   if (!identical(completeness, "dense_complete"))
     stop("Profile completeness contract is missing or unsupported", call. = FALSE)
-  levels <- as.character(d$allowed_levels[[1L]])
+  levels <- bridge_parse_text_array(d$allowed_levels[[1L]])
   levels_sql <- paste0("ARRAY[",
     paste(vapply(levels, function(x) .quoter_sql_serveur(con, x), character(1)),
           collapse = ","), "]::text[]")

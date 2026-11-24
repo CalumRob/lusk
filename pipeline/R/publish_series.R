@@ -792,19 +792,19 @@ register_owned_series_publishers <- function(registry, metadata, habitat_metadat
   id <- as.character(d$dataset_id)[[1L]]
   indicator <- as.character(d$indicator_id)[[1L]]
   descriptor <- data.frame(dataset_id = id, indicator_id = indicator,
-    axis_kind = d$axis_kind, axis_values = I(list(as.character(d$axis_values))),
+    axis_kind = d$axis_kind, axis_values = litteral_tableau_postgres(d$axis_values),
     completeness = d$completeness, comparison_point = d$comparison_point %||% NA_character_,
     label = d$label, unit = d$unit, direction = d$direction,
-    allowed_levels = I(list(as.character(d$allowed_levels))), descriptor_version = d$descriptor_version,
+    allowed_levels = litteral_tableau_postgres(d$allowed_levels), descriptor_version = d$descriptor_version,
     active_read_route = isTRUE(d$active_read_route),
-    axis_numeric_values = I(list(if (is.null(d$axis_numeric_values)) NA_integer_ else
-      as.integer(d$axis_numeric_values))), theme_id = d$theme_id %||% NA_character_,
+    axis_numeric_values = litteral_tableau_postgres(d$axis_numeric_values),
+    theme_id = d$theme_id %||% NA_character_,
     comparison_statistic = d$comparison_statistic %||% NA_character_,
     comparison_scope = d$comparison_scope %||% NA_character_,
     observation_period_kind = d$observation_period_kind %||% NA_character_,
     absence_semantics = d$absence_semantics %||% "unavailable",
-    comparison_levels = I(list(if (is.null(d$comparison_levels)) NA_character_ else
-      as.character(d$comparison_levels))), stringsAsFactors = FALSE)
+    comparison_levels = litteral_tableau_postgres(d$comparison_levels),
+    stringsAsFactors = FALSE)
   points <- p$points
   for (champ in c("state_role", "missing_reason"))
     if (!champ %in% names(points)) points[[champ]] <- NA_character_
@@ -992,21 +992,20 @@ owned_series_postgres_adapter <- function(con) {
        # Immutable series_provenance_revision rows are deliberately untouched.
        DBI::dbExecute(con,"DELETE FROM series_dataset_descriptor WHERE dataset_id=$1",
          params=list(dataset_id))
-       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\"',as.character(unlist(x)),fixed=TRUE),'"',collapse=","),"}")
+       array_literal <- litteral_tableau_postgres
        d <- as.list(lignes$series_dataset_descriptor)
-       numeric_axis <- if (all(is.na(unlist(d$axis_numeric_values)))) NA_character_ else
-         paste0("{",paste(unlist(d$axis_numeric_values),collapse=","),"}")
+       numeric_axis <- d$axis_numeric_values
        DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id,comparison_statistic,comparison_scope,observation_period_kind) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14,$15,$16,$17)",
-         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
+         params=list(dataset_id,d$indicator_id,d$axis_kind,d$axis_values,d$completeness,
            d$comparison_point,d$label,d$unit,d$direction,
-           array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id,
+           d$allowed_levels,d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id,
            d$comparison_statistic,d$comparison_scope,d$observation_period_kind))
        DBI::dbExecute(con,
          "UPDATE series_dataset_descriptor SET absence_semantics=$1 WHERE dataset_id=$2 AND indicator_id=$3",
          params=list(d$absence_semantics,dataset_id,d$indicator_id))
        if (!all(is.na(unlist(d$comparison_levels)))) DBI::dbExecute(con,
          "UPDATE series_dataset_descriptor SET comparison_levels=$1::text[] WHERE dataset_id=$2 AND indicator_id=$3",
-         params=list(array_literal(d$comparison_levels),dataset_id,d$indicator_id))
+         params=list(d$comparison_levels,dataset_id,d$indicator_id))
        for (table in c("series_context_parent_policy", "series_dataset_observation",
          "series_observation_provenance", "series_named_reference_descriptor",
          "series_named_reference", "series_named_reference_provenance"))

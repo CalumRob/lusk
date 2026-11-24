@@ -48,7 +48,7 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
                        version = c("va", "vb"), stringsAsFactors = FALSE)
   handler <- list(projeter = function(a) a$rows,
     lignes_persistees = function(a) a$rows,
-    lire_live = function(con, ressource, reference, attendu)
+    lire_live = function(con, ressource, reference, attendu, ...)
       list(facts = data.frame(territory_id = "c1",
                               value = if (ressource == "a") live_a else live_b)),
     colonnes_stockage = list(),

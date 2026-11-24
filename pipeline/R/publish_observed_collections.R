@@ -296,15 +296,26 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
   id <- as.character(d$indicator_id)[[1L]]
   descriptor <- data.frame(indicator_id = id, theme_id = d$theme_id, kind = d$kind,
     label = d$label, unit = d$unit, descriptor_version = d$descriptor_version,
-    allowed_levels = I(list(as.character(d$allowed_levels))),
+    allowed_levels = litteral_tableau_postgres(d$allowed_levels),
     comparison_detail = d$comparison_detail %||% NA_character_,
     comparison_period = d$comparison_period %||% NA_character_, direction = d$direction,
     stringsAsFactors = FALSE)
   table <- switch(as.character(d$kind), period_detail = "period_detail_observation",
                   anchored_membership = "anchored_membership",
                   stop("Unknown observed fact shape", call. = FALSE))
+  categories <- p$categories
+  if (!is.null(categories)) {
+    if (!"anchor_levels" %in% names(categories)) {
+      categories$anchor_levels <- rep("{}", nrow(categories))
+    } else {
+      categories$anchor_levels <- vapply(categories$anchor_levels,
+        litteral_tableau_postgres, character(1))
+    }
+    if (!"rider_label" %in% names(categories)) categories$rider_label <- NA_character_
+    if (!"clock_policy" %in% names(categories)) categories$clock_policy <- "dataset"
+  }
   out <- list(observed_collection_descriptor = descriptor,
-    observed_collection_category = p$categories, facts = p$facts,
+    observed_collection_category = categories, facts = p$facts,
     source_dataset = p$datasets, source_vintage = p$vintages)
   names(out)[names(out) == "facts"] <- table
   c(out, .lignes_collection_comparaison(rows$comparison, id))
@@ -324,7 +335,7 @@ lignes_collection_persistees <- function(artefact) {
   DBI::dbExecute(con, paste0("INSERT INTO observed_collection_publication",
     "(indicator_id,content_version,reference_content_version,row_count) VALUES($1,$2,$3,$4)"),
     params = list(indicator, version, as.character(reference_version)[[1L]], nrow(projection$facts)))
-  levels <- paste0("{", paste(unlist(d$allowed_levels), collapse = ","), "}")
+  levels <- d$allowed_levels
   DBI::dbExecute(con, paste0("INSERT INTO observed_collection_descriptor",
     "(indicator_id,theme_id,kind,label,unit,descriptor_version,allowed_levels,",
     "comparison_detail,comparison_period,direction) VALUES($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10)"),

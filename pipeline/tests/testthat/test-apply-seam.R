@@ -52,6 +52,26 @@ test_that("adopt uses the shared serving-session seam and writes no serving tabl
   expect_false(any(grepl("\\$remplacer\\s*\\(", adopt)))
 })
 
+test_that("publication errors leave transaction completion to the single DBI wrapper", {
+  for (fichier in c("R/apply_publication.R", "R/adoption_publication.R")) {
+    source <- paste(readLines(file.path(racine_pipeline(), fichier), warn = FALSE),
+                    collapse = "\n")
+    expect_false(grepl("DBI::db(Commit|Rollback)|dbExecute\\s*\\([^\\n]*\\b(COMMIT|ROLLBACK)\\b",
+                       source, ignore.case = TRUE), info = fichier)
+  }
+  etat <- getFromNamespace(".publication_transaction_state", "lusk")
+  etat$connection <- NULL
+  appels <- 0L
+  local_mocked_bindings(dbWithTransaction = function(con, expr) {
+    appels <<- appels + 1L
+    force(expr)
+  }, .package = "DBI")
+  expect_error(with_publication_transaction(structure(list(), class = "fake"),
+    stop("copy failure")), "copy failure")
+  expect_identical(appels, 1L)
+  expect_null(etat$connection)
+})
+
 test_that("allowlists name exact files — no broad regex can admit a new file", {
   motifs <- c(vapply(AUTORISATIONS_DB, function(a) a$fichier, character(1)),
               vapply(AUTORISATIONS_ECRITURE_SERVEUR, function(a) a$fichier, character(1)))

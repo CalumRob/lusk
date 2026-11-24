@@ -756,7 +756,8 @@ publish_registered_scalar_comparison <- function(projection, db) {
               "comparison_facet", "denominator_semantics", "completeness",
               "descriptor_version")
   descriptor <- descriptors[, champs, drop = FALSE]
-  descriptor$allowed_levels <- I(lapply(descriptors$allowed_levels, as.character))
+  descriptor$allowed_levels <- vapply(descriptors$allowed_levels,
+    litteral_tableau_postgres, character(1))
   sources <- do.call(rbind, lapply(seq_len(nrow(descriptors)), function(i)
     data.frame(indicator_id = descriptors$indicator_id[[i]],
                source_id = as.character(descriptors$allowed_sources[[i]]),
@@ -813,7 +814,7 @@ lignes_scalaires_persistees <- function(artefact) {
               "descriptor_version")
   for (i in seq_len(nrow(lignes$scalar_descriptor))) {
     d <- lignes$scalar_descriptor[i, , drop = FALSE]
-    levels <- as.character(d$allowed_levels[[1L]])
+    levels <- bridge_parse_text_array(d$allowed_levels[[1L]])
     array_sql <- paste0("ARRAY[", paste(vapply(levels, function(x)
       .quoter_sql_serveur(con, x), character(1)), collapse = ","), "]::text[]")
     values <- vapply(champs, function(field)

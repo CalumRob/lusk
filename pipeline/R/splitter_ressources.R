@@ -314,7 +314,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lire_live = lire_live_scalaire,
     lignes_persistees = lignes_scalaires_persistees,
     colonnes_stockage = list(scalar_observation = "published_at",
-      comparison_source_lineage = "comparison_content_version")),
+      comparison_source_lineage = "comparison_content_version"),
+    colonnes_tableau = list(scalar_descriptor = "allowed_levels")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -337,7 +338,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     colonnes_stockage = list(
       profile_comparison_group = "profile_content_version",
       profile_comparison_territory = "profile_content_version",
-      comparison_source_lineage = "comparison_content_version")),
+      comparison_source_lineage = "comparison_content_version"),
+    colonnes_tableau = list(profile_descriptor = "allowed_levels")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
@@ -359,7 +361,9 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_series,
     lire_live = lire_live_series,
     lignes_persistees = lignes_series_persistees,
-    colonnes_stockage = list()),
+    colonnes_stockage = list(),
+    colonnes_tableau = list(series_dataset_descriptor = c("axis_values",
+      "allowed_levels", "axis_numeric_values", "comparison_levels"))),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -378,7 +382,9 @@ REGISTRE_FORMES_RESSOURCE <- list(
     colonnes_stockage = list(
       observed_collection_comparison_group = "collection_content_version",
       observed_collection_comparison_territory = "collection_content_version",
-      observed_collection_comparison_lineage = "comparison_content_version")),
+      observed_collection_comparison_lineage = "comparison_content_version"),
+    colonnes_tableau = list(observed_collection_descriptor = "allowed_levels",
+      observed_collection_category = "anchor_levels")),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie, reference)
@@ -399,6 +405,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lire_live = lire_live_aedar,
     lignes_persistees = lignes_aedar_persistees,
     colonnes_stockage = list(),
+    colonnes_tableau = list(),
     colonnes_json = list(aedar_territorial_aggregate = c("identity", "measures")))
 )
 

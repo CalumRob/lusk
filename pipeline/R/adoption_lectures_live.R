@@ -19,14 +19,14 @@
   rows[colonnes, drop = FALSE]
 }
 
-.adoption_normaliser_tableau <- function(rows, attendu) {
-  for (colonne in names(attendu)) {
-    if (!is.list(attendu[[colonne]])) next
-    values <- lapply(rows[[colonne]], .adoption_array)
-    mode <- typeof(attendu[[colonne]][[1L]])
-    values <- lapply(values, function(x) switch(mode,
-      integer = as.integer(x), double = as.numeric(x), as.character(x)))
-    rows[[colonne]] <- I(values)
+.adoption_normaliser_tableau <- function(rows, attendu, colonnes = character()) {
+  for (colonne in intersect(colonnes, names(rows))) {
+    normaliser <- function(x) {
+      if (length(x) == 1L && is.character(x) && !is.na(x) &&
+          startsWith(x, "{") && endsWith(x, "}")) return(x)
+      litteral_tableau_postgres(x)
+    }
+    rows[[colonne]] <- vapply(rows[[colonne]], normaliser, character(1))
   }
   rows
 }
@@ -56,12 +56,12 @@
     "WHERE ", where, " ORDER BY source_id,vintage_id"), as.list(params))
 }
 
-lire_live_scalaire <- function(con, ressource, reference, lignes_attendues) {
+lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list()) {
   id <- as.character(ressource)
   params <- list(id)
   lire <- function(table, where = " WHERE indicator_id=$1", args = params)
     .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, args), lignes_attendues[[table]])
+      names(lignes_attendues[[table]]), where, args), lignes_attendues[[table]], colonnes_tableau[[table]])
   out <- list(
     scalar_descriptor = lire("scalar_descriptor"),
     scalar_descriptor_source = lire("scalar_descriptor_source"),
@@ -84,12 +84,12 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues) {
   out
 }
 
-lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues) {
+lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list()) {
   id <- as.character(ressource)
   params <- list(id)
   lire <- function(table, where = " WHERE indicator_id=$1")
     .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]])
+      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]], colonnes_tableau[[table]])
   out <- list(
     profile_descriptor = lire("profile_descriptor"),
     profile_descriptor_source = lire("profile_descriptor_source"),
@@ -132,12 +132,12 @@ normaliser_live_profil <- function(rows, artefacts, lectures) {
   rows
 }
 
-lire_live_series <- function(con, ressource, reference, lignes_attendues) {
+lire_live_series <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list()) {
   id <- as.character(ressource)
   params <- list(id)
   lire <- function(table, where = " WHERE dataset_id=$1")
     .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]])
+      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]], colonnes_tableau[[table]])
   out <- list(
     series_dataset_descriptor = lire("series_dataset_descriptor"),
     series_dataset_observation = lire("series_dataset_observation"),
@@ -167,12 +167,12 @@ lire_live_series <- function(con, ressource, reference, lignes_attendues) {
   out
 }
 
-lire_live_collection <- function(con, ressource, reference, lignes_attendues) {
+lire_live_collection <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list()) {
   id <- as.character(ressource)
   params <- list(id)
   lire <- function(table, where = " WHERE indicator_id=$1")
     .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]])
+      names(lignes_attendues[[table]]), where, params), lignes_attendues[[table]], colonnes_tableau[[table]])
   descriptor <- lire("observed_collection_descriptor")
   if (nrow(descriptor) != 1L)
     stop(paste0("adoption : descripteur de collection absent ou multiple pour ", id),
@@ -202,7 +202,7 @@ lire_live_collection <- function(con, ressource, reference, lignes_attendues) {
   as.data.frame(jsonlite::fromJSON(x, simplifyDataFrame = TRUE), stringsAsFactors = FALSE)
 }
 
-lire_live_aedar <- function(con, ressource, reference, lignes_attendues) {
+lire_live_aedar <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list()) {
   lire <- function(table) .adoption_lire_table(con, table,
     names(lignes_attendues[[table]]))
   out <- list(aedar_territorial_aggregate = lire("aedar_territorial_aggregate"),
