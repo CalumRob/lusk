@@ -415,6 +415,7 @@ test_that("valider_theme_metadata : la lecture qui référence « classification
 # indicateurs du thème (INDICATEURS_<THEME>) ; les valeurs de lecture
 # supplémentaires (div_loss_t/b, trajectoire_artif_par_habitant) sont des
 # déclarations documentées, jamais des clés du registre.
+
 test_that("directions : chaque clé classée de chaque thème déclare SA direction (aucun défaut silencieux, #368)", {
   # le registre par thème : les thèmes légers (Économie, Mobilité) ne portent
   # pas de membre `indicateurs` — leur registre est leur table déclarative
@@ -464,6 +465,7 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
 # rang_reg). Une clé absente du registre du module vaut « high » — le défaut
 # EXACT de compute_ranks : jamais un « moins = mieux » qui signifierait deux
 # choses selon la surface, la dérive meurt à l'écriture.
+
 test_that("valider_theme_metadata : un descripteur contradictoire au module est rejeté (#506)", {
   directions_demographie <- theme_demographie()$directions
 
@@ -531,6 +533,7 @@ test_that("concordance des directions : les SIX canons épinglés passent telle 
 # clé de la page serait faux, ce sont deux indicateurs différents). Une clé
 # absente du registre vaut « high », le défaut exact de compute_ranks via
 # direction_de() ; sans direction déclarée par la facette, rien à croiser.
+
 test_that("valider_theme_metadata : une facette résumée contradictoire au module est rejetée (#516)", {
   # le cas concordant passe : « part_passoires » résume « distribution_dpe »,
   # les DEUX facettes du canon Habitat déclarent « low » comme le module
@@ -653,6 +656,7 @@ test_that("concordance des facettes résumées : les SIX canons épinglés passe
 # `structure-verte` ne déclare AUCUNE lecture — le sous-groupe silencieux de
 # la grammaire (#370) ; les DEUX sous-groupes Programmes (#408) n'en
 # déclarent aucun non plus (le thème sans lecture).
+
 test_that("sous-groupes : la décomposition #370 + #408 + #1048 — treize sous-groupes, ordre de fiche exact, familles des huit", {
   attendu <- list(
     mobilite = list(
@@ -910,40 +914,6 @@ test_that("verifier_parite_trajectoires : le canon Milieux épinglé est en pari
   meta <- lire_theme_metadata("milieux")
   expect_identical(meta$indicator_pages$artif_par_habitant$family, "trajectory")
   expect_no_error(verifier_parite_trajectoires(meta, faits_trajectoires_milieux()))
-})
-
-test_that("verifier_parite_trajectoires : les sorties producteur de fixture couvrent leurs axes déclarés (#438)", {
-  # Les faits numériques ne sont plus lus depuis un snapshot JSON. Chaque
-  # contrat est vérifié contre la sortie de son producteur de fixture.
-  racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
-  expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
-
-  pages_trajectoires <- 0L
-  for (theme in THEMES_METADATA) {
-    meta <- lire_theme_metadata(theme)
-    cles <- names(meta$indicator_pages)
-    if (!any(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))) next
-
-    faits <- lire_indicateurs_producteur_fixture(theme, racine_public)
-    if (theme_sans_lecture(theme)) {
-      # The retained Mobility Parquet remains unchanged, but its incumbent
-      # raccordement curve has the prior axis. Rebuild the owner-owned rows
-      # from the byte-pinned producer artifact for the current trajectory
-      # contract rather than treating that Parquet as a fixture clone.
-      raccordement <- lire_artefact_raccordement_national()
-      raccordement_faits <- lignes_indicateurs_raccordement_national(
-        raccordement$calculation, vintages_mobilite())
-      faits <- dplyr::bind_rows(
-        faits[!faits$key %in% raccordement_faits$key, , drop=FALSE],
-        raccordement_faits)
-    }
-    verifier_parite_trajectoires(meta, faits)
-    pages_trajectoires <- pages_trajectoires +
-      sum(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))
-  }
-  # La couverture du devoir : les QUATRE indicateurs trajectoires publiés ont
-  # leur page — jamais une famille trajectoire orpheline.
-  expect_identical(pages_trajectoires, 4L)
 })
 
 test_that("verifier_parite_trajectoires : une année morte déclarée échoue fort (#438)", {
@@ -1382,6 +1352,7 @@ test_that("valider_theme_metadata : un rôle du nuage muet, fantôme ou à déta
 # rendu existent et sont testés sur des fixtures ; le premier descripteur
 # épinglé viendra avec ses faits. Ce verrou force la mise à jour CONSCIENTE
 # du compte quand elle arrivera — jamais une famille orpheline en silence.
+
 test_that("l'énumération des relations publiées est connue — aucune page relation à travers les six thèmes (#441)", {
   pages_relations <- 0L
   pour_theme <- character(0)

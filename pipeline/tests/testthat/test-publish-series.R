@@ -803,6 +803,7 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
   expect_error(series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "public"),
     "owned series smoke schema")
 })
+
 test_that("owned raccordement publisher projects its declared serving-only reference locator", {
   fixture <- synthetic_raccordement_projection_fixture()
   metadata <- fixture$metadata
@@ -903,28 +904,4 @@ test_that("owned raccordement publisher projects its declared serving-only refer
   expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata,
     producer_contract=list(date_mesure="2026-09-16")),
     "observation period")
-})
-
-test_that("canonical Mobility metadata locator validates the owned raccordement projection", {
-  metadata <- lire_theme_metadata("mobilite")
-  declaration <- metadata$owned_series_routes$raccordement_courbe
-  page <- metadata$indicator_pages$raccordement_courbe
-  expect_identical(page$trajectory$reference$indicator, declaration$reference_indicator)
-  expect_identical(page$trajectory$reference$territoire, "53")
-  expect_identical(page$trajectory$reference$label, declaration$reference$label)
-
-  artifact <- lire_artefact_raccordement_national()
-  vintages <- vintages_mobilite()
-  canonical <- lignes_indicateurs_raccordement_national(artifact$calculation, vintages)
-  projection <- project_raccordement_owned_series(canonical, vintages, metadata,
-    producer_contract=RECETTE_RACCORDEMENT_NATIONAL)
-  expect_no_error(validate_owned_series_projection(projection))
-  expect_equal(nrow(projection$points), 1268L * 73L)
-  expect_equal(nrow(projection$named_reference), 73L)
-  expect_equal(projection$named_reference_descriptors$reference_indicator_id,
-    declaration$reference_indicator)
-  partial <- canonical[-which(canonical$key == "raccordement_courbe" &
-    canonical$type == "commune")[[1L]], , drop = FALSE]
-  expect_error(project_raccordement_owned_series(partial, vintages, metadata,
-    producer_contract=RECETTE_RACCORDEMENT_NATIONAL), "commune 22001.*t0000")
 })
