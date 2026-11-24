@@ -420,7 +420,6 @@ def _profile_comparison_publication_marker(conn, family="profile", resource_ids=
             conn, "SELECT indicator_id FROM profile_resource_comparison_publication").fetchall()]
     resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
     publications = live_resource_publications(conn, resource_ids, family)
-    reference_version = live_territory_reference_version(conn)
     rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
         profile_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count FROM profile_resource_comparison_publication
@@ -428,6 +427,11 @@ def _profile_comparison_publication_marker(conn, family="profile", resource_ids=
     markers = {row[0]: row[1:] for row in rows}
     if len(markers) != len(resource_ids):
         publication_unavailable(family, "Published profile comparison is stale or incompatible")
+    marker_references = {marker[2] for marker in markers.values()}
+    if len(marker_references) != 1:
+        raise HTTPException(503, "Published profile comparison is stale or incompatible")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(marker_references)))
     for resource_id, marker in markers.items():
         if (not marker[0] or not marker[1] or marker[2] != reference_version
                 or publications[resource_id].reference_content_version != marker[2]
@@ -912,7 +916,6 @@ def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=No
             conn, "SELECT indicator_id FROM scalar_resource_comparison_publication").fetchall()]
     resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
     publications = live_resource_publications(conn, resource_ids, family)
-    reference_version = live_territory_reference_version(conn)
     rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
         scalar_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count FROM scalar_resource_comparison_publication
@@ -920,6 +923,11 @@ def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=No
     markers = {row[0]: row[1:] for row in rows}
     if len(markers) != len(resource_ids):
         publication_unavailable(family, "Published scalar comparison is stale or incompatible")
+    marker_references = {marker[2] for marker in markers.values()}
+    if len(marker_references) != 1:
+        raise HTTPException(503, "Published scalar comparison is stale or incompatible")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(marker_references)))
     for resource_id, marker in markers.items():
         if (not marker[0] or not marker[1] or marker[2] != reference_version
                 or publications[resource_id].reference_content_version != marker[2]

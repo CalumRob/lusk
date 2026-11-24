@@ -71,6 +71,8 @@ class CollectionConnection:
         self.statements.append(sql)
         if "FROM resource_publication" in sql:
             return Cursor(row=("resource_a", "observed_collection", "collection-v1", "ref-v1"))
+        if "SELECT content_version" in sql and "territory_reference" in sql:
+            return Cursor(row=("ref-v1", 1))
         if "FROM observed_collection_publication" in sql:
             return Cursor(row=("collection-v1", "ref-v1", "ref-v1"))
         raise AssertionError(sql)

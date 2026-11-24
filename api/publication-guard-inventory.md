@@ -318,6 +318,7 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_owned_series_snapshot` | `—` | Required owned named reference is incomplete |
 | `fatal` | `snapshot_reads.py` | `_owned_series_snapshot.lineage` | `—` | Owned series provenance is incomplete |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is stale or incompatible |
+| `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_publication_marker` | `—` | Published profile comparison is unavailable |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_results` | `—` | Coordinate-selected profile comparison is ambiguous |
 | `fatal` | `snapshot_reads.py` | `_profile_comparison_results` | `—` | Legacy profile comparison unit is incompatible |
@@ -346,6 +347,7 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_published_scalar_comparison_results` | `—` | Published scalar comparison peer ranks are incomplete |
 | `fatal` | `snapshot_reads.py` | `_published_scalar_comparison_results` | `—` | Published scalar comparison peer statuses do not match group counts |
 | `fatal` | `snapshot_reads.py` | `_published_scalar_comparison_results` | `—` | Published scalar comparison result is invalid |
+| `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is stale or incompatible |
 | `fatal` | `snapshot_reads.py` | `_scalar_comparison_publication_marker` | `—` | Published scalar comparison is unavailable |
 | `fatal` | `snapshot_reads.py` | `_scalar_facet_comparison_preflight` | `—` | Declared scalar facet comparison is incompatible |

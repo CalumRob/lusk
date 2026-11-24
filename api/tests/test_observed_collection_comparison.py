@@ -32,6 +32,8 @@ class PublishedConnection:
             return Cursor((None,False) if self.bad=="storage_missing" else ("observed_collection_comparison_lineage",True))
         if "FROM resource_publication" in sql:
             return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+        if "SELECT content_version" in sql and "territory_reference" in sql:
+            return Cursor(("ref-v1", 1))
         if "FROM observed_collection_publication p" in sql:
             return Cursor(("collection-v1", "ref-v1", "ref-v1"))
         if "FROM observed_collection_comparison_publication" in sql:
@@ -101,6 +103,8 @@ def test_selected_comparison_sql_reads_the_requested_category_and_period():
                                     ("c3", 300., "source", "Dataset", "v1", "2025", None, None)])
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication p" in sql:
                 return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             raise AssertionError(sql)
@@ -247,6 +251,8 @@ def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenanc
             if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             if "FROM period_detail_observation o" in sql:
                 return Cursor(rows=[("housing", "Housing", "2024", None, "source", "Dataset", "v1", "2024", None, None)])
@@ -274,6 +280,8 @@ def test_period_detail_preflight_counts_actual_focal_rows():
             if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             if "SELECT count(*) FROM period_detail_observation" in sql: return Cursor((37,))
             raise AssertionError(sql)
@@ -296,6 +304,8 @@ def test_anchored_membership_preflight_counts_resolved_anchor_rows():
             if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             raise AssertionError(sql)
 
@@ -332,6 +342,8 @@ def test_selected_singleton_member_serves_its_value_as_median_without_rank():
                 return Cursor(rows=[("c1", 600., "source", "Dataset", "v1", "2025", None, None)])
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication p" in sql:
                 return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             raise AssertionError(sql)
@@ -353,6 +365,8 @@ def test_selected_comparison_without_comparable_values_stays_unavailable():
                 return Cursor(rows=[])
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("grant_amount", "observed_collection", "collection-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor(("ref-v1", 1))
             if "FROM observed_collection_publication p" in sql:
                 return Cursor(("collection-v1", "ref-v1", "ref-v1"))
             raise AssertionError(sql)
