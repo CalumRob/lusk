@@ -8,21 +8,45 @@ if (!exists(".lusk_cache_graphe_structure", globalenv(), inherits = FALSE)) {
   assign(".lusk_cache_graphe_structure", new.env(parent = emptyenv()), globalenv())
 }
 
+# Enumerated by searching Sys.getenv("LUSK_ in _targets.R and pipeline/R/.
+# LUSK_CACHE/LUSK_SORTIE are intentionally absent: structural reads replace both
+# with isolated paths, so caller-owned temporary paths cannot affect the graph.
+ENV_GRAPHE_STRUCTURE <- c(
+  "LUSK_THEMES", "LUSK_MODE", "LUSK_SCALAR_SCOPE", "LUSK_PUBLISH_DB",
+  "LUSK_PUBLISH_PROFILE", "LUSK_AEDAR_ADDRESS_ORIGINS", "LUSK_AEDAR_PUBLISH_PROGRESS",
+  "LUSK_ARTEFACTS", "LUSK_PUBLICATION_RECEIPTS", "LUSK_PUBLISH_OWNED_SERIES",
+  "LUSK_PUBLISH_SERIES", "LUSK_BRIDGE_LOCK_TIMEOUT_MS",
+  "LUSK_BRIDGE_STATEMENT_TIMEOUT_MS", "LUSK_BRIDGE_TEST_CLEANUP",
+  "LUSK_PUBLISH_PORT", "LUSK_AEDAR_CANONICAL_DIR", "LUSK_SOURCES_LOCK"
+)
+
 environnement_graphe_structure <- function() {
-  defauts <- c(LUSK_THEMES = "", LUSK_MODE = "full", LUSK_PUBLISH_DB = "",
-               LUSK_PUBLISH_PROFILE = "", LUSK_SCALAR_SCOPE = "")
-  stats::setNames(lapply(names(defauts), function(nom) {
-    Sys.getenv(nom, unset = defauts[[nom]])
-  }), names(defauts))
+  stats::setNames(lapply(ENV_GRAPHE_STRUCTURE, function(nom) {
+    Sys.getenv(nom, unset = "")
+  }), ENV_GRAPHE_STRUCTURE)
+}
+
+entrees_graphe_structure <- function() {
+  cible <- file.path(getwd(), "_targets.R")
+  if (!file.exists(cible)) stop("_targets.R is required for a structural graph read")
+  sources <- if (dir.exists("R")) {
+    list.files("R", pattern = "\\.R$", full.names = TRUE)
+  } else character()
+  metadata <- if (dir.exists(file.path("inst", "extdata", "theme-metadata"))) {
+    list.files(file.path("inst", "extdata", "theme-metadata"),
+               pattern = "\\.json$", full.names = TRUE)
+  } else character()
+  fichiers <- c(cible, sources, metadata)
+  stats::setNames(unname(tools::md5sum(fichiers)),
+                  sub("^\\./", "", normalizePath(fichiers, winslash = "/",
+                                                  mustWork = TRUE)))
 }
 
 entree_graphe_structure <- function() {
-  cible <- file.path(getwd(), "_targets.R")
-  if (!file.exists(cible)) stop("_targets.R is required for a structural graph read")
   description <- list(
     directory = normalizePath(getwd(), winslash = "/", mustWork = TRUE),
     environnement = environnement_graphe_structure(),
-    cible = unname(tools::md5sum(cible))
+    entrees = entrees_graphe_structure()
   )
   cle <- as.character(openssl::md5(serialize(description, NULL, version = 2L)))
   cache <- get(".lusk_cache_graphe_structure", globalenv(), inherits = FALSE)

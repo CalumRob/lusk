@@ -43,6 +43,38 @@ test_that("one memoised manifest serves each effective graph environment", {
   expect_identical(appels, 2L)
 })
 
+test_that("editing a pinned theme JSON invalidates the memoised graph", {
+  projet <- tempfile("graphe-cache-metadata-")
+  dir.create(file.path(projet, "R"), recursive = TRUE)
+  dir.create(file.path(projet, "inst", "extdata", "theme-metadata"), recursive = TRUE)
+  on.exit(unlink(projet, recursive = TRUE), add = TRUE)
+  writeLines("list()", file.path(projet, "_targets.R"))
+  writeLines("f <- function() 1", file.path(projet, "R", "f.R"))
+  metadata <- file.path(projet, "inst", "extdata", "theme-metadata", "theme_toy.json")
+  writeLines('{"label":"a"}', metadata)
+  withr::local_dir(projet)
+  withr::local_envvar(
+    LUSK_THEMES = "", LUSK_MODE = "full", LUSK_PUBLISH_DB = "",
+    LUSK_PUBLISH_PROFILE = "", LUSK_SCALAR_SCOPE = ""
+  )
+
+  appels <- 0L
+  local_mocked_bindings(
+    tar_manifest = function(callr_function = NULL, envir = parent.frame(), ...) {
+      appels <<- appels + 1L
+      data.frame(name = "target", command = as.character(appels),
+                 stringsAsFactors = FALSE)
+    },
+    .package = "targets"
+  )
+
+  premier <- manifeste_graphe()
+  writeLines('{"label":"b"}', metadata)  # same byte length: content hash must notice
+  second <- manifeste_graphe()
+  expect_identical(appels, 2L)
+  expect_false(identical(premier$command, second$command))
+})
+
 test_that("a structural read restores targets options changed by _targets.R", {
   projet <- tempfile("graphe-cache-options-")
   dir.create(projet)
