@@ -49,6 +49,7 @@ fixture_cascade_apply <- function(root, ids, magasin) {
     REGISTRE_FORMES_RESSOURCE = registry)
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
+    dbExecute = function(con, sql, params = list()) 1L,
     dbGetQuery = function(con, sql, params = list()) {
       if (grepl("table_publication WHERE table_name='territory_reference'", sql, fixed = TRUE))
         return(data.frame(content_version = "reference-v1"))
