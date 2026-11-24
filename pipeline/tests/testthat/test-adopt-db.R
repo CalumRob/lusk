@@ -127,6 +127,20 @@
         vintage_id = character(), stringsAsFactors = FALSE)), class = "collection-projection")
 }
 
+# The splitter derives an artefact's `digests_lignage` from its provenance
+# source ids (splitter_ressources.R:461). Both collection helpers carry facts
+# with a source_id but an intentionally empty provenance (they are shared with
+# adapter-only tests), which would leave the adopt artefact with NO attested
+# lineage and make the shared freeze guard refuse the resource. Give every
+# collection fact its provenance row so the lineage digest resolves from the
+# sortie's source-digests.json and from `fixture$lock`, exactly as the real
+# publisher's projection does.
+.adopt_db_collection_lineage <- function(projection) {
+  data.frame(source_id = as.character(projection$facts$source_id),
+             vintage_id = as.character(projection$facts$vintage_id),
+             stringsAsFactors = FALSE)
+}
+
 .adopt_db_series_projection <- function() {
   p <- adaptateur_series_projection()
   p$descriptor$direction <- "high"
@@ -235,8 +249,16 @@
 
   serie <- .adopt_db_series_projection()
   period <- adaptateur_collection_projection()
+  period$provenance <- .adopt_db_collection_lineage(period)
   membres <- .adopt_db_anchored_collection(reference)
+  membres$provenance <- .adopt_db_collection_lineage(membres)
   aedar <- adaptateur_aedar_projection()
+  # AEDAR producers carry `source` as scalar list fields; the splitter derives
+  # `digests_lignage` from a provenance DATA.FRAME's source_id column. Coerce it
+  # to the one-row frame the canonical sortie reader yields so this resource
+  # gets the same attested lineage as the other shapes.
+  if (is.list(aedar$source) && "source_id" %in% names(aedar$source))
+    aedar$source <- as.data.frame(aedar$source, stringsAsFactors = FALSE)
   aedar$descriptor <- list(indicator_id = "aedar",
     theme_id = lire_theme_metadata("mobilite")$theme)
   aedar_manifest <- .adopt_db_aedar_manifest(aedar, reference)
@@ -349,6 +371,40 @@ test_that("DPE-like fixture derives its semantic contract from the scalar descri
   expect_identical(profile$descriptor$comparison_scalar, scalar$comparison_facet)
   expect_true(all(profile$descriptor$levels %in%
     as.character(scalar$allowed_levels[[1L]])))
+})
+
+test_that("adopt fixture gives every resource an attested lineage present in the lock", {
+  # The shared freeze guard (verifier_gel_lignage_ressource) refuses a resource
+  # whose artefact has no lineage digest. This fixture is DB-free; build exactly
+  # the artefacts adopt will compare and prove each one has real, non-absent
+  # digests whose source ids are all present in `fixture$lock`.
+  fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE)
+  builds <- splitter_sortie(fixture$sortie, root = fixture$root,
+    projections = fixture$projections, reference = fixture$reference,
+    metadata_directory = fixture$metadata_directory)
+  artefacts <- charger_artefacts_construits(builds, fixture$root)
+  expect_true(nrow(builds) >= 8L)
+  expect_setequal(names(artefacts), as.character(builds$ressource))
+  for (id in names(artefacts)) {
+    lignage <- artefacts[[id]]$digests_lignage
+    expect_true(is.list(lignage) && length(lignage) > 0L, info = id)
+    for (source in names(lignage)) {
+      entree <- lignage[[source]]
+      expect_identical(as.character(entree$source_id), source, info = paste(id, source))
+      expect_false(isTRUE(entree$absent), info = paste(id, source))
+      expect_true(is.character(entree$sha256) && length(entree$sha256) == 1L &&
+                    !is.na(entree$sha256) && nzchar(entree$sha256),
+                  info = paste(id, source))
+      expect_true(source %in% names(fixture$lock), info = paste(id, source))
+    }
+    acceptable <- tryCatch({
+      verifier_gel_lignage_ressource(artefacts[[id]], registre = fixture$lock)
+      TRUE
+    }, error = function(e) FALSE)
+    expect_true(acceptable, info = id)
+  }
 })
 
 test_that("guarded: real full-path publication adopts every shape with unchanged data and plan", {

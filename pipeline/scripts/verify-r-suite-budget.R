@@ -21,7 +21,9 @@ EXCEPTIONS_BUDGET <- data.frame(
     "test-targets-raccordement.R",
     "test-offre-tc-bridge.R",
     "test-release-freeze.R",
-    "test-publish-scalar.R"
+    "test-publish-scalar.R",
+    "test-adopt-db.R",
+    "test-adopt-db.R"
   ),
   test = c(
     NA_character_,
@@ -32,7 +34,9 @@ EXCEPTIONS_BUDGET <- data.frame(
     "LE CRON SAUTE LA CHAÎNE : après l'amorçage, plus JAMAIS un recalcul",
     NA_character_,
     NA_character_,
-    "raccordement scalar projection binds its producer metadata, source vintage, and trajectory t0090"
+    "raccordement scalar projection binds its producer metadata, source vintage, and trajectory t0090",
+    NA_character_,
+    "adopt fixture gives every resource an attested lineage present in the lock"
   ),
   raison = c(
     "initial whole-repo parse-data seam and DBI audits; later structural audits reuse the cache",
@@ -43,9 +47,11 @@ EXCEPTIONS_BUDGET <- data.frame(
     "execution is the contract: cron never recomputes after bootstrap; expires with #1129",
     "ADR-0049 step 4 retires the offre_tc bridge; expires with ADR-0049 step 4",
     "real digests_run dependency-edge assertion requires the distinct DB+profile network",
-    "#1163 committed-payload raccordement refusal; assertion intentionally unchanged"
+    "#1163 committed-payload raccordement refusal; assertion intentionally unchanged",
+    "adopt freeze guard needs the one full fixture build (payload profiles + AEDAR canonical manifest); artefact build itself is under 1 s",
+    "same full-fixture contract; the freeze proof must cover all eight resources, not a cheaper subset"
   ),
-  expiration = c(rep(NA_character_, 4L), "#1129", "#1129", "ADR-0049 step 4", NA_character_, NA_character_),
+  expiration = c(rep(NA_character_, 4L), "#1129", "#1129", "ADR-0049 step 4", NA_character_, NA_character_, NA_character_, NA_character_),
   stringsAsFactors = FALSE
 )
 
