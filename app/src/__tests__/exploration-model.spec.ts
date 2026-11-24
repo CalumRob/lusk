@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
+import { estimerDensite, extremes, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -74,6 +74,195 @@ describe('modèle pur de Page d’indicateur', () => {
   it('samples finite density coordinates', () => { const density = estimerDensite([10, 20, 30]); expect(density.every((point) => Number.isFinite(point.x) && Number.isFinite(point.density))).toBe(true); expect(positionDensite(density, 20)).toBeCloseTo(50); expect(hauteurDensite(density, 20)).not.toBeNull() })
   it('map filtering keeps BOTH sexes so fusion can aggregate F+M (a sex-filtered payload starves resoudreGroupeSexe and crashes the paint watcher)', () => { const resolved = { ...facet(), detail: 'F', sex: 'F' as const, dimension: 'women', labels: { F: 'Femmes' } }; const femmeA = { ...facts('a', 10), detail: 'F', sex: 'F', dimension: 'women' }; const hommeA = { ...facts('a', 12), detail: 'F', sex: 'M', dimension: 'women' }; const femmeB = { ...facts('b', 20), detail: 'F', sex: 'F', dimension: 'women' }; const source = { territoires, indicateurs: [femmeA, hommeA, femmeB] as unknown as Indicateur[], histoires: [], runReport: null, vintages: null, programmes: null }; const result = payloadPourCarte(source, resolved, { niveau: 'commune' }); expect(result.indicateurs).toEqual([femmeA, hommeA, femmeB]) })
   it('presents ties, null values and empty scopes honestly', () => { const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], facet(), territoires, { niveau: 'commune', territoire: 'c' }); expect(tied.high.count).toBe(2); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], facet(), territoires, { niveau: 'commune' }); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })
+  it('extrêmes (#1165) : le max/min du périmètre est calculé UNE fois sur TOUTE la population, pas une fois par ligne', () => {
+    // Le périmètre complet porte le max et le min ; le filtre de recherche ne
+    // réduit que les LIGNES affichées, jamais les extrêmes. Garder l'invariant
+    // verrouille le correctif O(n²) : l'ancien code recalculait
+    // `Math.max(...all.map(...))` DANS le prédicat de filter (n² appels).
+    const communes = ['a', 'b', 'c', 'd'].map((id, i) => facts(id, [10, 50, 20, 90][i]))
+    const modele = modeleExploration(communes, facet(), territoires, { niveau: 'commune', recherche: 'Alpha' })
+    expect(modele.rows.map((row) => row.territoire.territoire)).toEqual(['a'])
+    expect(modele.high.count).toBe(1)
+    expect(modele.high.rows[0].territoire.territoire).toBe('d') // max = 90, hors du filtre
+    expect(modele.low.count).toBe(1)
+    expect(modele.low.rows[0].territoire.territoire).toBe('a') // min = 10, dans le filtre
+  })
+
+  it('extrêmes (#1165) : le hissage reste identique à l’oracle O(n²) sur les cas limites et les entrées aléatoires', () => {
+    type ValeurEssai = number | null | undefined
+    // Oracle ORIGINAL : le max/min est recomputé dans CHAQUE prédicat filter.
+    // La valeur null est exclue de la population par `avecValeur` ; undefined
+    // y entre et rend donc les deux extrêmes NaN, comme Math.max/min d’origine.
+    const oracle = (valeurs: readonly ValeurEssai[]) => {
+      const population = valeurs.flatMap((value, index) => value === null ? [] : [{ id: `t${index}`, value: value as number }])
+      const highRows = population.filter((row) => row.value === Math.max(...population.map((item) => item.value)))
+      const lowRows = population.filter((row) => row.value === Math.min(...population.map((item) => item.value)))
+      return { highRows, lowRows }
+    }
+    const verifie = (valeurs: ValeurEssai[]) => {
+      const faitsEssai = valeurs.map((value, index) => facts(`t${index}`, value as number | null))
+      const territoiresEssai: Territoire[] = valeurs.map((_, index) => ({
+        territoire: `t${index}`,
+        type: 'commune',
+        nom: `Territoire ${String(index).padStart(4, '0')}`,
+        departement: '22',
+        epci: 'e',
+      }))
+      const modele = modeleExploration(faitsEssai, facet(), territoiresEssai, { niveau: 'commune' })
+      const attendu = oracle(valeurs)
+      const verifieExtreme = (obtenu: ReturnType<typeof modeleExploration>['high'], lignes: Array<{ id: string; value: number }>) => {
+        expect(obtenu.count).toBe(lignes.length)
+        // Le contrat public ne expose la ligne que si l’extrême est unique ;
+        // pour une égalité, le compte reste entier et la liste reste vide.
+        expect(obtenu.rows.map((row) => row.territoire.territoire)).toEqual(lignes.length === 1 ? [lignes[0].id] : [])
+        if (lignes.length === 1) {
+          expect(Object.is(obtenu.rows[0].value, lignes[0].value)).toBe(true)
+          expect(obtenu.rows[0]).toEqual(modele.rows.find((row) => row.territoire.territoire === lignes[0].id))
+        }
+      }
+      verifieExtreme(modele.high, attendu.highRows)
+      verifieExtreme(modele.low, attendu.lowRows)
+    }
+
+    const cas: ValeurEssai[][] = [
+      [],
+      [5],
+      [7, 7, 7, 7],
+      [1, 2, 2, 3],
+      [1, 1, 2, 3],
+      [1, 2, 1, 2],
+      [NaN, 1, 2, 3],
+      [1, 2, 3, NaN],
+      [Infinity, 1, 2, 3],
+      [-Infinity, 0, Infinity],
+      [-0, -0],
+      [0, 0],
+      [0, -0],
+      [-0, 0],
+      [1, null, 2],
+      [null],
+      [1, undefined, 2],
+      [undefined],
+      [1, null, undefined, 2],
+    ]
+    cas.forEach(verifie)
+
+    let graine = 0x51f15e
+    const aleatoire = (): ValeurEssai => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      const cas = graine % 24
+      if (cas === 0) return NaN
+      if (cas === 1) return Infinity
+      if (cas === 2) return -Infinity
+      if (cas === 3) return 0
+      if (cas === 4) return -0
+      if (cas === 5) return null
+      if (cas === 6) return undefined
+      return ((graine >>> 8) / 0xffffff) * 2000 - 1000
+    }
+    for (let n = 0; n < 32; n++) verifie(Array.from({ length: n }, aleatoire))
+    verifie(Array.from({ length: 1202 }, () => ((graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0) / 0xffffffff) * 2000 - 1000))
+  })
+})
+
+describe('extremes — sémantique Math.min/max et sécurité de pile (#1165)', () => {
+  const attendMeme = (valeurs: readonly number[]) => {
+    const obtenu = extremes(valeurs)
+    expect(Object.is(obtenu.min, Math.min(...valeurs)), 'min').toBe(true)
+    expect(Object.is(obtenu.max, Math.max(...valeurs)), 'max').toBe(true)
+  }
+
+  it('reste Object.is-identique au spread sur les cas limites et les séries aléatoires', () => {
+    const cas: number[][] = [
+      [],
+      [5],
+      [1, 2, 3],
+      [NaN],
+      [NaN, 1, 2],
+      [1, NaN, 2],
+      [1, 2, NaN],
+      [Infinity],
+      [-Infinity],
+      [-Infinity, Infinity],
+      [0, -0],
+      [-0, 0],
+      [0, -0, 0],
+      [-0, 0, -0],
+    ]
+    cas.forEach(attendMeme)
+
+    let graine = 0x6e2b1f5
+    const aleatoire = (n: number): number[] => Array.from({ length: n }, () => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      return (graine / 0xffffffff) * 2000 - 1000
+    })
+    for (let n = 0; n < 64; n++) attendMeme(aleatoire(n))
+    attendMeme(aleatoire(1202))
+  })
+
+  it('reste stack-safe sur 200000 valeurs', () => {
+    const valeurs = Array.from({ length: 200000 }, (_, index) => index - 100000)
+    expect(() => extremes(valeurs)).not.toThrow()
+    const obtenu = extremes(valeurs)
+    expect(Object.is(obtenu.min, -100000)).toBe(true)
+    expect(Object.is(obtenu.max, 99999)).toBe(true)
+  })
+})
+
+describe('estimerDensite — exactitude bit-à-bit (#1165)', () => {
+  // Oracle : l'implémentation KDE d'ORIGINE, conservée telle quelle dans le
+  // test. Aucune optimisation ne doit en modifier le moindre bit (x, density,
+  // y, y mappé 0..100, NaN/Infinity/span 0).
+  const oracle = (values: readonly number[], samples = 64): ReturnType<typeof estimerDensite> => {
+    if (!values.length) return []
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const span = max - min
+    const bandwidth = Math.max(span / 8, 1e-9)
+    const points = Array.from({ length: samples }, (_, index) => {
+      const x = span === 0 ? min : min + (span * index) / (samples - 1)
+      const density = values.reduce((sum, value) => sum + Math.exp(-0.5 * ((x - value) / bandwidth) ** 2), 0) / (values.length * bandwidth)
+      return { x, density: Number.isFinite(density) ? Math.max(0, density) : 0, y: 0 }
+    })
+    const maximum = Math.max(...points.map((point) => point.density), 0)
+    return points.map((point) => ({ ...point, y: maximum > 0 ? 100 - (point.density / maximum) * 100 : 50 }))
+  }
+  const attendMeme = (obtenu: ReturnType<typeof estimerDensite>, attendu: ReturnType<typeof estimerDensite>) => {
+    expect(obtenu).toHaveLength(attendu.length)
+    obtenu.forEach((point, i) => {
+      expect(Object.is(point.x, attendu[i].x), `x[${i}]`).toBe(true)
+      expect(Object.is(point.density, attendu[i].density), `density[${i}]`).toBe(true)
+      expect(Object.is(point.y, attendu[i].y), `y[${i}]`).toBe(true)
+    })
+  }
+  const pseudoAleatoire = (n: number): number[] => {
+    let graine = 0x2f6e2b1
+    return Array.from({ length: n }, () => {
+      graine = (Math.imul(graine, 1664525) + 1013904223) >>> 0
+      return (graine / 0xffffffff) * 1000 - 500
+    })
+  }
+
+  it('reste bit-à-bit identique à l’oracle sur les cas limites, aléatoires et les échantillonnages non standards', () => {
+    const cas: Array<{ valeurs: number[]; samples?: number }> = [
+      { valeurs: [] },
+      { valeurs: [5] },
+      { valeurs: [7, 7, 7, 7] }, // span 0
+      { valeurs: [NaN, 1, 2, 3] },
+      { valeurs: [Infinity, 1, 2, 3] },
+      { valeurs: [-Infinity, 0, Infinity] },
+      { valeurs: [0, -0, 1, 2] },
+      { valeurs: [-0, -0] },
+      { valeurs: [0, 0] },
+      { valeurs: [10, 20, 30], samples: 1 },
+      { valeurs: [10, 20, 30], samples: 2 },
+      { valeurs: [10, 20, 30], samples: 7 },
+      { valeurs: pseudoAleatoire(3000), samples: 128 }, // grand n
+    ]
+    for (const { valeurs, samples } of cas) {
+      attendMeme(estimerDensite(valeurs, samples), oracle(valeurs, samples))
+    }
+  })
 })
 
 // Les helpers partagés du rang et de la médiane (issue #437) — LA seule
