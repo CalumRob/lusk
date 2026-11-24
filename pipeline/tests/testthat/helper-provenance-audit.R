@@ -418,7 +418,7 @@ verifier_params_dbi_positionnels <- function(racine) {
 # Écriture des tables de service (ADR-0049 décision 8 / #1137) -----------------
 # SEUL un adaptateur de forme peut écrire les tables de service d'une forme.
 # Le scanner repère toute écriture (DELETE/INSERT/UPDATE/TRUNCATE/dbWriteTable)
-# sur une table de service scalaire ; un site non autorisé fait échouer la
+# sur une table de service d'une forme enregistrée ; un site non autorisé fait échouer la
 # suite. Les producteurs historiques sont autorisés « retire in ADR-0049 step 4 »
 # ; `apply` n'écrit AUCUNE table de service directement — il délègue à l'adaptateur.
 TABLES_SERVICE_SCALAIRE <- paste0(
@@ -490,10 +490,10 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
 auditer_ecritures_serveur <- function(racine,
                                       autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
   fichiers <- fichiers_structure(
-    racine, motif = paste0(TABLES_SERVICE_SCALAIRE, "|dbWriteTable|dbAppendTable"))
+    racine, motif = paste0(TABLES_SERVICE, "|dbWriteTable|dbAppendTable"))
   trousses <- list()
   sql <- paste0("(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(",
-                TABLES_SERVICE_SCALAIRE, ")")
+                TABLES_SERVICE, ")")
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
     source <- source_structure(f)
@@ -512,7 +512,7 @@ auditer_ecritures_serveur <- function(racine,
       arguments <- arguments_appel(ecritures$id[[i]], source)
       if (nrow(arguments) < 2L) next
       nom_table <- trimws(noeud_texte(arguments$id[[2L]], source))
-      if (grepl(paste0("^[\"'](", TABLES_SERVICE_SCALAIRE, ")[\"']$"),
+      if (grepl(paste0("^[\"'](", TABLES_SERVICE, ")[\"']$"),
                 nom_table)) {
         lignes_fautives <- c(lignes_fautives, ecritures$line1[[i]])
       }
