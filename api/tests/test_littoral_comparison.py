@@ -237,7 +237,9 @@ def test_absent_littoral_publication_fails_closed_without_borrowed_statistics(ab
             "commune", ("c1", "c2"), "c1",
         )
     assert raised.value.status_code == 503
-    assert "scalar comparison" in raised.value.detail.lower()
+    expected = ("territory reference publication" if absence == "stale_generation"
+                else "scalar comparison")
+    assert expected in raised.value.detail.lower()
     # Every published read was addressed at the littoral context only: no
     # density/Bretagne group or focal statistic was fetched as a substitute.
     assert connection.sql
