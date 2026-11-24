@@ -24,6 +24,8 @@ class _Connection:
                 return _Result(("reading-v1", 1, "reference-v1"))
             if table == "economy_activity_evidence":
                 return _Result(("evidence-v1", "reference-v1", 2))
+        if "SELECT content_version,row_count" in sql and "territory_reference" in sql:
+            return _Result(("reference-v1", 1))
         if "FROM table_publication WHERE table_name='territory_reference'" in sql:
             return _Result(("reference-v1",))
         if "FROM (SELECT 1 FROM economy_typed_reading LIMIT %s)" in sql:

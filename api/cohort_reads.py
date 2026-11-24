@@ -6,7 +6,8 @@ from math import isfinite
 from fastapi import HTTPException
 
 from api.publication_outcomes import family_for_resource, publication_unavailable
-from api.resource_publication import live_resource_publication
+from api.resource_publication import (live_resource_publication,
+                                       live_territory_reference_version)
 
 
 @dataclass(frozen=True)
@@ -34,10 +35,7 @@ class TerritoryCohort:
 
 def resolve_territory_cohort(conn, target, *, work_budget):
     """Resolve only a declared-level population from the published reference."""
-    marker = conn.execute("""SELECT content_version,row_count FROM table_publication
-        WHERE table_name='territory_reference'""").fetchone()
-    if not marker or not marker[0] or int(marker[1]) < 1:
-        raise HTTPException(503, "Territory reference publication is unavailable")
+    reference_version = live_territory_reference_version(conn)
 
     if target.department_id is not None:
         parent = conn.execute("""SELECT 1 FROM territory_reference
@@ -67,7 +65,7 @@ def resolve_territory_cohort(conn, target, *, work_budget):
         raise HTTPException(413, "Cohort population exceeds the bounded work limit")
     members = tuple({"id": row[0], "type": row[1], "name": row[2]} for row in rows)
     return TerritoryCohort(target.type, target.department_id, target.epci_id,
-                           members, marker[0])
+                           members, reference_version)
 
 
 def _bounded_count(conn, query, params, budget, message):
@@ -128,11 +126,9 @@ def _scalar_contract(conn, resource_id, territory_type, cohort):
         publication_unavailable("scalar", "Declared scalar publication is unavailable")
     if territory_type not in descriptor[6]:
         raise HTTPException(422, "Indicator is not declared for this cohort level")
-    reference = conn.execute("""SELECT content_version FROM table_publication
-        WHERE table_name='territory_reference'""").fetchone()
-    if not reference or not reference[0] or reference[0] != publication.reference_content_version:
-        raise HTTPException(503, "Scalar publication is stale or incompatible")
-    marker = (publication.content_version, publication.reference_content_version, reference[0])
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    marker = (publication.content_version, publication.reference_content_version, reference_version)
     return descriptor, marker
 
 
@@ -263,11 +259,11 @@ def _profile_context(conn, item, cohort, fields):
         raise HTTPException(422, "Profile coordinate selection is empty")
     publication = live_resource_publication(
         conn, item.resource, "profile", reference_content_version=cohort.reference_content_version)
-    reference = conn.execute("""SELECT content_version FROM table_publication
-        WHERE table_name='territory_reference'""").fetchone()
-    if publication.content_version != version or not reference or reference[0] != publication.reference_content_version:
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    if publication.content_version != version:
         raise HTTPException(503, "Profile publication is unavailable or incompatible")
-    marker = (publication.content_version, publication.reference_content_version)
+    marker = (publication.content_version, reference_version)
     return descriptor, marker, axes_by_name, detail_units, selected_details, selected_sexes
 
 
@@ -418,12 +414,11 @@ def _owned_series_context(conn, item, resource, cohort):
     marker = conn.execute("""SELECT content_version,reference_content_version,row_count,published_at
         FROM series_dataset_publication WHERE dataset_id=%s""",
         (dataset_id,)).fetchone()
-    reference = conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     if not marker or not marker[0]:
         publication_unavailable("ordered_series", "Owned-series publication is stale or unavailable")
-    if (not reference or not reference[0] or marker[1] != reference[0]
-            or marker[1] != cohort.reference_content_version
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=cohort.reference_content_version)
+    if (marker[1] != reference_version
             or publication.reference_content_version != marker[1]):
         raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
@@ -555,9 +550,11 @@ def read_owned_series_cohort(conn, item, resource, cohort, fields):
 
 def _legacy_series_context(conn, item, cohort):
     publication = live_resource_publication(conn, item.resource, "ordered_series")
-    marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
-        FROM table_publication s LEFT JOIN table_publication t
-          ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'""").fetchone()
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=cohort.reference_content_version)
+    row = conn.execute("""SELECT s.content_version,s.reference_content_version
+        FROM table_publication s WHERE s.table_name='ordered_series'""").fetchone()
+    marker = (row[0], row[1], reference_version) if row else None
     if not marker or not marker[0]:
         publication_unavailable("ordered_series", "Series publication is unavailable or incompatible")
     if (not marker[1] or not marker[2] or marker[1] != marker[2]
@@ -830,16 +827,13 @@ def read_membership_cohort(conn, item, resource, descriptor, cohort, fields):
 def _typed_reading_context(conn, item, resource, cohort):
     from api.typed_reading_snapshots import typed_reading_descriptor
 
-    reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     marker = conn.execute("""SELECT content_version,row_count,reference_content_version
         FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
-    if not reference or not reference[0]:
-        raise HTTPException(503, "Typed-reading publication is unavailable or stale")
-    if reference[0] != cohort.reference_content_version:
-        raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=cohort.reference_content_version)
     if not marker or not marker[0]:
         publication_unavailable("typed_reading", "Typed-reading publication is unavailable or stale")
-    if marker[1] < 1 or marker[2] != reference[0]:
+    if marker[1] < 1 or marker[2] != reference_version:
         raise HTTPException(503, "Typed-reading publication is unavailable or stale")
     if item.target.type not in resource.allowed_levels:
         raise HTTPException(422, "Typed reading is not declared for this cohort level")

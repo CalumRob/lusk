@@ -56,3 +56,15 @@ def live_resource_publication(conn, resource_id, family, *, reference_content_ve
     return live_resource_publications(
         conn, [resource_id], family, reference_content_version=reference_content_version,
     )[resource_id]
+
+
+def live_territory_reference_version(conn, *, expected_content_version=None):
+    """Read the one live territory-reference clock for every semantic operation."""
+    marker = conn.execute("""SELECT content_version,row_count FROM table_publication
+        WHERE table_name='territory_reference'""").fetchone()
+    if not marker or not marker[0] or (len(marker) > 1 and int(marker[1]) < 1):
+        raise HTTPException(503, "Territory reference publication is unavailable")
+    version = marker[0]
+    if expected_content_version is not None and version != expected_content_version:
+        raise HTTPException(503, "Territory reference publication is stale or incompatible")
+    return version

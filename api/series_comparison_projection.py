@@ -11,15 +11,15 @@ from statistics import median
 from api.cohort_reads import _bounded_count
 from api.publication_outcomes import publication_unavailable
 from api.snapshot_reads import _comparison_cohort, _fixed_scalar_comparison_context
-from api.resource_publication import live_resource_publication
+from api.resource_publication import (live_resource_publication,
+                                       live_territory_reference_version)
 
 
 def _context(conn, item, family="ordered_series"):
     descriptor = conn.execute("""SELECT d.dataset_id,d.axis_kind,d.axis_values,d.direction,
         d.comparison_statistic,d.comparison_scope,d.descriptor_version,
-        p.content_version,p.reference_content_version,t.content_version
+        p.content_version,p.reference_content_version
         FROM series_dataset_descriptor d LEFT JOIN series_dataset_publication p USING(dataset_id)
-        LEFT JOIN table_publication t ON t.table_name='territory_reference'
         WHERE d.indicator_id=%s AND d.active_read_route""", (item.resource,)).fetchone()
     if not descriptor:
         publication_unavailable(family,
@@ -28,7 +28,9 @@ def _context(conn, item, family="ordered_series"):
     if not descriptor[7]:
         publication_unavailable(family,
             "Series comparison axis publication is unavailable or stale")
-    if (not descriptor[8] or not descriptor[9] or descriptor[8] != descriptor[9]
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    if (not descriptor[8] or descriptor[8] != reference_version
             or publication.reference_content_version != descriptor[8]):
         raise HTTPException(503, "Series comparison descriptor/publication is unavailable")
     statistic = descriptor[4] or "median"

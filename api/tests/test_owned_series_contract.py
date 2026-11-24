@@ -93,7 +93,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "FROM series_dataset_publication WHERE dataset_id=%s" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
                                 "2026-10-01T00:00:00Z")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor([("ref-v8",)])
             if "WHERE p.table_name='scalar_observation'" in sql:
                 return Cursor([("scalar-v4", "ref-v8", "ref-v8")])
@@ -209,7 +209,9 @@ def test_owned_series_selected_comparison_uses_median_and_independent_publicatio
             self.calls.append((sql, params))
             if "FROM resource_publication" in sql:
                 return Cursor([("dvf_prix_m2", "owned_series", "owner-v17", "reference-v9")])
-            if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor([("reference-v9", 1)])
+            if "FROM series_dataset_publication p WHERE" in sql:
                 return Cursor([("dvf_prix_m2", "owner-v17", "reference-v9", "reference-v9")])
             if "FROM series_dataset_descriptor d WHERE" in sql:
                 return Cursor([("dvf_prix_m2", "prix_m2", "theme", "2025", "Price", "€/m²",

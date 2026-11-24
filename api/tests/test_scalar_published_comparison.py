@@ -53,7 +53,7 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
@@ -115,7 +115,7 @@ def test_published_scalar_member_projection_preserves_a_single_eligible_rank():
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
@@ -158,7 +158,7 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("population", "comparison-v1", "old-scalar" if self.stale else "scalar-v1",
@@ -193,7 +193,7 @@ def test_published_scalar_peer_rows_match_group_counts_and_tie_span(corruption):
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 3,
@@ -258,7 +258,7 @@ def test_dual_shape_scalar_facet_marker_uses_declared_family_for_preflight_and_r
                 return Cursor((True,))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(None)

@@ -95,7 +95,9 @@ class AedarConnection:
         self.statements.append(sql)
         if "FROM resource_publication" in sql:
             return Cursor(row=("aedar", "aedar", "aedar-v1", "ref-v1"))
-        if "FROM table_publication p JOIN table_publication t" in sql:
+        if "SELECT content_version" in sql and "territory_reference" in sql:
+            return Cursor(row=("ref-v1", 1))
+        if "FROM table_publication p" in sql and "aedar_territorial_aggregate" in sql:
             return Cursor(row=("aedar-storage-v1", 10, "ref-v1", "ref-v1"))
         raise AssertionError(sql)
 

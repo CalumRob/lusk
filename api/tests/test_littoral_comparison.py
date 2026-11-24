@@ -171,7 +171,7 @@ def test_littoral_fixed_context_reads_published_group_without_peer_facts():
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("population", "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("population", "comparison-v1", "scalar-v1", "reference-v1", 1, 2,
@@ -212,7 +212,7 @@ def test_absent_littoral_publication_fails_closed_without_borrowed_statistics(ab
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[("population", "scalar", "scalar-v1", "reference-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("reference-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 marker = ["comparison-v1", "scalar-v1", "reference-v1", 1, 2,

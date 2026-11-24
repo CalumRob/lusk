@@ -389,7 +389,7 @@ class _ProfileConnection:
                              self.default_detail, self.default_sex, "high", None, None, None, False)])
         if "FROM resource_publication" in sql:
             return _Cursor([("structure_age", "declared_profile", "profile-v1", "ref-v1")])
-        if "SELECT content_version FROM table_publication" in sql and "territory_reference" in sql:
+        if "SELECT content_version" in sql and "territory_reference" in sql:
             return _Cursor([("ref-v1",)])
         if "SELECT axis_key FROM profile_axis" in sql:
             keys = self.details if params[1] == "detail" else self.sexes

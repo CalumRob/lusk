@@ -62,6 +62,8 @@ class ProjectionConnection:
             raise AssertionError(f"Unexpected bounded count: {sql}")
         if "FROM resource_publication" in sql:
             return Cursor(rows=[("owned-v1", "owned_series", "series-v1", "ref-v1")])
+        if "SELECT content_version" in sql and "territory_reference" in sql:
+            return Cursor(rows=[("ref-v1", 1)])
         if "SELECT d.dataset_id,d.axis_kind,d.axis_values" in sql:
             if self.stale == "descriptor_missing":
                 return Cursor()

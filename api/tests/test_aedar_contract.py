@@ -424,6 +424,8 @@ def test_aedar_semantic_facts_read_bounds_results_for_all_territory_levels(monke
         def execute(self, sql, params=None):
             if "FROM resource_publication" in sql:
                 return Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Cursor([("ref-v1", 1)])
             if "SELECT DISTINCT typequ" in sql:
                 return Cursor([(value,) for value in (params[0] if params else ()) if value in known_typequ])
             if "SELECT p.content_version" in sql:
@@ -570,6 +572,7 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     class Rows:
         def __init__(self, rows): self.rows=rows
         def fetchall(self): return self.rows
+        def fetchone(self): return self.rows[0] if self.rows else None
     class Connection:
         def execute(self, sql, *_args, **_kwargs):
             state["queries"].append((sql,_args[0] if _args else None))
@@ -577,6 +580,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
                 return None
             if "FROM resource_publication" in sql:
                 return Rows([("aedar", "aedar", "aedar-v1", "ref-v1")])
+            if "SELECT content_version" in sql and "territory_reference" in sql:
+                return Rows([("ref-v1", 1)])
             if "SELECT DISTINCT typequ" in sql:
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
@@ -966,6 +971,8 @@ class _AedarSelectedConnection:
             return None
         if "FROM resource_publication" in s:
             return _AedarSelectedRows(["resource"], [("aedar", "aedar", "aedar-v1", "ref-v1")])
+        if "SELECT content_version" in s and "territory_reference" in s:
+            return _AedarSelectedRows(["reference"], [("ref-v1", 1)])
         if "SELECT DISTINCT typequ FROM aedar_territorial_aggregate" in s:
             requested = set(params[0])
             typequs = sorted({typequ for records in self.state["aggregates"].values()

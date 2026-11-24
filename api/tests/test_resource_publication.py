@@ -4,7 +4,9 @@ import pytest
 from fastapi import HTTPException
 
 from api.publication_outcomes import PublicationUnavailable
-from api.resource_publication import live_resource_publication, live_resource_publications
+from api.resource_publication import (live_resource_publication,
+                                       live_resource_publications,
+                                       live_territory_reference_version)
 
 
 class Cursor:
@@ -13,6 +15,9 @@ class Cursor:
 
     def fetchall(self):
         return self.rows
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
 
 
 class Connection:
@@ -57,6 +62,28 @@ def test_reference_mismatch_is_a_hard_stale_publication_error():
 
     assert raised.value.status_code == 503
     assert raised.value.detail == "Resource publication is stale or incompatible"
+
+
+def test_reference_clock_has_one_missing_and_one_stale_contract():
+    class ReferenceConnection:
+        def __init__(self, row):
+            self.row = row
+
+        def execute(self, sql, params=None):
+            assert "SELECT content_version,row_count FROM table_publication" in sql
+            assert "table_name='territory_reference'" in sql
+            return Cursor([self.row] if self.row else [])
+
+    assert live_territory_reference_version(ReferenceConnection(("ref-v1", 2))) == "ref-v1"
+    with pytest.raises(HTTPException) as missing:
+        live_territory_reference_version(ReferenceConnection(None))
+    assert missing.value.status_code == 503
+    assert missing.value.detail == "Territory reference publication is unavailable"
+    with pytest.raises(HTTPException) as stale:
+        live_territory_reference_version(ReferenceConnection(("ref-v2", 2)),
+                                         expected_content_version="ref-v1")
+    assert stale.value.status_code == 503
+    assert stale.value.detail == "Territory reference publication is stale or incompatible"
 
 
 def test_batch_lookup_uses_one_registry_query_for_all_requested_resources():

@@ -9,7 +9,8 @@ from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_CELLULE_AXES, AEDA
                               aedar_typequ_registry_size)
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
-from api.resource_publication import live_resource_publication
+from api.resource_publication import (live_resource_publication,
+                                       live_territory_reference_version)
 from api.resource_catalogue import default_resource_grammar
 
 
@@ -33,21 +34,17 @@ def _aedar_summary_publication_marker(conn):
     clock predicate and the typed-absence classification cannot drift.
     """
     publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
     marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
-            s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
+            s.aedar_source_content_version,a.content_version,a.reference_content_version,%s AS reference_version
         FROM table_publication s
         JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
-        JOIN table_publication r ON r.table_name='territory_reference'
-        WHERE s.table_name='aedar_territory_summary'""").fetchone()
+        WHERE s.table_name='aedar_territory_summary'""", (reference_version,)).fetchone()
     if not marker:
-        # The joins hide which publication is absent. The shared territory
+        # The join hides which publication is absent. The shared territory
         # reference is request-wide; only the AEDAR summary's own absence is a
         # typed item outcome.
-        reference = conn.execute(
-            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-        ).fetchone()
-        if not reference or not reference[0]:
-            raise HTTPException(503, "AEDAR territory summary publication is unavailable or stale")
         summary = conn.execute("""SELECT content_version,row_count FROM table_publication
             WHERE table_name='aedar_territory_summary'""").fetchone()
         if not summary or not summary[0] or summary[1] < 1:
@@ -69,15 +66,12 @@ def _aedar_summary_publication_marker(conn):
 def _aedar_aggregate_publication_marker(conn):
     """Read and validate the aggregate publication clocks once, for focal and cohort reads."""
     publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
-    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
-            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-            WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+            %s AS reference_version FROM table_publication p
+            WHERE p.table_name='aedar_territorial_aggregate'""", (reference_version,)).fetchone()
     if not marker:
-        reference = conn.execute(
-            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-        ).fetchone()
-        if not reference or not reference[0]:
-            raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
         own = conn.execute("""SELECT content_version,row_count FROM table_publication
             WHERE table_name='aedar_territorial_aggregate'""").fetchone()
         if not own or not own[0] or own[1] < 1:
@@ -343,10 +337,13 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
 def _aedar_comparison_marker(conn):
     """Read and validate the reference-only AEDAR comparison publication marker."""
     publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=publication.reference_content_version)
     marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
               p.publication_mode,
-              a.content_version,r.content_version
+              (SELECT content_version FROM table_publication
+                 WHERE table_name='aedar_territorial_aggregate'),%s AS reference_version
               ,p.density_summary_class_count,p.density_summary_measure_count,p.density_summary_row_count,
               (SELECT count(*) FROM aedar_density_class_summary s
                  WHERE s.comparison_content_version=p.content_version),
@@ -359,15 +356,8 @@ def _aedar_comparison_marker(conn):
               (SELECT count(DISTINCT group_id) FROM aedar_littoral_summary s
                   WHERE s.comparison_content_version=p.content_version)
               FROM aedar_comparison_publication p
-              LEFT JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
-              LEFT JOIN table_publication r ON r.table_name='territory_reference'
-              WHERE p.singleton""").fetchone()
+              WHERE p.singleton""", (reference_version,)).fetchone()
     if not marker or not marker[0]:
-        reference = conn.execute(
-            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
-        ).fetchone()
-        if not reference or not reference[0]:
-            raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
         publication_unavailable("aedar", "AEDAR comparison publication is unavailable or stale")
     if marker[9] is None or marker[10] is None:
         raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")

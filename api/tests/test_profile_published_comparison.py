@@ -51,7 +51,7 @@ class DetailConnection:
             return Cursor(("profile_resource_comparison_publication",))
         if "FROM resource_publication" in sql:
             return Cursor(rows=[(params[0][0], "declared_profile", "profile-v1", "ref-v1")])
-        if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+        if "SELECT content_version" in sql and "territory_reference" in sql:
             return Cursor(("ref-v1",))
         if "FROM profile_resource_comparison_publication" in sql:
             return Cursor() if self.marker is None else Cursor(rows=[("housing_profile", *self.marker)])
@@ -444,7 +444,7 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "ref-v1")])
-            if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in sql:
+            if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("ref-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
                 return Cursor(rows=[("part_passoires", "pub", "scalar-v1", "ref-v1", 1, 2,

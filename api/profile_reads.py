@@ -2,7 +2,8 @@
 from fastapi import HTTPException
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
-from api.resource_publication import live_resource_publications
+from api.resource_publication import (live_resource_publications,
+                                       live_territory_reference_version)
 
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True,
@@ -18,22 +19,21 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         return [], None
     publications = live_resource_publications(
         conn, [d[0] for d in descriptors], "profile")
-    reference = conn.execute(
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-    if not reference or not reference[0]:
+    reference_versions = {publication.reference_content_version
+                          for publication in publications.values()}
+    if len(reference_versions) != 1:
         raise HTTPException(503, 'Profile publication is unavailable or incompatible')
-    if any(publication.reference_content_version != reference[0]
-           for publication in publications.values()):
-        raise HTTPException(503, 'Profile publication is unavailable or incompatible')
+    reference_version = live_territory_reference_version(
+        conn, expected_content_version=next(iter(reference_versions)))
     versions = {publication.content_version for publication in publications.values()}
     if len(versions) != 1:
         raise HTTPException(503, 'Profile publication versions are not uniform')
     version = next(iter(versions))
-    marker = (version, reference[0])
+    marker = (version, reference_version)
     dependencies = [d[8] for d in descriptors if d[8] is not None]
     if dependencies:
         scalar_publications = live_resource_publications(
-            conn, dependencies, "profile", reference_content_version=reference[0])
+            conn, dependencies, "profile", reference_content_version=reference_version)
         try:
             scalar_markers = {row[0]: row[1] for row in conn.execute(
                 """SELECT indicator_id,scalar_content_version
@@ -50,7 +50,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                 continue
             facet = scalar_descriptors.get(d[8])
             if (scalar_markers.get(d[8]) != d[9]
-                    or scalar_publications[d[8]].reference_content_version != reference[0]
+                    or scalar_publications[d[8]].reference_content_version != reference_version
                     or not facet or facet[0] != d[2] or facet[1] != d[7]
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')

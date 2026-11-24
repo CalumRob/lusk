@@ -103,7 +103,7 @@ class _Conn:
             territory_type, limit = params[0], params[-1]
             rows = [member for member in self.members if member[1] == territory_type]
             return _Rows([], rows[:limit])
-        if "SELECT content_version FROM table_publication WHERE table_name='territory_reference'" in s:
+        if "SELECT content_version" in s and "territory_reference" in s:
             return _Rows([], [(self.ref_version,)])
         if "s.table_name='aedar_territory_summary'" in s:
             if self.summary_marker == "absent":
