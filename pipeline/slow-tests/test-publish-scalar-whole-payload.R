@@ -1,4 +1,5 @@
 # Slow tier (#1172): complete retained scalar snapshots are rebuilt from committed producer outputs.
+# Subject files: pipeline/R/publish_scalar.R, pipeline/R/publish_retained_scalar_snapshot.R, pipeline/R/adaptateur_scalaire.R, pipeline/R/splitter_ressources.R, pipeline/inst/extdata/theme-metadata, pipeline/tests/testthat/helper-payload.R, public/data
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-publish-scalar-whole-payload.R', package='lusk')"
 
 for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper)

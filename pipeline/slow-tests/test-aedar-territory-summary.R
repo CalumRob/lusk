@@ -1,4 +1,5 @@
 # Slow tier (#1172): the complete 235-TYPEQU × 312-measure fixture protects all 40 territory summary readings and their independent sums/support/provenance.
+# Subject files: pipeline/R/aedar_aggregates.R, pipeline/tests/testthat/helper-aedar-fixtures.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

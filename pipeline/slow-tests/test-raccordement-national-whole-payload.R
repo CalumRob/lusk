@@ -1,4 +1,5 @@
 # Slow tier (#1172): the committed national raccordement artefact and full OD matrix
+# Subject files: pipeline/R/calcul_raccordement.R, pipeline/R/artefact_raccordement.R, pipeline/R/provenance_raccordement.R, pipeline/inst/extdata/raccordement_national_matrix_20261021.rds, pipeline/inst/extdata/raccordement_national_outbound_v1.rds
 # protect byte identity, uncapped coverage, the reviewed Combourg journey, and the published golden model.
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-raccordement-national-whole-payload.R', package='lusk')"
 

@@ -1,4 +1,5 @@
 # Slow tier (#1172): execution is the contract: two tar_make calls on the three-target vintage fixture prove changed bytes and publication clocks.
+# Subject files: pipeline/_targets.R, pipeline/R/vintage.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

@@ -1,4 +1,5 @@
 # Slow tier (#1172): rebuilds every trajectory producer fixture, including the full national
+# Subject files: pipeline/R/theme_metadata.R, pipeline/R/calcul_raccordement.R, pipeline/inst/extdata/theme-metadata, pipeline/tests/testthat/helper-payload.R, public/data
 # raccordement artefact, to protect metadata-axis parity across all published trajectory pages.
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-theme-metadata-whole-payload.R', package='lusk')"
 

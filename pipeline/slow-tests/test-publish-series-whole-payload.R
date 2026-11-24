@@ -1,4 +1,5 @@
 # Slow tier (#1172): projects the complete 1,268-commune × 73-step national raccordement artefact
+# Subject files: pipeline/R/publish_series.R, pipeline/R/calcul_raccordement.R, pipeline/inst/extdata/theme-metadata, public/data
 # to protect the canonical owned-series locator, named reference, and missing-commune fail-closed contract.
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-publish-series-whole-payload.R', package='lusk')"
 

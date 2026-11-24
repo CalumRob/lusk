@@ -1,4 +1,5 @@
 # Slow tier (#1172): the local splitter command reads a real generated sortie; protects resource/shape/version/status CLI output.
+# Subject files: pipeline/R/splitter_ressources.R, pipeline/tests/testthat/helper-artefacts-ressource.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

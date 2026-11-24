@@ -1,4 +1,5 @@
 # Slow tier (#1172): scans every committed producer payload and vintages table to protect
+# Subject files: pipeline/R, pipeline/inst/extdata/theme-metadata, pipeline/tests/testthat/helper-payload.R, public/data
 # the public source-label language contract (no pipeline artefact ids in published labels).
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-contract-vintages-langue.R', package='lusk')"
 

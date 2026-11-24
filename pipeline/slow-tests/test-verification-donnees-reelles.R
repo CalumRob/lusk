@@ -1,4 +1,5 @@
 # Slow tier (#1172): four execution scenarios on the smallest toy graph prove input/content/code lock replay, unchanged skip, loud failure and report survival.
+# Subject files: pipeline/_targets.R, pipeline/tests/testthat/helper-targets-fixtures.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

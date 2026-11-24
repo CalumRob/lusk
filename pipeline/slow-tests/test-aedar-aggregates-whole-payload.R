@@ -1,4 +1,5 @@
 # Slow tier (#1172): full 235-TYPEQU × 312-measure comparison publications and round trips.
+# Subject files: pipeline/R/aedar_aggregates.R, pipeline/tests/testthat/helper-aedar-fixtures.R
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-aedar-aggregates-whole-payload.R', package='lusk')"
 
 source(file.path(pkgload::pkg_path(), "tests", "testthat", "helper-aedar-fixtures.R"))

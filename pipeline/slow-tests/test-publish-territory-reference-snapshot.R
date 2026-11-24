@@ -1,4 +1,5 @@
 # Slow tier (#1172): the retained scalar snapshot is rebuilt from committed producer outputs; protects legacy service-share exclusion and reference binding.
+# Subject files: pipeline/R/publish_territory_reference.R, pipeline/R/publish_retained_scalar_snapshot.R, pipeline/tests/testthat/helper-payload.R, public/data
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

@@ -1,4 +1,5 @@
 # Slow tier (#1172): ten full OCS-GE payload/history computations protect clocks, state lineage, readings, determinism and schema; thirteen CSV/tibble contracts are back in tests/testthat/.
+# Subject files: pipeline/R/theme_milieux.R, pipeline/tests/testthat/helper-milieux.R, pipeline/tests/testthat/helper-reference-canonique.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

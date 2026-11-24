@@ -1,4 +1,5 @@
 # Slow tier (#1172): execution is the contract: always-cue report rewrites and downstream-failure survival on the mini-graph.
+# Subject files: pipeline/_targets.R, pipeline/tests/testthat/helper-targets-fixtures.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

@@ -1,4 +1,5 @@
 # Slow tier (#1172): the full pooled density + littoral comparison publication proves sibling isolation.
+# Subject files: pipeline/R/aedar_aggregates.R, pipeline/scripts/build-aedar-littoral-aggregate.R, pipeline/tests/testthat/helper-aedar-fixtures.R
 # Contract: littoral publication keeps density counters intact, binds the classification version, and fails closed on stale C/NC membership.
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-aedar-littoral-whole-payload.R', package='lusk')"
 

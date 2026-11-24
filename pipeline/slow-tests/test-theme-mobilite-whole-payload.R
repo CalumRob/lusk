@@ -1,4 +1,5 @@
 # Slow tier (#1172): the complete Mobility fixture uses the committed territory universe and
+# Subject files: pipeline/R/theme_mobilite.R, pipeline/R/calcul_raccordement.R, pipeline/inst/extdata/theme-metadata, public/data
 # national raccordement artefact. It protects all 17 indicator keys/ranks/clocks and loud theme validation.
 # Run from pipeline/: Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('slow-tests/test-theme-mobilite-whole-payload.R', package='lusk')"
 

@@ -1,4 +1,5 @@
 # Slow tier (#1172): the bidirectional parity scan reads every committed producer fact; the pinned-label registry contract is back in tests/testthat/.
+# Subject files: pipeline/inst/extdata/theme-metadata, pipeline/tests/testthat/helper-payload.R, public/data
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({

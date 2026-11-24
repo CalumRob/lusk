@@ -1,4 +1,5 @@
 # Slow tier (#1172): three committed public/data projections protect ENAF, OCS-GE and vintage-label identity; synthetic codec/validator/atomic-publication contracts are back in tests/testthat/.
+# Subject files: pipeline/R/publish_series.R, pipeline/inst/extdata/theme-metadata, public/data
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({
