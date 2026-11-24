@@ -18,6 +18,36 @@ when a source detail is not declared it fails the run with
 producer snapshot is dated, so its fixture-parity tests normalise old domain
 names instead of treating the snapshot as the source of truth.
 
+## Migration 046 (#1137) — per-resource publication registry (additive, expand phase)
+
+`046_resource_publication.sql` adds, **without changing any existing row,
+marker, constraint or grant**:
+
+- `resource_publication` — one row per Ressource sémantique de service
+  (`resource_id`, `shape`, `content_version`, `reference_content_version`,
+  `published_at`, `retired`). It is the single answer to "what is live".
+- `resource_publication_event` — append-only receipt (resource, shape,
+  operation `apply`/`retire`/`adopt`, old → new version, commit SHA, time,
+  confirmed-definition flag, lineage digests). The publisher gets **INSERT and
+  SELECT only** (no UPDATE/DELETE/TRUNCATE grant), and a BEFORE UPDATE/DELETE/
+  TRUNCATE trigger refuses any rewrite regardless of role.
+- `scalar_resource_comparison_publication` — a per-indicator comparison marker
+  for scalars, keyed by `indicator_id`, alongside the existing per-indicator
+  group/territory/lineage rows.
+
+**Expand-phase coexistence.** `table_publication['scalar_observation']` and the
+`scalar_comparison_publication` singleton are deliberately LEFT IN PLACE and
+are **not** written by `apply` in this step: the current API keeps reading them
+until the reader cutover in step 4 (#1140). Migration 047 (contract) removes the
+global markers and typed-reading tables in a separate owner-approved window.
+`schema.sql` carries the same contract for fresh installs; the fast DB-free
+contract is `api/tests/test_resource_publication_migration_contract.py`, and the
+guarded, non-retained populated-upgrade rehearsal is
+`api/tests/integration/test_resource_publication_migration.py` (own random
+schemas, mutex, runtime identity checks, cleanup opt-in; skips without the
+`lusk_it_contract` DSNs). Applying this DDL alone publishes nothing; no worker
+applies it to a serving database.
+
 ## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
 
 `045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication

@@ -430,6 +430,38 @@ $env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
 python -m pytest api/tests/integration/test_aedar_littoral_migration.py -q
 ```
 
+### Per-resource publication (migration 046 and scalar apply, #1137)
+
+Two focused, non-retained proofs cover ADR-0049 step 2. Both require the exact
+documented `lusk_it_contract` DSNs, dedicated roles, private `PGPASSFILE`,
+`Local\LuskIntegrationContractDb` mutex, cleanup opt-in and runtime identity
+checks; both skip before any connection without the `LUSK_TEST_*` variables.
+
+`test_resource_publication_migration.py` upgrades a populated pre-046 schema,
+checks every pre-existing row and both global scalar/comparison markers survive,
+verifies the three new relations and their fresh-`schema.sql` parity, replays 046
+as a no-op, and proves the receipt is append-only (UPDATE/DELETE refused).
+
+```powershell
+python -m pytest api/tests/integration/test_resource_publication_migration.py -q
+```
+
+The end-to-end `apply` proof lives with the R code
+(`pipeline/tests/testthat/test-apply-scalar-db.R`). It uses the
+`LUSK_SCALAR_TEST_*` variables from the R smoke section above plus
+`LUSK_SCALAR_TEST_CLEANUP=1`, one random schema and fresh `api/schema.sql`. It
+proves applying scalar A leaves every other scalar's facts, descriptors,
+provenance and comparison byte-identical; a forced failure mid-apply rolls back
+everything (registry and receipts unchanged); applying the previous version
+restores A exactly; retirement removes A's rows and leaves a receipt; and a
+definition change refuses with zero writes unless confirmed. It never connects
+to the serving database `lusk`.
+
+```powershell
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter='apply-scalar-db', stop_on_failure=TRUE)"
+```
+
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration
