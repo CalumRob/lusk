@@ -162,6 +162,30 @@ ancetres_noeud <- function(id, source) {
   ancetres
 }
 
+references_do_call <- function(source, noms) {
+  references <- references_structure(source, noms)
+  references[vapply(references$id, function(id) {
+    ancetres <- appels_ancetres(id, source)
+    do_call <- ancetres[ancetres$fonction == "do.call", , drop = FALSE]
+    if (!nrow(do_call)) return(FALSE)
+    any(vapply(do_call$id, function(appel_id) {
+      argument <- premier_argument_appel(appel_id, source)
+      !is.na(argument) && appel_descendant_de(id, argument, source)
+    }, logical(1)))
+  }, logical(1)), , drop = FALSE]
+}
+
+liste_arguments_do_call <- function(id, source) {
+  arguments <- arguments_appel(id, source)
+  if (nrow(arguments) < 2L) return(arguments[FALSE, , drop = FALSE])
+  liste <- arguments$id[[2L]]
+  appels <- appels_structure(source)
+  if (!identical(appels$fonction[match(liste, appels$id)], "list")) {
+    return(arguments[FALSE, , drop = FALSE])
+  }
+  arguments_appel(liste, source)
+}
+
 appel_descendant_de <- function(id, ancetre, source) {
   identical(id, ancetre) || ancetre %in% ancetres_noeud(id, source)
 }

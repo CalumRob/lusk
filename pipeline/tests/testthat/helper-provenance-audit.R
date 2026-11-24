@@ -79,23 +79,13 @@ auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_servic
                       c("dbConnect", "configuration_service_postgres"), , drop = FALSE]
     # `do.call(DBI::dbConnect, ...)` opens the same connection but the parser
     # represents dbConnect as a function reference, not a direct call node.
-    references <- references_structure(
+    references <- references_do_call(
       source, c("dbConnect", "configuration_service_postgres"))
-    references <- references[vapply(references$id, function(id) {
-      ancetres <- appels_ancetres(id, source)
-      do_call <- ancetres[ancetres$fonction == "do.call", , drop = FALSE]
-      if (!nrow(do_call)) return(FALSE)
-      any(vapply(do_call$id, function(appel_id) {
-        argument <- premier_argument_appel(appel_id, source)
-        !is.na(argument) && appel_descendant_de(id, argument, source)
-      }, logical(1)))
-    }, logical(1)), , drop = FALSE]
     sites <- rbind(sites, references)
     sites <- sites[!duplicated(paste(sites$fonction, sites$line1, sites$col1)), ,
                    drop = FALSE]
     for (i in seq_len(nrow(sites))) {
       site <- sites[i, , drop = FALSE]
-      if (!grepl(motif, appel_ligne(site, source))) next
       blocs <- appels_ancetres(site$id, source)
       blocs <- blocs[blocs$fonction %in% c("function", "if", "for", "while"), ,
                      drop = FALSE]
@@ -157,12 +147,25 @@ auditer_appels_garde <- function(racine) {
     source <- source_structure(f)
     appels <- appels_structure(source)
     sites <- appels[appels$fonction == "verifier_gel_release", , drop = FALSE]
+    references <- references_do_call(source, "verifier_gel_release")
+    sites <- rbind(sites, references)
     for (i in seq_len(nrow(sites))) {
       site <- sites[i, , drop = FALSE]
+      sans_argument <- is.na(argument_nomme(site$id, "sortie", source)) &&
+        nrow(arguments_appel(site$id, source)) == 0L
+      if (!site$id %in% appels$id) {
+        do_call <- appels_ancetres(site$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        arguments <- if (nrow(do_call)) {
+          liste_arguments_do_call(do_call$id[[1L]], source)
+        } else {
+          data.frame()
+        }
+        sans_argument <- nrow(arguments) == 0L
+      }
       trousses[[length(trousses) + 1L]] <- data.frame(
         fichier = rel, ligne = site$line1[[1L]],
-        sans_argument = is.na(argument_nomme(site$id, "sortie", source)) &&
-          nrow(arguments_appel(site$id, source)) == 0L,
+        sans_argument = sans_argument,
         source = appel_ligne(site, source), stringsAsFactors = FALSE
       )
     }
@@ -297,6 +300,20 @@ verifier_structure_reseau <- function(racine, autorisations = AUTORISATIONS_RESE
 MOTIF_HASH_JSON <- "sha256\\s*\\(.*toJSON\\s*\\("
 MOTIF_ENVELOPPE_WFS <- "toJSON\\s*\\(\\s*(brut|reponse|response|collection|limites|enveloppe|collection_wfs)\\b"
 
+enveloppe_wfs <- function(id, source, noms_enveloppe) {
+  appels <- appels_structure(source)
+  json <- appels[vapply(appels$id, function(appel_id) {
+    appel_descendant_de(appel_id, id, source)
+  }, logical(1)) & appels$fonction == "toJSON", , drop = FALSE]
+  for (j in seq_len(nrow(json))) {
+    argument <- premier_argument_appel(json$id[[j]], source)
+    if (is.na(argument)) next
+    texte <- trimws(noeud_texte(argument, source))
+    if (grepl(paste0("^(", noms_enveloppe, ")\\b"), texte)) return(TRUE)
+  }
+  FALSE
+}
+
 auditer_hachages_wfs <- function(racine) {
   fichiers <- fichiers_structure(racine, motif = "sha256")
   trousses <- list()
@@ -306,21 +323,17 @@ auditer_hachages_wfs <- function(racine) {
     source <- source_structure(f)
     appels <- appels_structure(source)
     hachages <- appels[appels$fonction == "sha256", , drop = FALSE]
+    references <- references_do_call(source, "sha256")
+    hachages <- rbind(hachages, references)
     for (i in seq_len(nrow(hachages))) {
       hachage <- hachages[i, , drop = FALSE]
-      json <- appels[vapply(appels$id, function(id) {
-        appel_descendant_de(id, hachage$id, source)
-      }, logical(1)) & appels$fonction == "toJSON", , drop = FALSE]
-      enveloppe <- FALSE
-      for (j in seq_len(nrow(json))) {
-        argument <- premier_argument_appel(json$id[[j]], source)
-        if (is.na(argument)) next
-        texte <- trimws(noeud_texte(argument, source))
-        if (grepl(paste0("^(", noms_enveloppe, ")\\b"), texte)) {
-          enveloppe <- TRUE
-          break
-        }
+      racine_hachage <- hachage$id
+      if (!hachage$id %in% appels$id) {
+        do_call <- appels_ancetres(hachage$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        if (nrow(do_call)) racine_hachage <- do_call$id[[1L]]
       }
+      enveloppe <- enveloppe_wfs(racine_hachage, source, noms_enveloppe)
       autorise <- !enveloppe || grepl("^R/wfs_digest\\.R$", rel)
       trousses[[length(trousses) + 1L]] <- data.frame(
         fichier = rel, ligne = hachage$line1[[1L]], enveloppe = enveloppe,
@@ -386,13 +399,27 @@ auditer_params_dbi <- function(racine) {
     appels <- appels_structure(source)
     sites <- appels[appels$fonction %in% c("dbExecute", "dbGetQuery", "dbSendQuery"), ,
                    drop = FALSE]
+    references <- references_do_call(source, c("dbExecute", "dbGetQuery", "dbSendQuery"))
+    sites <- rbind(sites, references)
     for (i in seq_len(nrow(sites))) {
       site <- sites[i, , drop = FALSE]
       valeur <- argument_nomme(site$id, "params", source)
+      if (!site$id %in% appels$id) {
+        do_call <- appels_ancetres(site$id, source)
+        do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+        if (nrow(do_call)) {
+          arguments <- arguments_appel(do_call$id[[1L]], source)
+          liste <- if (nrow(arguments) >= 2L) arguments$id[[2L]] else NA_integer_
+          if (!is.na(liste) &&
+              identical(appels$fonction[match(liste, appels$id)], "list")) {
+            valeur <- argument_nomme(liste, "params", source)
+          }
+        }
+      }
       if (!params_dbi_nommes(valeur, source)) next
       trousses[[length(trousses) + 1L]] <- data.frame(
         fichier = relatif_sous(f, racine),
-        source = appel_texte(site, source), stringsAsFactors = FALSE)
+        source = appel_ligne(site, source), stringsAsFactors = FALSE)
     }
   }
   if (!length(trousses)) return(data.frame(fichier = character(), source = character()))
@@ -437,9 +464,20 @@ TABLES_SERVICE_REGISTRE <- "resource_publication"
 TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL, "|",
   TABLES_SERVICE_SERIE, "|", TABLES_SERVICE_COLLECTION, "|", TABLES_SERVICE_AEDAR,
   "|", TABLES_SERVICE_REGISTRE)
+est_table_service <- function(nom) {
+  nom <- trimws(nom)
+  nom <- gsub("^[\"']|[\"']$", "", nom)
+  motifs <- strsplit(TABLES_SERVICE, "|", fixed = TRUE)[[1L]]
+  any(vapply(motifs, function(table) {
+    if (endsWith(table, "_")) startsWith(nom, table) else identical(nom, table)
+  }, logical(1)))
+}
+MOTIF_NOM_TABLE_SERVEUR <- paste(vapply(strsplit(TABLES_SERVICE, "|", fixed = TRUE)[[1L]],
+  function(table) if (endsWith(table, "_")) table else paste0(table, "[\"']"),
+  character(1)), collapse = "|")
 MOTIF_ECRITURE_SERVEUR <- paste0(
   "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE, ")",
-  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE, ")")
+  "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", MOTIF_NOM_TABLE_SERVEUR, ")")
 
 AUTORISATIONS_ECRITURE_SERVEUR <- list(
   list(fichier = "^R/adaptateur_scalaire\\.R$",
@@ -507,9 +545,24 @@ auditer_ecritures_serveur <- function(racine,
       arguments <- arguments_appel(ecritures$id[[i]], source)
       if (nrow(arguments) < 2L) next
       nom_table <- trimws(noeud_texte(arguments$id[[2L]], source))
-      if (grepl(paste0("^[\"'](", TABLES_SERVICE, ")[\"']$"),
-                nom_table)) {
+      if (est_table_service(nom_table)) {
         lignes_fautives <- c(lignes_fautives, ecritures$line1[[i]])
+      }
+    }
+    references <- references_do_call(source, c("dbWriteTable", "dbAppendTable"))
+    for (i in seq_len(nrow(references))) {
+      do_call <- appels_ancetres(references$id[[i]], source)
+      do_call <- do_call[do_call$fonction == "do.call", , drop = FALSE]
+      if (!nrow(do_call)) next
+      arguments <- arguments_appel(do_call$id[[1L]], source)
+      if (nrow(arguments) < 2L) next
+      liste <- arguments$id[[2L]]
+      if (!identical(appels$fonction[match(liste, appels$id)], "list")) next
+      valeurs <- arguments_appel(liste, source)
+      if (nrow(valeurs) < 2L) next
+      nom_table <- trimws(noeud_texte(valeurs$id[[2L]], source))
+      if (est_table_service(nom_table)) {
+        lignes_fautives <- c(lignes_fautives, references$line1[[i]])
       }
     }
     for (i in unique(lignes_fautives)) {
