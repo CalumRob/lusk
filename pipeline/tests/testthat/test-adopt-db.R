@@ -364,7 +364,7 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   avant <- .adopt_db_digest(con)
 
   resultat <- adopter_ressources(fixture$sortie, root = fixture$root,
-    lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
+    registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
     metadata_directory = fixture$metadata_directory, con = con)
   attendus <- c("densite", "part_passoires", "structure_age", "distribution_dpe",
     "artif_par_habitant", "acv", "membres", "aedar")
@@ -386,7 +386,7 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
     "SELECT * FROM resource_publication_event WHERE operation='adopted'"))), length(attendus))
 
   plan <- plan_publication(root = fixture$root,
-    live = lire_listing_live_registre(con), lock = fixture$lock)
+    live = lire_listing_live_registre(con), registre = fixture$lock)
   expect_setequal(plan$ressources$ressource, attendus)
   expect_false(any(plan$ressources$change))
   expect_false(any(plan$ressources$cascade))
@@ -426,7 +426,7 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     avant <- .adopt_db_digest(con)
     registre_avant <- .adopt_db_registry_digest(con)
     err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
-      lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
+      registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
       metadata_directory = fixture$metadata_directory, con = con), error = identity)
     expect_s3_class(err, "erreur_adoption", info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
@@ -457,7 +457,7 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
     invisible(TRUE)
   }, .package = "lusk")
   err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
-    lock = fixture$lock, projections = fixture$projections, reference = fixture$reference,
+    registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
     metadata_directory = fixture$metadata_directory, con = con), error = identity)
   expect_match(conditionMessage(err), "forced adoption receipt failure", fixed = TRUE)
   expect_identical(.adopt_db_digest(con), avant)
