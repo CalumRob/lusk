@@ -97,6 +97,20 @@ test_that("la commande locale split lit une vraie sortie et imprime resource, sh
   expect_identical(version(premier), version(second))
 })
 
+test_that("les propriétaires de profils scalaires viennent des métadonnées producteur, sans thème écrit en dur", {
+  repertoire <- tempfile("theme-metadata-")
+  dir.create(repertoire)
+  on.exit(unlink(repertoire, recursive = TRUE), add = TRUE)
+  writeLines('{"theme":"programmes","indicator_pages":{},"sources":{"un_profil":"src"},"source_records":{"src":{}},"profile_contracts":{"un_profil":{"completeness":"dense_complete","support_count_field":"n"}}}',
+    file.path(repertoire, "theme_programmes.json"))
+  expect_identical(profil_owners_scalaires_depuis_metadata(repertoire), "un_profil")
+
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "splitter_ressources.R"),
+    warn = FALSE), collapse = "\n")
+  expect_false(grepl('c("demographie", "habitat", "mobilite")', code, fixed = TRUE))
+  expect_true(grepl("declared_profile_owners()", code, fixed = TRUE))
+})
+
 test_that("un artefact scalaire dont l'univers diffère de la référence canonique est refusé", {
   sortie <- artefacts_fixture_sortie_scalaire()
   root <- artefacts_fixture_root()

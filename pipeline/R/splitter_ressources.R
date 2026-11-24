@@ -43,19 +43,28 @@ lire_projections_scalaires_sortie <- function(sortie, metadata_directory = NULL,
   projections
 }
 
+# Les propriétaires de profils liés au scalaire sont déduits des CONTRATS
+# producteur épinglés (tous les theme_*.json), jamais d'une liste de thèmes.
+profil_owners_scalaires_depuis_metadata <- function(metadata_directory = NULL) {
+  repertoire <- if (is.null(metadata_directory))
+    system.file("extdata", "theme-metadata", package = "lusk") else metadata_directory
+  fichiers <- sort(list.files(repertoire, pattern = "^theme_.*\\.json$", full.names = TRUE))
+  if (!length(fichiers))
+    stop("No producer theme metadata found for profile publication", call. = FALSE)
+  unlist(lapply(fichiers, function(path)
+    profile_serving_scalar_owners(jsonlite::fromJSON(path, simplifyVector = FALSE))),
+    use.names = FALSE)
+}
+
 lire_projections_profils_sortie <- function(sortie, metadata_directory = NULL) {
   dossier <- file.path(sortie, "profile-serving")
   if (!dir.exists(dossier)) return(list())
   binding <- if (file.exists(file.path(sortie, "scalar-serving", "binding.json")))
     read_profile_scalar_binding(sortie) else NULL
-  themes <- c("demographie", "habitat", "mobilite")
-  scalar_owners <- unlist(lapply(themes, function(theme) {
-    metadata <- if (is.null(metadata_directory)) lire_theme_metadata(theme) else
-      jsonlite::read_json(file.path(metadata_directory, paste0("theme_", theme, ".json")),
-                          simplifyVector = FALSE)
-    profile_serving_scalar_owners(metadata)
-  }), use.names = FALSE)
+  scalar_owners <- profil_owners_scalaires_depuis_metadata(metadata_directory)
   projections <- list()
+  # declared_profile_owners() est l'inventaire des profils déclarés : la liste
+  # fermée des Ressources sémantiques de service de cette forme.
   for (owner in declared_profile_owners()) {
     chemin <- file.path(dossier, owner)
     if (!dir.exists(chemin)) next
