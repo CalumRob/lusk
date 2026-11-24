@@ -53,11 +53,29 @@ function inputFor(key: PdfFixtureSectionKey): CahierSectionCaptureInput {
   }
 }
 
+function activationRelevantFields(capture: CahierExportAvailability) {
+  return {
+    readiness: capture.readiness,
+    figures: capture.figures,
+    maps: {
+      status: capture.capabilities.maps.status,
+      legend: capture.capabilities.maps.legend,
+    },
+    comparison: capture.comparison,
+  }
+}
+
 describe('availability capture for the Cahier PDF action (#1165)', () => {
   it.each(PDF_FIXTURE_SECTION_KEYS)('decides the same activation as the frozen capture for %s', (key) => {
     const input = inputFor(key)
     expect(evaluerDisponibiliteExportPdf(captureCahierSectionAvailability(input)))
       .toEqual(evaluerDisponibiliteExportPdf(captureCahierSection(input)))
+  })
+
+  it.each(PDF_FIXTURE_SECTION_KEYS)('keeps every activation-relevant field identical to the frozen capture for %s', (key) => {
+    const input = inputFor(key)
+    expect(activationRelevantFields(captureCahierSectionAvailability(input)))
+      .toEqual(activationRelevantFields(captureCahierSection(input)))
   })
 
   it('returns only the fields read by the activation policy', () => {
