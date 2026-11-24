@@ -104,13 +104,13 @@ def _seed_profile(connection):
     connection.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,
         allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,
         comparison_direction,denominator_semantics,detail_units_required)
-        VALUES (%s,'fixture','Profile A','%',ARRAY['commune'],'dense_complete',%s,
-        'd1',NULL,'high','stock',false)""", (resource_id, version + "-descriptor"))
+        VALUES (%s,'fixture','Profile A',%s,ARRAY['commune'],'dense_complete',%s,
+        'd1',NULL,'high','stock',false)""", (resource_id, "%", version + "-descriptor"))
     connection.execute("INSERT INTO profile_descriptor_source VALUES (%s,'source_a')",
                        (resource_id,))
     connection.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,
-        ordinal,unit) VALUES (%s,'detail','d1','D1',0,'%'),(%s,'detail','d2','D2',1,'%')""",
-        (resource_id, resource_id))
+        ordinal,unit) VALUES (%s,'detail','d1','D1',0,%s),(%s,'detail','d2','D2',1,%s)""",
+        (resource_id, "%", resource_id, "%"))
     for territory_id, base in ((FOCAL, 10.0), (PEER, 20.0)):
         for detail, value in (("d1", base), ("d2", base + 1)):
             connection.execute("""INSERT INTO profile_observation(indicator_id,territory_id,
