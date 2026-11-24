@@ -795,15 +795,21 @@ owned_series_postgres_adapter <- function(con) {
       params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
-    replace_dataset=function(projection, version) {
+    # ADR-0049 step 2 (#1139): `replace_dataset` is the ONE writer of this
+    # dataset's serving tables. The owned-series shape adapter calls it with an
+    # injected reference (already validated by `apply`) instead of reading the
+    # live reference again; there is no second copy of this SQL anywhere.
+    replace_dataset=function(projection, version, reference_version=NULL,
+                             reference_rows=NULL) {
       validate_owned_series_projection(projection)
       d <- projection$descriptor; dataset_id <- d$dataset_id
-      reference <- DBI::dbGetQuery(con,
-        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
+      reference <- if (is.null(reference_version)) DBI::dbGetQuery(con,
+        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'") else
+        data.frame(content_version = as.character(reference_version)[[1L]], stringsAsFactors = FALSE)
       if (nrow(reference)!=1L) stop("Territory reference publication is unavailable",call.=FALSE)
       if (identical(d$axis_kind,"duration_minute") && identical(d$completeness,"dense_complete")) {
-        registered <- DBI::dbGetQuery(con,
-          "SELECT territory_id,territory_type FROM territory_reference")
+        registered <- if (is.null(reference_rows)) DBI::dbGetQuery(con,
+          "SELECT territory_id,territory_type FROM territory_reference") else reference_rows[c("territory_id","territory_type")]
         expected <- registered[registered$territory_type %in% d$allowed_levels,,drop=FALSE]
         actual <- unique(projection$points[c("territory_id","territory_type")])
         key <- function(rows) paste(rows$territory_type,rows$territory_id,sep="\x1f")
@@ -826,19 +832,24 @@ owned_series_postgres_adapter <- function(con) {
        # the owner no-op decision. Vintage clocks remain strict below, and each
        # immutable provenance revision keeps the label recorded at publication.
        # Revision records are insert-only; a reused ID/hash with different content is rejected.
-       for (i in seq_len(nrow(projection$provenance))) {
-         p <- projection$provenance[i,,drop=FALSE]
-         # The owner-scoped series publisher owns the source identity and
-         # vintage registry needed by dependent facts (including sparse source
-         # absences). Publish these canonical source records in the same
-         # transaction as the immutable series revision.
-          DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
-            ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-            params=list(p$source_id[[1L]],p$source_name[[1L]]))
-          DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
-            VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",
-            params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))
-          registered_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
+        # The owner-scoped series publisher owns the source identity and vintage
+        # registry needed by dependent facts. Both tables go through the ONE
+        # shared source writer (#1138 review); the mutable dataset label is
+        # refreshed, immutable vintage rows are insert-only and clock-checked.
+        provenance <- projection$provenance
+        datasets_serveur <- data.frame(source_id=provenance$source_id,
+          name=provenance$source_name, stringsAsFactors=FALSE)
+        vintages_serveur <- data.frame(source_id=provenance$source_id,
+          vintage_id=provenance$vintage_id, version=provenance$source_version,
+          reference_date=provenance$reference_date,
+          publication_date=provenance$publication_date, stringsAsFactors=FALSE)
+        .ecrire_sources_serveur(con, datasets_serveur, vintages = NULL,
+                                conflict = "update")
+        .ecrire_sources_serveur(con, datasets = NULL, vintages_serveur,
+                                conflict = "nothing")
+        for (i in seq_len(nrow(provenance))) {
+          p <- provenance[i,,drop=FALSE]
+           registered_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
             FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
             params=list(p$source_id[[1L]],p$vintage_id[[1L]]))
           expected_vintage <- p[c("source_version","reference_date","publication_date")]
@@ -910,7 +921,7 @@ owned_series_postgres_adapter <- function(con) {
         DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
       }
       if (!is.null(d$comparison_levels)) {
-        territory_rows <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference")
+        territory_rows <- if (is.null(reference_rows)) DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference") else reference_rows
         comparison <- project_ordered_series_comparisons(projection,territory_rows,version,
           as.character(reference$content_version[[1L]]))
         DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",
@@ -1167,11 +1178,10 @@ series_postgres_adapter <- function(con) {
       if (length(foreign_ids))
         stop("Refusing whole-table series replacement: existing other indicator snapshot(s) found", call.=FALSE)
       levels_sql <- paste0("ARRAY[", paste(vapply(d$allowed_levels, quote, character(1)), collapse=","), "]::text[]")
-      DBI::dbExecute(con, "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-        params=list(d$source_id, projection$dataset_name))
       vintage <- projection$vintage
-      DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-        params=unname(as.list(vintage[c("source_id","vintage_id","version","reference_date","publication_date")])) )
+      .ecrire_sources_serveur(con,
+        data.frame(source_id=d$source_id, name=projection$dataset_name,
+                   stringsAsFactors=FALSE), vintage, conflict="update")
       DBI::dbExecute(con, "DELETE FROM ordered_series")
       DBI::dbExecute(con, "DELETE FROM series_descriptor")
       fields <- c("indicator_id","axis_kind","completeness","comparison_point","label","unit","direction","source_id","vintage_id","descriptor_version")

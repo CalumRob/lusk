@@ -507,6 +507,31 @@ $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='apply-profile-db', stop_on_failure=TRUE)"
 ```
 
+### Owned series, observed collection and AEDAR adapters (#1139)
+
+The companion shape-adapter proof (`pipeline/tests/testthat/test-apply-shapes-db.R`,
+#1139) uses the same `LUSK_SCALAR_TEST_*` variables, cleanup opt-in, mutex and
+random schema. Each snapshot is scoped to one resource (never a whole table):
+
+- applying one owned series leaves the other series byte-identical, and a
+  cross-shape proof seeds scalar, collection and AEDAR first and shows their
+  rows and markers byte-identical after applying another series;
+- applying one observed collection leaves the other collections byte-identical,
+  with the symmetric cross-shape proof against scalar, series and AEDAR;
+- AEDAR `apply` passes the deferred `check_aedar_comparison_publication`
+  validator both with and without littoral summaries, and leaves seeded scalar,
+  series and collection rows byte-identical.
+
+AEDAR reads the live `territory_reference` rows ONCE inside apply's transaction
+(shared with the series and collection adapters) and validates dense territory ×
+TYPEQU coverage with them; its comparison facts come from the artefact. Without
+the opt-in the module skips before any connection.
+
+```powershell
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter='apply-shapes-db', stop_on_failure=TRUE)"
+```
+
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration

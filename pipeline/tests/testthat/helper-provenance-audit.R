@@ -361,7 +361,21 @@ TABLES_SERVICE_SCALAIRE <- paste0(
 TABLES_SERVICE_PROFIL <- paste0(
   "profile_descriptor|profile_axis|profile_observation|profile_comparison_",
   "|profile_resource_comparison_publication")
-TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL)
+TABLES_SERVICE_SERIE <- paste0(
+  "series_dataset_publication|series_dataset_descriptor|series_dataset_observation",
+  "|series_observation_provenance|series_provenance_revision|series_named_reference",
+  "|series_context_parent_policy|ordered_series_comparison_")
+TABLES_SERVICE_COLLECTION <- paste0(
+  "observed_collection_publication|observed_collection_descriptor",
+  "|observed_collection_category|observed_collection_comparison_",
+  "|period_detail_observation|anchored_membership")
+TABLES_SERVICE_AEDAR <- paste0(
+  "aedar_territorial_aggregate|aedar_territory_summary|aedar_comparison_",
+  "|aedar_density_class_summary|aedar_littoral_summary")
+TABLES_SERVICE_REGISTRE <- "resource_publication"
+TABLES_SERVICE <- paste0(TABLES_SERVICE_SCALAIRE, "|", TABLES_SERVICE_PROFIL, "|",
+  TABLES_SERVICE_SERIE, "|", TABLES_SERVICE_COLLECTION, "|", TABLES_SERVICE_AEDAR,
+  "|", TABLES_SERVICE_REGISTRE)
 MOTIF_ECRITURE_SERVEUR <- paste0(
   "(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(", TABLES_SERVICE, ")",
   "|db(Write|Append)Table\\s*\\([^,]+,\\s*[\"'](", TABLES_SERVICE, ")")
@@ -371,8 +385,20 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
        raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
   list(fichier = "^R/adaptateur_profil_declare\\.R$",
        raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/adaptateur_series\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/adaptateur_collection\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/adaptateur_aedar\\.R$",
+       raison = "adaptateur de forme ADR-0049 — seul écrivain des tables de service de sa forme"),
+  list(fichier = "^R/registre_ressource\\.R$",
+       raison = "écrivain partagé du registre et des reçus ADR-0049"),
   list(fichier = "^R/publish_scalar\\.R$",
        raison = "producteur historique — retire in ADR-0049 step 4"),
+  list(fichier = "^R/publish_series\\.R$",
+       raison = "producteur historique partagé avec l'adaptateur — retire in ADR-0049 step 4"),
+  list(fichier = "^R/publish_observed_collections\\.R$",
+       raison = "producteur historique partagé avec l'adaptateur — retire in ADR-0049 step 4"),
   list(fichier = "^R/publish_profile\\.R$",
        raison = "producteur historique — retire in ADR-0049 step 4"),
   list(fichier = "^R/aedar_aggregates\\.R$",
@@ -384,6 +410,14 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
   list(fichier = "^scripts/smoke-habitat-reading-postgres\\.R$",
        raison = "smoke historique — retire in ADR-0049 step 4"),
   list(fichier = "^scripts/smoke-retained-baseline-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-series-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-fiche-series-postgres\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-comparison-lineage-fixture\\.R$",
+       raison = "smoke historique — retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/smoke-programme-postgres\\.R$",
        raison = "smoke historique — retire in ADR-0049 step 4")
 )
 
