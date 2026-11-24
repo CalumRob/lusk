@@ -29,6 +29,7 @@ import {
   READY_AEDAR,
   READY_READINESS,
   capturePdfFixture,
+  mapAvailability,
   readyPublications,
   type PdfFixtureSectionKey,
 } from './helpers/cahierPdfFixtures'
@@ -60,6 +61,7 @@ function activationRelevantFields(capture: CahierExportAvailability) {
     maps: {
       status: capture.capabilities.maps.status,
       legend: capture.capabilities.maps.legend,
+      items: capture.capabilities.maps.items.map((item) => ({ declared: item.declared })),
     },
     comparison: capture.comparison,
   }
@@ -76,6 +78,25 @@ describe('availability capture for the Cahier PDF action (#1165)', () => {
     const input = inputFor(key)
     expect(activationRelevantFields(captureCahierSectionAvailability(input)))
       .toEqual(activationRelevantFields(captureCahierSection(input)))
+  })
+
+  it('keeps a declared unavailable map blocking both captures', () => {
+    const input: CahierSectionCaptureInput = {
+      ...inputFor('aedar-car-overview'),
+      publications: [mapAvailability([{
+        id: 'car',
+        label: 'Voiture',
+        declared: true,
+        loaded: false,
+        unavailable: true,
+        inlineUrl: null,
+      }], 'none')],
+    }
+    const availability = captureCahierSectionAvailability(input)
+    const full = captureCahierSection(input)
+    expect(evaluerDisponibiliteExportPdf(availability)).toMatchObject({ ready: false, reason: 'map-unavailable' })
+    expect(evaluerDisponibiliteExportPdf(full)).toMatchObject({ ready: false, reason: 'map-unavailable' })
+    expect(activationRelevantFields(availability)).toEqual(activationRelevantFields(full))
   })
 
   it('returns only the fields read by the activation policy', () => {
