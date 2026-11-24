@@ -301,7 +301,10 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune),
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
+    # Shape adapter (ADR-0049 seam, #1139): one resource per collection.
+    projeter = projeter_artefact_collection,
+    remplacer = remplacer_collection),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie)

@@ -250,6 +250,86 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
     as.integer(mismatched_lineage_versions)!=0L
 }
 
+# --- Shared observed-collection serving writers (ADR-0049 step 2, #1139) -----
+# UNE fonction par table. Le producteur `publish_observed_collection` ci-dessous
+# et l'adaptateur de forme (adaptateur_collection.R) appellent CES fonctions ;
+# aucun SQL n'est dupliqué. Toutes les valeurs passent par des params positionnels.
+
+.ecrire_collection_sources <- function(con, datasets, vintages, conflict = c("update", "nothing")) {
+  conflict <- match.arg(conflict)
+  sql_dataset <- if (identical(conflict, "update"))
+    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name"
+  else
+    "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO NOTHING"
+  sql_vintage <- if (identical(conflict, "update"))
+    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date"
+  else
+    "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING"
+  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) {
+    r <- datasets[i, , drop = FALSE]
+    DBI::dbExecute(con, sql_dataset, params = unname(as.list(r[c("source_id", "name")])))
+  }
+  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) {
+    r <- vintages[i, , drop = FALSE]
+    DBI::dbExecute(con, sql_vintage,
+      params = unname(as.list(r[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
+    same <- DBI::dbGetQuery(con, paste0("SELECT version,reference_date,publication_date ",
+      "FROM source_vintage WHERE source_id=$1 AND vintage_id=$2"),
+      params = list(r$source_id[[1L]], r$vintage_id[[1L]]))
+    if (!isTRUE(all.equal(same, r[c("version", "reference_date", "publication_date")],
+                          check.attributes = FALSE)))
+      stop("Observed source vintage conflicts with an existing publication", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.ecrire_collection_base <- function(con, projection, version, reference_version) {
+  d <- projection$descriptor; indicator <- d$indicator_id
+  DBI::dbExecute(con, "DELETE FROM observed_collection_publication WHERE indicator_id=$1",
+                 params = list(indicator))
+  DBI::dbExecute(con, paste0("INSERT INTO observed_collection_publication",
+    "(indicator_id,content_version,reference_content_version,row_count) VALUES($1,$2,$3,$4)"),
+    params = list(indicator, version, as.character(reference_version)[[1L]], nrow(projection$facts)))
+  levels <- paste0("{", paste(d$allowed_levels, collapse = ","), "}")
+  DBI::dbExecute(con, paste0("INSERT INTO observed_collection_descriptor",
+    "(indicator_id,theme_id,kind,label,unit,descriptor_version,allowed_levels,",
+    "comparison_detail,comparison_period,direction) VALUES($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10)"),
+    params = list(indicator, d$theme_id, d$kind, d$label, d$unit, d$descriptor_version,
+                  levels, d$comparison_detail, d$comparison_period, d$direction))
+  DBI::dbWriteTable(con, "observed_collection_category", projection$categories,
+                    append = TRUE, row.names = FALSE)
+  table <- switch(d$kind, period_detail = "period_detail_observation",
+                  anchored_membership = "anchored_membership",
+                  stop("Unknown observed fact shape", call. = FALSE))
+  DBI::dbWriteTable(con, table, projection$facts, append = TRUE, row.names = FALSE)
+  invisible(TRUE)
+}
+
+.ecrire_collection_comparaison <- function(con, indicator, comparisons,
+                                            comparison_version, version, reference_version) {
+  DBI::dbExecute(con, paste0("INSERT INTO observed_collection_comparison_publication",
+    "(indicator_id,content_version,collection_content_version,reference_content_version,",
+    "group_row_count,territory_row_count,lineage_row_count,lineage_complete,published_at) ",
+    "VALUES($1,$2,$3,$4,$5,$6,$7,true,now()) ON CONFLICT(indicator_id) DO UPDATE SET ",
+    "content_version=EXCLUDED.content_version,collection_content_version=EXCLUDED.collection_content_version,",
+    "reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,",
+    "territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,",
+    "lineage_complete=true,published_at=EXCLUDED.published_at"),
+    params = list(indicator, comparison_version, version, as.character(reference_version)[[1L]],
+                  nrow(comparisons$groups), nrow(comparisons$territories), nrow(comparisons$lineage)))
+  DBI::dbExecute(con, "DELETE FROM observed_collection_comparison_group WHERE indicator_id=$1",
+                 params = list(indicator))
+  DBI::dbWriteTable(con, "observed_collection_comparison_group",
+    transform(comparisons$groups, indicator_id = indicator), append = TRUE, row.names = FALSE)
+  DBI::dbWriteTable(con, "observed_collection_comparison_territory",
+    transform(comparisons$territories, indicator_id = indicator), append = TRUE, row.names = FALSE)
+  if (nrow(comparisons$lineage))
+    DBI::dbWriteTable(con, "observed_collection_comparison_lineage",
+      transform(comparisons$lineage, indicator_id = indicator,
+                comparison_content_version = comparison_version), append = TRUE, row.names = FALSE)
+  invisible(TRUE)
+}
+
 publish_observed_collection <- function(projection,con,artifact_directory=NULL) {
   d <- projection$descriptor; indicator <- d$indicator_id
   version <- scalar_content_version(projection)
@@ -327,38 +407,15 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
     artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
       write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
     if (changed) {
-      # source_dataset.name is the current mutable label; vintage identity and
-      # its version/date contract remain strict in the following loop.
-      for (i in seq_len(nrow(projection$datasets))) {
-        r <- projection$datasets[i,,drop=FALSE]
-        DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
-          ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",params=unname(as.list(r)))
-      }
-      for (i in seq_len(nrow(projection$vintages))) {
-        r <- projection$vintages[i,,drop=FALSE]
-        DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",params=unname(as.list(r)))
-        same <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",params=list(r$source_id,r$vintage_id))
-        if (!isTRUE(all.equal(same,r[c("version","reference_date","publication_date")],check.attributes=FALSE)))
-          stop("Observed source vintage conflicts with an existing publication",call.=FALSE)
-      }
-      DBI::dbExecute(con,"DELETE FROM observed_collection_publication WHERE indicator_id=$1",params=list(indicator))
-      DBI::dbExecute(con,"INSERT INTO observed_collection_publication(indicator_id,content_version,reference_content_version,row_count) VALUES($1,$2,$3,$4)",params=list(indicator,version,ref$content_version[[1L]],nrow(projection$facts)))
-      levels <- paste0("{",paste(d$allowed_levels,collapse=","),"}")
-      DBI::dbExecute(con,"INSERT INTO observed_collection_descriptor(indicator_id,theme_id,kind,label,unit,descriptor_version,allowed_levels,comparison_detail,comparison_period,direction) VALUES($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10)",
-        params=list(indicator,d$theme_id,d$kind,d$label,d$unit,d$descriptor_version,levels,d$comparison_detail,d$comparison_period,d$direction))
-      DBI::dbWriteTable(con,"observed_collection_category",projection$categories,append=TRUE,row.names=FALSE)
-      table <- switch(d$kind,period_detail="period_detail_observation",anchored_membership="anchored_membership",
-        stop("Unknown observed fact shape",call.=FALSE))
-      DBI::dbWriteTable(con,table,projection$facts,append=TRUE,row.names=FALSE)
+      # source_dataset.name is the current mutable label; the shared writer keeps
+      # the vintage identity/date contract strict below it.
+      .ecrire_collection_sources(con, projection$datasets, projection$vintages,
+                                 conflict = "update")
+      .ecrire_collection_base(con, projection, version, ref$content_version[[1L]])
     }
     if (identical(d$kind,"period_detail") && (changed || comparison_stale)) {
-      DBI::dbExecute(con,"INSERT INTO observed_collection_comparison_publication(indicator_id,content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete,published_at) VALUES($1,$2,$3,$4,$5,$6,$7,true,now()) ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,collection_content_version=EXCLUDED.collection_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,lineage_complete=true,published_at=EXCLUDED.published_at",
-        params=list(indicator,comparison_version,version,ref$content_version[[1L]],nrow(comparisons$groups),nrow(comparisons$territories),nrow(comparisons$lineage)))
-      DBI::dbExecute(con,"DELETE FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))
-      DBI::dbWriteTable(con,"observed_collection_comparison_group",transform(comparisons$groups,indicator_id=indicator),append=TRUE,row.names=FALSE)
-      DBI::dbWriteTable(con,"observed_collection_comparison_territory",transform(comparisons$territories,indicator_id=indicator),append=TRUE,row.names=FALSE)
-      if (nrow(comparisons$lineage)) DBI::dbWriteTable(con,"observed_collection_comparison_lineage",
-        transform(comparisons$lineage,indicator_id=indicator,comparison_content_version=comparison_version),append=TRUE,row.names=FALSE)
+      .ecrire_collection_comparaison(con, indicator, comparisons, comparison_version,
+                                     version, ref$content_version[[1L]])
     }
     list(changed=changed || comparison_stale,content_version=version,indicator_id=indicator,
       comparison_content_version=comparison_version,comparison_artifacts=artifact_paths)
