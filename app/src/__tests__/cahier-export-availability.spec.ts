@@ -60,6 +60,11 @@ describe('availability capture for the Cahier PDF action (#1165)', () => {
       .toEqual(evaluerDisponibiliteExportPdf(captureCahierSection(input)))
   })
 
+  it('returns only the fields read by the activation policy', () => {
+    const availability = captureCahierSectionAvailability(inputFor('visiter-la-bretagne'))
+    expect(Object.keys(availability).sort()).toEqual(['capabilities', 'comparison', 'figures', 'readiness'])
+  })
+
   it('does not clone the evidence or build a native render for the availability read', () => {
     const input = inputFor('visiter-la-bretagne')
     const availability = captureCahierSectionAvailability(input)

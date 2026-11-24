@@ -8,9 +8,12 @@
  * state, an unavailable cell) is not a failure and remains exportable with its
  * own honest wording.
  *
- * This module reads only #1021's immutable capture. It starts no acquisition,
- * mutates no screen control and owns no factual predicate: each state below is
- * the one the figure owner actually published.
+ * The activation policy reads only readiness, capabilities, comparison and
+ * figures. The mounted availability path hands it uncloned live owner values
+ * for reactive dependency tracking and must never store them. The authoritative
+ * check at generation time runs on #1021's frozen capture. This module starts no
+ * acquisition, mutates no screen control and owns no factual predicate: each
+ * state below is the one the figure owner actually published.
  */
 import type {
   CahierCaptureComparison,

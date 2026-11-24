@@ -640,7 +640,8 @@ function deepFreeze<T>(value: T): T {
  * walking Vue proxies to clone values it never consults.
  */
 export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportAvailability {
-  return sectionCapture(input, false)
+  const { readiness, capabilities, comparison, figures } = sectionCapture(input, false)
+  return { readiness, capabilities, comparison, figures }
 }
 
 export function captureCahierSection(input: CahierSectionCaptureInput): CahierExportCapture {
@@ -648,6 +649,10 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
 }
 
 function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): CahierExportCapture {
+  // One ownership decision for every live owner value. Adding another heavy
+  // field must use `own` too, so the availability and generation captures cannot
+  // silently disagree about whether that field is copied.
+  const own: <T>(value: T) => T = immutable ? deepPlain : (value) => value
   const section = input.section
   const evidence = section.evidence
   const family = evidence ? cahierCaptureFamily(evidence.kind) : null
@@ -674,7 +679,7 @@ function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): C
     ? explorer.state.state.typequ ?? null
     : null
   const capture: CahierExportCapture = {
-    ...(immutable && input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
+    ...(immutable && input.nativeRender ? { nativeRender: own(input.nativeRender) } : {}),
     nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
       modes: [...(input.aedar?.modes ?? [])] },
     identity: {
@@ -698,7 +703,7 @@ function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): C
     capabilities: {
       selectableSeries: captureSelectableSeries(family, input.aedar),
       selectedSeries: captureSelectedSeries(family, input.aedar),
-      maps: captureMaps({ family, evidence, publications, immutable }),
+      maps: captureMaps({ family, evidence, publications, own }),
     },
     comparison: {
       status: comparisonStatus,
@@ -722,7 +727,7 @@ function sectionCapture(input: CahierSectionCaptureInput, immutable: boolean): C
     },
     sources: captureSources(evidence),
     aedar: evidence && family?.startsWith('aedar-')
-      ? (immutable ? deepPlain(input.aedar) : input.aedar)
+      ? own(input.aedar)
       : null,
     figures: evidence && family
       ? captureFigures({ evidence, family, input, publications })
@@ -1186,9 +1191,9 @@ function captureMaps(options: {
   family: CahierCaptureFamily | null
   evidence: ContentEvidence | null
   publications: readonly CahierExportPublication[]
-  immutable: boolean
+  own: <T>(value: T) => T
 }): CahierCaptureMaps {
-  const { family, evidence, publications, immutable } = options
+  const { family, evidence, publications, own } = options
   const published = publications.filter((publication) => publication.state.owner === 'map-availability')
   if (published.length === 0) {
     return hasMapSurface(family, evidence)
@@ -1206,8 +1211,8 @@ function captureMaps(options: {
   return {
     status: mapStatus(items),
     legend,
-    items: immutable ? deepPlain(items) : items,
-    legendDetail: legendDetail ? (immutable ? deepPlain(legendDetail) : legendDetail) : null,
+    items: own(items),
+    legendDetail: legendDetail ? own(legendDetail) : null,
   }
 }
 
