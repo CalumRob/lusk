@@ -40,17 +40,24 @@
 # publisher, exactly as the retained path does. `apply` never publishes the
 # reference itself (E-class release, ADR-0049) — it only READS its marker.
 .guarded_apply_publish_reference <- function(con) {
-  reference <- artefacts_fixture_reference()
-  rows <- reference$rows
-  # The fixture carries identity/level columns; the publisher's projection
-  # contract also needs name/department/littoral. Inert values are fine: the
-  # reference CHECK permits NULL littoral on every row.
-  rows$name <- rows$territory_id
-  rows$department_id <- rep(NA_character_, nrow(rows))
-  rows$density_class_label <- rows$density_class_code
-  rows$littoral_code <- rep(NA_character_, nrow(rows))
-  rows$littoral_classement_source <- rep(NA_character_, nrow(rows))
-  projection <- list(rows = rows, content_version = reference$content_version)
+  base <- artefacts_fixture_reference()$rows
+  # The publisher binds unname(as.list(row)) POSITIONALLY, so column order must
+  # exactly match its INSERT (territory_id, territory_type, name, department_id,
+  # epci_id, density_class_code, density_class_label, littoral_code, source).
+  # The fixture carries identity/level columns; remaining values are inert and
+  # the reference CHECK permits NULL littoral on every row.
+  rows <- data.frame(
+    territory_id = base$territory_id,
+    territory_type = base$territory_type,
+    name = base$territory_id,
+    department_id = rep(NA_character_, nrow(base)),
+    epci_id = base$epci_id,
+    density_class_code = base$density_class_code,
+    density_class_label = base$density_class_code,
+    littoral_code = rep(NA_character_, nrow(base)),
+    littoral_classement_source = rep(NA_character_, nrow(base)),
+    stringsAsFactors = FALSE)
+  projection <- list(rows = rows, content_version = artefacts_fixture_reference()$content_version)
   publish_territory_reference_projection(projection,
     territory_reference_postgres_adapter(con))
   invisible(projection$content_version)
