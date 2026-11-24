@@ -72,6 +72,63 @@ test_that("publication errors leave transaction completion to the single DBI wra
   expect_null(etat$connection)
 })
 
+test_that("apply/adopt writers leave transaction completion to the single DBI wrapper", {
+  # A failed apply logged "there is no transaction in progress": an extra
+  # COMMIT/ROLLBACK after the outer DBI wrapper had already rolled back. Audit
+  # the whole write path statically, then prove at runtime with a recording mock
+  # that ONE boundary is used on both the success and the failure path.
+  racine <- racine_pipeline()
+  fichiers <- list.files(file.path(racine, "R"), full.names = TRUE,
+    pattern = paste0("^(apply_publication|adoption_publication|publication_protocol|",
+      "registre_ressource|ecriture_sources_serveur|adaptateur_[a-z_]+|",
+      "publish_observed_collections|publish_series|publish_scalar|publish_profile|",
+      "aedar_aggregates)\\.R$"))
+  expect_true(length(fichiers) >= 10L)
+  for (fichier in fichiers) {
+    source <- paste(readLines(fichier, warn = FALSE), collapse = "\n")
+    expect_false(grepl("DBI::db(Commit|Rollback|Begin)\\s*\\(", source, ignore.case = TRUE),
+                 info = basename(fichier))
+    # ROLLBACK TO SAVEPOINT is a within-transaction operation, not a boundary.
+    sql <- gsub("ROLLBACK\\s+TO\\s+SAVEPOINT\\s+\\S+", "", source, ignore.case = TRUE)
+    expect_false(grepl("dbExecute\\s*\\([^\\n]*\\b(COMMIT|ROLLBACK|BEGIN|END)\\b",
+                       sql, ignore.case = TRUE), info = basename(fichier))
+  }
+
+  etat <- getFromNamespace(".publication_transaction_state", "lusk")
+  etat$connection <- NULL
+  enregistre <- character()
+  local_mocked_bindings(
+    dbWithTransaction = function(con, expr) {
+      enregistre <<- c(enregistre, "dbWithTransaction"); force(expr)
+    },
+    dbBegin = function(con, ...) { enregistre <<- c(enregistre, "dbBegin"); invisible(TRUE) },
+    dbCommit = function(con, ...) { enregistre <<- c(enregistre, "dbCommit"); invisible(TRUE) },
+    dbRollback = function(con, ...) { enregistre <<- c(enregistre, "dbRollback"); invisible(TRUE) },
+    dbExecute = function(con, sql, ...) {
+      if (grepl("^\\s*(COMMIT|ROLLBACK|BEGIN|END)\\b", sql, ignore.case = TRUE))
+        enregistre <<- c(enregistre, trimws(sql))
+      invisible(TRUE)
+    },
+    .package = "DBI")
+  con <- structure(list(), class = "mock")
+  valeur <- with_publication_transaction(con, {
+    publication_transaction(con,
+      DBI::dbExecute(con, "DELETE FROM t WHERE id=$1", params = list(1L)))
+    "ok"
+  })
+  expect_identical(valeur, "ok")
+  expect_identical(enregistre, "dbWithTransaction")
+  expect_null(etat$connection)
+
+  enregistre <- character()
+  erreur <- tryCatch(with_publication_transaction(con, {
+    publication_transaction(con, stop("writer failed"))
+  }), error = identity)
+  expect_match(conditionMessage(erreur), "writer failed")
+  expect_identical(enregistre, "dbWithTransaction")
+  expect_null(etat$connection)
+})
+
 test_that("allowlists name exact files — no broad regex can admit a new file", {
   motifs <- c(vapply(AUTORISATIONS_DB, function(a) a$fichier, character(1)),
               vapply(AUTORISATIONS_ECRITURE_SERVEUR, function(a) a$fichier, character(1)))
