@@ -107,3 +107,27 @@ def test_aedar_keeps_storage_marker_and_adds_live_registry_gate():
 
     assert marker[:2] == ("aedar-storage-v1", 10)
     assert any("FROM resource_publication" in sql for sql in conn.statements)
+
+
+def test_aedar_registry_identity_comes_from_the_producer_contract(monkeypatch):
+    from types import SimpleNamespace
+    from api import aedar_reads
+
+    class ContractConnection(AedarConnection):
+        def execute(self, sql, params=None):
+            if "FROM resource_publication" in sql:
+                assert params == (["fixture_owner"],)
+                self.statements.append(sql)
+                return Cursor(row=("fixture_owner", "aedar", "aedar-v1", "ref-v1"))
+            return super().execute(sql, params)
+
+    grammar = SimpleNamespace(semantic_by_id={
+        "aggregate_identity": {"kind": "aedar_source_grain",
+                               "publication_resource_id": "fixture_owner"},
+        "summary_identity": {"kind": "aedar_territory_summary",
+                             "publication_resource_id": "fixture_owner"},
+    })
+    monkeypatch.setattr(aedar_reads, "default_resource_grammar", lambda: grammar)
+
+    assert _aedar_aggregate_publication_marker(ContractConnection())[:2] == (
+        "aedar-storage-v1", 10)

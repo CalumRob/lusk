@@ -5,11 +5,25 @@ from typing import NamedTuple
 
 from fastapi import HTTPException
 
-from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_MEASURE_KEYS,
+from api.aedar_models import (AEDAR_AGGREGATE_READINGS, AEDAR_CELLULE_AXES, AEDAR_MEASURE_KEYS,
                               aedar_typequ_registry_size)
 from api.field_selection import normalize_field_selection
 from api.publication_outcomes import publication_unavailable
 from api.resource_publication import live_resource_publication
+from api.resource_catalogue import default_resource_grammar
+
+
+def aedar_publication_resource_id():
+    """The one storage-resource identity declared by the semantic grammar."""
+    declarations = default_resource_grammar().semantic_by_id
+    publication_ids = {
+        declaration.get("publication_resource_id", resource_id)
+        for resource_id, declaration in declarations.items()
+        if declaration.get("kind") in AEDAR_CELLULE_AXES
+    }
+    if len(publication_ids) != 1:
+        raise HTTPException(503, "AEDAR publication resource identity is unavailable")
+    return next(iter(publication_ids))
 
 
 def _aedar_summary_publication_marker(conn):
@@ -18,7 +32,7 @@ def _aedar_summary_publication_marker(conn):
     Shared by the focal summary read and the whole-level cohort read so the
     clock predicate and the typed-absence classification cannot drift.
     """
-    publication = live_resource_publication(conn, "aedar", "aedar")
+    publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
     marker = conn.execute("""SELECT s.content_version,s.row_count,s.reference_content_version,
             s.aedar_source_content_version,a.content_version,a.reference_content_version,r.content_version
         FROM table_publication s
@@ -54,7 +68,7 @@ def _aedar_summary_publication_marker(conn):
 
 def _aedar_aggregate_publication_marker(conn):
     """Read and validate the aggregate publication clocks once, for focal and cohort reads."""
-    publication = live_resource_publication(conn, "aedar", "aedar")
+    publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
     marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
             FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
             WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
@@ -328,7 +342,7 @@ def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
 
 def _aedar_comparison_marker(conn):
     """Read and validate the reference-only AEDAR comparison publication marker."""
-    publication = live_resource_publication(conn, "aedar", "aedar")
+    publication = live_resource_publication(conn, aedar_publication_resource_id(), "aedar")
     marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
               p.publication_mode,
