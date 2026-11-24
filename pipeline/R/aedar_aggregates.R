@@ -3,6 +3,14 @@
 AEDAR_AGGREGATE_LEVELS <- c("commune", "epci", "departement", "region")
 AEDAR_AGGREGATE_SOURCE_ID <- "aedar_bretagne"
 AEDAR_AGGREGATE_VINTAGE <- "2026-v1"
+# Les trois fichiers du répertoire canonique AEDAR : contrat unique du
+# PRODUCTEUR, partagé avec le splitter par thème (ADR-0049, #1135). Écriture,
+# lecture et détection de répertoire lisent TOUTES cette même constante.
+AEDAR_CANONICAL_FILES <- c(
+  facts = "aedar_territorial_aggregate.parquet",
+  source = "aedar_territorial_aggregate_source.parquet",
+  typequ_metadata = "aedar_typequ_metadata.parquet"
+)
 # Current product-declared AEDAR comparison contexts. Keep this inventory
 # explicit: arbitrary member selections are intentionally resolved at request time.
 AEDAR_FIXED_COMPARISON_SCOPES <- list(
@@ -1142,17 +1150,17 @@ write_aedar_canonical <- function(projection, directory=file.path("data","proces
   if (!is.data.frame(projection$typequ_metadata) || nrow(projection$typequ_metadata)!=AEDAR_TYPEQU_REGISTRY_COUNT)
     stop("Canonical AEDAR publication requires TYPEQU metadata",call.=FALSE)
   dir.create(directory,recursive=TRUE,showWarnings=FALSE)
-  ecrire_parquet_si_modifie(projection$facts,file.path(directory,"aedar_territorial_aggregate.parquet"))
+  ecrire_parquet_si_modifie(projection$facts,file.path(directory,AEDAR_CANONICAL_FILES[["facts"]]))
   source <- as.data.frame(projection$source,stringsAsFactors=FALSE)
-  ecrire_parquet_si_modifie(source,file.path(directory,"aedar_territorial_aggregate_source.parquet"))
-  ecrire_parquet_si_modifie(projection$typequ_metadata,file.path(directory,"aedar_typequ_metadata.parquet"))
+  ecrire_parquet_si_modifie(source,file.path(directory,AEDAR_CANONICAL_FILES[["source"]]))
+  ecrire_parquet_si_modifie(projection$typequ_metadata,file.path(directory,AEDAR_CANONICAL_FILES[["typequ_metadata"]]))
   invisible(directory)
 }
 
 read_aedar_canonical <- function(directory=file.path("data","processed","aedar")) {
-  facts_path <- file.path(directory,"aedar_territorial_aggregate.parquet")
-  source_path <- file.path(directory,"aedar_territorial_aggregate_source.parquet")
-  metadata_path <- file.path(directory,"aedar_typequ_metadata.parquet")
+  facts_path <- file.path(directory,AEDAR_CANONICAL_FILES[["facts"]])
+  source_path <- file.path(directory,AEDAR_CANONICAL_FILES[["source"]])
+  metadata_path <- file.path(directory,AEDAR_CANONICAL_FILES[["typequ_metadata"]])
   if (!file.exists(facts_path) || !file.exists(source_path) || !file.exists(metadata_path)) stop("Canonical AEDAR Parquet facts/provenance/TYPEQU metadata are missing",call.=FALSE)
   facts <- nanoparquet::read_parquet(facts_path); src <- nanoparquet::read_parquet(source_path)
   typequ_metadata <- as.data.frame(nanoparquet::read_parquet(metadata_path),stringsAsFactors=FALSE)
