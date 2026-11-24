@@ -179,4 +179,3 @@ test_that("AEDAR fixed references keep pooled density and same-level medians wit
   expect_error(write_aedar_comparison_fixture(invalid,dir),"Invalid AEDAR reference comparison keys")
   expect_identical(unname(tools::md5sum(file.path(dir,c("fixture-groups.parquet","fixture-territories.parquet")))),unname(before))
 })
-

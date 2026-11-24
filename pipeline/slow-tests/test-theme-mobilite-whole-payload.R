@@ -165,4 +165,3 @@ test_that("validations_mobilite : le raccordement hors domaine ou hors grille fa
     vintages = vintages_mobilite(), validations = validations_mobilite,
     apercu = APERCU_MOBILITE), "grille publiée")
 })
-

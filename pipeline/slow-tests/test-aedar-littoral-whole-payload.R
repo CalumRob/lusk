@@ -70,4 +70,3 @@ test_that("littoral publication is a sibling that leaves density counters intact
     reference_content_version=reference_content_version,directory=tempfile("x"),
     littoral_source=aedar_littoral_test_source_artifact()),"membership|disagrees")
 })
-

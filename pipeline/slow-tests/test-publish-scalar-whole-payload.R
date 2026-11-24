@@ -417,4 +417,3 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   expect_gt(length(retained_scalar_artifact_owners()), 0L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
-
