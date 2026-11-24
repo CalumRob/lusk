@@ -12,18 +12,18 @@ adaptateur_reference_rows <- function() {
     stringsAsFactors = FALSE)
 }
 
+# MÊME référence que celle publiée par le proof (artefacts_fixture_reference) :
+# la couverture dense territory × TYPEQU de l'agrégat AEDAR doit correspondre
+# exactement aux lignes live que `apply` transmet au validateur.
 adaptateur_aedar_reference_rows <- function(with_littoral = FALSE) {
-  classe <- as.character(registre_classes_densite()[["classe_densite_code"]])[[1L]]
-  reference <- data.frame(
-    territory_id = c("22001", "200000001", "22", "53"),
-    territory_type = c("commune", "epci", "departement", "region"),
-    epci_id = c("200000001", NA_character_, NA_character_, NA_character_),
-    density_class_code = c(classe, NA_character_, NA_character_, NA_character_),
-    stringsAsFactors = FALSE)
+  reference <- artefacts_fixture_reference()$rows
+  reference$littoral_classement_source <- rep(NA_character_, nrow(reference))
   if (with_littoral) {
-    reference$littoral_code <- c("C", NA_character_, NA_character_, NA_character_)
-    reference$littoral_classement_source <- c("fixture", NA_character_, NA_character_, NA_character_)
-  }
+    reference$littoral_code <- ifelse(reference$territory_type == "commune",
+      rep(c("C", "NC"), length.out = nrow(reference)), NA_character_)
+    reference$littoral_classement_source <- ifelse(reference$territory_type == "commune",
+      "fixture", NA_character_)
+  } else reference$littoral_code <- rep(NA_character_, nrow(reference))
   reference
 }
 
@@ -132,18 +132,29 @@ adaptateur_aedar_metadata <- function() {
 
 adaptateur_aedar_projection <- function() {
   axis <- adaptateur_aedar_typequ_fixture()
-  inputs <- stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS, function(level) {
-    x <- as.data.frame(matrix(0, nrow = nrow(axis), ncol = length(AEDAR_AGGREGATE_MEASURES),
-      dimnames = list(NULL, AEDAR_AGGREGATE_MEASURES)))
-    x$code_insee <- "22001"; x$epci_code <- "200000001"
-    x$code_departement <- "22"; x$code_region <- "53"
-    x$nom_commune <- "Essai"; x$nom_epci <- "EPCI"
-    x$nom_departement <- "Département"; x$nom_region <- "Bretagne"
-    x$TYPEQU <- axis$TYPEQU; x$LIB_TYPEQU <- axis$LIB_TYPEQU
-    x$n_addresses <- 2L; x$n_observed <- 1L; x$coverage_status <- "covered"
-    x$count_5_walk_share <- NA_real_
-    x[, c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]], AEDAR_AGGREGATE_MEASURES), drop = FALSE]
+  reference <- artefacts_fixture_reference()$rows
+  ids <- stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS, function(level) {
+    unique(as.character(reference$territory_id[reference$territory_type == level]))
   }), AEDAR_AGGREGATE_LEVELS)
+  inputs <- stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS, function(level) {
+    unlist(lapply(ids[[level]], function(id) {
+      x <- as.data.frame(matrix(0, nrow = nrow(axis), ncol = length(AEDAR_AGGREGATE_MEASURES),
+        dimnames = list(NULL, AEDAR_AGGREGATE_MEASURES)))
+      x$code_insee <- id; x$epci_code <- id
+      x$code_departement <- id; x$code_region <- id
+      x$nom_commune <- id; x$nom_epci <- id
+      x$nom_departement <- id; x$nom_region <- id
+      x$TYPEQU <- axis$TYPEQU; x$LIB_TYPEQU <- axis$LIB_TYPEQU
+      x$n_addresses <- 2L; x$n_observed <- 1L; x$coverage_status <- "covered"
+      x$count_5_walk_share <- NA_real_
+      x <- x[, c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]], AEDAR_AGGREGATE_MEASURES), drop = FALSE]
+      rownames(x) <- NULL
+      list(x)
+    }), recursive = FALSE)
+  }), AEDAR_AGGREGATE_LEVELS)
+  inputs <- lapply(inputs, function(parts) {
+    out <- do.call(rbind, parts); rownames(out) <- NULL; out
+  })
   project_aedar_aggregates(inputs, adaptateur_aedar_metadata())
 }
 
@@ -151,11 +162,12 @@ adaptateur_aedar_projection <- function() {
 # (including its tempfile generation paths), following the producer's contract.
 adaptateur_aedar_density_source <- function() {
   axis <- read_aedar_typequ_registry()
-  registry <- registre_classes_densite()
-  codes <- as.character(registry[["classe_densite_code"]])
-  ref <- list(crosswalk = data.frame(code_insee = c("22001", paste0("unused", 2:7)),
-    density_class_code = codes,
-    density_class_label = as.character(registry[["classe_densite_libelle_public"]]),
+  reference <- artefacts_fixture_reference()$rows
+  communes <- reference[reference$territory_type == "commune", , drop = FALSE]
+  codes <- unique(as.character(communes$density_class_code))
+  ref <- list(crosswalk = data.frame(code_insee = communes$territory_id,
+    density_class_code = communes$density_class_code,
+    density_class_label = communes$density_class_code,
     stringsAsFactors = FALSE),
     identity = MANIFEST_CLASSES_DENSITE[["id"]][[1L]],
     sha256 = MANIFEST_CLASSES_DENSITE[["sha256"]][[1L]],
@@ -164,7 +176,7 @@ adaptateur_aedar_density_source <- function() {
   density <- data.frame(territory_type = "density_class",
     territory_id = grid$density_class_code, density_class_code = grid$density_class_code,
     density_class_label = ref$crosswalk$density_class_label[
-      match(grid$density_class_code, codes)],
+      match(grid$density_class_code, ref$crosswalk$density_class_code)],
     TYPEQU = grid$TYPEQU, LIB_TYPEQU = axis$LIB_TYPEQU[match(grid$TYPEQU, axis$TYPEQU)],
     n_addresses = 1L, n_observed = 1L, coverage_status = "covered",
     source_snapshot_id = AEDAR_AGGREGATE_VINTAGE,
@@ -204,9 +216,15 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
   reference <- adaptateur_aedar_reference_rows(with_littoral)
   axes <- read_aedar_typequ_registry()$TYPEQU
   littoral_facts <- if (with_littoral) {
-    grouped <- data.frame(territory_id = "C", TYPEQU = axes, n_addresses = 2,
-      n_observed = 1, coverage_status = "covered", stringsAsFactors = FALSE)
-    for (measure in AEDAR_AGGREGATE_MEASURES) grouped[[measure]] <- 1
+    statuts <- unique(as.character(reference$littoral_code[
+      reference$territory_type == "commune"]))
+    statuts <- statuts[!is.na(statuts) & nzchar(statuts)]
+    grouped <- do.call(rbind, lapply(statuts, function(statut) {
+      g <- data.frame(territory_id = statut, TYPEQU = axes, n_addresses = 2,
+        n_observed = 1, coverage_status = "covered", stringsAsFactors = FALSE)
+      for (measure in AEDAR_AGGREGATE_MEASURES) g[[measure]] <- 1
+      g
+    }))
     grouped
   } else NULL
   x <- project_aedar_fixed_comparisons(projection$facts, reference,
