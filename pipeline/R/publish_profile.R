@@ -538,38 +538,16 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   v
 }
 
-.profil_quote_sql <- function(con, x) {
-  if (length(x) == 1L && is.na(x)) return("NULL")
-  as.character(DBI::dbQuoteString(con, as.character(x)))
-}
-
-.ecrire_sources_profil <- function(con, datasets, vintages) {
-  sql_source <- paste0("INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ",
-    "ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name")
-  sql_vintage <- paste0("INSERT INTO source_vintage(source_id,vintage_id,version,",
-    "reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ",
-    "ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,",
-    "reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date")
-  if (!is.null(datasets)) for (i in seq_len(nrow(datasets))) DBI::dbExecute(con, sql_source,
-    params = unname(as.list(datasets[i, c("source_id", "name")])))
-  if (!is.null(vintages)) for (i in seq_len(nrow(vintages))) DBI::dbExecute(con, sql_vintage,
-    params = unname(as.list(vintages[i, c("source_id", "vintage_id", "version",
-      "reference_date", "publication_date")])))
-  invisible(TRUE)
-}
-
-.ecrire_profil_descriptor <- function(con, descriptor, indicator_id = NULL,
-                                      required_scalar_version = NULL) {
+.ecrire_profil_descriptor <- function(con, descriptor, indicator_id = NULL) {
   d <- .profil_liste(descriptor, indicator_id)
   id <- as.character(d$indicator_id)[[1L]]
-  if (!is.null(required_scalar_version)) d$required_scalar_version <- required_scalar_version
   completeness <- as.character(.profil_champ(d, "completeness", "dense_complete"))[[1L]]
   if (!identical(completeness, "dense_complete"))
     stop("Profile completeness contract is missing or unsupported", call. = FALSE)
   levels <- as.character(unlist(.profil_champ(d, "levels", "commune"), use.names = FALSE))
   if (!length(levels)) levels <- "commune"
   levels_sql <- paste0("ARRAY[",
-    paste(vapply(levels, function(x) .profil_quote_sql(con, x), character(1)),
+    paste(vapply(levels, function(x) .quoter_sql_serveur(con, x), character(1)),
           collapse = ","), "]::text[]")
   params <- list(
     id,
@@ -719,7 +697,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor")
       for (projection in profiles) {
-        .ecrire_sources_profil(con, projection$datasets, projection$vintages)
+        .ecrire_sources_serveur(con, projection$datasets, projection$vintages, conflict = "update")
         .ecrire_profil_descriptor(con, projection$descriptor)
         .ecrire_profil_axes_observations(con, list(
           indicator_id = projection$descriptor$indicator_id,

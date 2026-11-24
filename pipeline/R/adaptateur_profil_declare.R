@@ -4,7 +4,7 @@
 # splitter_ressources.R). Cet adaptateur remplace le descripteur, les axes, les
 # faits, la provenance et la comparaison D'UN SEUL profil déclaré. Toutes les
 # écritures de tables de service passent par les writers partagés de
-# publish_profile.R (.ecrire_sources_profil / .ecrire_profil_descriptor /
+# publish_profile.R (.ecrire_sources_serveur / .ecrire_profil_descriptor /
 # .ecrire_profil_axes_observations / .ecrire_comparaison_profil) : aucune SQL
 # dupliquée, aucun guillemetage maison, aucun params nommé.
 #
@@ -146,7 +146,7 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
     }
     # `descriptor` now carries the apply-time RESOURCE version of the declared
     # scalar dependency; the build-time global token is never written.
-    .ecrire_sources_profil(con, rows$datasets, rows$vintages)
+    .ecrire_sources_serveur(con, rows$datasets, rows$vintages, conflict = "update")
     .ecrire_profil_descriptor(con, descriptor)
     .ecrire_profil_axes_observations(con, list(
       indicator_id = ressource, axes = rows$axes, facts = rows$facts,

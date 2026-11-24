@@ -12,7 +12,7 @@
 # phase expand les laisse pour l'API actuelle jusqu'à l'étape 4 (#1140).
 
 # All serving-table writes go through the SHARED writers in publish_scalar.R
-# (.ecrire_sources_scalaires / .ecrire_descripteurs_scalaires /
+# (.ecrire_sources_serveur / .ecrire_descripteurs_scalaires /
 # .ecrire_observations_scalaires / .ecrire_comparaison_scalaire). This adapter
 # only owns the indicator scope and the per-resource marker/registry row.
 
@@ -148,7 +148,7 @@ remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
     if (is.null(rows) || !identical(as.character(rows$ressource), ressource))
       stop("Scalar adapter rows do not match the requested resource", call. = FALSE)
 
-    .ecrire_sources_scalaires(con, rows$sources, rows$vintages, conflict = "nothing")
+    .ecrire_sources_serveur(con, rows$sources, rows$vintages, conflict = "nothing")
     .ecrire_descripteurs_scalaires(con, rows$descriptor)
     .ecrire_observations_scalaires(con, rows$observations, rows$provenance)
 
