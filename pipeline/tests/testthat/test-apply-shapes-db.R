@@ -101,13 +101,19 @@
   NA_character_  # AEDAR: tables globales (une seule ressource)
 }
 
+# ORDER BY 1 laisse l'ordre indéterminé à l'intérieur d'une même première
+# colonne (ex. toutes les lignes AEDAR d'un même contexte). Trier par TOUTES les
+# colonnes rend la comparaison avant/après déterministe : deux jeux de lignes
+# identiques donnent exactement le même data.frame.
 .guarded_shapes_lignes <- function(con, table, colonne = NULL, valeur = NULL) {
   champs <- DBI::dbListFields(con, table)
+  ordre <- paste(vapply(champs, function(champ)
+    as.character(DBI::dbQuoteIdentifier(con, champ)), character(1)), collapse = ",")
   if (!is.null(colonne) && colonne %in% champs) {
-    DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " WHERE ", colonne, "=$1 ORDER BY 1"),
+    DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " WHERE ", colonne, "=$1 ORDER BY ", ordre),
                     params = list(valeur))
   } else {
-    DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " ORDER BY 1"))
+    DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " ORDER BY ", ordre))
   }
 }
 
@@ -167,8 +173,9 @@ test_that("guarded: applying one owned series leaves every other series byte-ide
   apply_publication("artif_par_habitant", root = root, registre = lock, con = con)
   apres_b <- .guarded_shapes_snapshot(con, spec)
   for (t in names(spec)) expect_identical(apres_b[[t]], avant_b[[t]], info = t)
+  # `retired` vit sur resource_publication, pas sur le marqueur de dataset.
   expect_equal(nrow(DBI::dbGetQuery(con,
-    "SELECT * FROM series_dataset_publication WHERE dataset_id='artif_par_habitant' AND retired=false")), 1L)
+    "SELECT * FROM series_dataset_publication WHERE dataset_id='artif_par_habitant'")), 1L)
   expect_equal(nrow(DBI::dbGetQuery(con,
     "SELECT * FROM resource_publication WHERE resource_id='artif_par_habitant' AND retired=false")), 1L)
 })
