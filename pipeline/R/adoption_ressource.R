@@ -17,6 +17,7 @@ normaliser_adoption <- function(x) {
   if (is.data.frame(x)) {
     x <- as.data.frame(lapply(x, normaliser_valeur_adoption), stringsAsFactors = FALSE,
                        optional = TRUE)
+    rownames(x) <- NULL
     if (nrow(x) > 1L) {
       keys <- vapply(seq_len(nrow(x)), function(i)
         paste(as.integer(serialize(x[i, , drop = FALSE], NULL)), collapse = ","),

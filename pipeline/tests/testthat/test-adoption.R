@@ -21,6 +21,8 @@ test_that("adoption compares the real projected artefact rows and names each dif
   # PostgreSQL storage clocks are not Artefact de ressource content.
   live <- attendu
   live$observations$published_at <- as.POSIXct("2026-01-01", tz = "UTC")
+  live$observations <- live$observations[rev(seq_len(nrow(live$observations))), , drop = FALSE]
+  rownames(live$observations) <- paste0("storage-", seq_len(nrow(live$observations)))
   expect_true(comparer_ressource_adoptation(attendu, live, handler)$identique)
 
   live <- attendu

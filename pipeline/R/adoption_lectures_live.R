@@ -271,19 +271,26 @@ lire_live_aedar <- function(con, ressource, reference) {
       n_addresses = .adoption_count(rows$n_addresses),
       n_observed = .adoption_count(rows$n_observed), coverage_status = rows$coverage_status,
       measures, stringsAsFactors = FALSE)
-    if (is.null(metadata)) metadata <- unique(data.frame(
+    level_metadata <- unique(data.frame(
       TYPEQU = rows$typequ, LIB_TYPEQU = rows$typequ_label,
       description = rows$typequ_description, domain_code = rows$typequ_domain_code,
       domain_label = rows$typequ_domain_label, subdomain_code = rows$typequ_subdomain_code,
       subdomain_label = rows$typequ_subdomain_label, GAMME = rows$typequ_gamme,
       gamme_status = rows$typequ_gamme_status, source_order = rows$typequ_source_order,
       stringsAsFactors = FALSE))
+    if (is.null(metadata)) metadata <- level_metadata
+    else if (!comparer_valeur_adoption(metadata, level_metadata))
+      stop("adoption : les métadonnées TYPEQU AEDAR diffèrent entre niveaux", call. = FALSE)
   }
   # The producer's level columns are a closed contract; JSON identity decoding
   # supplies them in that same order rather than inventing a second projection.
   for (level in AEDAR_AGGREGATE_LEVELS)
     facts[[level]] <- facts[[level]][, unique(c("territory_type", "territory_id",
       AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]], AEDAR_AGGREGATE_MEASURES)), drop = FALSE]
+  source_fields <- c("source_id", "vintage_id", "source_url", "licence", "attribution",
+                     "reference_date", "publication_date")
+  if (nrow(unique(raw[source_fields])) != 1L)
+    stop("adoption : la provenance AEDAR diffère entre les faits", call. = FALSE)
   source_row <- raw[1L, , drop = FALSE]
   dataset <- .adoption_query(con,
     "SELECT name FROM source_dataset WHERE source_id=$1", list(source_row$source_id))
