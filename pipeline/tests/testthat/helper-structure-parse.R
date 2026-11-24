@@ -6,11 +6,16 @@ if (!exists(".lusk_cache_structure_parse", globalenv(), inherits = FALSE)) {
   assign(".lusk_cache_structure_parse", new.env(parent = emptyenv()), globalenv())
 }
 
-fichiers_structure <- function(racine, sous = c("R", "scripts")) {
+fichiers_structure <- function(racine, sous = c("R", "scripts"), motif = NULL) {
   fichiers <- list.files(racine, pattern = "\\.R$", full.names = TRUE,
                          recursive = TRUE)
   fichiers <- fichiers[grepl(paste0("/(", paste(sous, collapse = "|"),
                                      ")/[^/]+\\.R$"), fichiers)]
+  if (!is.null(motif)) {
+    fichiers <- fichiers[vapply(fichiers, function(f) {
+      any(grepl(motif, readLines(f, warn = FALSE, encoding = "UTF-8")))
+    }, logical(1))]
+  }
   fichiers
 }
 
@@ -25,14 +30,26 @@ source_structure <- function(fichier) {
   expressions <- parse(file = fichier, keep.source = TRUE)
   donnees <- utils::getParseData(expressions)
   valeur <- list(lignes = lignes, expressions = expressions, donnees = donnees)
+  if (is.null(donnees) || !nrow(donnees)) {
+    valeur$index_enfants <- list()
+    valeur$index_parent <- integer()
+  } else {
+    index <- split(seq_len(nrow(donnees)), as.character(donnees$parent))
+    valeur$index_enfants <- lapply(index, function(lignes) {
+      lignes[order(donnees$line1[lignes], donnees$col1[lignes], donnees$id[lignes])]
+    })
+    valeur$index_parent <- stats::setNames(donnees$parent, as.character(donnees$id))
+  }
+  valeur$index_ancetres <- new.env(parent = emptyenv())
   valeur$appels <- appels_structure(valeur)
   assign(cle, valeur, cache)
   valeur
 }
 
-enfants_parse <- function(id, donnees) {
-  lignes <- donnees[donnees$parent == id, , drop = FALSE]
-  lignes[order(lignes$line1, lignes$col1, lignes$id), , drop = FALSE]
+enfants_parse <- function(id, source) {
+  lignes <- source$index_enfants[[as.character(id)]]
+  if (is.null(lignes)) return(source$donnees[FALSE, , drop = FALSE])
+  source$donnees[lignes, , drop = FALSE]
 }
 
 noeud_texte <- function(id, source) {
@@ -71,41 +88,47 @@ appels_structure <- function(source) {
   if (is.null(donnees) || !nrow(donnees)) return(vide)
 
   noeuds <- donnees[!donnees$terminal & donnees$text == "", , drop = FALSE]
-  appels <- vector("list", nrow(noeuds))
-  n <- 0L
+  ids <- integer(nrow(noeuds)); fonctions <- character(nrow(noeuds))
+  packages <- character(nrow(noeuds)); lignes <- integer(nrow(noeuds))
+  colonnes <- integer(nrow(noeuds)); fins <- integer(nrow(noeuds))
+  parents <- integer(nrow(noeuds)); n <- 0L
   for (i in seq_len(nrow(noeuds))) {
     id <- noeuds$id[[i]]
-    enfants <- enfants_parse(id, donnees)
-    if (!any(enfants$terminal & enfants$text == "(")) next
-    if (!nrow(enfants)) next
-    appelee <- enfants[1L, , drop = FALSE]
+    enfants <- source$index_enfants[[as.character(id)]]
+    if (is.null(enfants) || length(enfants) < 2L) next
+    if (!any(donnees$terminal[enfants] & donnees$text[enfants] == "(")) next
+    appelee <- enfants[[1L]]
     package <- NA_character_
-    if (appelee$terminal) {
-      fonction <- appelee$text
+    if (donnees$terminal[[appelee]]) {
+      fonction <- donnees$text[[appelee]]
     } else {
-      signature <- enfants_parse(appelee$id, donnees)
-      operateur <- which(signature$terminal & signature$text == "::")
+      signature <- source$index_enfants[[as.character(donnees$id[[appelee]])]]
+      if (is.null(signature)) next
+      operateur <- which(donnees$terminal[signature] & donnees$text[signature] == "::")
       if (length(operateur) == 1L && operateur > 1L &&
-          operateur < nrow(signature)) {
-        package <- signature$text[[operateur - 1L]]
-        fonction <- signature$text[[operateur + 1L]]
-      } else if (nrow(signature) == 1L && signature$terminal[[1L]]) {
-        fonction <- signature$text[[1L]]
+          operateur < length(signature)) {
+        package <- donnees$text[[signature[[operateur - 1L]]]]
+        fonction <- donnees$text[[signature[[operateur + 1L]]]]
+      } else if (length(signature) == 1L && donnees$terminal[[signature]]) {
+        fonction <- donnees$text[[signature]]
       } else {
         next
       }
     }
     if (!nzchar(fonction) || fonction %in% c("(", "{", "[")) next
     n <- n + 1L
-    appels[[n]] <- data.frame(
-      id = id, fonction = fonction, package = package,
-      line1 = noeuds$line1[[i]], col1 = noeuds$col1[[i]],
-      line2 = noeuds$line2[[i]], col2 = noeuds$col2[[i]],
-      parent = noeuds$parent[[i]], stringsAsFactors = FALSE
-    )
+    ids[[n]] <- id; fonctions[[n]] <- fonction; packages[[n]] <- package
+    lignes[[n]] <- noeuds$line1[[i]]; colonnes[[n]] <- noeuds$col1[[i]]
+    fins[[n]] <- noeuds$line2[[i]]; parents[[n]] <- noeuds$parent[[i]]
   }
   if (!n) return(vide)
-  do.call(rbind, appels[seq_len(n)])
+  data.frame(
+    id = ids[seq_len(n)], fonction = fonctions[seq_len(n)],
+    package = packages[seq_len(n)], line1 = lignes[seq_len(n)],
+    col1 = colonnes[seq_len(n)], line2 = fins[seq_len(n)],
+    col2 = noeuds$col2[match(ids[seq_len(n)], noeuds$id)],
+    parent = parents[seq_len(n)], stringsAsFactors = FALSE
+  )
 }
 
 references_structure <- function(source, noms) {
@@ -122,26 +145,28 @@ references_structure <- function(source, noms) {
   noeuds
 }
 
-appel_descendant_de <- function(id, ancetre, source) {
-  if (identical(id, ancetre)) return(TRUE)
-  donnees <- source$donnees
-  parent <- donnees$parent[match(id, donnees$id)]
-  while (!is.na(parent) && parent > 0L) {
-    if (identical(parent, ancetre)) return(TRUE)
-    parent <- donnees$parent[match(parent, donnees$id)]
+ancetres_noeud <- function(id, source) {
+  cle <- as.character(id)
+  if (exists(cle, source$index_ancetres, inherits = FALSE)) {
+    return(get(cle, source$index_ancetres, inherits = FALSE))
   }
-  FALSE
+  parent <- source$index_parent[[cle]]
+  ancetres <- integer()
+  while (!is.na(parent) && parent > 0L) {
+    ancetres <- c(ancetres, parent)
+    parent <- source$index_parent[[as.character(parent)]]
+  }
+  assign(cle, ancetres, source$index_ancetres)
+  ancetres
+}
+
+appel_descendant_de <- function(id, ancetre, source) {
+  identical(id, ancetre) || ancetre %in% ancetres_noeud(id, source)
 }
 
 appels_ancetres <- function(id, source) {
   appels <- appels_structure(source)
-  ancetres <- integer()
-  donnees <- source$donnees
-  parent <- donnees$parent[match(id, donnees$id)]
-  while (!is.na(parent) && parent > 0L) {
-    if (parent %in% appels$id) ancetres <- c(ancetres, parent)
-    parent <- donnees$parent[match(parent, donnees$id)]
-  }
+  ancetres <- intersect(ancetres_noeud(id, source), appels$id)
   appels[match(ancetres, appels$id), , drop = FALSE]
 }
 
@@ -151,7 +176,7 @@ appel_avant <- function(a, b) {
 }
 
 arguments_appel <- function(id, source) {
-  enfants <- enfants_parse(id, source$donnees)
+  enfants <- enfants_parse(id, source)
   # The first child is the callee (a symbol or a namespaced `::` expression);
   # punctuation and the remaining expression children are not arguments.
   if (nrow(enfants) < 2L) return(enfants[FALSE, , drop = FALSE])
@@ -160,7 +185,7 @@ arguments_appel <- function(id, source) {
 }
 
 argument_nomme <- function(id, nom, source) {
-  enfants <- enfants_parse(id, source$donnees)
+  enfants <- enfants_parse(id, source)
   egaux <- which(enfants$terminal & enfants$text == "=")
   for (j in egaux) {
     if (j < 2L || !enfants$terminal[[j - 1L]] ||

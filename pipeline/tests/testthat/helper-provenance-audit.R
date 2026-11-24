@@ -69,7 +69,7 @@ autorise_site <- function(rel, source, autorisations) {
 
 auditer_appels_db <- function(racine, motif = "dbConnect\\(|configuration_service_postgres\\(",
                               autorisations = AUTORISATIONS_DB) {
-  fichiers <- fichiers_structure(racine)
+  fichiers <- fichiers_structure(racine, motif = "dbConnect|configuration_service_postgres")
   trousses <- list()
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
@@ -151,7 +151,7 @@ verifier_structure_gel <- function(racine, autorisations = AUTORISATIONS_DB) {
 # `sortie` est requis : un appel `verifier_gel_release()` sans argument est une
 # faute structurelle — il laisserait le garde lire un dossier implicite.
 auditer_appels_garde <- function(racine) {
-  fichiers <- fichiers_structure(racine)
+  fichiers <- fichiers_structure(racine, motif = "verifier_gel_release")
   trousses <- list()
   for (f in fichiers) {
     rel <- relatif_sous(f, racine)
@@ -216,7 +216,8 @@ MOTIF_RESEAU <- paste0(
 )
 
 auditer_appels_reseau <- function(racine, autorisations = AUTORISATIONS_RESEAU) {
-  fichiers <- fichiers_structure(racine)
+  fichiers <- fichiers_structure(
+    racine, motif = "download\\.file|req_perform|httr::GET|curl_fetch|url\\(|st_read\\(|read_csv\\(|fromJSON\\(")
   trousses <- list()
   fonctions_directes <- c("download.file", "req_perform", "GET", "curl_fetch")
   fonctions_url <- c("url", "st_read", "read_csv", "fromJSON")
@@ -302,7 +303,7 @@ MOTIF_HASH_JSON <- "sha256\\s*\\(.*toJSON\\s*\\("
 MOTIF_ENVELOPPE_WFS <- "toJSON\\s*\\(\\s*(brut|reponse|response|collection|limites|enveloppe|collection_wfs)\\b"
 
 auditer_hachages_wfs <- function(racine) {
-  fichiers <- fichiers_structure(racine)
+  fichiers <- fichiers_structure(racine, motif = "sha256")
   trousses <- list()
   noms_enveloppe <- "brut|reponse|response|collection|limites|enveloppe|collection_wfs"
   for (f in fichiers) {
@@ -371,8 +372,8 @@ params_dbi_nommes <- function(valeur, source) {
   for (i in seq_len(nrow(descendants))) {
     appel <- descendants[i, , drop = FALSE]
     if (appel$fonction == "list" &&
-        any(enfants_parse(appel$id, source$donnees)$terminal &
-            enfants_parse(appel$id, source$donnees)$text == "=")) return(TRUE)
+        any(enfants_parse(appel$id, source)$terminal &
+            enfants_parse(appel$id, source)$text == "=")) return(TRUE)
     if (appel$fonction == "as.list") {
       ancetres <- appels_ancetres(appel$id, source)
       if (!nrow(ancetres) || !identical(ancetres$fonction[[1L]], "unname")) return(TRUE)
@@ -382,7 +383,8 @@ params_dbi_nommes <- function(valeur, source) {
 }
 
 auditer_params_dbi <- function(racine) {
-  fichiers <- list.files(file.path(racine, "R"), pattern = "\\.R$", full.names = TRUE)
+  fichiers <- fichiers_structure(
+    racine, sous = "R", motif = "dbExecute|dbGetQuery|dbSendQuery")
   trousses <- list()
   for (f in fichiers) {
     source <- source_structure(f)
@@ -487,7 +489,8 @@ AUTORISATIONS_ECRITURE_SERVEUR <- list(
 
 auditer_ecritures_serveur <- function(racine,
                                       autorisations = AUTORISATIONS_ECRITURE_SERVEUR) {
-  fichiers <- fichiers_structure(racine)
+  fichiers <- fichiers_structure(
+    racine, motif = paste0(TABLES_SERVICE_SCALAIRE, "|dbWriteTable|dbAppendTable"))
   trousses <- list()
   sql <- paste0("(DELETE FROM|INSERT INTO|UPDATE|TRUNCATE)\\s+(",
                 TABLES_SERVICE_SCALAIRE, ")")
