@@ -8,10 +8,6 @@
 # fork de projection. Les lectures typées ne sont PAS divisées (retirement
 # ultérieur). Aucune connexion à la base de service.
 
-NOMS_FICHIERS_AEDAR <- c("aedar_territorial_aggregate.parquet",
-                         "aedar_territorial_aggregate_source.parquet",
-                         "aedar_typequ_metadata.parquet")
-
 lire_reference_sortie <- function(sortie) {
   chemin <- file.path(sortie, "territoires.parquet")
   if (!file.exists(chemin))
@@ -97,7 +93,7 @@ lire_projection_aedar_sortie <- function(sortie) {
                  file.path(sortie, "data", "processed", "aedar"),
                  Sys.getenv("LUSK_AEDAR_CANONICAL_DIR", unset = file.path("data", "processed", "aedar")))
   for (candidat in candidats) {
-    if (all(file.exists(file.path(candidat, NOMS_FICHIERS_AEDAR))))
+    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES))))
       return(read_aedar_canonical(candidat))
   }
   NULL

@@ -97,6 +97,19 @@ test_that("la commande locale split lit une vraie sortie et imprime resource, sh
   expect_identical(version(premier), version(second))
 })
 
+test_that("le contrat des fichiers canoniques AEDAR appartient au producteur et est partagé", {
+  expect_identical(unname(AEDAR_CANONICAL_FILES),
+    c("aedar_territorial_aggregate.parquet", "aedar_territorial_aggregate_source.parquet",
+      "aedar_typequ_metadata.parquet"))
+  expect_false(exists("NOMS_FICHIERS_AEDAR", inherits = TRUE))
+  racine <- testthat::test_path("..", "..")
+  lire <- function(chemin) paste(readLines(chemin, warn = FALSE), collapse = "\n")
+  expect_true(grepl("AEDAR_CANONICAL_FILES", lire(file.path(racine, "R", "aedar_aggregates.R")),
+                   fixed = TRUE))
+  expect_false(grepl("aedar_territorial_aggregate.parquet",
+                     lire(file.path(racine, "R", "splitter_ressources.R")), fixed = TRUE))
+})
+
 test_that("aucune connexion à la base de service n'est introduite dans ce slice", {
   racine <- testthat::test_path("..", "..")
   fichiers <- c(
