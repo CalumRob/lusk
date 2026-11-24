@@ -1,3 +1,10 @@
+# Slow tier (#1172): four execution scenarios on the smallest toy graph prove input/content/code lock replay, unchanged skip, loud failure and report survival.
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 # test-verification-donnees-reelles ---------------------------------------------
 # Seam 3 (#342, épique #329) : la vérification « données réelles » PILOTÉE PAR
 # SES ENTRÉES, encodée en test FIXTURE — l'US 13 du port (les blocs réels des
@@ -99,4 +106,6 @@ test_that("un verrou cassé fait ÉCHOUER le target — un run rouge reste bruya
   # écrit quand même — la sémantique « le rapport survit à l'échec d'une
   # étape » (#8/#10) que le cron exploite
   expect_equal(targets::tar_progress(rapport_toy)$progress, "completed")
+})
+
 })

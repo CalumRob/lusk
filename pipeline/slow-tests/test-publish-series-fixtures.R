@@ -1,3 +1,10 @@
+# Slow tier (#1172): owned-series publishers, readers and CLI routes run over canonical Parquet/producer fixtures; protects projection, provenance, comparison and atomic publication contracts.
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 seed_owned_series_artifact_fixtures <- function(payload, vintages, metadata, destination,
     habitat=NULL, habitat_vintages=NULL, habitat_metadata=NULL, owners=c("conso_enaf_annuel", "artif_par_habitant", "prix_m2")) {
   if ("conso_enaf_annuel" %in% owners) {
@@ -904,4 +911,6 @@ test_that("owned raccordement publisher projects its declared serving-only refer
   expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata,
     producer_contract=list(date_mesure="2026-09-16")),
     "observation period")
+})
+
 })

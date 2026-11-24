@@ -1,3 +1,10 @@
+# Slow tier (#1172): bidirectional label parity scans every committed producer fact and pinned metadata page; protects public vocabulary with no dead or missing labels.
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 # test-parite-libelles ---------------------------------------------------------
 # Les libellés payload-owned (issue #318) — les gardes de parité bidirectionnelle
 # qui verrouillent le contrat de vocabulaire :
@@ -106,4 +113,6 @@ test_that("parité bidirectionnelle métadonnées épinglées ↔ faits producte
         paste(morts, collapse = ", ")))
     }
   }
+})
+
 })

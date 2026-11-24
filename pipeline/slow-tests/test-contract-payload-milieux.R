@@ -1,3 +1,10 @@
+# Slow tier (#1172): the complete Milieux payload fixture protects table shape, territory coverage, M2/M3 states, annual series, provenance and reading-law contracts.
+# Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
+
+local({
+  withr::local_dir(file.path(pkgload::pkg_path(), "tests", "testthat"))
+  for (helper in list.files(file.path(pkgload::pkg_path(), "tests", "testthat"), pattern = "^helper.*\\.R$", full.names = TRUE)) source(helper, local = environment())
+
 # test-contract-payload-milieux -------------------------------------------------
 # Le SEAM de test du payload Milieux (issue #171, étendu par #172, pivoté par
 # #239 — ADR-0017) : même fixture -> même payload, pour toujours. L'INDICATEUR
@@ -383,4 +390,6 @@ test_that("la garde « toute commune a un état > 0 » : un état nul ou NA est 
                      validations = validations_milieux,
                      apercu = APERCU_MILIEUX)
   )
+})
+
 })

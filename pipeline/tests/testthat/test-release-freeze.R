@@ -134,11 +134,12 @@ test_that("le target de publication dépend de digests_run (empreintes du run)",
   )
   manifeste <- manifeste_graphe()
   expect_true("digests_run" %in% manifeste$name)
-  edges <- reseau_graphe()$edges
-  expect_true("digests_run" %in%
-                edges$from[edges$to == "publie_backend_retained"])
-  expect_true("digests_run" %in%
-                edges$from[edges$to == "publie_profiles_declares"])
+  # A command reference is a tracked targets dependency; asserting it directly
+  # avoids rebuilding the full network for this publication-edge contract.
+  for (cible in c("publie_backend_retained", "publie_profiles_declares")) {
+    commande <- manifeste$command[manifeste$name == cible]
+    expect_true(grepl("digests_run", commande, fixed = TRUE), info = cible)
+  }
 })
 
 test_that("le point d'entrée retained refuse avant toute connexion DB", {
