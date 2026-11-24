@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import pytest
 
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+
 
 pytestmark = pytest.mark.integration
 
@@ -803,7 +805,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             with pool.connection() as connection:
                 yield RecordingConnection(connection)
 
-    catalogue = main.default_resource_catalogue()
+    catalogue = default_resource_catalogue()
     template = catalogue.resources_by_id["densite"]
     fixture_resource = replace(template, resource_id="fixture_scalar", indicator_id="fixture_scalar",
         theme_id="demographie", label="Fixture scalar", unit="count")
@@ -994,7 +996,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == canonical_db_env["schema"]
 
-    catalogue = main.default_resource_catalogue()
+    catalogue = default_resource_catalogue()
     resources = list(catalogue.resources)
 
     def fixture_resource(resource_id, shape):
@@ -2373,7 +2375,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v2'
 
         from dataclasses import replace
-        from api.resource_catalogue import default_resource_catalogue
+        from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
         pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
                               kwargs={"autocommit": True})
@@ -2483,7 +2485,7 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
     from psycopg_pool import ConnectionPool
     from api import main
     from dataclasses import replace
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     publish_dsn, read_dsn = _configuration()
     schema = "it_" + uuid.uuid4().hex[:20]
@@ -2658,7 +2660,7 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
         from psycopg_pool import ConnectionPool
         from api import main
         from dataclasses import replace
-        from api.resource_catalogue import default_resource_catalogue
+        from api.tests.resource_catalogue_fixtures import default_resource_catalogue
         pool = ConnectionPool(conninfo=_dsn_with_schema(db_env["read_dsn"], schema),
                               min_size=0, max_size=1, open=True,
                               kwargs={"autocommit": True})

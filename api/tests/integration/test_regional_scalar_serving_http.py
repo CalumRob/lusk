@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.tests.integration.test_publication_outcome_http import (
     outcome_db, integration_db_mutex, _client, _close, _item, _v2,
 )

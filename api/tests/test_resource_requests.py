@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceBatchRequest, ResourceReadItem
 from api.semantic_resource_reader import SemanticResourceReader
 

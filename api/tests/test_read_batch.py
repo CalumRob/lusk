@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from api import main
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 
 class Connection:

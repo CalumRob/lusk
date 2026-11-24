@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from api import main
 from api.publication_outcomes import (PublicationUnavailable, family_for_resource,
                                       publication_unavailable)
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 
 

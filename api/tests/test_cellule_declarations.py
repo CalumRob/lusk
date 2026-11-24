@@ -16,8 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api import main
-from api.resource_catalogue import (ResourceCatalogue, default_resource_catalogue,
-                                    discover_indicator_resources, validate_resource_item)
+from api.resource_catalogue import ResourceCatalogue, validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue, discover_indicator_resources
 from api.resource_requests import ResourceReadItem
 from api.semantic_resource_reader import SemanticResourceReader
 

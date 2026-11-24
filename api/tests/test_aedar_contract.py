@@ -7,9 +7,11 @@ import pytest
 
 from api import aedar_reads, semantic_resource_reader
 from api.aedar_models import AEDAR_AGGREGATE_READINGS
-from api.resource_catalogue import (default_resource_catalogue,
-                                     discover_indicator_resources, validate_resource_item)
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue, discover_indicator_resources
 from api.resource_requests import ResourceReadItem
+
+pytestmark = pytest.mark.usefixtures("legacy_resource_catalogue")
 
 
 def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():

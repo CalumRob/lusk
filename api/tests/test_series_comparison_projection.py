@@ -273,7 +273,7 @@ def test_selected_comparison_keeps_the_existing_unique_commune_min_two_policy():
 def test_reader_projection_is_requested_only_and_default_reads_stay_unchanged(monkeypatch):
     """Without the opt-in field the shared reader never enters the projection."""
     from api.semantic_resource_reader import SemanticResourceReader
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     def fail_projection(*_args, **_kwargs):
         raise AssertionError("Unrequested reads must not reach the comparison projection")

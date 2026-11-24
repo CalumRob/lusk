@@ -11,7 +11,8 @@ from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_c
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
 from api.publication_outcomes import family_for_resource, publication_unavailable
-from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
+from api.resource_catalogue import (ResourceCatalogue, database_resource_catalogue,
+                                     default_resource_grammar)
 from api.resource_publication import live_territory_reference_version
 
 
@@ -183,7 +184,7 @@ class SemanticResourceReader:
         request-local cache reuses that resolution for the same cohort target.
         v1 never calls this method.
         """
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         identities = []
         cohort_targets = {}
         relation_groups = []
@@ -364,7 +365,7 @@ class SemanticResourceReader:
 
     def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None,
                    *, work_budget: int = 200_000, snapshot_state=None) -> int:
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:
@@ -607,7 +608,7 @@ class SemanticResourceReader:
         return None
 
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None, *, snapshot_state=None) -> dict:
-        catalogue = catalogue or default_resource_catalogue()
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
         if item.fields and "axis_comparisons" in item.fields:

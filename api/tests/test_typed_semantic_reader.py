@@ -1,4 +1,5 @@
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 from api.semantic_resource_reader import SemanticResourceReader
 from api.typed_reading_snapshots import validate_milieux_source_bindings

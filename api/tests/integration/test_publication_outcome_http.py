@@ -21,6 +21,7 @@ import pytest
 
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _dsn_with_schema)
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 pytestmark = pytest.mark.integration
 
@@ -220,7 +221,7 @@ def _client(db, monkeypatch):
                                        open=True, kwargs={"autocommit": True})
     repository = main.ReadRepository(pool)
     main.app.dependency_overrides[main.get_repository] = lambda: repository
-    main.app.dependency_overrides[main.get_resource_catalogue] = main.default_resource_catalogue
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
     return TestClient(main.app), pool
 
 
@@ -475,7 +476,7 @@ def test_database_fault_is_never_softened_into_a_publication_outcome(outcome_db,
     pool = psycopg_pool.ConnectionPool(conninfo=outcome_db["read_dsn"], min_size=0, max_size=2,
                                        open=True, kwargs={"autocommit": True})
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-    main.app.dependency_overrides[main.get_resource_catalogue] = main.default_resource_catalogue
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
     quoted = '"' + outcome_db["read_role"].replace('"', '""') + '"'
     try:
         with psycopg.connect(outcome_db["publisher_dsn"], autocommit=True) as publisher:

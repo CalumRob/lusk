@@ -231,7 +231,7 @@ def test_published_scalar_peer_rows_match_group_counts_and_tie_span(corruption):
 
 def test_dual_shape_scalar_facet_marker_uses_declared_family_for_preflight_and_read(monkeypatch):
     from api.publication_outcomes import PublicationUnavailable, family_for_resource
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     class Cursor:
         def __init__(self, row=None, rows=None):

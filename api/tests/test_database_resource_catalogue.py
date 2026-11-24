@@ -142,6 +142,18 @@ def test_empty_live_set_is_an_empty_catalogue_not_file_backed_discovery():
 
 
 @pytest.mark.db_catalogue
+def test_production_catalogue_module_has_no_theme_metadata_file_discovery():
+    import inspect
+    from api import resource_catalogue
+
+    source = inspect.getsource(resource_catalogue)
+    assert "default_resource_catalogue" not in source
+    assert "discover_indicator_resources" not in source
+    assert "theme-metadata" not in source
+    assert 'glob("theme_*.json")' not in source
+
+
+@pytest.mark.db_catalogue
 def test_resources_http_route_uses_the_database_catalogue(monkeypatch):
     from fastapi.testclient import TestClient
     from api import main

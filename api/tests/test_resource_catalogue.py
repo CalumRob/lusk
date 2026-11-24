@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.resource_catalogue import (default_resource_catalogue,
-                                    discover_indicator_resources,
-                                    validate_resource_item)
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue, discover_indicator_resources
 from api.resource_requests import ResourceReadItem
 from api import main
 
@@ -469,7 +468,7 @@ def test_discovery_fails_closed_on_unaccounted_producer_declaration(tmp_path):
         discover_indicator_resources(tmp_path)
 
 
-def test_public_discovery_is_producer_derived_and_database_free():
+def test_legacy_public_discovery_override_is_producer_derived():
     catalogue = discover_indicator_resources(METADATA)
     main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
     try:

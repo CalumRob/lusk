@@ -11,21 +11,16 @@ def pytest_configure(config):
     )
 
 
-@pytest.fixture(autouse=True)
-def _offline_catalogue_for_legacy_unit_fixtures(request):
-    """Keep existing DB-free HTTP fixtures on their checked-in producer roster.
+@pytest.fixture
+def legacy_resource_catalogue():
+    """Explicit opt-in for legacy DB-free HTTP fixtures with fake serving SQL.
 
-    Production discovery is database-backed. Guarded integration tests and the
-    dedicated db_catalogue route test exercise that dependency; older unit HTTP
-    fixtures model serving SQL, not discovery SQL, and would otherwise need a
-    second unrelated fake catalogue in every connection stub.
+    Production route tests use the database catalogue. Only modules that mark
+    ``usefixtures("legacy_resource_catalogue")`` receive this test-only override.
     """
     from api import main
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
-    if request.node.get_closest_marker("integration") or request.node.get_closest_marker("db_catalogue"):
-        yield
-        return
     original = main.get_resource_catalogue
     main.app.dependency_overrides[original] = default_resource_catalogue
     try:

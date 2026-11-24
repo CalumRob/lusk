@@ -16,9 +16,12 @@ from fastapi.testclient import TestClient
 
 from api.aedar_models import AEDAR_SUMMARY_FAMILY, AEDAR_PER_CELL_FAMILY
 from api.publication_outcomes import PublicationUnavailable
-from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 from api.semantic_resource_reader import SemanticResourceReader
+
+pytestmark = pytest.mark.usefixtures("legacy_resource_catalogue")
 
 AGGREGATE = "aedar_territorial_aggregate"
 SUMMARY = "aedar_territory_summary"

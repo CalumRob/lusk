@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from api.resource_catalogue import (default_resource_catalogue, discover_indicator_resources,
-                                    validate_resource_item)
+from api.resource_catalogue import validate_resource_item
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue, discover_indicator_resources
 from api.resource_requests import ResourceBatchItem, ResourceReadItem
 
 ROOT = Path(__file__).resolve().parents[2]

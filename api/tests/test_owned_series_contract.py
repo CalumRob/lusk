@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from api.main import get_semantic_resource_reader
-from api.resource_catalogue import default_resource_catalogue
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
 from api import snapshot_reads
 from api.snapshot_reads import _complete_owned_mean_curve

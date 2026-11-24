@@ -274,7 +274,7 @@ def _run_worker(root: Path, current_root: Path, scoped_dsn: str,
 def _worker() -> None:
     fixture = json.loads(os.environ["LUSK_BENCH_FIXTURE"])
     import psycopg
-    from api.resource_catalogue import default_resource_catalogue
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
     catalogue = default_resource_catalogue()
     declaration = catalogue.resources_by_id["aedar_territorial_aggregate"]

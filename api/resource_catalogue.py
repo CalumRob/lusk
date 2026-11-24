@@ -1,8 +1,8 @@
-"""Producer-derived semantic resource metadata for API discovery.
+"""Semantic resource grammar and database-backed API discovery.
 
-The theme metadata files are the pipeline's producer declarations.  This module
-projects their declared serving shapes; it does not maintain an API-side list of
-indicator IDs or physical table names.
+The pipeline publishes producer declarations with each resource version. This
+module projects those declarations and the image-owned shape grammar; it never
+reads theme metadata files or maintains an API-side resource inventory.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -130,15 +130,6 @@ def default_resource_grammar() -> ResourceGrammar:
     if len(ids) != len(set(ids)):
         raise ValueError("Duplicate producer semantic resource identity")
     return ResourceGrammar(path, contract)
-
-
-@lru_cache(maxsize=1)
-def default_resource_catalogue() -> ResourceCatalogue:
-    """Offline producer projection retained for pipeline/tests, not HTTP discovery."""
-    root = Path(__file__).resolve().parents[1]
-    producer = Path(os.environ.get("LUSK_PRODUCER_METADATA_DIR", root / "pipeline" / "inst" / "extdata"))
-    metadata = producer / "theme-metadata"
-    return discover_indicator_resources(metadata, producer / "semantic-resource-contracts.json")
 
 
 _SHAPE_DECLARATIONS = (
@@ -792,29 +783,16 @@ def _declared_measure_facets(declaration, resource_id) -> dict[str, dict]:
     return facets
 
 
-def discover_indicator_resources(metadata_directory: str | Path | None,
-                                 semantic_contract_path: str | Path | None = None, *,
-                                 metadata_by_theme: dict | None = None) -> ResourceCatalogue:
-    """Validate and project all theme-scoped indicator declarations.
-
-    A retained indicator must be covered by at least one producer-declared
-    serving shape and a page descriptor. Explicitly excluded legacy source
-    declarations stay visible in the audit result but never enter discovery.
-    """
+def project_resource_catalogue(metadata_by_theme: dict,
+                               semantic_contract_path: str | Path | None = None) -> ResourceCatalogue:
+    """Project already-published producer declarations; never read metadata files."""
     declarations = []
     resources = []
     by_key = {}
-    if metadata_by_theme is None:
-        metadata_files = sorted(Path(metadata_directory).glob("theme_*.json"))
-        if not metadata_files:
-            raise ValueError("No producer theme metadata files found")
-        loaded_metadata = [(path.name, json.loads(path.read_text(encoding="utf-8")))
-                           for path in metadata_files]
-    else:
-        loaded_metadata = [(f"{theme}.json", metadata)
-                           for theme, metadata in metadata_by_theme.items()]
-        if not loaded_metadata and semantic_contract_path is None:
-            raise ValueError("No producer resource descriptors found")
+    loaded_metadata = [(f"{theme}.json", metadata)
+                       for theme, metadata in metadata_by_theme.items()]
+    if not loaded_metadata and semantic_contract_path is None:
+        raise ValueError("No producer resource descriptors found")
 
     for name, metadata in loaded_metadata:
         theme_id = metadata.get("theme")
@@ -1070,8 +1048,7 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
         # Grammar identities remain admissible even when their registry row is
         # absent, so a named read reaches the typed registry 503. They are not
         # discovered until a live version-bound descriptor exists.
-        semantic_projection = discover_indicator_resources(
-            None, grammar.contract_path, metadata_by_theme={})
+        semantic_projection = project_resource_catalogue({}, grammar.contract_path)
         admission.extend(semantic_projection.resources)
         seen_admission.update(resource.resource_id for resource in admission)
         for publication_id, content_version, resource_id, raw_descriptor, live in rows:
@@ -1094,8 +1071,7 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
                 metadata = descriptor.get("metadata")
                 if not isinstance(metadata, dict):
                     raise ValueError("indicator discovery metadata is missing")
-                projected = discover_indicator_resources(
-                    None, metadata_by_theme={metadata["theme"]: metadata})
+                projected = project_resource_catalogue({metadata["theme"]: metadata})
                 matches = [item for item in projected.resources
                            if item.resource_id == resource_id]
                 if len(matches) != 1:
