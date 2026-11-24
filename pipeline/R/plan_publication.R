@@ -203,24 +203,11 @@ resume_derive_ressource <- function(artefact_live, artefact_built) {
 verifier_gel_lignage_ressource <- function(artefact, registre = NULL, lock = NULL) {
   lignage <- artefact$digests_lignage
   if (!is.list(lignage)) lignage <- list()
-  ids <- names(lignage)
-  # Une entrée explicite `absent = TRUE` consigne une source de la provenance
-  # sans empreinte dans source-digests.json : le lignage n'est pas attestation,
-  # la ressource est refusée (raison ADR-0048 `empreinte_absente`).
-  absents <- ids[vapply(lignage, function(d) {
-    if (isTRUE(d$absent)) return(TRUE)
-    sha <- champ_caractere(d$sha256)
-    is.na(sha)
-  }, logical(1))]
-  if (length(absents)) {
-    stop(erreur_gel_release("empreinte_absente", paste0(
-      "Gel de release : empreinte absente pour ", paste(absents, collapse = ", "),
-      " — publication refusée, zéro écriture. Relock requis."
-    )))
-  }
-  if (!length(ids)) return(invisible(TRUE))
   if (is.null(registre)) registre <- lire_lock(lock)
-  evaluer_gel_empreintes(lignage, registre, ids = ids,
+  # Le noyau partagé porte TOUTES les raisons de gel, y compris
+  # `empreinte_absente` pour les entrées explicites `absent = TRUE`, et le
+  # garde d'empreintes vides. Aucune raison n'est réimplémentée ici.
+  evaluer_gel_empreintes(lignage, registre, ids = names(lignage),
                          exiger_couverture = FALSE,
                          chemin = paste0("lignage[", artefact$ressource, "]"))
 }

@@ -42,6 +42,17 @@ evaluer_gel_empreintes <- function(digests, registre, ids = NULL,
   cibles <- if (is.null(ids)) seq_along(digests) else which(ids_digest %in% as.character(ids))
   for (i in cibles) {
     id <- ids_digest[[i]]
+    # Une entrée explicite `absent = TRUE` (source de la provenance sans
+    # empreinte dans source-digests.json) n'est pas une attestation. Même
+    # raison, même message que le garde global : une seule implementation.
+    digest <- digests[[i]]
+    if (isTRUE(digest$absent) || is.na(champ_caractere(digest$sha256))) {
+      stop(erreur_gel_release(
+        "empreinte_absente",
+        paste0("Gel de release : empreinte absente pour ", id,
+               " — publication refusée, zéro écriture. Relock requis.")
+      ))
+    }
     verrou <- registre[[id]]
     if (is.null(verrou)) {
       stop(erreur_gel_release(

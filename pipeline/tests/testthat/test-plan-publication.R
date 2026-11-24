@@ -285,6 +285,19 @@ test_that("une dérive DANS le lignage refuse et nomme la source", {
   expect_identical(plan$ressources$gel[plan$ressources$ressource == "densite"], "ok")
 })
 
+test_that("le noyau partagé produit seul la raison empreinte_absente", {
+  digests <- list(list(source_id = "s1", sha256 = NA_character_, absent = TRUE))
+  erreur <- tryCatch(evaluer_gel_empreintes(digests, list(), exiger_couverture = FALSE),
+                     error = function(e) e)
+  expect_s3_class(erreur, "erreur_gel_release")
+  expect_identical(erreur$raison, "empreinte_absente")
+  expect_match(conditionMessage(erreur), "empreinte absente pour s1", fixed = TRUE)
+  expect_match(conditionMessage(erreur), "publication refusée, zéro écriture", fixed = TRUE)
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "plan_publication.R"),
+                          warn = FALSE), collapse = "\n")
+  expect_false(grepl("stop\\(erreur_gel_release", code))
+})
+
 test_that("une empreinte absente du lignage refuse avec la raison empreinte_absente", {
   p <- plan_preparer()
   on.exit(p$nettoyer(), add = TRUE)
