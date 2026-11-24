@@ -101,6 +101,22 @@ only (rendered/element rules are not exercised by that pass).
 - Keep the acquisition registry complete against `THEMES_CANONIQUES`; its contract test must fail when a canonical theme is omitted.
 - Domain vocabulary and owner decisions for this mode live in `CONTEXT.md` — « Acquisition par thème » (anciennement « Acquisition paresseuse par thème »).
 
+### App tests (`app/`) — how to run them
+
+- `npm test` = the `unit` Vitest project: happy-dom only, **no real browser**, no Playwright/Chromium
+  import reachable. Config lives in `app/vitest.config.ts` (never in `vite.config.ts`).
+- During iteration run filtered: `npx vitest run --project unit <file-or-regex>`. Run the full
+  `npm test` **once, before handoff** — not after every edit.
+- `npm run test:browser` = the `browser` project (`*.browser.spec.ts`): the Cahier PDF specs that need a
+  real layout engine. It starts ONE Chromium and ONE Vite bundle for the whole run
+  (`src/__tests__/browser/globalSetup.ts`); spec files reach it through a loopback bridge and never
+  launch a browser. Needs Chrome (`LUSK_CHROME_PATH` or the system install). Run it **only** when
+  touching the Cahier PDF composer / native paint / DOM painter, or `cahierPdf*` test helpers —
+  and before merging such a ticket. It is not part of `npm test`.
+- A spec that needs real layout is named `*.browser.spec.ts`; do not add Chromium to the unit project.
+- `npm ci` first on a fresh checkout/worktree (missing `jspdf` / `pdfjs-dist` breaks module loading).
+  `node_modules` must be a real directory per checkout — never a junction to another checkout.
+
 ### R / renv in worktrees (pipeline) — READ BEFORE RUNNING ANY R
 
 The R pipeline (`pipeline/`) uses renv, which stores each project's package library at

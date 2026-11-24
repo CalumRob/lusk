@@ -1,16 +1,14 @@
-import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import vue from '@vitejs/plugin-vue'
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vite'
 import type { Connect, Plugin } from 'vite'
 import type { ServerResponse } from 'node:http'
 import { copierPayloadEnBuild } from './scripts/copy-payload-build'
 
-// Vite 7 + Vitest 4 share this config. The `test` block wires Vitest:
-// happy-dom (no browser), unit specs under src/.
+// App (dev / build / preview) config only. Vitest lives in vitest.config.ts.
 // Deploy note (docs/self-hosting.md): nginx serves dist/ at the site root
 // with `try_files $uri /index.html` — so the SPA uses the default base '/'
 // and createWebHistory (client-side history routing, server-side fallback).
@@ -24,7 +22,7 @@ import { copierPayloadEnBuild } from './scripts/copy-payload-build'
 // `npm run dev` nor `npm run build` regenerates the pipeline.
 const racineApp = path.resolve(fileURLToPath(new URL('.', import.meta.url)))
 const racineDepot = path.resolve(racineApp, '..')
-const racineDependancesReelle = realpathSync(path.resolve(racineApp, 'node_modules'))
+const racineDependances = path.resolve(racineApp, 'node_modules')
 const racinePayload = path.resolve(racineApp, '../public/data')
 
 async function servirPayloadMiddleware(
@@ -75,16 +73,13 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['maplibre-gl'],
   },
-  // [PROTOTYPE CARTOGRAPHIE — JETABLE] Variant E reads the existing QGIS
-  // exports from pipeline/maps through Vite's /@fs seam; keep the allowance
-  // bounded to this repository and remove it with the map-layout prototype.
   server: {
+    // The app imports repository-owned files outside app/ (for example
+    // pipeline/inst/extdata/*.csv?raw), so the repository root must be
+    // servable. Nothing outside the checkout is allowed: node_modules must be
+    // a real directory in each checkout, never a junction to another one.
     fs: {
-      // Worktrees can share node_modules through a junction to the main
-      // checkout. Vite resolves /@fs font assets through that junction, so
-      // allow the actual dependency root instead of returning 403 and falling
-      // back to system fonts in dev.
-      allow: [racineDepot, racineDependancesReelle],
+      allow: [racineDepot],
     },
     // Variant E keeps /api same-origin in the browser. The public read-only API
     // is the development default; override for a local API with LUSK_API_ORIGIN.
@@ -98,27 +93,11 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      // Vitest only, and before the broad '@' entry: specs generate through one
-      // headless Chromium because happy-dom has no layout for the DOM painter.
-      ...(process.env.VITEST
-        ? { '@/fiche/prototype/cahierPdfComposer': path.join(racineApp, 'src/__tests__/helpers/cahierPdfComposerNative.ts') }
-        : {}),
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       // svg2pdf's UMD `main` cannot consume jsPDF's ESM exports under Vitest's
       // SSR resolver. The package's own ES build is the browser build; pin it
       // explicitly so tests and the production bundle run the same module.
-      'svg2pdf.js': path.join(racineDependancesReelle, 'svg2pdf.js/dist/svg2pdf.es.min.js'),
+      'svg2pdf.js': path.join(racineDependances, 'svg2pdf.js/dist/svg2pdf.es.min.js'),
     },
-  },
-  test: {
-    environment: 'happy-dom',
-    // PDF colour resolution consumes the real CSS owner as text. Vitest's
-    // default CSS stub would otherwise turn even its ?raw import into ''.
-    css: { include: [/tokens\.css/] },
-    include: ['src/**/*.spec.ts'],
-    setupFiles: ['src/__tests__/setup.ts'],
-    // #868 : l'acquisition par thème est le seul mode — il n'y a plus de
-    // valeur d'environnement à piquer ; aucun test ne peut retomber sur un
-    // chemin statique.
   },
 })

@@ -17,7 +17,8 @@
     "verify:aedar-demand": "node scripts/verify-aedar-demand.mjs",
     "verify:rank-circles": "node scripts/verify-rank-circles.mjs",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --project unit",
+    "test:browser": "vitest run --project browser",
     "verify:cahier-pdf-production": "node scripts/verify-cahier-pdf-production.mjs",
     "verify:detector": "npx --yes impeccable@4.9.2 detect src"
   },
