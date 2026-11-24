@@ -62,16 +62,26 @@ plan_fixture_listing_json <- function(live) {
 }
 
 plan_fixture_attributions <- function() {
+  # Un code regression est fatal au build (ADR-0048 §4) : aucun artefact n'est
+  # produit et il n'atteint jamais verif-attributions.json. Seules des derives
+  # de donnees y figurent.
   list(
     list(type = "drift", source = "dpe_energy",
          message = "donnees : derive de dpe_energy depuis 2026-11-23"),
-    list(type = "regression", source = "census_densite",
-         message = "regression de code : entrees identiques, sortie modifiee")
+    list(type = "drift", source = "census_densite",
+         message = "donnees : derive de census_densite depuis 2026-11-23"),
+    # Entrees sur deux sources : aucune ressource n'a les DEUX dans son
+    # lignage -> aucune attribution (regle du sous-ensemble complet).
+    list(type = "drift", sources = list(list(source_id = "dpe_energy"),
+                                        list(source_id = "profile_source")),
+         message = "donnees : derive horizontale")
   )
 }
 
-plan_fixture_attributions_json <- function(attributions) {
-  chemin <- tempfile("plan-attributions-")
-  jsonlite::write_json(attributions, chemin, auto_unbox = TRUE)
-  chemin
+plan_fixture_attributions_dir <- function(attributions) {
+  dossier <- tempfile("plan-attributions-")
+  dir.create(dossier)
+  jsonlite::write_json(attributions, file.path(dossier, NOM_ATTRIBUTIONS),
+                       auto_unbox = TRUE)
+  dossier
 }

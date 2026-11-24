@@ -358,8 +358,18 @@ test_that("le statut de vérification est attribué par lignage", {
   densite <- plan$ressources[plan$ressources$ressource == "densite", ]
   expect_identical(part$check, "drift")
   expect_true(grepl("dpe_energy", part$check_detail, fixed = TRUE))
-  expect_identical(densite$check, "regression")
+  expect_identical(densite$check, "drift")
   expect_identical(plan$ressources$check[plan$ressources$ressource == "distribution_dpe"], "none")
+  # L'attribution à deux sources n'appartient à aucune ressource (sous-ensemble
+  # complet requis, pas recouvrement).
+  expect_false(any(grepl("derive horizontale", plan$ressources$check_detail,
+                         fixed = TRUE)))
+  # Aucune régression ne remonte au plan : elle est fatale au build.
+  expect_false(any(grepl("regression", plan$ressources$check, fixed = TRUE)))
+  code <- paste(readLines(testthat::test_path("..", "..", "R", "plan_publication.R"),
+                          warn = FALSE), collapse = "\n")
+  expect_true(grepl("lire_attributions\\(", code))
+  expect_false(grepl("lire_attributions_fichier", code, fixed = TRUE))
 })
 
 # -- CLI -----------------------------------------------------------------------
@@ -383,17 +393,18 @@ test_that("la commande plan imprime live, built, cascadance, gel et vérificatio
   on.exit(p$nettoyer(), add = TRUE)
   initial <- plan_fixture_build(p$root)
   listing <- plan_fixture_listing_json(plan_fixture_listing(initial))
-  attributions <- plan_fixture_attributions_json(plan_fixture_attributions())
-  on.exit(unlink(c(listing, attributions)), add = TRUE)
+  attributions <- plan_fixture_attributions_dir(plan_fixture_attributions())
+  on.exit(unlink(c(listing, attributions), recursive = TRUE), add = TRUE)
   restaurer <- plan_cli_environnement(c("LUSK_ARTEFACTS", "LUSK_SOURCES_LOCK",
-    "LUSK_LIVE_LISTING", "LUSK_ATTRIBUTIONS"))
+    "LUSK_LIVE_LISTING"))
   on.exit(restaurer(), add = TRUE)
   Sys.setenv(LUSK_ARTEFACTS = p$root, LUSK_SOURCES_LOCK = p$verrou$lock,
-             LUSK_LIVE_LISTING = listing, LUSK_ATTRIBUTIONS = attributions)
+             LUSK_LIVE_LISTING = listing)
   avant <- sort(list.files(p$root, recursive = TRUE, all.files = TRUE))
   script <- testthat::test_path("..", "..", "scripts", "publication.R")
 
-  sortie <- suppressWarnings(system2("Rscript", c(shQuote(script), "plan"),
+  sortie <- suppressWarnings(system2("Rscript", c(shQuote(script), "plan",
+                                                  shQuote(attributions)),
                                      stdout = TRUE, stderr = TRUE))
 
   expect_true(any(grepl("^ressource=offre_tc .*live=", sortie, fixed = FALSE)))
@@ -412,11 +423,10 @@ test_that("la commande plan sans listing live affiche not adopted", {
   on.exit(p$nettoyer(), add = TRUE)
   plan_fixture_build(p$root)
   restaurer <- plan_cli_environnement(c("LUSK_ARTEFACTS", "LUSK_SOURCES_LOCK",
-    "LUSK_LIVE_LISTING", "LUSK_ATTRIBUTIONS"))
+    "LUSK_LIVE_LISTING"))
   on.exit(restaurer(), add = TRUE)
   Sys.setenv(LUSK_ARTEFACTS = p$root, LUSK_SOURCES_LOCK = p$verrou$lock)
   Sys.unsetenv("LUSK_LIVE_LISTING")
-  Sys.unsetenv("LUSK_ATTRIBUTIONS")
   script <- testthat::test_path("..", "..", "scripts", "publication.R")
 
   sortie <- suppressWarnings(system2("Rscript", c(shQuote(script), "plan"),

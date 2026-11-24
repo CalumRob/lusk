@@ -30,12 +30,9 @@ if (identical(commande, "split")) {
          call. = FALSE)
   }
   sortie <- if (length(args) == 2L) args[[2L]] else ""
-  attributions <- Sys.getenv("LUSK_ATTRIBUTIONS", unset = "")
-  if (!nzchar(attributions) && nzchar(sortie))
-    attributions <- file.path(sortie, NOM_ATTRIBUTIONS)
   plan <- plan_publication(
     live = Sys.getenv("LUSK_LIVE_LISTING", unset = ""),
-    attributions = if (nzchar(attributions)) attributions else NULL)
+    attributions = if (nzchar(sortie)) sortie else NULL)
   imprimer_plan_publication(plan)
 } else {
   stop("Usage: Rscript scripts/publication.R split <sortie> | plan [sortie]",

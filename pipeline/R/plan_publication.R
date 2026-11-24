@@ -45,13 +45,6 @@ lire_listing_live_fichier <- function(chemin) {
   do.call(rbind, lignes)
 }
 
-lire_attributions_fichier <- function(chemin) {
-  if (is.null(chemin) || !nzchar(chemin) || !file.exists(chemin)) return(NULL)
-  brut <- jsonlite::fromJSON(chemin, simplifyVector = FALSE)
-  if (is.list(brut) && !is.null(brut$attributions)) brut <- brut$attributions
-  brut
-}
-
 # -- Descripteur : lecture hétérogène liste / data.frame -----------------------
 
 champ_descripteur <- function(descripteur, nom) {
@@ -218,6 +211,12 @@ raison_erreur_gel <- function(e) {
 
 # -- Statut de vérification des données réelles --------------------------------
 
+# Attribution ADR-0048 §4 amendée : une vérification n'appartient à une
+# ressource que si TOUTES ses sources d'entrée sont dans le lignage de cette
+# ressource (sous-ensemble complet, pas simple recouvrement). Une régression de
+# code est FATAL AU BUILD (entrées identiques, sortie modifiée) : le build échoue,
+# aucun artefact n'existe à planifier, donc aucune régression n'atteint jamais
+# verif-attributions.json. Le plan ne rapporte que des dérives de données.
 verifications_par_ressource <- function(attributions, artefacts) {
   if (is.null(attributions) || !length(attributions)) return(list())
   resultat <- list()
@@ -228,20 +227,18 @@ verifications_par_ressource <- function(attributions, artefacts) {
                            use.names = FALSE))
     }
     if (!is.null(attribution$source)) ids <- c(ids, as.character(attribution$source))
-    ids <- ids[!is.na(ids)]
+    ids <- unique(ids[!is.na(ids)])
+    if (!length(ids)) next
+    message <- if (!is.null(attribution$message))
+      as.character(attribution$message)[[1L]] else ""
     for (nom in names(artefacts)) {
       lignage <- names(artefacts[[nom]]$digests_lignage)
-      communs <- intersect(ids, lignage)
-      if (!length(communs)) next
-      type <- if (identical(attribution$type, "regression")) "regression" else "drift"
-      message <- if (!is.null(attribution$message))
-        as.character(attribution$message)[[1L]] else ""
+      if (!all(ids %in% lignage)) next
       if (is.null(resultat[[nom]])) {
-        resultat[[nom]] <- list(type = type, message = message, sources = communs)
+        resultat[[nom]] <- list(type = "drift", message = message, sources = ids)
       } else {
         resultat[[nom]]$message <- paste(resultat[[nom]]$message, message, sep = " | ")
-        resultat[[nom]]$sources <- union(resultat[[nom]]$sources, communs)
-        if (identical(type, "regression")) resultat[[nom]]$type <- "regression"
+        resultat[[nom]]$sources <- union(resultat[[nom]]$sources, ids)
       }
     }
   }
@@ -382,8 +379,10 @@ plan_publication <- function(root = NULL, builds = NULL, live = NULL, lock = NUL
   if (is.function(live)) live <- live()
   if (is.character(live) && length(live) == 1L) live <- lire_listing_live_fichier(live)
   if (is.null(registre)) registre <- lire_lock(lock)
+  # `attributions` est un dossier de sortie : on réutilise le lecteur canonique
+  # de lock_attribution.R, jamais un lecteur de fichier parallèle.
   if (is.character(attributions) && length(attributions) == 1L)
-    attributions <- lire_attributions_fichier(attributions)
+    attributions <- lire_attributions(attributions)
 
   artefacts <- list()
   artefacts_live <- list()
