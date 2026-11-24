@@ -35,10 +35,11 @@ EXCEPTIONS_BUDGET <- data.frame(
     "first structural audit parses its connection/write candidates and proves apply is guarded",
     "first DBI-candidate parse-data audit; the positional contract covers every R source",
     "one full targets network construction for report dependency edges; later files reuse it",
-    "execution is the contract: cue discipline across repeated makes; cron retirement leaves it unchanged",
-    "execution is the contract: cron never recomputes after bootstrap; #1129 leaves it unchanged",
-    "ADR-0049 step 4 retires the offre_tc bridge; its 78 transaction contracts are deliberately left unchanged"
+    "execution is the contract: cue discipline across repeated makes; expires with #1129",
+    "execution is the contract: cron never recomputes after bootstrap; expires with #1129",
+    "ADR-0049 step 4 retires the offre_tc bridge; expires with ADR-0049 step 4"
   ),
+  expiration = c(rep(NA_character_, 4L), "#1129", "#1129", "ADR-0049 step 4"),
   stringsAsFactors = FALSE
 )
 

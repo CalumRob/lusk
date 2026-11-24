@@ -34,6 +34,18 @@ test_that("budget exceptions match the exact file and test name", {
   expect_false(envir$exception_budget("other.R", "executes twice"))
 })
 
+test_that("retirement-bound budget exceptions carry an expiry label", {
+  envir <- new.env(parent = globalenv())
+  sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
+  attendu <- c("test-offre-tc-bridge.R" = "ADR-0049 step 4",
+               "test-targets-raccordement.R" = "#1129")
+  expect_true("expiration" %in% names(envir$EXCEPTIONS_BUDGET))
+  for (fichier in names(attendu)) {
+    lignes <- envir$EXCEPTIONS_BUDGET[envir$EXCEPTIONS_BUDGET$fichier == fichier, ]
+    expect_true(all(lignes$expiration == attendu[[fichier]]), info = fichier)
+  }
+})
+
 test_that("the budget report names the top offenders", {
   envir <- new.env(parent = globalenv())
   sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
