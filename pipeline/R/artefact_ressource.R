@@ -145,14 +145,22 @@ ecrire_artefact_ressource <- function(ressource, forme, contenu,
   list(ressource = ressource, forme = forme, version = version, statut = "new")
 }
 
-lire_artefact_ressource <- function(ressource, version, root = NULL) {
+lire_artefact_ressource <- function(ressource, version, root = NULL, forme = NULL) {
   valider_identite_ressource(ressource)
   dossier <- file.path(racine_artefacts(root), ressource, version)
   if (!dir.exists(dossier))
     stop("Artefact de ressource version is unavailable: ", ressource, "/", version, call. = FALSE)
   manifest <- jsonlite::fromJSON(file.path(dossier, "manifest.json"), simplifyVector = FALSE)
-  lu <- verifier_dossier_artefact(dossier, manifest$ressource, manifest$forme, version)
-  c(list(ressource = ressource, version = version, forme = manifest$forme), lu[c("contenu", "digests_lignage", "manifest")])
+  # L'adresse demandée doit correspondre au manifeste : un artefact déplacé sous
+  # une autre ressource/version ne peut pas être lu sous cette identité.
+  if (!identical(manifest$ressource, ressource) || !identical(manifest$version, version))
+    stop("Artefact de ressource manifest disagrees with the requested ressource/version",
+      call. = FALSE)
+  if (!is.null(forme) && !identical(manifest$forme, forme))
+    stop("Artefact de ressource manifest disagrees with the requested shape", call. = FALSE)
+  lu <- verifier_dossier_artefact(dossier, ressource, manifest$forme, version)
+  c(list(ressource = ressource, version = version, forme = manifest$forme),
+    lu[c("contenu", "digests_lignage", "manifest")])
 }
 
 lister_artefacts_ressource <- function(root = NULL, ressource = NULL) {

@@ -47,6 +47,34 @@ test_that("un contenu différent donne une autre Version de ressource publiée s
   expect_setequal(versions$version, c(v1$version, v2$version))
 })
 
+test_that("la lecture refuse une ressource, une forme ou une version qui ne correspondent pas au manifeste", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  contenu <- list(faits = data.frame(value = 1), descriptor = list(label = "Un"),
+    provenance = data.frame(source_id = "s1", vintage_id = "v1"), comparison = NULL)
+  ecrit <- ecrire_artefact_ressource("densite", "scalar", contenu, root = root)
+
+  faux_id <- file.path(root, "autre_ressource", ecrit$version)
+  dir.create(faux_id, recursive = TRUE)
+  source <- file.path(root, "densite", ecrit$version)
+  fichiers <- list.files(source, full.names = FALSE)
+  expect_true(all(file.copy(file.path(source, fichiers), faux_id, overwrite = TRUE)))
+  expect_error(lire_artefact_ressource("autre_ressource", ecrit$version, root = root),
+    "manifest")
+  expect_error(lire_artefact_ressource("densite", ecrit$version, root = root,
+    forme = "owned_series"), "manifest")
+  expect_error(lire_artefact_ressource("densite", ecrit$version, root = root,
+    forme = "declared_profile"), "manifest")
+
+  # Un dossier déplacé sous une autre version doit échouer : le manifeste porte
+  # la version réelle, pas le nom du dossier.
+  faux <- file.path(root, "densite", "version-faussee")
+  dir.create(faux, recursive = TRUE)
+  expect_true(all(file.copy(file.path(source, fichiers), faux, overwrite = TRUE)))
+  expect_error(lire_artefact_ressource("densite", "version-faussee", root = root),
+    "manifest")
+})
+
 test_that("le sélecteur de rétention est pur : versions publiées et dernier build non publié", {
   builds <- data.frame(
     ressource = c("a", "a", "a", "a", "b", "b"),
