@@ -40,6 +40,7 @@ import type {
   TextBlock,
 } from '@/fiche/content/themeContent'
 import type { Territoire } from '@/payload/types'
+import type { CahierExportAvailability } from './cahierPdfExport'
 import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 
 /** One to three selectable series may be kept for a readable PDF table (PRD #1014). */
@@ -638,7 +639,7 @@ function deepFreeze<T>(value: T): T {
  * (the activation policy still reads each owner state it gates on) without
  * walking Vue proxies to clone values it never consults.
  */
-export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportCapture {
+export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportAvailability {
   return sectionCapture(input, false)
 }
 

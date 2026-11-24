@@ -63,7 +63,7 @@ describe('availability capture for the Cahier PDF action (#1165)', () => {
   it('does not clone the evidence or build a native render for the availability read', () => {
     const input = inputFor('visiter-la-bretagne')
     const availability = captureCahierSectionAvailability(input)
-    expect(availability.nativeRender).toBeUndefined()
+    expect(Object.prototype.hasOwnProperty.call(availability, 'nativeRender')).toBe(false)
     // The curve model is passed through by reference: only generation needs the
     // independent frozen copy, whose points and sources are never read here.
     const model = availability.figures[0]!.model as { points: unknown }
