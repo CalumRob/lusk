@@ -41,8 +41,8 @@ test_that("la comparaison d'un artefact scalaire est celle de l'indicateur seul 
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   reference <- artefacts_fixture_reference(version = "reference-territoriale-v2")
   resultat <- splitter_sortie(tempfile("sortie-"), root = root,
-    projections = artefacts_fixture_all_projections(), reference = reference,
-    digests = artefacts_fixture_all_digests())
+    projections = artefacts_fixture_all_projections(reference$content_version),
+    reference = reference, digests = artefacts_fixture_all_digests())
   version <- resultat$version[resultat$ressource == "densite"]
   artefact <- lire_artefact_ressource("densite", version, root = root)
   comparaison <- artefact$contenu$comparison
@@ -53,12 +53,52 @@ test_that("la comparaison d'un artefact scalaire est celle de l'indicateur seul 
   expect_identical(unique(comparaison$lineage$facet_id), "densite")
   expect_identical(comparaison$reference_content_version, "reference-territoriale-v2")
 
+  # Jeton explicite : la comparaison porte la version des FAITS de CETTE
+  # ressource (descripteur + faits + provenance, comparaison exclue), jamais le
+  # jeton scalaire global calculé sur le snapshot de tous les indicateurs.
+  attendu <- version_artefact(contenu_artefact(artefact$contenu$faits,
+    artefact$contenu$descriptor, artefact$contenu$provenance, NULL))
+  expect_identical(comparaison$scalar_content_version, attendu)
+  projections <- artefacts_fixture_scalar_projections()
+  global <- version_artefact(contenu_artefact(
+    list(facts = do.call(rbind, lapply(projections, `[[`, "facts")),
+         eligible_territories = projections[[1L]]$eligible_territories),
+    do.call(rbind, lapply(projections, `[[`, "descriptors")),
+    do.call(rbind, lapply(projections, `[[`, "provenance")), NULL))
+  expect_false(identical(comparaison$scalar_content_version, global))
+
   # Même ref, un autre indicateur : comparaison différente, Liaison identique.
   version_autre <- resultat$version[resultat$ressource == "offre_tc"]
   autre <- lire_artefact_ressource("offre_tc", version_autre, root = root)
   expect_false(identical(comparaison$content_version, autre$contenu$comparison$content_version))
   expect_false(any(autre$contenu$comparison$groups$indicator_id == "densite"))
   expect_identical(autre$contenu$comparison$reference_content_version, "reference-territoriale-v2")
+  expect_identical(autre$contenu$comparison$scalar_content_version,
+    version_artefact(contenu_artefact(autre$contenu$faits, autre$contenu$descriptor,
+      autre$contenu$provenance, NULL)))
+})
+
+test_that("les jetons d'une comparaison non scalaire lient aussi les faits de sa ressource et la référence", {
+  root <- artefacts_fixture_root()
+  root_invalide <- artefacts_fixture_root()
+  on.exit(unlink(c(root, root_invalide), recursive = TRUE), add = TRUE)
+  reference <- artefacts_fixture_reference(version = "reference-profil-v3")
+  resultat <- splitter_sortie(tempfile("sortie-"), root = root,
+    projections = artefacts_fixture_all_projections(reference$content_version),
+    reference = reference, digests = artefacts_fixture_all_digests())
+  version <- resultat$version[resultat$ressource == "distribution_dpe"]
+  artefact <- lire_artefact_ressource("distribution_dpe", version, root = root)
+  expect_identical(artefact$contenu$comparison$scalar_content_version,
+    version_artefact(contenu_artefact(artefact$contenu$faits, artefact$contenu$descriptor,
+      artefact$contenu$provenance, NULL)))
+  expect_identical(artefact$contenu$comparison$reference_content_version,
+    "reference-profil-v3")
+
+  projections <- artefacts_fixture_all_projections(reference$content_version)
+  projections$declared_profile$distribution_dpe$comparison$scalar_content_version <- "faux-jeton"
+  expect_error(splitter_sortie(tempfile("sortie-"), root = root_invalide,
+    projections = projections, reference = reference,
+    digests = artefacts_fixture_all_digests()), "Comparison tokens are not bound")
 })
 
 test_that("les digests de lignage de chaque artefact portent exactement les source_id de sa provenance", {

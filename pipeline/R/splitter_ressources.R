@@ -120,9 +120,32 @@ comparaison_scalaire_ressource <- function(projection, ressource, reference) {
   direction <- as.character(descriptions$direction[[1L]])
   if (is.na(facet) || !identical(facet, ressource) || !direction %in% c("high", "low")) return(NULL)
   version_faits <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection)
+  # Jeton explicite (ADR-0049) : `scalar_content_version` est la version des
+  # FAITS DE CETTE RESSOURCE (descripteur + faits + provenance, comparaison
+  # exclue) — PAS le jeton scalaire global d'aujourd'hui, calculé par le
+  # producteur sur le snapshot de TOUS les indicateurs. `reference_content_version`
+  # est la version de la référence territoriale de la sortie. Un changement de
+  # référence déplace donc la comparaison de chaque ressource, pas un token global.
   project_scalar_comparisons(projection, reference$rows,
     input_scalar_content_version = version_faits,
     reference_content_version = reference$content_version)
+}
+
+# Toute comparaison qui porte ces jetons — scalaire OU autre forme — doit être
+# liée aux faits de CETTE ressource et à la référence de la sortie. Les
+# comparaisons sans jetons (familles sans publication de comparaison) sont
+# simplement laissées telles quelles.
+verifier_jetons_comparaison <- function(handler, projection, ressource, reference, comparaison) {
+  if (!is.list(comparaison) ||
+      !all(c("scalar_content_version", "reference_content_version") %in% names(comparaison)))
+    return(invisible(NULL))
+  attendu <- version_faits_ressource(handler, projection)
+  if (!identical(as.character(comparaison$scalar_content_version), as.character(attendu)) ||
+      !identical(as.character(comparaison$reference_content_version),
+                 as.character(reference$content_version)))
+    stop("Comparison tokens are not bound to this resource's facts and the sortie territory reference: ",
+      ressource, call. = FALSE)
+  invisible(TRUE)
 }
 
 # Comparaison déjà portée par la projection du producteur (profil, série,
@@ -236,6 +259,7 @@ splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference =
                                  stringsAsFactors = FALSE)
       faits <- faits_forme(handler, projection)
       comparaison <- handler$comparaison(projection, id, reference)
+      verifier_jetons_comparaison(handler, projection, id, reference, comparaison)
       contenu <- contenu_artefact(faits, descripteur, provenance, comparaison)
       digests_lignage <- digests_lignage_ressource(sources_provenance_ressource(provenance), digests)
       ecrit <- ecrire_artefact_ressource(id, forme, contenu,

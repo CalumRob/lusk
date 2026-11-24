@@ -62,14 +62,22 @@ artefacts_fixture_scalar_projections <- function() {
   stats::setNames(list(a, b), c("densite", "offre_tc"))
 }
 
-artefacts_fixture_profile_projections <- function() {
-  list(distribution_dpe = list(
+artefacts_fixture_profile_projections <- function(reference_version = "reference-v1") {
+  projection <- list(
     descriptor = list(indicator_id = "distribution_dpe", theme_id = "habitat"),
     facts = data.frame(indicator_id = "distribution_dpe", territory_id = "c1",
       value = 1, stringsAsFactors = FALSE),
     provenance = data.frame(source_id = "profile_source", vintage_id = "v1",
       stringsAsFactors = FALSE),
-    comparison = NULL))
+    comparison = NULL)
+  # Un profil déclaré peut porter une comparaison : ses jetons suivent la même
+  # règle que le scalaire (faits de CETTE ressource + référence de la sortie).
+  faits <- projection[setdiff(names(projection), c("descriptor", "provenance", "comparison"))]
+  version <- version_artefact(contenu_artefact(faits, projection$descriptor,
+    projection$provenance, NULL))
+  projection$comparison <- list(scalar_content_version = version,
+    reference_content_version = reference_version, kind = "declared_profile")
+  list(distribution_dpe = projection)
 }
 
 artefacts_fixture_series_projections <- function() {
@@ -101,10 +109,10 @@ artefacts_fixture_aedar_projection <- function() {
     comparison = NULL))
 }
 
-artefacts_fixture_all_projections <- function() {
+artefacts_fixture_all_projections <- function(reference_version = "reference-v1") {
   list(
     scalar = artefacts_fixture_scalar_projections(),
-    declared_profile = artefacts_fixture_profile_projections(),
+    declared_profile = artefacts_fixture_profile_projections(reference_version),
     owned_series = artefacts_fixture_series_projections(),
     observed_collection = artefacts_fixture_collection_projections(),
     aedar = artefacts_fixture_aedar_projection()
