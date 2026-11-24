@@ -8,9 +8,12 @@
  * state, an unavailable cell) is not a failure and remains exportable with its
  * own honest wording.
  *
- * This module reads only #1021's immutable capture. It starts no acquisition,
- * mutates no screen control and owns no factual predicate: each state below is
- * the one the figure owner actually published.
+ * The activation policy reads only readiness, capabilities, comparison and
+ * figures. The mounted availability path hands it uncloned live owner values
+ * for reactive dependency tracking and must never store them. The authoritative
+ * check at generation time runs on #1021's frozen capture. This module starts no
+ * acquisition, mutates no screen control and owns no factual predicate: each
+ * state below is the one the figure owner actually published.
  */
 import type {
   CahierCaptureComparison,
@@ -54,6 +57,19 @@ export type CahierPdfActivation =
       readonly reason: CahierPdfActivationReason
       readonly message: string
     }
+
+/**
+ * The part of a section capture the activation policy actually reads (#1165).
+ *
+ * The mounted PDF action re-evaluates this on every reactive change, so its
+ * source may pass owner values through by reference instead of building the
+ * frozen, screen-independent generation capture. Every field below is still
+ * read from the live owner, which keeps the button's dependency tracking.
+ */
+export type CahierExportAvailability = Pick<
+  CahierExportCapture,
+  'readiness' | 'capabilities' | 'comparison' | 'figures'
+>
 
 const MESSAGES: Readonly<Record<CahierPdfActivationReason, string>> = {
   'section-pending': 'Les données de cette section sont encore en cours de chargement.',
@@ -240,7 +256,7 @@ function comparisonBlockReason(
  * settled, so it must never strand the action.
  */
 function overviewRanksPending(
-  capture: CahierExportCapture,
+  capture: CahierExportAvailability,
   comparison: CahierCaptureComparison,
 ): boolean {
   if (!comparisonRelevant(comparison)) return false
@@ -276,7 +292,7 @@ function figureResourceFailures(figure: CahierCaptureFigure): FigureResourceFail
 }
 
 function figureBlockReason(
-  capture: CahierExportCapture,
+  capture: CahierExportAvailability,
   comparison: CahierCaptureComparison,
 ): CahierPdfActivationReason | null {
   for (const figure of capture.figures) {
@@ -300,7 +316,7 @@ function figureBlockReason(
  * required map/legend surfaces, the acquired equipment, then the requested
  * comparison and its direct reference. The first unmet required state wins.
  */
-export function evaluerDisponibiliteExportPdf(capture: CahierExportCapture): CahierPdfActivation {
+export function evaluerDisponibiliteExportPdf(capture: CahierExportAvailability): CahierPdfActivation {
   switch (capture.readiness.status) {
     case 'pending':
       return bloque('section-pending')

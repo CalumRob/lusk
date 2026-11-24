@@ -40,6 +40,7 @@ import type {
   TextBlock,
 } from '@/fiche/content/themeContent'
 import type { Territoire } from '@/payload/types'
+import type { CahierExportAvailability } from './cahierPdfExport'
 import { CAHIER_FIGURE_ROW } from './cahierFigureNativeGeometry'
 
 /** One to three selectable series may be kept for a readable PDF table (PRD #1014). */
@@ -628,7 +629,74 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value)
 }
 
+type CahierCaptureOwner = <T>(value: T) => T
+
+/**
+ * The generation path applies this clone-or-reference choice to native-render
+ * input, AEDAR state, map items and legend detail. Figure models and the other
+ * assembled capture fields rely on the outer `deepPlain(capture)` below, not on
+ * this helper; availability passes its values through by reference.
+ */
+function captureOwner(immutable: boolean): CahierCaptureOwner {
+  return immutable ? deepPlain : (value) => value
+}
+
+/**
+ * Read only the owner-observed inputs the activation policy consumes (#1165).
+ *
+ * The mounted action re-evaluates on every reactive change. Passing heavy values
+ * through by reference keeps the same dependency tracking without walking Vue
+ * proxies to clone them, and no generation-only identity/source/native-render
+ * field is built or retained on this path.
+ */
+export function captureCahierSectionAvailability(input: CahierSectionCaptureInput): CahierExportAvailability {
+  return captureActivation(input, captureOwner(false))
+}
+
 export function captureCahierSection(input: CahierSectionCaptureInput): CahierExportCapture {
+  const own = captureOwner(true)
+  const { readiness, capabilities, comparison, figures } = captureActivation(input, own)
+  const section = input.section
+  const evidence = section.evidence
+  const family = evidence ? cahierCaptureFamily(evidence.kind) : null
+  const explorer = input.publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
+  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
+    ? explorer.state.state.typequ ?? null
+    : null
+  const capture: CahierExportCapture = {
+    ...(input.nativeRender ? { nativeRender: own(input.nativeRender) } : {}),
+    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
+      modes: [...(input.aedar?.modes ?? [])] },
+    identity: {
+      sectionKey: section.key,
+      evidenceKind: evidence?.kind ?? null,
+      sectionLabel: section.label,
+      sectionAvailability: section.availability,
+      unit: { key: input.unit.key, label: input.unit.label },
+      territory: {
+        type: input.territory.type,
+        code: input.territory.code,
+        name: input.territory.name,
+      },
+    },
+    generation: captureGeneration(evidence),
+    readiness,
+    capabilities,
+    comparison,
+    sources: captureSources(evidence),
+    aedar: evidence && family?.startsWith('aedar-')
+      ? own(input.aedar)
+      : null,
+    figures,
+  }
+  return deepFreeze(deepPlain(capture))
+}
+
+/** The single construction path for every field the PDF activation policy reads. */
+function captureActivation(
+  input: CahierSectionCaptureInput,
+  own: CahierCaptureOwner,
+): CahierExportAvailability {
   const section = input.section
   const evidence = section.evidence
   const family = evidence ? cahierCaptureFamily(evidence.kind) : null
@@ -650,27 +718,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
   const referenceStatus = cahierCaptureConsumesReference(family)
     ? (input.referenceStatus === undefined ? 'unobserved' : input.referenceStatus)
     : null
-  const explorer = publications.find((publication) => publication.state.owner === 'aedar-equipment-explorer')
-  const selectedTypequ = explorer?.state.owner === 'aedar-equipment-explorer'
-    ? explorer.state.state.typequ ?? null
-    : null
-  const capture: CahierExportCapture = {
-    ...(input.nativeRender ? { nativeRender: deepPlain(input.nativeRender) } : {}),
-    nativeSelection: { typequ: selectedTypequ, horizonMinutes: input.aedar?.horizonMinutes ?? null,
-      modes: [...(input.aedar?.modes ?? [])] },
-    identity: {
-      sectionKey: section.key,
-      evidenceKind: evidence?.kind ?? null,
-      sectionLabel: section.label,
-      sectionAvailability: section.availability,
-      unit: { key: input.unit.key, label: input.unit.label },
-      territory: {
-        type: input.territory.type,
-        code: input.territory.code,
-        name: input.territory.name,
-      },
-    },
-    generation: captureGeneration(evidence),
+  return {
     readiness: {
       status: input.readiness.status,
       reason: input.readiness.reason,
@@ -679,7 +727,7 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
     capabilities: {
       selectableSeries: captureSelectableSeries(family, input.aedar),
       selectedSeries: captureSelectedSeries(family, input.aedar),
-      maps: captureMaps({ family, evidence, publications }),
+      maps: captureMaps({ family, evidence, publications, own }),
     },
     comparison: {
       status: comparisonStatus,
@@ -701,13 +749,10 @@ export function captureCahierSection(input: CahierSectionCaptureInput): CahierEx
         referenceStatus,
       }),
     },
-    sources: captureSources(evidence),
-    aedar: evidence && family?.startsWith('aedar-') ? deepPlain(input.aedar) : null,
     figures: evidence && family
       ? captureFigures({ evidence, family, input, publications })
       : [],
   }
-  return deepFreeze(deepPlain(capture))
 }
 
 const FAMILY_HAS_COMPARISON_EVIDENCE: Readonly<Record<CahierCaptureFamily, boolean>> = {
@@ -1165,8 +1210,9 @@ function captureMaps(options: {
   family: CahierCaptureFamily | null
   evidence: ContentEvidence | null
   publications: readonly CahierExportPublication[]
+  own: <T>(value: T) => T
 }): CahierCaptureMaps {
-  const { family, evidence, publications } = options
+  const { family, evidence, publications, own } = options
   const published = publications.filter((publication) => publication.state.owner === 'map-availability')
   if (published.length === 0) {
     return hasMapSurface(family, evidence)
@@ -1184,8 +1230,8 @@ function captureMaps(options: {
   return {
     status: mapStatus(items),
     legend,
-    items: deepPlain(items),
-    legendDetail: legendDetail ? deepPlain(legendDetail) : null,
+    items: own(items),
+    legendDetail: legendDetail ? own(legendDetail) : null,
   }
 }
 

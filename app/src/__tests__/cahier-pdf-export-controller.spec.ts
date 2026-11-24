@@ -61,6 +61,7 @@ function controllerFor(
   let calls = 0
   const controller = new CahierPdfExportController({
     capture: () => { calls += 1; return capture },
+    availability: () => capture,
     generator,
   })
   return { controller, captureCalls: () => calls }
@@ -188,6 +189,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     let captures = 0
     const controller = new CahierPdfExportController({
       capture: () => { captures += 1; return current },
+      availability: () => current,
       generator: generate,
       identite: () => ID_ACCESS,
     })
@@ -214,6 +216,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
       capture: () => current,
+      availability: () => current,
       generator: generate,
     })
 
@@ -297,6 +300,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const generate = vi.fn<CahierPdfGenerator>().mockReturnValue(pending.promise)
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: generate,
       identite: () => identity,
     })
@@ -323,6 +327,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     let identity = ID_A
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: generate,
       identite: () => identity,
     })
@@ -349,6 +354,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     identity = ID_A
     const errorController = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: failing,
       identite: () => identity,
     })
@@ -367,6 +373,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     let identity = ID_A
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: generate,
       identite: () => identity,
     })
@@ -393,6 +400,7 @@ describe('shared PDF export controller machine (#1023)', () => {
       .mockResolvedValueOnce(artefact())
     const controller = new CahierPdfExportController({
       capture: () => current,
+      availability: () => current,
       generator: generate,
       identite: () => ID_ACCESS,
     })
@@ -412,6 +420,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const capture = capturePdfFixture('aedar-equipment-profile')
     const controller = new CahierPdfExportController({
       capture: () => capture,
+      availability: () => capture,
       generator: null,
     })
     expect(controller.peutActiver.value).toBe(false)
@@ -433,6 +442,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: first,
     })
 
@@ -458,6 +468,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: first,
     })
 
@@ -484,6 +495,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const second = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact('second.pdf'))
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: first,
     })
 
@@ -507,6 +519,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: generate,
     })
 
@@ -523,6 +536,7 @@ describe('shared PDF export controller machine (#1023)', () => {
     const generate = vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
     const controller = new CahierPdfExportController({
       capture: () => capturePdfFixture('aedar-equipment-profile'),
+      availability: () => capturePdfFixture('aedar-equipment-profile'),
       generator: generate,
     })
 

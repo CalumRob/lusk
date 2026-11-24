@@ -61,6 +61,7 @@ function mountAction(options: {
       sectionLabel: options.sectionLabel ?? capture.identity.sectionLabel,
       identite: options.identite ?? identitePorteeDeCapture(capture),
       capture: () => capture,
+      availability: () => capture,
       generator: options.generator === undefined
         ? vi.fn<CahierPdfGenerator>().mockResolvedValue(artefact())
         : options.generator,
@@ -343,6 +344,7 @@ describe('shared PDF section action (#1023)', () => {
         sectionLabel: 'Profil',
         identite: identitePorteeDeCapture(pending),
         capture: () => (ready.value ? settled : pending),
+        availability: () => (ready.value ? settled : pending),
         generator: generate,
       },
       attachTo: document.body,
