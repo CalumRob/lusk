@@ -1427,3 +1427,21 @@ CREATE TABLE profile_resource_comparison_publication (
 );
 GRANT SELECT ON profile_resource_comparison_publication TO lusk_reader;
 GRANT SELECT, INSERT, UPDATE, DELETE ON profile_resource_comparison_publication TO lusk_publisher;
+
+-- Version-bound producer discovery declarations (migration 048, #1140).
+-- The API intersects these with live registry rows and the image grammar; the
+-- theme metadata itself is deliberately not an API image input.
+CREATE TABLE resource_publication_descriptor (
+    resource_id text PRIMARY KEY CHECK (resource_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    publication_resource_id text NOT NULL CHECK (publication_resource_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    content_version text NOT NULL CHECK (length(content_version) > 0),
+    descriptor jsonb NOT NULL CHECK (jsonb_typeof(descriptor) = 'object'),
+    published_at timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (publication_resource_id) REFERENCES resource_publication(resource_id)
+      ON DELETE CASCADE
+);
+CREATE INDEX resource_publication_descriptor_live_idx
+  ON resource_publication_descriptor(publication_resource_id,content_version);
+GRANT SELECT ON resource_publication_descriptor TO lusk_reader;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON resource_publication_descriptor FROM lusk_reader;
+GRANT SELECT, INSERT, UPDATE, DELETE ON resource_publication_descriptor TO lusk_publisher;
