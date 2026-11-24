@@ -99,14 +99,23 @@ lire_projections_collections_sortie <- function(sortie) {
   lapply(registre, function(producteur) producteur$project(entrees$canonical))
 }
 
-lire_projection_aedar_sortie <- function(sortie) {
+lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
   candidats <- c(file.path(sortie, "aedar"),
                  file.path(sortie, "aedar", "canonical"),
                  file.path(sortie, "data", "processed", "aedar"),
                  Sys.getenv("LUSK_AEDAR_CANONICAL_DIR", unset = file.path("data", "processed", "aedar")))
   for (candidat in candidats) {
-    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES))))
-      return(read_aedar_canonical(candidat))
+    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES)))) {
+      projection <- read_aedar_canonical(candidat)
+      # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
+      # référence de la sortie) : `apply` n'a jamais besoin de relire le
+      # territory_reference vivant pour la publier (#1139).
+      if (file.exists(file.path(candidat, "aedar_comparison_manifest.json"))) {
+        if (is.null(reference)) reference <- lire_reference_sortie(sortie)
+        projection$comparison <- comparaison_aedar_pour_artefact(candidat, reference)
+      }
+      return(projection)
+    }
   }
   NULL
 }
@@ -307,7 +316,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_collection),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
-      projection <- lire_projection_aedar_sortie(sortie)
+      projection <- lire_projection_aedar_sortie(sortie, reference)
       if (is.null(projection)) list() else list(aedar = projection)
     },
     champs_faits = NULL,
@@ -316,7 +325,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_comparaison = "comparison",
     comparaison = comparaison_persistee("comparison"),
     comparer_definition = comparer_definition_canonique(),
-    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune)
+    champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
+    # Shape adapter (ADR-0049 seam, #1139): the single aedar resource writes its
+    # aggregate, TYPEQU metadata, comparison, density and littoral summaries in
+    # one transaction, plus the registry row.
+    projeter = projeter_artefact_aedar,
+    remplacer = remplacer_aedar)
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

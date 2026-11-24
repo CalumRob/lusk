@@ -84,6 +84,110 @@ adaptateur_collection_projection <- function(indicator = "acv", value = 5) {
       stringsAsFactors = FALSE)), class = "collection-projection")
 }
 
+# --- AEDAR -------------------------------------------------------------------
+adaptateur_aedar_typequ_fixture <- function() {
+  readr::read_csv(testthat::test_path("fixtures", "aedar-region-2026v1-typequ.csv"),
+    col_types = readr::cols(.default = readr::col_character()), trim_ws = FALSE,
+    show_col_types = FALSE)
+}
+
+adaptateur_aedar_metadata <- function() {
+  axis <- read_aedar_typequ_registry()
+  i <- seq_len(nrow(axis))
+  domain <- ((i - 1L) %% 27L) %% 7L + 1L
+  data.frame(TYPEQU = axis$TYPEQU, LIB_TYPEQU = axis$LIB_TYPEQU,
+    description = paste("Description", i), domain_code = paste0("D", domain),
+    domain_label = paste("Domain", domain),
+    subdomain_code = paste0("S", ((i - 1L) %% 27L) + 1L),
+    subdomain_label = paste("Subdomain", ((i - 1L) %% 27L) + 1L),
+    GAMME = c("Proximité", "Hors Gamme", rep(NA_character_, length(i) - 2L)),
+    gamme_status = c("classified", "hors_gamme", rep("absent", length(i) - 2L)),
+    source_order = i, stringsAsFactors = FALSE)
+}
+
+adaptateur_aedar_projection <- function() {
+  axis <- adaptateur_aedar_typequ_fixture()
+  inputs <- stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS, function(level) {
+    x <- as.data.frame(matrix(0, nrow = nrow(axis), ncol = length(AEDAR_AGGREGATE_MEASURES),
+      dimnames = list(NULL, AEDAR_AGGREGATE_MEASURES)))
+    x$code_insee <- "22001"; x$epci_code <- "200000001"
+    x$code_departement <- "22"; x$code_region <- "53"
+    x$nom_commune <- "Essai"; x$nom_epci <- "EPCI"
+    x$nom_departement <- "Département"; x$nom_region <- "Bretagne"
+    x$TYPEQU <- axis$TYPEQU; x$LIB_TYPEQU <- axis$LIB_TYPEQU
+    x$n_addresses <- 2L; x$n_observed <- 1L; x$coverage_status <- "covered"
+    x$count_5_walk_share <- NA_real_
+    x[, c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]], AEDAR_AGGREGATE_MEASURES), drop = FALSE]
+  }), AEDAR_AGGREGATE_LEVELS)
+  project_aedar_aggregates(inputs, adaptateur_aedar_metadata())
+}
+
+# An artefact-bound comparison structure. Built in memory from the aggregate
+# projection and a versioned territory reference — never from a live DB read.
+adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
+                                          reference_version = "reference-v1") {
+  # La référence porte exactement les identités de la projection agrégate
+  # (commune / epci / departement / region), comme le producteur l'exige.
+  reference <- data.frame(
+    territory_id = c("22001", "200000001", "22", "53"),
+    territory_type = c("commune", "epci", "departement", "region"),
+    epci_id = c("200000001", NA_character_, NA_character_, NA_character_),
+    density_class_code = c("A", NA_character_, NA_character_, NA_character_),
+    stringsAsFactors = FALSE)
+  if (with_littoral) {
+    reference$littoral_code <- c("C", NA_character_, NA_character_, NA_character_)
+    reference$littoral_classement_source <- c("fixture", NA_character_, NA_character_, NA_character_)
+  }
+  axes <- read_aedar_typequ_registry()$TYPEQU
+  littoral_facts <- if (with_littoral) {
+    grouped <- data.frame(territory_id = "C", TYPEQU = axes, n_addresses = 2,
+      n_observed = 1, coverage_status = "covered", stringsAsFactors = FALSE)
+    for (measure in AEDAR_AGGREGATE_MEASURES) grouped[[measure]] <- 1
+    grouped
+  } else NULL
+  x <- project_aedar_fixed_comparisons(projection$facts, reference,
+    aedar_aggregate_content_version(projection), reference_version,
+    density_group_facts = NULL, input_hashes = c(artefact = "aedar-fixture"),
+    littoral_group_facts = littoral_facts)
+  x$groups$typequ <- x$groups$TYPEQU
+  x$groups$TYPEQU <- NULL
+  mesures <- unique(x$groups$measure)
+ groupes_du_contexte <- function(context)
+    unique(x$groups$group_id[x$groups$comparison_context == context])
+  classes <- groupes_du_contexte("density_class")
+  summariser <- function(ids) {
+    do.call(rbind, lapply(ids, function(id) data.frame(
+      group_id = id, measure = mesures[[1L]], value = NA_real_,
+      status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
+      n_observed = NA_integer_, coverage_status = NA_character_,
+      stringsAsFactors = FALSE)))
+  }
+  density <- summariser(classes)
+  littoral <- if (with_littoral) summariser(groupes_du_contexte("littoral")) else NULL
+  x$density_rows <- density
+  x$littoral_rows <- littoral
+  x$density_class_summaries <- list(class_count = length(classes),
+    measure_count = 1L, typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
+    row_count = nrow(density))
+  x$littoral_summaries <- list(status_count = if (with_littoral) length(groupes_du_contexte("littoral")) else 0L,
+    measure_count = if (with_littoral) 1L else 0L,
+    row_count = if (with_littoral) nrow(littoral) else 0L)
+  x$publication_mode <- "reference_only"
+  x
+}
+
+adaptateur_aedar_artefact <- function(root, with_littoral = FALSE) {
+  projection <- adaptateur_aedar_projection()
+  comparaison <- adaptateur_aedar_comparaison(projection, with_littoral)
+  faits <- faits_forme(REGISTRE_FORMES_RESSOURCE[["aedar"]], projection)
+  contenu <- contenu_artefact(faits, list(indicator_id = "aedar", theme_id = "mobilite"),
+    projection$source, comparaison)
+  ecrit <- ecrire_artefact_ressource("aedar", "aedar", contenu,
+    digests_lignage = digests_lignage_ressource("aedar_bretagne",
+      artefacts_fixture_digests("aedar_bretagne")), root = root)
+  lire_artefact_ressource("aedar", ecrit$version, root = root)
+}
+
 adaptateur_collection_artefact <- function(root, indicator = "acv", value = 5) {
   projection <- adaptateur_collection_projection(indicator, value)
   contenu <- contenu_artefact(

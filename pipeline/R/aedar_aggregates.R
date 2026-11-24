@@ -2034,6 +2034,44 @@ validate_aedar_comparison_manifest_file <- function(path,directory,verify_parts=
   manifest
 }
 
+# ADR-0049 step 2 (#1139) : matérialiser la comparaison canonique en mémoire
+# dans l'Artefact de ressource `aedar`. Le producteur garde ses Parquets ; le
+# splitter attache cette structure immuable, liée à la référence territoriale
+# de la sortie. L'adaptateur n'a ensuite JAMAIS besoin de relire
+# `territory_reference` vivant pour écrire la comparaison.
+comparaison_aedar_pour_artefact <- function(directory, reference) {
+  manifest <- read_aedar_comparison_canonical(directory, verify_parts = FALSE)
+  if (!identical(as.character(manifest$reference_content_version),
+                 as.character(reference$content_version)))
+    stop("AEDAR comparison reference version differs from the sortie reference", call. = FALSE)
+  groups <- do.call(rbind, lapply(manifest$parts, function(part) {
+    g <- as.data.frame(nanoparquet::read_parquet(
+      file.path(manifest$directory, part$groups)), stringsAsFactors = FALSE)
+    names(g)[names(g) == "TYPEQU"] <- "typequ"
+    g
+  }))
+  density <- as.data.frame(nanoparquet::read_parquet(
+    file.path(manifest$directory, manifest$density_class_summaries$path)), stringsAsFactors = FALSE)
+  littoral <- NULL
+  desc <- manifest$littoral_summaries
+  if (!is.null(desc) && isTRUE(desc$row_count > 0L))
+    littoral <- as.data.frame(nanoparquet::read_parquet(
+      file.path(manifest$directory, desc$path)), stringsAsFactors = FALSE)
+  list(content_version = manifest$content_version,
+    aedar_content_version = manifest$aedar_content_version,
+    reference_content_version = manifest$reference_content_version,
+    input_content_version = manifest$input_content_version,
+    input_identity = manifest$input_identity,
+    source_snapshot_id = manifest$source_snapshot_id,
+    publication_mode = manifest$publication_mode,
+    group_row_count = manifest$group_row_count,
+    territory_row_count = manifest$territory_row_count,
+    groups = groups, density_rows = density, littoral_rows = littoral,
+    density_class_summaries = manifest$density_class_summaries,
+    littoral_summaries = manifest$littoral_summaries,
+    membership = manifest$membership)
+}
+
 # Deliberately separate small-fixture round trips; production canonical files
 # are manifest/partition based and never reassemble the full territory table.
 write_aedar_comparison_fixture <- function(x,directory) {
@@ -2062,6 +2100,57 @@ validate_aedar_comparison_manifest_membership <- function(manifest,territory_ref
   sort_rows<-function(x) {x<-unique(x[keycols]);x<-x[do.call(order,x),keycols,drop=FALSE];rownames(x)<-NULL;x}
   if(!isTRUE(all.equal(sort_rows(actual),sort_rows(expected),check.attributes=FALSE)))
     stop("AEDAR comparison manifest membership is stale relative to published territory reference",call.=FALSE)
+  invisible(TRUE)
+}
+
+# ADR-0049 step 2 (#1139) : UN seul écrivain des tables de comparaison AEDAR.
+# Le producteur lit ses Parquets puis appelle cette fonction ; l'adaptateur de
+# forme lui fournit les mêmes lignes depuis l'Artefact de ressource (aucune
+# lecture de territory_reference vivante, aucun SQL dupliqué).
+ecrire_aedar_comparaison_rows <- function(con, x, groups, density_rows,
+                                           littoral_rows = NULL) {
+  DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
+  DBI::dbExecute(con,"DELETE FROM aedar_density_class_summary")
+  DBI::dbExecute(con,"DELETE FROM aedar_littoral_summary")
+  DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
+  DBI::dbWriteTable(con,"aedar_comparison_group",groups,append=TRUE,row.names=FALSE)
+  tokens <- c("comparison_content_version"=x$content_version,
+    "aedar_content_version"=x$aedar_content_version,
+    "reference_content_version"=x$reference_content_version,
+    "input_content_version"=x$input_content_version)
+  colonnes <- c("group_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status")
+  density_payload <- density_rows[colonnes]
+  for (nom in names(tokens)) density_payload[[nom]] <- unname(tokens[[nom]])
+  DBI::dbWriteTable(con,"aedar_density_class_summary",density_payload,append=TRUE,row.names=FALSE)
+  if (!is.null(littoral_rows) && nrow(littoral_rows)) {
+    littoral_payload <- littoral_rows[colonnes]
+    for (nom in names(tokens)) littoral_payload[[nom]] <- unname(tokens[[nom]])
+    DBI::dbWriteTable(con,"aedar_littoral_summary",littoral_payload,append=TRUE,row.names=FALSE)
+  }
+  DBI::dbExecute(con,paste0("INSERT INTO aedar_comparison_publication(singleton,content_version,",
+    "publication_mode,source_snapshot_id,aedar_content_version,reference_content_version,",
+    "input_content_version,input_identity,group_row_count,territory_row_count,",
+    "density_summary_class_count,density_summary_measure_count,density_summary_typequ_count,",
+    "density_summary_row_count,littoral_summary_status_count,littoral_summary_measure_count,",
+    "littoral_summary_row_count,published_at) VALUES(true,$1,'reference_only','2026-v1',$2,$3,$4,",
+    "$5::jsonb,$6,0,$7,$8,$9,$10,$11,$12,$13,now()) ON CONFLICT(singleton) DO UPDATE SET ",
+    "content_version=EXCLUDED.content_version,publication_mode=EXCLUDED.publication_mode,",
+    "source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,",
+    "reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,",
+    "input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=0,",
+    "density_summary_class_count=EXCLUDED.density_summary_class_count,",
+    "density_summary_measure_count=EXCLUDED.density_summary_measure_count,",
+    "density_summary_typequ_count=EXCLUDED.density_summary_typequ_count,",
+    "density_summary_row_count=EXCLUDED.density_summary_row_count,",
+    "littoral_summary_status_count=EXCLUDED.littoral_summary_status_count,",
+    "littoral_summary_measure_count=EXCLUDED.littoral_summary_measure_count,",
+    "littoral_summary_row_count=EXCLUDED.littoral_summary_row_count,published_at=EXCLUDED.published_at"),
+    params=list(x$content_version,x$aedar_content_version,x$reference_content_version,
+      x$input_content_version,as.character(x$input_identity),x$group_row_count,
+      x$density_class_summaries$class_count,x$density_class_summaries$measure_count,
+      x$density_class_summaries$typequ_count,x$density_class_summaries$row_count,
+      x$littoral_summaries$status_count,x$littoral_summaries$measure_count,
+      x$littoral_summaries$row_count))
   invisible(TRUE)
 }
 
@@ -2130,19 +2219,7 @@ publish_aedar_comparisons <- function(x,con) {
      } else {
        progress("begin-replacement",groups=x$group_row_count,territories=x$territory_row_count,
          density_summaries=x$density_class_summaries$row_count)
-       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
-       DBI::dbExecute(con,"DELETE FROM aedar_density_class_summary")
-       DBI::dbExecute(con,"DELETE FROM aedar_littoral_summary")
-       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
-      chunk_size<-20000L
-      group_buffer<-list(); group_buffer_rows<-0L
-      flush_groups<-function() {
-        if(length(group_buffer)) {
-          batch<-do.call(rbind,group_buffer)
-          DBI::dbWriteTable(con,"aedar_comparison_group",batch,append=TRUE,row.names=FALSE)
-          group_buffer<<-list(); group_buffer_rows<<-0L
-        }
-      }
+      group_buffer<-list()
       for(part_index in seq_along(x$parts)) {
         part <- x$parts[[part_index]]
         groups<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$groups)),stringsAsFactors=FALSE)
@@ -2154,35 +2231,10 @@ publish_aedar_comparisons <- function(x,con) {
         names(groups)[names(groups)=="TYPEQU"]<-"typequ"
         names(territories)[names(territories)=="TYPEQU"]<-"typequ"
         group_buffer[[length(group_buffer)+1L]]<-groups
-        group_buffer_rows<-group_buffer_rows+nrow(groups)
-        if(group_buffer_rows>=chunk_size) flush_groups()
         if(part_index %% 25L == 0L) progress("replacement-partitions",done=part_index,total=length(x$parts))
        }
-       flush_groups()
-       density_summaries<-read_density_summaries()
-       density_payload<-density_summaries[c("group_id","measure","value","status","n_typequ",
-         "n_addresses","n_observed","coverage_status")]
-       density_payload$comparison_content_version<-x$content_version
-       density_payload$aedar_content_version<-x$aedar_content_version
-       density_payload$reference_content_version<-x$reference_content_version
-       density_payload$input_content_version<-x$input_content_version
-       DBI::dbWriteTable(con,"aedar_density_class_summary",density_payload,append=TRUE,row.names=FALSE)
-       if(!is.null(littoral_summaries)&&nrow(littoral_summaries)) {
-         littoral_payload<-littoral_summaries[c("group_id","measure","value","status","n_typequ",
-           "n_addresses","n_observed","coverage_status")]
-         littoral_payload$comparison_content_version<-x$content_version
-         littoral_payload$aedar_content_version<-x$aedar_content_version
-         littoral_payload$reference_content_version<-x$reference_content_version
-         littoral_payload$input_content_version<-x$input_content_version
-         DBI::dbWriteTable(con,"aedar_littoral_summary",littoral_payload,append=TRUE,row.names=FALSE)
-       }
-       progress("before-publication-marker")
-        DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,publication_mode,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,density_summary_class_count,density_summary_measure_count,density_summary_typequ_count,density_summary_row_count,littoral_summary_status_count,littoral_summary_measure_count,littoral_summary_row_count,published_at) VALUES(true,$1,'reference_only','2026-v1',$2,$3,$4,$5::jsonb,$6,0,$7,$8,$9,$10,$11,$12,$13,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,publication_mode=EXCLUDED.publication_mode,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=0,density_summary_class_count=EXCLUDED.density_summary_class_count,density_summary_measure_count=EXCLUDED.density_summary_measure_count,density_summary_typequ_count=EXCLUDED.density_summary_typequ_count,density_summary_row_count=EXCLUDED.density_summary_row_count,littoral_summary_status_count=EXCLUDED.littoral_summary_status_count,littoral_summary_measure_count=EXCLUDED.littoral_summary_measure_count,littoral_summary_row_count=EXCLUDED.littoral_summary_row_count,published_at=EXCLUDED.published_at",
-          params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
-            x$input_identity,x$group_row_count,x$density_class_summaries$class_count,
-            x$density_class_summaries$measure_count,x$density_class_summaries$typequ_count,
-            x$density_class_summaries$row_count,x$littoral_summaries$status_count,
-            x$littoral_summaries$measure_count,x$littoral_summaries$row_count))
+       group_payload <- if(length(group_buffer)) do.call(rbind,group_buffer) else data.frame()
+       ecrire_aedar_comparaison_rows(con, x, group_payload, read_density_summaries(), littoral_summaries)
        transaction_result <- list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,
          territory_row_count=x$territory_row_count,density_summary_row_count=x$density_class_summaries$row_count,
          littoral_summary_row_count=x$littoral_summaries$row_count)
@@ -2218,7 +2270,12 @@ read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
     projection
   }
 
-publish_aedar_aggregates <- function(projection, db) {
+# ADR-0049 step 2 (#1139): `reference_version` / `reference_pairs` may be
+# injected by the aedar shape adapter from the artefact's bound reference. The
+# adapter never reads the live territory_reference for its comparison; the
+# expand-phase producer path still reads it here and stays allowlisted.
+publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
+                                     reference_pairs = NULL) {
   progress_started <- proc.time()[[3L]]
   timing <- new.env(parent=emptyenv())
   timing$commit_started <- NA_real_
@@ -2287,14 +2344,20 @@ publish_aedar_aggregates <- function(projection, db) {
     "DELETE FROM aedar_territorial_aggregate AS stored WHERE NOT EXISTS (SELECT 1 FROM expected ",
     "WHERE expected.territory_type=stored.territory_type AND expected.territory_id=stored.territory_id ",
     "AND expected.typequ=stored.typequ)")
-  result <- DBI::dbWithTransaction(db, {
+  result <- publication_transaction(db, {
     progress("begin-transaction")
     DBI::dbExecute(db,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-    reference <- DBI::dbGetQuery(db,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
+    injecte <- !is.null(reference_version)
+    reference <- if (!injecte) DBI::dbGetQuery(db,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'") else
+      data.frame(content_version=as.character(reference_version)[[1L]],stringsAsFactors=FALSE)
     if (nrow(reference)!=1L) stop("AEDAR publication requires published territory reference",call.=FALSE)
     ref_version <- reference$content_version[[1L]]
-    reference_pairs <- DBI::dbGetQuery(db,"SELECT territory_type,territory_id FROM territory_reference")
-    validate_aedar_territory_reference(facts,reference_pairs)
+    if (!injecte) {
+      paires <- DBI::dbGetQuery(db,"SELECT territory_type,territory_id FROM territory_reference")
+      validate_aedar_territory_reference(facts,paires)
+    } else if (!is.null(reference_pairs)) {
+      validate_aedar_territory_reference(facts,reference_pairs)
+    }
     existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
     unchanged <- nrow(existing) && identical(existing$content_version[[1L]],version) && identical(existing$reference_content_version[[1L]],ref_version)
     if (!unchanged) {
