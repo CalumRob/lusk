@@ -282,7 +282,7 @@ test_that("les rapports du graphe dépendent des verrous du même run", {
   withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
                       LUSK_SORTIE = tempfile("sortie-rapport-"),
                       LUSK_CACHE = tempfile("cache-rapport-"))
-  edges <- targets::tar_network()$edges
+  edges <- reseau_graphe()$edges
   for (theme in c("economie", "milieux", "mobilite")) {
     verifs <- edges$from[grepl("^verif_", edges$from) &
                            edges$to == paste0("rapport_", theme)]
@@ -297,7 +297,7 @@ test_that("un thème sans verrou n'a aucune dépendance verif_ (#1109)", {
   withr::local_envvar(LUSK_THEMES = "demographie,habitat", LUSK_MODE = "full",
                       LUSK_SORTIE = tempfile("sortie-sans-verif-"),
                       LUSK_CACHE = tempfile("cache-sans-verif-"))
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   expect_false("verif_" %in% manifeste$name)
   for (theme in c("demographie", "habitat")) {
     commande <- manifeste$command[manifeste$name == paste0("rapport_", theme)]

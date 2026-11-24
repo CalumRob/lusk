@@ -157,7 +157,7 @@ test_that("le graphe réel porte le canon épinglé des cinq thèmes comme dépe
   # (la règle #341)
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   noms <- manifeste$name
   commande <- function(nom) manifeste$command[manifeste$name == nom]
 
@@ -179,9 +179,7 @@ test_that("le canon épinglé d'un thème n'a aucun aval hors SA cible metadata 
   withr::local_envvar(LUSK_THEMES = "")
   # Issue #341 (course en parallèle) : la vérification de structure lit un
   # store ISOLÉ (jamais le store réel, jamais de unlink)
-  store_structure <- tempfile("graphe-metadata-")
-
-  aretes <- targets::tar_network(store = store_structure)$edges
+  aretes <- reseau_graphe()$edges
   for (t in c("demographie", "habitat", "economie", "mobilite", "milieux")) {
     # un changement du canon SEUL ne peut invalider QUE la publication des
     # métadonnées de SON thème — jamais les étapes de données ni un autre thème

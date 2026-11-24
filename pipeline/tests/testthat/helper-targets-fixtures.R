@@ -236,7 +236,7 @@ ecrire_mini_graphe <- function(projet, avec_rapport = TRUE) {
     'format = "file", cue = tar_cue(mode = "always"))'
   )
   lignes <- c(
-    sprintf('pkgload::load_all("%s", quiet = TRUE)',
+    sprintf('if (!requireNamespace("toypkg", quietly = TRUE)) pkgload::load_all("%s", quiet = TRUE)',
             gsub("\\\\", "/", file.path(projet, "toypkg"))),
     "library(targets)",
     'tar_option_set(imports = "toypkg", trust_timestamps = FALSE, error = "continue")',
@@ -339,7 +339,7 @@ charger_pieces_graphe <- function(noms) {
 ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
   noms_themes <- paste0("theme_", themes, "()", collapse = ", ")
   lignes <- c(
-    sprintf('pkgload::load_all("%s", quiet = TRUE)',
+    sprintf('if (!requireNamespace("toypkg", quietly = TRUE)) pkgload::load_all("%s", quiet = TRUE)',
             gsub("\\\\", "/", file.path(projet, "toypkg"))),
     "library(targets)",
     'tar_option_set(imports = "toypkg", trust_timestamps = FALSE, error = "continue")',

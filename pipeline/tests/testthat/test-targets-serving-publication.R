@@ -2,14 +2,14 @@ test_that("la publication SQL ne fait jamais partie du graphe ordinaire", {
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB = "", LUSK_THEMES = "",
                      LUSK_MODE = "full")
-  expect_false("publie_backend_retained" %in% targets::tar_manifest()$name)
+  expect_false("publie_backend_retained" %in% manifeste_graphe()$name)
 })
 
 test_that("le leaf SQL attend les faits, la référence finale et les vintages", {
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "",
                      LUSK_MODE = "full")
-  manifest <- targets::tar_manifest()
+  manifest <- manifeste_graphe()
   command <- manifest$command[manifest$name == "publie_backend_retained"]
   expect_length(command, 1L)
   for (owner in retained_scalar_artifact_owners())
@@ -27,7 +27,7 @@ test_that("le leaf SQL attend les faits, la référence finale et les vintages",
 test_that("le grain de lecture typé est bâti par thème depuis le payload en mémoire", {
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB = "", LUSK_THEMES = "", LUSK_MODE = "full")
-  manifest <- targets::tar_manifest()
+  manifest <- manifeste_graphe()
   command <- manifest$command[manifest$name == "typed_reading_serving_artifacts"]
   expect_length(command, 1L)
   expect_match(command, "materialize_theme_typed_reading_artifacts", fixed = TRUE)
@@ -43,16 +43,16 @@ test_that("un graphe sans Démographie ou Habitat ou en mode cron refuse l'opt-i
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "mobilite,economie",
                      LUSK_MODE = "full")
-  expect_error(targets::tar_manifest(), "couvrant tous les propriétaires scalaires déclarés")
+  expect_error(manifeste_graphe(), "couvrant tous les propriétaires scalaires déclarés")
   Sys.setenv(LUSK_THEMES = "mobilite", LUSK_MODE = "cron")
-  expect_error(targets::tar_manifest(), "run local")
+  expect_error(manifeste_graphe(), "run local")
 })
 
 test_that("le leaf SQL refuse séparément un run sans faits canonique Mobilité", {
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "economie,demographie",
                      LUSK_MODE = "full")
-  expect_error(targets::tar_manifest(),
+  expect_error(manifeste_graphe(),
     "couvrant tous les propriétaires scalaires déclarés")
 })
 
@@ -60,5 +60,5 @@ test_that("le leaf scalaire refuse séparément un run sans Habitat", {
   withr::local_dir(pkgload::pkg_path())
   withr::local_envvar(LUSK_PUBLISH_DB="1", LUSK_THEMES="mobilite,economie,demographie",
                       LUSK_MODE="full")
-  expect_error(targets::tar_manifest(), "couvrant tous les propriétaires scalaires déclarés")
+  expect_error(manifeste_graphe(), "couvrant tous les propriétaires scalaires déclarés")
 })

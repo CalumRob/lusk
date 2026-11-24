@@ -34,31 +34,31 @@ test_that("le verrou tourne au premier make, puis saute tant que rien ne change"
   withr::local_dir(projet)
 
   # (a) premier make : le verrou tourne
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
   expect_equal(targets::tar_progress(verif_toy)$progress, "completed")
 
   # (b) rien ne change : le verrou SAUTE — et le graphe entier aussi
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
   expect_equal(targets::tar_progress(verif_toy)$progress, "skipped")
-  expect_length(targets::tar_outdated(), 0)
+  expect_length(targets::tar_outdated(callr_function = NULL), 0)
 })
 
 test_that("le fichier brut change -> le verrou rejoue (fraîcheur par contenu)", {
   projet <- installer_mini_projet(avec_rapport = FALSE)
   withr::local_dir(projet)
 
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
 
   # (c) le fichier d'entrée change de CONTENU (mêmes bases, autre répartition
   # — le verrou somme toujours 6 : il doit REJOUER et passer, pas sauter)
   writeLines(c("code,base", "a,3", "b,1", "c,2"),
              file.path(projet, "data", "raw", "entree.txt"))
 
-  perimes <- targets::tar_outdated()
+  perimes <- targets::tar_outdated(callr_function = NULL)
   expect_true("verif_toy" %in% perimes)
   expect_true("fichiers_toy" %in% perimes)   # la fraîcheur par contenu
 
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
   expect_equal(targets::tar_progress(verif_toy)$progress, "completed")
 })
 
@@ -66,18 +66,18 @@ test_that("le corps du lecteur change -> le verrou rejoue (suivi d'imports)", {
   projet <- installer_mini_projet(avec_rapport = FALSE)
   withr::local_dir(projet)
 
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
 
   # (d) lire_entree_toy (LE lecteur du verrou) change de corps — AUCUN fichier
   # touché : le piège de la fraîcheur (#325) est géré par le hash du corps de
   # la fonction importée, transitif jusqu'au vérificateur
   editer_fonction_toypkg(projet, "brute <- read.csv", "brute <- utils::read.csv")
 
-  perimes <- targets::tar_outdated()
+  perimes <- targets::tar_outdated(callr_function = NULL)
   expect_true("verif_toy" %in% perimes)
   expect_false("brut_toy" %in% perimes)  # le lecteur n'est pas dans le builder
 
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
   expect_equal(targets::tar_progress(verif_toy)$progress, "completed")
 })
 
@@ -85,7 +85,7 @@ test_that("un verrou cassé fait ÉCHOUER le target — un run rouge reste bruya
   projet <- installer_mini_projet()
   withr::local_dir(projet)
 
-  targets::tar_make()
+  targets::tar_make(callr_function = NULL)
 
   # (e) la donnée brute change de contenu (somme 13 != 6) : le vérificateur
   # s'arrête bruyamment (stop()), le target passe en erreur — error =
@@ -93,7 +93,7 @@ test_that("un verrou cassé fait ÉCHOUER le target — un run rouge reste bruya
   writeLines(c("code,base", "a,10", "b,2", "c,1"),
              file.path(projet, "data", "raw", "entree.txt"))
 
-  suppressWarnings(targets::tar_make())
+  suppressWarnings(targets::tar_make(callr_function = NULL))
   expect_equal(targets::tar_progress(verif_toy)$progress, "errored")
   # le rapport de run (le target indépendant réestampillé à chaque run) est
   # écrit quand même — la sémantique « le rapport survit à l'échec d'une

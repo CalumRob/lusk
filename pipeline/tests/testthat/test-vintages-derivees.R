@@ -177,7 +177,7 @@ ecrire_projet_vintages <- function(projet, horloge, payload, pipe) {
   cible <- file.path(projet, "_targets.R")
   lignes <- c(
     "library(targets)",
-    sprintf("pkgload::load_all('%s', quiet = TRUE)", pipeline),
+    sprintf("if (!requireNamespace('lusk', quietly = TRUE)) pkgload::load_all('%s', quiet = TRUE)", pipeline),
     "tar_option_set(imports = 'lusk', trust_timestamps = FALSE, error = 'stop')",
     'CACHE <- "data/raw"',
     sprintf('HORLOGE <- "%s"', horloge),

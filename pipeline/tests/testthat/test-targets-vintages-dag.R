@@ -12,7 +12,7 @@ test_that("chaque vintages_table_* dépend des cibles de téléchargement de son
   withr::local_envvar(LUSK_THEMES = "")
 
   # structure lue dans un store ISOLÉ — jamais le store réel (règle #341)
-  reseau <- targets::tar_network(store = tempfile("graphe-vintages-"))
+  reseau <- reseau_graphe()
   aretes <- reseau[["edges"]]
   dependances <- function(cible) unique(aretes$from[aretes$to == cible])
 
@@ -37,7 +37,7 @@ test_that("les commandes des vintages portent le garde de fail-closed et le cach
   withr::local_dir(racine)
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest()
+  manifeste <- manifeste_graphe()
   commande <- function(nom) manifeste$command[manifeste$name == nom]
 
   for (theme in c("demographie", "habitat", "economie", "mobilite", "milieux")) {
