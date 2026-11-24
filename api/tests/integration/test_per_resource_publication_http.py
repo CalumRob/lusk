@@ -114,8 +114,9 @@ def _seed_profile(connection):
     for territory_id, base in ((FOCAL, 10.0), (PEER, 20.0)):
         for detail, value in (("d1", base), ("d2", base + 1)):
             connection.execute("""INSERT INTO profile_observation(indicator_id,territory_id,
-                territory_type,detail_key,sex_key,value,status) VALUES (%s,%s,'commune',%s,
-                '',%s,'measured')""", (resource_id, territory_id, detail, value))
+                territory_type,detail_key,sex_key,sex_axis_name,value,status)
+                VALUES (%s,%s,'commune',%s,'',NULL,%s,'measured')""",
+                (resource_id, territory_id, detail, value))
             connection.execute("""INSERT INTO profile_observation_source(indicator_id,
                 territory_id,detail_key,sex_key,source_id,vintage_id) VALUES (%s,%s,%s,'',
                 'source_a','v1')""", (resource_id, territory_id, detail))
