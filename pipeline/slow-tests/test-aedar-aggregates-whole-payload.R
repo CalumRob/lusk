@@ -179,4 +179,62 @@ test_that("AEDAR fixed references keep pooled density and same-level medians wit
   invalid<-result; invalid$groups$statistic[1]<-"median"; invalid$groups$n_addresses[1]<-1
   expect_error(write_aedar_comparison_fixture(invalid,dir),"Invalid AEDAR reference comparison keys")
   expect_identical(unname(tools::md5sum(file.path(dir,c("fixture-groups.parquet","fixture-territories.parquet")))),unname(before))
+
+test_that("density-only Parquet builder pools addresses and publishes the complete domain", {
+  skip_if_not_installed("nanoparquet")
+  skip_if_not_installed("arrow")
+  axis <- read_aedar_typequ_registry()
+  dir <- tempfile("aedar-density-only-"); dir.create(dir)
+  on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  origins_path <- file.path(dir,"origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id=c("a","b","c","d","e","f","g"),
+    code_insee=c("c1","c1","c2","c2","c2","c3","c3"),lon=1:7,lat=1:7),origins_path)
+  mode_paths <- stats::setNames(vapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) file.path(dir,paste0(mode,".parquet")),character(1)),
+    AEDAR_ADDRESS_SOURCE_MODES)
+  keys <- list(walk=data.frame(code_insee=c("c1","c1","c2"),cle_interop_adr=c("a","b","c"),TYPEQU="A104"),
+    transit=data.frame(code_insee=c("c1","c2"),cle_interop_adr=c("b","e"),TYPEQU="A104"),
+    transit_gain=data.frame(code_insee=c("c1","c1","c3","c3"),cle_interop_adr=c("a","b","f","g"),TYPEQU="A104"))
+  for(mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    x <- keys[[mode]]
+    if(is.null(x)) x <- data.frame(code_insee=character(),cle_interop_adr=character(),TYPEQU=character())
+    for(column in AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]) x[[column]] <- rep(0,nrow(x))
+    if(mode=="walk"&&nrow(x)) x$count_5_walk <- c(1,3,9)
+    if(mode=="transit_gain"&&nrow(x)) x$count_5_transit_gain_p1 <- c(-4,-2,-4,-2)
+    nanoparquet::write_parquet(x,mode_paths[[mode]])
+  }
+  crosswalk <- data.frame(code_insee=c("c1","c2","c3","c4"),density_class_code=c("pooled","pooled","negative","empty"),
+    density_class_label=c("Pooled","Pooled","Negative","Empty"),stringsAsFactors=FALSE)
+  output_path <- file.path(dir,"density.parquet")
+  local_mocked_bindings(project_aedar_aggregates=function(...) stop("territorial aggregate projection must not run"))
+  result <- build_aedar_density_aggregate(mode_paths,origins_path,crosswalk,
+    "classe_densite_communale",paste(rep("a",64),collapse=""),"test-vintage",output_path,
+    verify_hashes=FALSE)
+  expect_true(file.exists(output_path))
+  expect_equal(nrow(result),3L*nrow(axis))
+  expect_true(all(AEDAR_AGGREGATE_MEASURES%in%names(result)))
+  pooled <- result[result$density_class_code=="pooled"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(pooled$n_addresses,5)
+  expect_equal(pooled$n_observed,4)
+  expect_equal(pooled$count_5_walk_mean,13/5)
+  expect_equal(pooled$count_5_walk_min,0)
+  expect_equal(pooled$count_5_walk_max,9)
+  negative <- result[result$density_class_code=="negative"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(negative$count_5_transit_gain_min,-4)
+  expect_equal(negative$count_5_transit_gain_max,-2)
+  covered_unseen <- result[result$density_class_code=="pooled"&result$TYPEQU=="A105",,drop=FALSE]
+  expect_equal(covered_unseen$count_5_walk_mean,0)
+  uncovered <- result[result$density_class_code=="empty"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(uncovered$coverage_status,"uncovered_no_address_origins")
+  expect_true(is.na(uncovered$count_5_walk_mean))
+  expect_equal(unique(result$density_reference_identity),"classe_densite_communale")
+  expect_equal(unique(result$density_reference_sha256),paste(rep("a",64),collapse=""))
+  expect_equal(unique(result$density_reference_vintage),"test-vintage")
+  expect_true(all(nzchar(result$input_content_version)))
+  identity <- jsonlite::fromJSON(unique(result$input_identity))
+  expect_setequal(names(identity),c("address_origins","density_reference",paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES)))
+  expect_true(all(result$source_snapshot_id==AEDAR_AGGREGATE_VINTAGE))
+  restored <- nanoparquet::read_parquet(output_path)
+  expect_equal(restored$count_5_walk_mean[restored$density_class_code=="pooled"&restored$TYPEQU=="A104"],13/5)
+})
+
 })

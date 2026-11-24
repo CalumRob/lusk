@@ -70,4 +70,95 @@ test_that("littoral publication is a sibling that leaves density counters intact
   expect_error(project_aedar_comparison_publication(projection,density_source,stale,
     reference_content_version=reference_content_version,directory=tempfile("x"),
     littoral_source=aedar_littoral_test_source_artifact()),"membership|disagrees")
+
+aedar_littoral_fixture_chemin <- function() {
+  testthat::test_path("fixtures", "littoral-dreal-bretagne-2023-04-21.csv")
+}
+
+aedar_littoral_univers_canonique <- function() {
+  readr::read_csv(
+    testthat::test_path("..", "..", "inst", "extdata", "population_communes_2023.csv"),
+    col_types = readr::cols(code_commune = readr::col_character()),
+    show_col_types = FALSE, progress = FALSE
+  )$code_commune
+}
+
+test_that("littoral builder pools C/NC address evidence, never commune summaries", {
+  skip_if_not_installed("nanoparquet")
+  skip_if_not_installed("arrow")
+  axis <- read_aedar_typequ_registry()
+  dir <- tempfile("aedar-littoral-only-"); dir.create(dir)
+  on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  origins_path <- file.path(dir,"origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id=c("a","b","c","d","e"),
+    code_insee=c("c1","c1","c2","c2","c3"),lon=1:5,lat=1:5),origins_path)
+  mode_paths <- stats::setNames(vapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode)
+    file.path(dir,paste0(mode,".parquet")),character(1)),AEDAR_ADDRESS_SOURCE_MODES)
+  keys <- list(walk=data.frame(code_insee=c("c1","c1","c2"),cle_interop_adr=c("a","b","c"),TYPEQU="A104"))
+  for(mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    x <- keys[[mode]]
+    if(is.null(x)) x <- data.frame(code_insee=character(),cle_interop_adr=character(),TYPEQU=character())
+    for(column in AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]) x[[column]] <- rep(0,nrow(x))
+    if(mode=="walk"&&nrow(x)) x$count_5_walk <- c(1,3,9)
+    nanoparquet::write_parquet(x,mode_paths[[mode]])
+  }
+  crosswalk <- data.frame(code_insee=c("c1","c2","c3"),littoral_code=c("C","C","NC"),
+    littoral_label=c("Littoral","Littoral","Non littoral"),stringsAsFactors=FALSE)
+  output_path <- file.path(dir,"littoral.parquet")
+  result <- build_aedar_littoral_aggregate(mode_paths,origins_path,crosswalk,
+    "classe_littorale_communale",paste(rep("a",64),collapse=""),"test-vintage",output_path,
+    verify_hashes=FALSE)
+  expect_equal(nrow(result),2L*nrow(axis))
+  pooled <- result[result$littoral_code=="C" & result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(pooled$n_addresses,4)
+  expect_equal(pooled$count_5_walk_mean,13/4)
+  expect_equal(pooled$count_5_walk_share,3/4)
+  uncovered <- result[result$littoral_code=="NC" & result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(uncovered$coverage_status,"covered")
+  expect_equal(uncovered$n_addresses,1)
+  identity <- jsonlite::fromJSON(unique(result$input_identity))
+  expect_setequal(names(identity),c("address_origins","littoral_reference",paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES)))
+  expect_equal(unique(result$littoral_reference_identity),"classe_littorale_communale")
+})
+
+test_that("the built littoral artifact pools the fixture crosswalk's C/NC membership", {
+  skip_if_not_installed("nanoparquet")
+  skip_if_not_installed("arrow")
+  path <- aedar_littoral_fixture_chemin()
+  communes <- aedar_littoral_univers_canonique()
+  ref <- read_aedar_littoral_reference(path, communes = communes)
+  cw <- ref$crosswalk
+
+  dir <- tempfile("aedar-littoral-fixture-"); dir.create(dir)
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+  # Two real canonical communes from the pinned fixture: 29083 is C, 29209 NC.
+  origins_path <- file.path(dir, "origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id = c("a", "b", "c"),
+    code_insee = c("29083", "29083", "29209"), lon = 1:3, lat = 1:3), origins_path)
+  mode_paths <- stats::setNames(vapply(AEDAR_ADDRESS_SOURCE_MODES, function(mode)
+    file.path(dir, paste0(mode, ".parquet")), character(1)), AEDAR_ADDRESS_SOURCE_MODES)
+  keys <- list(walk = data.frame(code_insee = c("29083", "29083", "29209"),
+    cle_interop_adr = c("a", "b", "c"), TYPEQU = "A104"))
+  for (mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    x <- keys[[mode]]
+    if (is.null(x)) x <- data.frame(code_insee = character(), cle_interop_adr = character(), TYPEQU = character())
+    for (column in AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]) x[[column]] <- rep(0, nrow(x))
+    if (mode == "walk" && nrow(x)) x$count_5_walk <- c(1, 3, 9)
+    nanoparquet::write_parquet(x, mode_paths[[mode]])
+  }
+  output_path <- file.path(dir, "littoral.parquet")
+  result <- build_aedar_littoral_aggregate(mode_paths, origins_path, cw,
+    ref$identity, ref$sha256, ref$vintage, output_path, verify_hashes = FALSE)
+  expect_setequal(unique(result$littoral_code), c("C", "NC"))
+  expect_setequal(unique(result[c("littoral_code", "littoral_label")])$littoral_label,
+    c("Littoral", "Non littoral"))
+  expect_silent(validate_aedar_littoral_aggregate(result, ref))
+  served <- data.frame(territory_type = "commune", territory_id = cw$code_insee,
+    littoral_code = cw$littoral_code, stringsAsFactors = FALSE)
+  expect_silent(validate_aedar_littoral_membership(ref, served))
+  stale <- served
+  stale$littoral_code[stale$territory_id == "29083"] <- "NC"
+  expect_error(validate_aedar_littoral_membership(ref, stale), "disagrees")
+})
+
 })

@@ -21,8 +21,21 @@ ENV_GRAPHE_STRUCTURE <- c(
 )
 
 environnement_graphe_structure <- function() {
+  defauts <- c(
+    LUSK_THEMES = "", LUSK_MODE = "full", LUSK_SCALAR_SCOPE = "",
+    LUSK_PUBLISH_DB = "", LUSK_PUBLISH_PROFILE = "",
+    LUSK_AEDAR_ADDRESS_ORIGINS = "", LUSK_AEDAR_PUBLISH_PROGRESS = "",
+    LUSK_ARTEFACTS = file.path("data", "artefacts"),
+    LUSK_PUBLICATION_RECEIPTS = file.path(tempdir(), "lusk-publication-receipts"),
+    LUSK_PUBLISH_OWNED_SERIES = "", LUSK_PUBLISH_SERIES = "",
+    LUSK_BRIDGE_LOCK_TIMEOUT_MS = "5000",
+    LUSK_BRIDGE_STATEMENT_TIMEOUT_MS = "120000", LUSK_BRIDGE_TEST_CLEANUP = "",
+    LUSK_PUBLISH_PORT = "5432",
+    LUSK_AEDAR_CANONICAL_DIR = file.path("data", "processed", "aedar"),
+    LUSK_SOURCES_LOCK = ""
+  )
   stats::setNames(lapply(ENV_GRAPHE_STRUCTURE, function(nom) {
-    Sys.getenv(nom, unset = "")
+    Sys.getenv(nom, unset = defauts[[nom]])
   }), ENV_GRAPHE_STRUCTURE)
 }
 

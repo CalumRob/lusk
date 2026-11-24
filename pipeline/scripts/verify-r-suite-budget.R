@@ -19,7 +19,9 @@ EXCEPTIONS_BUDGET <- data.frame(
     "test-lock-attribution.R",
     "test-targets-raccordement.R",
     "test-targets-raccordement.R",
-    "test-offre-tc-bridge.R"
+    "test-offre-tc-bridge.R",
+    "test-release-freeze.R",
+    "test-publish-scalar.R"
   ),
   test = c(
     NA_character_,
@@ -28,7 +30,9 @@ EXCEPTIONS_BUDGET <- data.frame(
     NA_character_,
     "discipline de cue : un second appel SAUTE tout, une entrée touchée n'invalide que la chaîne",
     "LE CRON SAUTE LA CHAÎNE : après l'amorçage, plus JAMAIS un recalcul",
-    NA_character_
+    NA_character_,
+    NA_character_,
+    "raccordement scalar projection binds its producer metadata, source vintage, and trajectory t0090"
   ),
   raison = c(
     "initial whole-repo parse-data seam and DBI audits; later structural audits reuse the cache",
@@ -37,9 +41,11 @@ EXCEPTIONS_BUDGET <- data.frame(
     "one full targets network construction for report dependency edges; later files reuse it",
     "execution is the contract: cue discipline across repeated makes; expires with #1129",
     "execution is the contract: cron never recomputes after bootstrap; expires with #1129",
-    "ADR-0049 step 4 retires the offre_tc bridge; expires with ADR-0049 step 4"
+    "ADR-0049 step 4 retires the offre_tc bridge; expires with ADR-0049 step 4",
+    "real digests_run dependency-edge assertion requires the distinct DB+profile network",
+    "#1163 committed-payload raccordement refusal; assertion intentionally unchanged"
   ),
-  expiration = c(rep(NA_character_, 4L), "#1129", "#1129", "ADR-0049 step 4"),
+  expiration = c(rep(NA_character_, 4L), "#1129", "#1129", "ADR-0049 step 4", NA_character_, NA_character_),
   stringsAsFactors = FALSE
 )
 
