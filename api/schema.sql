@@ -1411,3 +1411,19 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON resource_publication,
   scalar_resource_comparison_publication TO lusk_publisher;
 GRANT SELECT, INSERT ON resource_publication_event TO lusk_publisher;
 REVOKE UPDATE, DELETE, TRUNCATE ON resource_publication_event FROM lusk_publisher;
+
+-- Per-resource declared-profile comparison marker (migration 047, #1138).
+-- Expand phase: coexists with the global profile_comparison_publication
+-- singleton until the step-4 reader cutover.
+CREATE TABLE profile_resource_comparison_publication (
+    indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    content_version text NOT NULL,
+    profile_content_version text NOT NULL,
+    reference_content_version text NOT NULL,
+    group_row_count integer NOT NULL CHECK (group_row_count >= 0),
+    territory_row_count integer NOT NULL CHECK (territory_row_count >= 0),
+    lineage_row_count integer NOT NULL CHECK (lineage_row_count >= 0),
+    published_at timestamptz NOT NULL DEFAULT now()
+);
+GRANT SELECT ON profile_resource_comparison_publication TO lusk_reader;
+GRANT SELECT, INSERT, UPDATE, DELETE ON profile_resource_comparison_publication TO lusk_publisher;
