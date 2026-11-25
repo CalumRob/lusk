@@ -32,16 +32,18 @@ normaliser_adoption <- function(x) {
     return(x)
   }
   if (is.list(x)) {
-    absent <- vapply(x, function(v) is.null(v) ||
-      (length(v) == 1L && !is.list(v) && is.na(v)), logical(1))
-    x <- x[!absent]
+    # Never drop a NULL / single-NA entry: an explicit absence is data, and
+    # dropping it could turn a mismatch into a match.
     return(lapply(x, normaliser_adoption))
   }
   normaliser_valeur_adoption(x)
 }
 
 comparer_valeur_adoption <- function(attendu, live, ignore = character()) {
-  if (absence_comparaison(attendu) && absence_comparaison(live)) return(TRUE)
+  # A missing side equals the other ONLY when that other side carries no row:
+  # an artefact comparison with rows is never equal to a missing live one.
+  if (is.null(attendu) || is.null(live))
+    return(absence_comparaison(attendu) && absence_comparaison(live))
   if (is.data.frame(attendu) || is.data.frame(live)) {
     if (!is.data.frame(attendu) || !is.data.frame(live)) return(FALSE)
     if (length(setdiff(names(live), c(names(attendu), ignore)))) return(FALSE)
@@ -53,15 +55,19 @@ comparer_valeur_adoption <- function(attendu, live, ignore = character()) {
     live <- live[, colonnes, drop = FALSE]
     return(identical(normaliser_adoption(attendu), normaliser_adoption(live)))
   }
+  if (absence_comparaison(attendu) && absence_comparaison(live)) return(TRUE)
   identical(normaliser_adoption(attendu), normaliser_adoption(live))
 }
 
 # NULL comparison and an empty comparison row set are the same absence. AEDAR's
 # littoral sibling uses NULL before the extension and a zero-row frame after a
-# current publication; neither contains a fact.
+# current publication; neither contains a fact. Anything that carries a row, at
+# any depth, is NOT an absence: the test is recursive and never true for rows.
 absence_comparaison <- function(x) {
-  is.null(x) || (is.list(x) && all(vapply(x, function(part)
-    is.null(part) || (is.data.frame(part) && nrow(part) == 0L), logical(1))))
+  if (is.null(x)) return(TRUE)
+  if (is.data.frame(x)) return(nrow(x) == 0L)
+  if (!is.list(x)) return(length(x) == 0L)
+  all(vapply(x, absence_comparaison, logical(1)))
 }
 
 # Comparable form = named persisted tables. A missing/extra table is a

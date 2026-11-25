@@ -234,6 +234,50 @@ test_that("global comparison tokens are ignored only when they equal the live gl
   expect_null(liaisons_globales_profil(profil("p", "autre"), list())$profile_comparison_group)
 })
 
+test_that("explicit absences in a list are data: NULL and NA entries are never dropped", {
+  expect_false(identical(normaliser_adoption(list(x = NULL, y = "v")),
+                         normaliser_adoption(list(x = "v", y = "v"))))
+  expect_false(identical(normaliser_adoption(list(x = NA, y = 1)),
+                         normaliser_adoption(list(y = 1))))
+  expect_false(identical(normaliser_adoption(list(x = NA_character_, y = 1)),
+                         normaliser_adoption(list(x = "a", y = 1))))
+  expect_false(comparer_valeur_adoption(list(x = NULL, y = "v"), list(x = "v", y = "v")))
+  expect_false(comparer_valeur_adoption(list(x = NA, y = 1), list(y = 1)))
+  expect_true(comparer_valeur_adoption(list(x = NA, y = 1), list(x = NA, y = 1)))
+})
+
+test_that("a missing live comparison never equals an artefact comparison that has rows", {
+  rows <- data.frame(group_id = c("g1", "g2"), median = c(1, 2), stringsAsFactors = FALSE)
+  vide <- rows[0L, , drop = FALSE]
+  expect_false(comparer_valeur_adoption(rows, NULL))
+  expect_false(comparer_valeur_adoption(NULL, rows))
+  expect_false(comparer_valeur_adoption(rows, vide))
+  expect_false(comparer_valeur_adoption(rows, data.frame()))
+  expect_false(comparer_valeur_adoption(list(groups = rows, territories = vide), NULL))
+  expect_false(comparer_valeur_adoption(list(groups = rows), list(groups = NULL)))
+  # Two absences are the one legitimate equality (AEDAR littoral sibling).
+  expect_true(comparer_valeur_adoption(NULL, vide))
+  expect_true(comparer_valeur_adoption(vide, NULL))
+  expect_true(comparer_valeur_adoption(list(groups = vide), NULL))
+  expect_false(absence_comparaison(rows))
+  expect_false(absence_comparaison(list(a = NULL, b = rows)))
+
+  # Through the persisted-row comparison, table by table.
+  handler <- list(colonnes_stockage = list())
+  attendu <- list(scalar_comparison_group = rows)
+  for (live_vide in list(vide, data.frame(), NULL)) {
+    live <- list(scalar_comparison_group = live_vide)
+    resultat <- comparer_lignes_persistees(attendu, live, handler)
+    expect_false(resultat$identique)
+    expect_identical(resultat$parties, "scalar_comparison_group")
+  }
+  # ...and through the legacy comparison champ.
+  resultat <- comparer_ressource_adoptation(list(comparison = list(groups = rows)),
+    list(comparison = NULL), list(champs_live = "comparison", champs_comparaison = "groups"))
+  expect_false(resultat$identique)
+  expect_identical(resultat$parties, "comparison")
+})
+
 test_that("splitter binds profile, series and collection comparisons to their resource facts", {
   reference <- artefacts_fixture_reference()
   profile <- artefacts_fixture_profile_artefact()$artefact$contenu
