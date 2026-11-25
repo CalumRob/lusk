@@ -962,3 +962,33 @@ install. It also covers the current-state no-op, absent/present shapes, and
 transactional rejection of incompatible partial states. Fresh installs continue
 to use `schema.sql`. This migration does not publish data or authorize
 deployment.
+
+## Operator flow -- adopting an existing database, then planning (#1142, rollout #1143)
+
+Run from `pipeline/`, with the serving credential set process-scoped by the owner
+(never in a shared shell). Order: dump (restore-tested) -> 046 -> 047 -> 048 ->
+adopt -> verify -> deploy the new API -> sweep -> contract migration (#1141).
+
+1. `Rscript scripts/publication.R adopt <sortie> --dry-run` -- opens the same
+   session as `apply` (snapshot + reference lock), proves every resource's live rows
+   equal its artefact (every persisted column, every row of the resource, vintage
+   clocks and comparison tokens) and writes **nothing**. A refusal names each
+   diverging resource and table; a sortie without the AEDAR canonical files or
+   `aedar_comparison_manifest.json` is refused with `aedar_canonique_absent` /
+   `aedar_manifeste_absent`.
+2. `Rscript scripts/publication.R adopt <sortie>` -- same proof, then ONE transaction
+   writes only: the registry rows, the version-bound descriptors (048), the
+   per-resource comparison markers (046/047) and the `adopt` receipts. No serving row
+   is rewritten.
+   The per-resource comparison markers carry over the GLOBAL comparison token the
+   live comparison rows already carry (it is the API's identity key: lineage token ==
+   marker token), recorded in the local receipt as `comparison_token`.
+3. Verify the registry and descriptor counts, then deploy the new API.
+4. `Rscript scripts/publication.R listing > live.json` -- prints the live registry as
+   JSON, read-only, through the shared serving-session seam.
+5. `$env:LUSK_LIVE_LISTING = "live.json"; Rscript scripts/publication.R plan <sortie>`
+   -- `plan` never connects to a database (#1136); it reads that listing file and must
+   report every resource `status=unchanged`.
+
+`apply` takes the same `lock` / `registre` / connection options as `adopt`, and a
+later `apply` of an adopted resource replaces its comparison marker normally.
