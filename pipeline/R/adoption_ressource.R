@@ -5,6 +5,10 @@
 # PostgreSQL dates, integer64 counts and numeric SQL values must compare by
 # value, not by an R storage class chosen by the driver. Row order is not data.
 normaliser_valeur_adoption <- function(x) {
+  # Zero-row frames legitimately have different empty column types on the two
+  # sides (logical() from a writer, character() from an empty DB fetch). No
+  # datum is lost by normalising an empty non-list column to character().
+  if (!length(x) && !is.list(x)) return(character())
   if (length(x) && !is.list(x) && all(is.na(x))) return(rep(NA_character_, length(x)))
   if (inherits(x, "integer64")) x <- as.integer(as.character(x))
   if (inherits(x, "Date")) x <- as.character(x)
@@ -73,8 +77,12 @@ comparer_lignes_persistees <- function(attendu, live, handler) {
     ignore <- as.character(handler$colonnes_stockage[[table]] %||% character())
     a <- attendu[[table]]; b <- live[[table]]
     for (colonne in as.character(handler$colonnes_json[[table]] %||% character())) {
-      decoder <- function(x) I(lapply(x, function(value)
-        jsonlite::fromJSON(as.character(value), simplifyVector = FALSE)))
+      # PostgreSQL jsonb does not preserve object key order; compare decoded
+      # JSON by key, not by the writer's serialization order.
+      decoder <- function(x) I(lapply(x, function(value) {
+        obj <- jsonlite::fromJSON(as.character(value), simplifyVector = FALSE)
+        if (is.list(obj)) obj[sort(names(obj))] else obj
+      }))
       a[[colonne]] <- decoder(a[[colonne]]); b[[colonne]] <- decoder(b[[colonne]])
     }
     comparer_valeur_adoption(a, b, ignore)

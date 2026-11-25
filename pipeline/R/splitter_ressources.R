@@ -316,6 +316,11 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lire_live = lire_live_scalaire,
     lignes_persistees = lignes_scalaires_persistees,
     colonnes_stockage = list(scalar_observation = "published_at",
+      # Current dataset label and vintage clocks are live metadata: the
+      # resource Artefact carries the source identity but not those mutable
+      # values, so they are declared storage-only for every shape.
+      source_dataset = "name",
+      source_vintage = c("reference_date", "publication_date"),
       comparison_source_lineage = "comparison_content_version"),
     colonnes_tableau = list(scalar_descriptor = "allowed_levels")),
   declared_profile = list(
@@ -338,6 +343,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     normaliser_live = normaliser_live_profil,
     lignes_persistees = lignes_profil_persistees,
     colonnes_stockage = list(
+      source_dataset = "name",
+      source_vintage = c("reference_date", "publication_date"),
       profile_comparison_group = "profile_content_version",
       profile_comparison_territory = "profile_content_version",
       comparison_source_lineage = "comparison_content_version"),
@@ -363,7 +370,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_series,
     lire_live = lire_live_series,
     lignes_persistees = lignes_series_persistees,
-    colonnes_stockage = list(),
+    colonnes_stockage = list(source_dataset = "name",
+      source_vintage = c("reference_date", "publication_date")),
     colonnes_tableau = list(series_dataset_descriptor = c("axis_values",
       "allowed_levels", "axis_numeric_values", "comparison_levels"))),
   observed_collection = list(
@@ -382,6 +390,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lire_live = lire_live_collection,
     lignes_persistees = lignes_collection_persistees,
     colonnes_stockage = list(
+      source_dataset = "name",
+      source_vintage = c("reference_date", "publication_date"),
       observed_collection_comparison_group = "collection_content_version",
       observed_collection_comparison_territory = "collection_content_version",
       observed_collection_comparison_lineage = "comparison_content_version"),
@@ -406,7 +416,8 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_aedar,
     lire_live = lire_live_aedar,
     lignes_persistees = lignes_aedar_persistees,
-    colonnes_stockage = list(),
+    colonnes_stockage = list(source_dataset = "name",
+      source_vintage = c("reference_date", "publication_date")),
     colonnes_tableau = list(),
     colonnes_json = list(aedar_territorial_aggregate = c("identity", "measures")))
 )

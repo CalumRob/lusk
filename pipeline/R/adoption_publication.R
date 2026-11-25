@@ -84,7 +84,8 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
         lectures[[id]] <- tryCatch({
           lignes_attendues <- handler$lignes_persistees(artefact)
           handler$lire_live(con, id, reference, lignes_attendues,
-                            handler$colonnes_tableau %||% list())
+                            handler$colonnes_tableau %||% list(),
+                            handler$colonnes_stockage %||% list())
         }, error = function(e) e)
       }
       comparaisons <- comparer_adoption_artefacts(artefacts, lectures)
@@ -106,7 +107,9 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
           # registry row and travel through the SAME shared writer as apply.
           ecrire_descripteurs_ressource(con, artefact)
           ecrire_recette_ressource(con = con, ressource = id,
-            forme = as.character(artefact$forme), operation = "adopted",
+            # The DB event stores the verb allowed by api/schema.sql:1376
+            # (apply/retire/adopt); the local receipt keeps the "adopted" status.
+            forme = as.character(artefact$forme), operation = "adopt",
             old_version = NULL, new_version = as.character(artefact$version),
             commit_sha = commit_sha, confirmed_definition = FALSE,
             lineage_digests = artefact$digests_lignage)
