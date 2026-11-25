@@ -61,6 +61,20 @@ test_that("listing reads the registry read-only through the shared seam and plan
   expect_identical(listing$version, c("va", "vb"))
   expect_identical(version_live_ressource("b", listing), "vb")
 
+  # ...and the shared transaction entry point is the only way a serving transaction
+  # is opened: listing has no raw dbWithTransaction of its own.
+  corps_listing <- paste(deparse(lister_registre_publication), collapse = "\n")
+  expect_false(grepl("dbWithTransaction", corps_listing, fixed = TRUE))
+  expect_true(grepl("with_publication_transaction\\(.*lecture_seule = TRUE", corps_listing))
+  # The read-only declaration is the FIRST statement of the transaction, and a normal
+  # (writing) transaction does not carry it.
+  statements <- character()
+  with_publication_transaction(con, lecture_seule = TRUE, DBI::dbExecute(con, "SELECT 1"))
+  expect_identical(statements, c("SET TRANSACTION READ ONLY", "SELECT 1"))
+  statements <- character()
+  with_publication_transaction(con, DBI::dbExecute(con, "SELECT 1"))
+  expect_identical(statements, "SELECT 1")
+
   # The seam is the ONLY connection owner: it must be what listing goes through.
   expect_true(grepl("avec_session_service_publication\\(",
     paste(deparse(lister_registre_publication), collapse = "\n")))

@@ -179,10 +179,8 @@ avec_session_service_publication <- function(artefacts, cibles, lock = NULL,
 lister_registre_publication <- function(lock = NULL, registre = NULL, con = NULL) {
   avec_session_service_publication(list(), character(), lock = lock, registre = registre,
     con = con, code = function(con)
-      DBI::dbWithTransaction(con, {
-        DBI::dbExecute(con, "SET TRANSACTION READ ONLY")
-        lire_listing_live_registre(con)
-      }))
+      with_publication_transaction(con, lecture_seule = TRUE,
+        lire_listing_live_registre(con)))
 }
 
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de

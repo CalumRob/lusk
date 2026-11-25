@@ -21,13 +21,18 @@ publication_transaction <- function(con, expr) {
   DBI::dbWithTransaction(con, expr)
 }
 
-with_publication_transaction <- function(con, expr) {
+# The ONE way to open a serving transaction. `lecture_seule = TRUE` declares the
+# transaction READ ONLY as its first statement (a listing must not be able to write).
+with_publication_transaction <- function(con, expr, lecture_seule = FALSE) {
   state <- .publication_transaction_state
   if (!is.null(state$connection))
     stop("Nested outer publication transaction is not supported", call. = FALSE)
   state$connection <- con
   on.exit({ state$connection <- NULL }, add = TRUE)
-  DBI::dbWithTransaction(con, force(expr))
+  DBI::dbWithTransaction(con, {
+    if (isTRUE(lecture_seule)) DBI::dbExecute(con, "SET TRANSACTION READ ONLY")
+    force(expr)
+  })
 }
 
 # Shared owner-scoped publication transaction protocol.
