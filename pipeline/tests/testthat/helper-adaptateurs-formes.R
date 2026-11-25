@@ -266,8 +266,11 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
   x$density_class_summaries <- list(class_count = length(classes),
     measure_count = length(mesures), typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
     row_count = nrow(density))
+  # One summary row per (littoral status, measure): the marker's measure_count
+  # is the number of measures, not 1, or the deferred DB trigger's
+  # row_count = status_count * measure_count contract fails at commit.
   x$littoral_summaries <- list(status_count = if (with_littoral) length(groupes_du_contexte("littoral")) else 0L,
-    measure_count = if (with_littoral) 1L else 0L,
+    measure_count = if (with_littoral) length(mesures) else 0L,
     row_count = if (with_littoral) nrow(littoral) else 0L)
   x$publication_mode <- "reference_only"
   x$source_snapshot_id <- AEDAR_AGGREGATE_VINTAGE
