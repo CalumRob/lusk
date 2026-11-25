@@ -583,7 +583,6 @@ publish_milieux_reading <- function(con, facts, canonical) {
   if(length(ocs_indices)) {
     revision_ids <- unique(bindings$provenance_revision_id[ocs_indices])
     dataset_ids <- unique(bindings$dataset_id[ocs_indices])
-    in_params <- function(values, start=1L) paste0("$",seq.int(start,length.out=length(values)),collapse=",")
     revisions <- DBI::dbGetQuery(con,paste0("SELECT provenance_revision_id,source_id,vintage_id,source_name,source_version,reference_date,publication_date FROM series_provenance_revision WHERE provenance_revision_id IN (",in_params(revision_ids),")"),params=unname(as.list(revision_ids)))
     dataset_params <- as.list(dataset_ids)
     observations <- DBI::dbGetQuery(con,paste0("SELECT dataset_id,territory_id,territory_type,axis_value,state_role,observation_period,value FROM series_dataset_observation WHERE indicator_id='artif_par_habitant' AND dataset_id IN (",in_params(dataset_ids),")"),params=dataset_params)

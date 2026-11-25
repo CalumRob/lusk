@@ -26,16 +26,9 @@
   rows[, colonnes, drop = FALSE]
 }
 
-# RPostgres sends a length-one character vector as a scalar, so ANY($1::text[])
-# fails with "malformed array literal" whenever a key set has one member. Use
-# positional IN ($1,...) params, the same unnamed positional contract everywhere.
-.adoption_in <- function(valeurs, colonne = "source_id") {
-  valeurs <- unique(as.character(valeurs))
-  if (!length(valeurs)) return(NULL)
-  list(where = paste0(" WHERE ", colonne, " IN (",
-                      paste(paste0("$", seq_along(valeurs)), collapse = ","), ")"),
-       params = as.list(valeurs))
-}
+# Positional IN ($1,...) comes from the ONE shared helper (sql_positionnels.R).
+.adoption_in <- function(valeurs, colonne = "source_id")
+  clause_in_positionnelle(valeurs, colonne)
 
 .adoption_normaliser_tableau <- function(rows, attendu, colonnes = character()) {
   for (colonne in intersect(colonnes, names(rows))) {
