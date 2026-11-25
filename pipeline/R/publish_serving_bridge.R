@@ -1252,7 +1252,7 @@ bridge_fk_inventory <- function(con, managed = BRIDGE_MANAGED_TABLES,
   if (!is.character(schema) || length(schema) != 1L || is.na(schema) || !nzchar(schema))
     stop("Bridge FK pre-flight could not resolve the target schema", call. = FALSE)
 
-  placeholders <- paste0("$", seq_along(managed), collapse = ",")
+  placeholders <- in_params(managed)
   # Scope BOTH sides of every FK to the schema being published. Without this,
   # a shared disposable DB with 76 leftover it_* schemas yields probes against
   # tables that do not exist in the target schema.

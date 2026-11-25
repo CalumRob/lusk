@@ -81,13 +81,9 @@
 .adoption_vintages <- function(con, paires) {
   if (!nrow(paires))
     return(.adoption_query(con, "SELECT * FROM source_vintage WHERE false"))
-  where <- paste(vapply(seq_len(nrow(paires)), function(i)
-    paste0("(source_id=$", 2L * i - 1L, " AND vintage_id=$", 2L * i, ")"),
-    character(1)), collapse = " OR ")
-  params <- unlist(lapply(seq_len(nrow(paires)), function(i)
-    list(paires$source_id[[i]], paires$vintage_id[[i]])), use.names = FALSE)
-  .adoption_query(con, paste0("SELECT * FROM source_vintage WHERE ", where,
-    " ORDER BY source_id,vintage_id"), as.list(params))
+  clause <- clause_paires_positionnelle(paires, c("source_id", "vintage_id"))
+  .adoption_query(con, paste0("SELECT * FROM source_vintage WHERE ", clause$where,
+    " ORDER BY source_id,vintage_id"), clause$params)
 }
 
 # The ONE reader of the two shared source tables, used by every shape: `out` is the
