@@ -1,6 +1,12 @@
 # Lectures live d'adoption (#1142). Chaque forme declare ici SA lecture dans
 # REGISTRE_FORMES_RESSOURCE. Les requetes réutilisent les projections et les
 # décodeurs existants; adopt ne contient ni SQL ni switch par forme.
+#
+# Adoption is a proof of EQUALITY, so every reader returns the live tables as the
+# database holds them: EVERY persisted column and EVERY row selected by the
+# RESOURCE's own keys (indicator_id / dataset_id / comparison facet), never subset
+# to the artefact's columns or keys. A live-only column or a live-only row thus
+# reaches comparer_valeur_adoption() and is reported as a mismatch.
 
 .adoption_query <- function(con, sql, params = NULL) {
   rows <- if (is.null(params)) DBI::dbGetQuery(con, sql) else
@@ -10,20 +16,20 @@
   as.data.frame(rows, stringsAsFactors = FALSE, optional = TRUE)
 }
 
-# A shape's `colonnes_stockage` is the ONE declaration of writer-only columns
-# (e.g. scalar_observation.published_at) that exist in the persisted row builder
-# but not in the live table. Exclude them from the SELECT, not from the row
-# builder: comparer_lignes_persistees() ignores the same declaration on the
-# artefact side, so no reader-side ad-hoc strip is introduced.
-.adoption_lire_table <- function(con, table, colonnes, where = "", params = NULL,
+# `colonnes` (the artefact's columns) only names what the live table MUST carry;
+# `stockage` (a shape's `colonnes_stockage`, the ONE declaration of genuinely
+# write-time columns such as scalar_observation.published_at) exempts a column the
+# artefact cannot carry. comparer_lignes_persistees() ignores the same
+# declaration, so there is no reader-side ad-hoc strip.
+.adoption_lire_table <- function(con, table, colonnes = NULL, where = "", params = NULL,
                                 stockage = character()) {
-  colonnes <- setdiff(as.character(colonnes), as.character(stockage))
   rows <- .adoption_query(con, paste0("SELECT * FROM ", table, where), params)
-  missing <- setdiff(colonnes, names(rows))
+  requis <- setdiff(as.character(colonnes %||% character()), as.character(stockage))
+  missing <- setdiff(requis, names(rows))
   if (length(missing))
     stop(paste0("adoption : colonnes persistées absentes de ", table, ": ",
                 paste(missing, collapse = ",")), call. = FALSE)
-  rows[, colonnes, drop = FALSE]
+  rows
 }
 
 # Positional IN ($1,...) comes from the ONE shared helper (sql_positionnels.R).
@@ -51,30 +57,72 @@
   bridge_parse_text_array(x)
 }
 
-.adoption_vintages <- function(con, pairs) {
-  pairs <- unique(as.data.frame(pairs, stringsAsFactors = FALSE))
-  pairs <- pairs[!is.na(pairs$source_id) & !is.na(pairs$vintage_id), , drop = FALSE]
-  if (!nrow(pairs)) return(data.frame(source_id = character(), vintage_id = character(),
-    version = character(), reference_date = as.Date(character()),
-    publication_date = as.Date(character()), stringsAsFactors = FALSE))
-  where <- paste(vapply(seq_len(nrow(pairs)), function(i)
+# `source_dataset` / `source_vintage` are shared tables, so "the resource's rows"
+# are the (source, vintage) pairs the RESOURCE references in its LIVE provenance and
+# lineage tables (any live table already read that carries source_id AND
+# vintage_id), united with the artefact's own pairs. A live reference the artefact
+# lacks brings its live vintage row into the comparison (and is reported there as
+# well as in the provenance table); an unrelated historical vintage of the same
+# source, kept by other resources, is not this resource's row.
+.adoption_paires_live <- function(tables) {
+  paires <- lapply(tables, function(x) {
+    if (!is.data.frame(x) || !all(c("source_id", "vintage_id") %in% names(x))) return(NULL)
+    data.frame(source_id = as.character(x$source_id),
+               vintage_id = as.character(x$vintage_id), stringsAsFactors = FALSE)
+  })
+  paires <- do.call(rbind, c(paires[!vapply(paires, is.null, logical(1))],
+    list(data.frame(source_id = character(), vintage_id = character(),
+                    stringsAsFactors = FALSE))))
+  paires <- unique(paires[!is.na(paires$source_id) & nzchar(paires$source_id) &
+    !is.na(paires$vintage_id) & nzchar(paires$vintage_id), , drop = FALSE])
+  paires[order(paires$source_id, paires$vintage_id), , drop = FALSE]
+}
+
+.adoption_vintages <- function(con, paires) {
+  if (!nrow(paires))
+    return(.adoption_query(con, "SELECT * FROM source_vintage WHERE false"))
+  where <- paste(vapply(seq_len(nrow(paires)), function(i)
     paste0("(source_id=$", 2L * i - 1L, " AND vintage_id=$", 2L * i, ")"),
     character(1)), collapse = " OR ")
-  params <- unlist(lapply(seq_len(nrow(pairs)), function(i)
-    list(pairs$source_id[[i]], pairs$vintage_id[[i]])), use.names = FALSE)
-  .adoption_query(con, paste0(
-    "SELECT source_id,vintage_id,version,reference_date,publication_date FROM source_vintage ",
-    "WHERE ", where, " ORDER BY source_id,vintage_id"), as.list(params))
+  params <- unlist(lapply(seq_len(nrow(paires)), function(i)
+    list(paires$source_id[[i]], paires$vintage_id[[i]])), use.names = FALSE)
+  .adoption_query(con, paste0("SELECT * FROM source_vintage WHERE ", where,
+    " ORDER BY source_id,vintage_id"), as.list(params))
+}
+
+# The ONE reader of the two shared source tables, used by every shape: `out` is the
+# shape's already-read live tables, `lignes_attendues` the artefact's rows.
+.adoption_ajouter_sources <- function(con, out, lignes_attendues, stockage = list()) {
+  paires <- .adoption_paires_live(c(out, list(
+    lignes_attendues$source_vintage[c("source_id", "vintage_id")])))
+  sources <- unique(c(paires$source_id,
+    as.character(lignes_attendues$source_dataset$source_id)))
+  sources <- sources[!is.na(sources) & nzchar(sources)]
+  ids <- clause_in_positionnelle(sources, "source_id")
+  out$source_dataset <- if (!is.null(ids))
+    .adoption_lire_table(con, "source_dataset", names(lignes_attendues$source_dataset),
+      paste0(ids$where, " ORDER BY source_id"), ids$params, stockage$source_dataset) else
+    .adoption_query(con, "SELECT * FROM source_dataset WHERE false")
+  out$source_vintage <- .adoption_vintages(con, paires)
+  out
+}
+
+# One reader closure over a resource key: every table is read with SELECT * and
+# its tableau columns normalised to the PostgreSQL literal the writer persists.
+.adoption_lecteur <- function(con, cle, valeur, lignes_attendues, colonnes_tableau,
+                              colonnes_stockage) {
+  force(valeur)
+  function(table, where = paste0(" WHERE ", cle, "=$1"), params = list(valeur))
+    .adoption_normaliser_tableau(.adoption_lire_table(con, table,
+      names(lignes_attendues[[table]]), where, params, colonnes_stockage[[table]]),
+      lignes_attendues[[table]], colonnes_tableau[[table]])
 }
 
 lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                               colonnes_stockage = list()) {
   id <- as.character(ressource)
-  params <- list(id)
-  lire <- function(table, where = " WHERE indicator_id=$1", args = params)
-    .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, args,
-      colonnes_stockage[[table]]), lignes_attendues[[table]], colonnes_tableau[[table]])
+  lire <- .adoption_lecteur(con, "indicator_id", id, lignes_attendues, colonnes_tableau,
+                            colonnes_stockage)
   out <- list(
     scalar_descriptor = lire("scalar_descriptor"),
     scalar_descriptor_source = lire("scalar_descriptor_source"),
@@ -86,25 +134,14 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colo
       " WHERE comparison_family='scalar' AND facet_id=$1"))
   if (nrow(out$scalar_descriptor) != 1L)
     stop(paste0("adoption : descripteur scalaire absent ou multiple pour ", id), call. = FALSE)
-  ids <- .adoption_in(lignes_attendues$source_dataset$source_id)
-  out$source_dataset <- if (!is.null(ids)) .adoption_lire_table(con, "source_dataset",
-    names(lignes_attendues$source_dataset), ids$where, ids$params) else
-    lignes_attendues$source_dataset
-  paires <- lignes_attendues$source_vintage[c("source_id", "vintage_id")]
-  # Read exactly the artefact's vintage keys; an absent key stays an empty frame
-  # and therefore differs from the non-empty writer row set.
-  out$source_vintage <- .adoption_vintages(con, paires)
-  out
+  .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
 }
 
 lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                                      colonnes_stockage = list()) {
   id <- as.character(ressource)
-  params <- list(id)
-  lire <- function(table, where = " WHERE indicator_id=$1")
-    .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params,
-      colonnes_stockage[[table]]), lignes_attendues[[table]], colonnes_tableau[[table]])
+  lire <- .adoption_lecteur(con, "indicator_id", id, lignes_attendues, colonnes_tableau,
+                            colonnes_stockage)
   out <- list(
     profile_descriptor = lire("profile_descriptor"),
     profile_descriptor_source = lire("profile_descriptor_source"),
@@ -117,12 +154,7 @@ lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues
       " WHERE comparison_family='profile' AND facet_id=$1"))
   if (nrow(out$profile_descriptor) != 1L)
     stop(paste0("adoption : descripteur de profil absent ou multiple pour ", id), call. = FALSE)
-  ids <- .adoption_in(lignes_attendues$source_dataset$source_id)
-  out$source_dataset <- if (!is.null(ids)) .adoption_lire_table(con, "source_dataset",
-    names(lignes_attendues$source_dataset), ids$where, ids$params) else
-    lignes_attendues$source_dataset
-  out$source_vintage <- .adoption_vintages(con,
-    lignes_attendues$source_vintage[c("source_id", "vintage_id")])
+  out <- .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
   scalar_marker <- .adoption_query(con,
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")
   attr(out, "global_scalar_token") <- if (nrow(scalar_marker))
@@ -150,11 +182,8 @@ normaliser_live_profil <- function(rows, artefacts, lectures) {
 lire_live_series <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                              colonnes_stockage = list()) {
   id <- as.character(ressource)
-  params <- list(id)
-  lire <- function(table, where = " WHERE dataset_id=$1")
-    .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params,
-      colonnes_stockage[[table]]), lignes_attendues[[table]], colonnes_tableau[[table]])
+  lire <- .adoption_lecteur(con, "dataset_id", id, lignes_attendues, colonnes_tableau,
+                            colonnes_stockage)
   out <- list(
     series_dataset_descriptor = lire("series_dataset_descriptor"),
     series_dataset_observation = lire("series_dataset_observation"),
@@ -168,30 +197,29 @@ lire_live_series <- function(con, ressource, reference, lignes_attendues, colonn
     ordered_series_comparison_lineage = lire("ordered_series_comparison_lineage"),
     ordered_series_comparison_zero_reason = lire("ordered_series_comparison_zero_reason"))
   if (nrow(out$series_dataset_descriptor) != 1L)
-    stop(paste0("adoption : descripteur de s?rie absent ou multiple pour ", id), call. = FALSE)
-  revisions <- .adoption_in(lignes_attendues$series_provenance_revision$provenance_revision_id,
-                            "provenance_revision_id")
+    stop(paste0("adoption : descripteur de serie absent ou multiple pour ", id), call. = FALSE)
+  # Provenance revisions are keyed by the revisions this dataset's LIVE rows
+  # reference (plus the artefact's), so a revision referenced only live is read.
+  references <- unique(c(
+    as.character(lignes_attendues$series_provenance_revision$provenance_revision_id),
+    unlist(lapply(out[c("series_observation_provenance",
+        "series_named_reference_provenance", "ordered_series_comparison_lineage")],
+      function(x) as.character(x$provenance_revision_id)), use.names = FALSE)))
+  revisions <- clause_in_positionnelle(references, "provenance_revision_id")
   out$series_provenance_revision <- if (!is.null(revisions))
     .adoption_lire_table(con, "series_provenance_revision",
-      names(lignes_attendues$series_provenance_revision), revisions$where, revisions$params) else
-    lignes_attendues$series_provenance_revision
-  ids <- .adoption_in(lignes_attendues$source_dataset$source_id)
-  out$source_dataset <- if (!is.null(ids)) .adoption_lire_table(con, "source_dataset",
-    names(lignes_attendues$source_dataset), ids$where, ids$params) else
-    lignes_attendues$source_dataset
-  out$source_vintage <- .adoption_vintages(con,
-    lignes_attendues$source_vintage[c("source_id", "vintage_id")])
-  out
+      names(lignes_attendues$series_provenance_revision),
+      paste0(revisions$where, " ORDER BY provenance_revision_id"), revisions$params,
+      colonnes_stockage$series_provenance_revision) else
+    .adoption_query(con, "SELECT * FROM series_provenance_revision WHERE false")
+  .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
 }
 
 lire_live_collection <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                                  colonnes_stockage = list()) {
   id <- as.character(ressource)
-  params <- list(id)
-  lire <- function(table, where = " WHERE indicator_id=$1")
-    .adoption_normaliser_tableau(.adoption_lire_table(con, table,
-      names(lignes_attendues[[table]]), where, params,
-      colonnes_stockage[[table]]), lignes_attendues[[table]], colonnes_tableau[[table]])
+  lire <- .adoption_lecteur(con, "indicator_id", id, lignes_attendues, colonnes_tableau,
+                            colonnes_stockage)
   descriptor <- lire("observed_collection_descriptor")
   if (nrow(descriptor) != 1L)
     stop(paste0("adoption : descripteur de collection absent ou multiple pour ", id),
@@ -206,13 +234,7 @@ lire_live_collection <- function(con, ressource, reference, lignes_attendues, co
     observed_collection_comparison_territory = lire("observed_collection_comparison_territory"),
     observed_collection_comparison_lineage = lire("observed_collection_comparison_lineage"))
   names(out)[names(out) == "facts"] <- table
-  ids <- .adoption_in(lignes_attendues$source_dataset$source_id)
-  out$source_dataset <- if (!is.null(ids)) .adoption_lire_table(con, "source_dataset",
-    names(lignes_attendues$source_dataset), ids$where, ids$params) else
-    lignes_attendues$source_dataset
-  out$source_vintage <- .adoption_vintages(con,
-    lignes_attendues$source_vintage[c("source_id", "vintage_id")])
-  out
+  .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
 }
 
 .adoption_json_frame <- function(x) {
@@ -223,6 +245,8 @@ lire_live_collection <- function(con, ressource, reference, lignes_attendues, co
 
 lire_live_aedar <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                            colonnes_stockage = list()) {
+  # AEDAR is one singleton resource: its tables hold nothing else, so each is read
+  # whole (no key can narrow it, and a stray row must show).
   lire <- function(table) .adoption_lire_table(con, table,
     names(lignes_attendues[[table]]), stockage = colonnes_stockage[[table]])
   out <- list(aedar_territorial_aggregate = lire("aedar_territorial_aggregate"),
@@ -232,12 +256,6 @@ lire_live_aedar <- function(con, ressource, reference, lignes_attendues, colonne
     aedar_density_class_summary = lire("aedar_density_class_summary"),
     aedar_littoral_summary = lire("aedar_littoral_summary"))
   if (!nrow(out$aedar_territorial_aggregate))
-    stop("adoption : agr?gat AEDAR absent", call. = FALSE)
-  ids <- .adoption_in(lignes_attendues$source_dataset$source_id)
-  out$source_dataset <- if (!is.null(ids)) .adoption_lire_table(con, "source_dataset",
-    names(lignes_attendues$source_dataset), ids$where, ids$params) else
-    lignes_attendues$source_dataset
-  out$source_vintage <- .adoption_vintages(con,
-    lignes_attendues$source_vintage[c("source_id", "vintage_id")])
-  out
+    stop("adoption : agregat AEDAR absent", call. = FALSE)
+  .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
 }
