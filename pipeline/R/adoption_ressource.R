@@ -67,14 +67,17 @@ absence_comparaison <- function(x) {
 # Comparable form = named persisted tables. A missing/extra table is a
 # mismatch; within a table only writer-produced columns are supplied by the
 # registry's lignes_persistees(), and storage-only columns are ignored here.
-comparer_lignes_persistees <- function(attendu, live, handler) {
+comparer_lignes_persistees <- function(attendu, live, handler, ignorer_liaisons = list()) {
   if (!is.list(attendu) || !is.list(live) || !length(attendu) ||
       !setequal(names(attendu), names(live)))
     return(list(identique = FALSE,
                 parties = c(setdiff(names(attendu), names(live)),
                             setdiff(names(live), names(attendu)))))
   parties <- names(attendu)[!vapply(names(attendu), function(table) {
-    ignore <- as.character(handler$colonnes_stockage[[table]] %||% character())
+    # Storage-only columns, plus the columns a VERIFIED global-token chain lets
+    # this comparison ignore (handler$liaisons_globales); nothing else.
+    ignore <- unique(c(as.character(handler$colonnes_stockage[[table]] %||% character()),
+                       as.character(ignorer_liaisons[[table]] %||% character())))
     a <- attendu[[table]]; b <- live[[table]]
     for (colonne in as.character(handler$colonnes_json[[table]] %||% character())) {
       # PostgreSQL jsonb does not preserve object key order; compare decoded

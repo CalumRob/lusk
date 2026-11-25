@@ -28,19 +28,30 @@ verifier_lecteurs_adoption <- function(artefacts) {
 # Comparaison pure d'un jeu d'artefacts contre des lignes live déjà lues. Elle
 # est séparée de l'orchestration pour que tous les refus soient cumulés avant
 # tout write, au lieu de s'arrêter au premier indicateur fautif.
-comparer_adoption_artefacts <- function(artefacts, lectures) {
+comparer_adoption_artefacts <- function(artefacts, lectures, attestations = list()) {
   resultats <- lapply(names(artefacts), function(id) {
     artefact <- artefacts[[id]]
     handler <- REGISTRE_FORMES_RESSOURCE[[artefact$forme]]
     comparaison <- tryCatch({
       if (inherits(lectures[[id]], "error")) stop(lectures[[id]])
-      live <- if (is.function(handler$normaliser_live))
-        handler$normaliser_live(lectures[[id]], artefacts, lectures) else lectures[[id]]
-      comparer_lignes_persistees(handler$lignes_persistees(artefact), live, handler)
-    }, error = function(e) list(identique = FALSE,
-      parties = paste0("lecture: ", conditionMessage(e))))
+      live <- lectures[[id]]
+      # Explicit, verified global-token chains only (adoption_liaisons_globales.R):
+      # the handler names the columns the chain lets the comparison ignore; the
+      # live rows themselves are never rewritten.
+      ignorer <- if (is.function(handler$liaisons_globales))
+        handler$liaisons_globales(live, artefacts, attestations) else list()
+      comparaison <- comparer_lignes_persistees(handler$lignes_persistees(artefact), live,
+                                                handler, ignorer)
+      comparaison$motif <- if (comparaison$identique) NA_character_ else "divergence"
+      comparaison
+    }, error = function(e) if (inherits(e, "erreur_adoption"))
+      list(identique = FALSE, motif = e$refus,
+           parties = paste0(e$refus, ": ", conditionMessage(e))) else
+      list(identique = FALSE, motif = "lecture",
+           parties = paste0("lecture: ", conditionMessage(e))))
     data.frame(ressource = id, forme = as.character(artefact$forme),
       version = as.character(artefact$version), identique = comparaison$identique,
+      motif = as.character(comparaison$motif),
       parties = paste(comparaison$parties, collapse = ","), stringsAsFactors = FALSE)
   })
   do.call(rbind, resultats)
@@ -48,7 +59,7 @@ comparer_adoption_artefacts <- function(artefacts, lectures) {
 
 adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
                               registre = NULL, con = NULL, receipts_dir = NULL,
-                              commit_sha = NULL) {
+                              commit_sha = NULL, attestations = list()) {
   if (!is.data.frame(builds) || !nrow(builds) ||
       !all(c("ressource", "forme", "version") %in% names(builds)))
     stop(erreur_adoption("artefact_absent",
@@ -88,7 +99,7 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
                             handler$colonnes_stockage %||% list())
         }, error = function(e) e)
       }
-      comparaisons <- comparer_adoption_artefacts(artefacts, lectures)
+      comparaisons <- comparer_adoption_artefacts(artefacts, lectures, attestations)
       if (!dry_run && any(!comparaisons$identique)) {
         details <- paste0(comparaisons$ressource[!comparaisons$identique],
                           " (", comparaisons$parties[!comparaisons$identique], ")")
@@ -138,7 +149,16 @@ adopter_ressources <- function(sortie, dry_run = FALSE, root = NULL, lock = NULL
     reference = reference, digests = digests, metadata_directory = metadata_directory)
   artefacts <- charger_artefacts_construits(builds, root)
   adopter_artefacts(builds, artefacts, dry_run = dry_run, lock = lock,
-    registre = registre, con = con, receipts_dir = receipts_dir, commit_sha = commit_sha)
+    registre = registre, con = con, receipts_dir = receipts_dir, commit_sha = commit_sha,
+    attestations = attestations_sortie_adoption(sortie))
+}
+
+# Jetons que la SORTIE a elle-même enregistrés, lus sans connexion : la liaison
+# scalaire d'un profil (scalar-serving/binding.json). Absent => NA, et la chaîne
+# globale d'un profil ne peut alors pas être attestée.
+attestations_sortie_adoption <- function(sortie) {
+  list(scalar_binding = tryCatch(read_profile_scalar_binding(sortie),
+                                 error = function(e) NA_character_))
 }
 
 imprimer_adoption <- function(resultat, con = stdout()) {

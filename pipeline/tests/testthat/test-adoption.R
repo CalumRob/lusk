@@ -138,17 +138,100 @@ test_that("profile adoption accepts only the exact global-to-resource scalar bin
     data.frame(source_id = "s", vintage_id = "v"), NULL))
   artefacts <- list(part_passoires = dependance)
   facts_version <- version_faits_artefact(dependance)
-  rows <- list(profile_descriptor = data.frame(
-    comparison_scalar = "part_passoires",
-    required_scalar_version = "global-scalar-token", stringsAsFactors = FALSE))
-  attr(rows, "global_scalar_token") <- "global-scalar-token"
-  normalise <- normaliser_live_profil(rows, artefacts, list())
-  expect_identical(normalise$profile_descriptor$required_scalar_version, facts_version)
+  live <- function(jeton, marqueur) {
+    rows <- list(profile_descriptor = data.frame(comparison_scalar = "part_passoires",
+      required_scalar_version = jeton, stringsAsFactors = FALSE))
+    attr(rows, "marqueurs_globaux") <- list(scalar_content_version = marqueur)
+    rows
+  }
+  rows <- live("global-scalar-token", "global-scalar-token")
+  attestations <- list(scalar_binding = "global-scalar-token")
 
-  attr(rows, "global_scalar_token") <- "another-global-token"
-  normalise <- normaliser_live_profil(rows, artefacts, list())
-  expect_identical(normalise$profile_descriptor$required_scalar_version,
-                  "global-scalar-token")
+  # live token == live global marker == the token the sortie recorded: the ONE
+  # explicit allowance. The live token is NOT rewritten, the column is named.
+  ignorer <- liaisons_globales_profil(rows, artefacts, attestations)
+  expect_identical(ignorer$profile_descriptor, "required_scalar_version")
+  expect_identical(rows$profile_descriptor$required_scalar_version, "global-scalar-token")
+
+  # A token that already equals the dependency's facts version needs no allowance.
+  directe <- live(facts_version, "autre")
+  expect_null(liaisons_globales_profil(directe, artefacts, attestations)$profile_descriptor)
+
+  refus <- function(rows, attestations) {
+    err <- tryCatch(liaisons_globales_profil(rows, artefacts, attestations), error = identity)
+    expect_s3_class(err, "erreur_adoption")
+    expect_identical(err$refus, "dependance_divergente")
+    err
+  }
+  # live token is not the live global marker
+  refus(live("global-scalar-token", "another-global-token"), attestations)
+  # marker is not the token the sortie recorded
+  refus(rows, list(scalar_binding = "another-recorded-token"))
+  # the sortie recorded nothing
+  refus(rows, list(scalar_binding = NA_character_))
+  refus(rows, list())
+  # an arbitrary live token
+  refus(live("forged", "global-scalar-token"), attestations)
+  # no live token at all
+  refus(live(NA_character_, "global-scalar-token"), attestations)
+})
+
+test_that("a refused dependency chain is a typed reason on the comparison, never a silent match", {
+  dependance <- list(forme = "scalar", version = "vs", contenu = contenu_artefact(
+    data.frame(territory_id = "c1", value = 1), list(indicator_id = "part_passoires"),
+    data.frame(source_id = "s", vintage_id = "v"), NULL))
+  profil <- list(forme = "declared_profile", version = "vp")
+  live <- list(profile_descriptor = data.frame(comparison_scalar = "part_passoires",
+    required_scalar_version = "forged", stringsAsFactors = FALSE))
+  attr(live, "marqueurs_globaux") <- list(scalar_content_version = "g")
+  handler <- REGISTRE_FORMES_RESSOURCE[["declared_profile"]]
+  handler$lignes_persistees <- function(a) live
+  scalaire <- list(lignes_persistees = function(a) list(), liaisons_globales = NULL)
+  local_mocked_bindings(REGISTRE_FORMES_RESSOURCE =
+    list(declared_profile = handler, scalar = scalaire))
+  resultat <- comparer_adoption_artefacts(
+    list(profil = profil, part_passoires = dependance),
+    list(profil = live, part_passoires = list()), list(scalar_binding = "g"))
+  ligne <- resultat[resultat$ressource == "profil", ]
+  expect_false(ligne$identique)
+  expect_identical(ligne$motif, "dependance_divergente")
+  expect_match(ligne$parties, "dependance_divergente", fixed = TRUE)
+})
+
+test_that("global comparison tokens are ignored only when they equal the live global marker", {
+  lineage <- function(jeton) data.frame(comparison_family = "scalar",
+    comparison_content_version = jeton, stringsAsFactors = FALSE)
+  live <- function(jeton, marqueur) {
+    rows <- list(comparison_source_lineage = lineage(jeton))
+    attr(rows, "marqueurs_globaux") <- list(comparison_content_version = marqueur)
+    rows
+  }
+  expect_identical(liaisons_globales_scalaire(live("g", "g"), list())$comparison_source_lineage,
+                   "comparison_content_version")
+  expect_length(liaisons_globales_scalaire(live("g", "autre"), list()), 0L)
+  expect_length(liaisons_globales_scalaire(live(c("g", "h"), "g"), list()), 0L)
+  expect_length(liaisons_globales_scalaire(live("g", NA_character_), list()), 0L)
+  vide <- list(comparison_source_lineage = lineage("g")[0L, , drop = FALSE])
+  attr(vide, "marqueurs_globaux") <- list(comparison_content_version = "g")
+  expect_length(liaisons_globales_scalaire(vide, list()), 0L)
+
+  profil <- function(jeton, marqueur) {
+    rows <- list(profile_descriptor = data.frame(comparison_scalar = NA_character_),
+      profile_comparison_group = data.frame(profile_content_version = jeton,
+        stringsAsFactors = FALSE),
+      profile_comparison_territory = data.frame(profile_content_version = jeton,
+        stringsAsFactors = FALSE),
+      comparison_source_lineage = data.frame(comparison_content_version = "lien",
+        stringsAsFactors = FALSE))
+    attr(rows, "marqueurs_globaux") <- list(profile_content_version = marqueur,
+      comparison_content_version = "lien")
+    rows
+  }
+  ignorer <- liaisons_globales_profil(profil("p", "p"), list())
+  expect_identical(ignorer$profile_comparison_group, "profile_content_version")
+  expect_identical(ignorer$profile_comparison_territory, "profile_content_version")
+  expect_identical(ignorer$comparison_source_lineage, "comparison_content_version")
+  expect_null(liaisons_globales_profil(profil("p", "autre"), list())$profile_comparison_group)
 })
 
 test_that("splitter binds profile, series and collection comparisons to their resource facts", {

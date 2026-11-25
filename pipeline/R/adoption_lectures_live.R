@@ -134,7 +134,14 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colo
       " WHERE comparison_family='scalar' AND facet_id=$1"))
   if (nrow(out$scalar_descriptor) != 1L)
     stop(paste0("adoption : descripteur scalaire absent ou multiple pour ", id), call. = FALSE)
-  .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
+  out <- .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
+  # The live GLOBAL comparison marker, read only to VERIFY the global-token chain
+  # (adoption_liaisons_globales.R); it is never written back into compared rows.
+  marqueur <- .adoption_query(con,
+    "SELECT content_version FROM scalar_comparison_publication WHERE singleton")
+  attr(out, "marqueurs_globaux") <- list(comparison_content_version =
+    if (nrow(marqueur)) as.character(marqueur$content_version[[1L]]) else NA_character_)
+  out
 }
 
 lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
@@ -155,28 +162,18 @@ lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues
   if (nrow(out$profile_descriptor) != 1L)
     stop(paste0("adoption : descripteur de profil absent ou multiple pour ", id), call. = FALSE)
   out <- .adoption_ajouter_sources(con, out, lignes_attendues, colonnes_stockage)
-  scalar_marker <- .adoption_query(con,
+  # The live GLOBAL markers, read only to VERIFY the global-token chain
+  # (adoption_liaisons_globales.R); they are never written into compared rows.
+  scalaire <- .adoption_query(con,
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")
-  attr(out, "global_scalar_token") <- if (nrow(scalar_marker))
-    as.character(scalar_marker$content_version[[1L]]) else NA_character_
+  comparaison <- .adoption_query(con, paste0("SELECT content_version,profile_content_version ",
+    "FROM profile_comparison_publication WHERE singleton=true"))
+  premier <- function(x, champ) if (nrow(x)) as.character(x[[champ]][[1L]]) else NA_character_
+  attr(out, "marqueurs_globaux") <- list(
+    scalar_content_version = premier(scalaire, "content_version"),
+    comparison_content_version = premier(comparaison, "content_version"),
+    profile_content_version = premier(comparaison, "profile_content_version"))
   out
-}
-
-# Today's full profile publisher binds required_scalar_version to the GLOBAL
-# scalar snapshot; the Artefact de ressource binds the same proven dependency to
-# its FACTS version. Accept only that exact live chain, never an arbitrary token.
-normaliser_live_profil <- function(rows, artefacts, lectures) {
-  descriptor <- as.list(rows$profile_descriptor[1L, , drop = FALSE])
-  dependance <- descriptor$comparison_scalar
-  if (is.null(dependance) || !length(dependance) || is.na(dependance)) return(rows)
-  dependance <- as.character(dependance)[[1L]]
-  if (is.null(artefacts[[dependance]])) return(rows)
-  attendu <- version_faits_artefact(artefacts[[dependance]])
-  live <- as.character(descriptor$required_scalar_version[[1L]])
-  global <- as.character(attr(rows, "global_scalar_token"))
-  if (!is.na(live) && !is.na(global) && identical(live, global))
-    rows$profile_descriptor$required_scalar_version <- attendu
-  rows
 }
 
 lire_live_series <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
