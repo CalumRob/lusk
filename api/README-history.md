@@ -267,7 +267,8 @@ the browser or `/srv/lusk/api` checkout.
 
 The PC connects **directly** to Pi PostgreSQL over LAN at `192.168.1.120:5432`,
 database `lusk`, role `lusk_publisher`. libpq reads the private password from
-`%APPDATA%\PostgreSQL\pgpass.conf`; use the literal IP, not the SSH hostname
+`%APPDATA%\PostgreSQL\pgpass-prod.conf` (since 2026-11-25; the default `pgpass.conf` holds only
+test roles — see `tests/integration/README.md` § "Passfiles and server access"); use the literal IP, not the SSH hostname
 `calum-pi`, because passfile host matching is exact. Do not copy the passfile,
 credentials, or Parquet to the Pi. On 2026-09-28 the publisher owned both
 building tables and the completeness-check function; verify ownership and
@@ -336,11 +337,12 @@ That is an accepted local trust boundary here, not isolation from the agent.
 Use an exact host, port, database and publisher role in each entry; avoid a
 wildcard that could silently select the wrong database. The operator creates
 the file and restricts its ACL without pasting its contents into an agent
-session. To persist **only the path** across new PowerShell sessions:
+session. Since 2026-11-25, set the path **process-scoped only**, in the
+window doing the publication; never persist it (a persisted path would hand the serving
+credential to every process):
 
 ```powershell
-$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
-[Environment]::SetEnvironmentVariable('PGPASSFILE', $env:PGPASSFILE, 'User')
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass-prod.conf'
 ```
 
 ```powershell

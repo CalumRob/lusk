@@ -44,6 +44,44 @@ references; the current suite does not rehearse those importer-era layouts.
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
 
+## Passfiles and server access
+
+Layout on the owner's PC since 2026-11-25:
+
+| File | Holds | Who points `PGPASSFILE` at it |
+|---|---|---|
+| `%APPDATA%\PostgreSQL\pgpass.conf` (libpq default) | only `lusk_it_contract:lusk_it_contract_pub` and `lusk_it_contract:lusk_it_contract_read` | guarded test runs (orchestrator, and workers when authorised) |
+| `%APPDATA%\PostgreSQL\pgpass-prod.conf` | only `lusk:lusk_publisher` | the owner, process-scoped, for owner-only operations |
+
+Because libpq falls back to the default file when `PGPASSFILE` is unset, a mistaken
+connection to `lusk` finds no password. For owner-only work on the serving database,
+in that window only:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass-prod.conf'
+```
+
+Never persist `PGPASSFILE` as a user or machine variable, never add a `lusk` line to
+the default file, and never let an agent set `PGPASSFILE` to `pgpass-prod.conf` or read it.
+Both files sit under the owner's Windows profile, so processes running as that identity
+can technically read them. The split guards against mistakes; it does not isolate
+the owner from agents.
+
+Server side (PostgreSQL in Docker on the Pi): the test roles must have no `CONNECT` on
+`lusk`. As the container's superuser (`sudo docker ps` to find the container, then
+`sudo docker exec -it <container> psql -U postgres -d lusk`), list the roles that use `lusk`
+(`SELECT DISTINCT grantee FROM information_schema.role_table_grants WHERE table_schema='public';`
+and `SELECT DISTINCT usename FROM pg_stat_activity WHERE datname='lusk';`), then run
+`REVOKE CONNECT ON DATABASE lusk FROM PUBLIC;` and
+`GRANT CONNECT ON DATABASE lusk TO lusk_publisher, lusk_reader;`, adding any other serving role
+those queries showed. Superusers are unaffected. Roll back with `GRANT CONNECT ON DATABASE lusk TO PUBLIC;`.
+Verify read-only from `lusk_it_contract`:
+`SELECT has_database_privilege('lusk_it_contract_pub','lusk','CONNECT')` and the same for
+`lusk_it_contract_read` must both be `false`.
+
+Known residual risk: `lusk_it_contract_pub` owns `lusk_it_contract` and its retained
+`it_*` schemas, so a faulty test could drop them. Only test data is at stake.
+
 ## Persistent Pi test-only database and R publisher smoke
 
 The operator-owned integration target is PostgreSQL on the Pi at

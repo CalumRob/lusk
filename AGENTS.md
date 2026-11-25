@@ -21,6 +21,17 @@ test-only database, dedicated roles, and private passfile setup. The persistent 
 `lusk_it_contract`; per-run random schemas are disposable. Never point tests at the serving
 database `lusk` or copy credentials into the repository.
 
+**Two passfiles on the owner's PC (since 2026-11-25).** The libpq default
+`%APPDATA%\PostgreSQL\pgpass.conf` holds **only** the two `lusk_it_contract` test roles, so a
+connection that forgets to set `PGPASSFILE`, or names the wrong database, can never authenticate to
+`lusk`. The serving credential (`lusk:lusk_publisher`) lives alone in
+`%APPDATA%\PostgreSQL\pgpass-prod.conf`. Only the owner points `PGPASSFILE` at it, process-scoped, in
+the window doing owner-only work (migrations, publication, `adopt`, rollout). Agents never set
+`PGPASSFILE` to `pgpass-prod.conf`, never read it, and never add a `lusk` line to the default file.
+Never persist `PGPASSFILE` as a user or machine variable. On the server the test roles
+have no `CONNECT` on `lusk` (`REVOKE CONNECT ON DATABASE lusk FROM PUBLIC`, explicit grants to the
+serving roles). Details: `api/tests/integration/README.md` § "Passfiles and server access".
+
 ### Orchestrator duties before merging a worker PR — Pocock orchestrator only, NOT workers
 
 Workers cannot run everything a merge needs. Before merging, the orchestrator (the session that
