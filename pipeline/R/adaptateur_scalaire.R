@@ -96,11 +96,25 @@ projeter_artefact_scalaire <- function(artefact) {
                    drop = FALSE]
   source_ids <- sort(unique(as.character(paires$source_id)))
   sources <- data.frame(source_id = source_ids, name = source_ids, stringsAsFactors = FALSE)
+  # The source clocks are persisted facts: take them from the artefact's own
+  # grain (faits$vintages, carried by the splitter from the producer's vintages),
+  # never rebuild them. A pair the artefact carries no clock for stays NA, so
+  # adoption compares it with the live row and refuses instead of assuming.
+  portees <- contenu$faits[["vintages"]]
+  portees_cle <- if (is.data.frame(portees))
+    paste(as.character(portees$source_id), as.character(portees$vintage_id)) else character()
+  paires_cle <- paste(as.character(paires$source_id), as.character(paires$vintage_id))
+  position <- match(paires_cle, portees_cle)
+  clock <- function(champ, defaut = NA_character_) {
+    if (!is.data.frame(portees) || !champ %in% names(portees)) return(rep(defaut, nrow(paires)))
+    valeurs <- portees[[champ]][position]
+    if (inherits(portees[[champ]], "Date")) valeurs else as.character(valeurs)
+  }
   vintages <- data.frame(source_id = as.character(paires$source_id),
     vintage_id = as.character(paires$vintage_id),
-    version = as.character(paires$vintage_id),
-    reference_date = rep(NA_character_, nrow(paires)),
-    publication_date = rep(NA_character_, nrow(paires)), stringsAsFactors = FALSE)
+    version = ifelse(is.na(position), as.character(paires$vintage_id), clock("version")),
+    reference_date = clock("reference_date"),
+    publication_date = clock("publication_date"), stringsAsFactors = FALSE)
 
   list(
     ressource = id, forme = "scalar", version = artefact$version,

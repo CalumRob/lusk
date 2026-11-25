@@ -33,11 +33,20 @@ lire_projections_scalaires_sortie <- function(sortie, metadata_directory = NULL,
     for (id in as.character(projection$descriptors$indicator_id)) {
       subset_field <- function(field)
         projection[[field]][projection[[field]]$indicator_id == id, , drop = FALSE]
+      provenance <- subset_field("provenance")
+      # The resource's source clocks (version, reference/publication dates) are
+      # persisted facts of source_vintage: carry the rows this resource's own
+      # provenance references, so adoption can compare them instead of exempting them.
+      cle <- function(x) paste(as.character(x$source_id), as.character(x$vintage_id))
+      vintages <- projection$vintages
+      vintages <- if (is.data.frame(vintages))
+        vintages[cle(vintages) %in% cle(provenance), , drop = FALSE] else NULL
       projections[[id]] <- list(
         facts = subset_field("facts"),
         descriptors = subset_field("descriptors"),
-        provenance = subset_field("provenance"),
-        eligible_territories = projection$eligible_territories)
+        provenance = provenance,
+        eligible_territories = projection$eligible_territories,
+        vintages = vintages)
     }
   }
   projections
@@ -235,7 +244,10 @@ lier_dependance_faits_profil <- function(descripteur, projections) {
 lier_dependance_aucune <- function(descripteur, projections) descripteur
 
 faits_forme <- function(handler, projection) {
-  if (!is.null(handler$champs_faits)) return(projection[handler$champs_faits])
+  # `intersect` keeps an optional grain (the scalar `vintages`) out of the hash
+  # when a projection does not carry it, instead of adding a NULL entry.
+  if (!is.null(handler$champs_faits))
+    return(projection[intersect(handler$champs_faits, names(projection))])
   exclus <- unique(c(handler$champ_descripteur, handler$champ_provenance, "comparison"))
   projection[setdiff(names(projection), exclus)]
 }
@@ -294,11 +306,22 @@ comparer_definition_canonique <- function(projeter = projeter_description_canoni
   }
 }
 
+# `source_dataset.name` is the ONE storage-only column shared by every shape, and
+# the reason is ownership, not convenience: `source_dataset` is a SHARED table
+# keyed by source_id alone, written by every shape and every historical publisher
+# (ecriture_sources_serveur.R: ON CONFLICT DO NOTHING for the scalar adapter, DO
+# UPDATE SET name=EXCLUDED.name for profile / series / collection / AEDAR). Its
+# label is therefore last-writer-wins across resources and is not a fact of any one
+# Artefact de ressource; the scalar adapter does not even carry a label (it writes
+# name = source_id). The row's existence, source_id and every source_vintage column
+# are still compared. Evidence recorded in the PR for #1142.
+STOCKAGE_SOURCE_DATASET_NAME <- "name"
+
 REGISTRE_FORMES_RESSOURCE <- list(
   scalar = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_scalaires_sortie(sortie, metadata_directory, reference),
-    champs_faits = c("facts", "eligible_territories"),
+    champs_faits = c("facts", "eligible_territories", "vintages"),
     champ_descripteur = "descriptors",
     champ_provenance = "provenance",
     champ_comparaison = NULL,
@@ -315,13 +338,13 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # Adoption compares the writer's own persisted row builder, table by table.
     lire_live = lire_live_scalaire,
     lignes_persistees = lignes_scalaires_persistees,
+    # `colonnes_stockage` lists ONLY genuinely write-time / non-resident columns.
+    # Everything else a writer persists is a fact and is compared: source_vintage
+    # clocks and every comparison / content-version token. The sole write-time
+    # column is scalar_observation.published_at (stamped now() on insert); the sole
+    # non-resident one is source_dataset.name (see STOCKAGE_SOURCE_DATASET_NAME).
     colonnes_stockage = list(scalar_observation = "published_at",
-      # Current dataset label and vintage clocks are live metadata: the
-      # resource Artefact carries the source identity but not those mutable
-      # values, so they are declared storage-only for every shape.
-      source_dataset = "name",
-      source_vintage = c("reference_date", "publication_date"),
-      comparison_source_lineage = "comparison_content_version"),
+      source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(scalar_descriptor = "allowed_levels")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
@@ -342,12 +365,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     lire_live = lire_live_profil_declare,
     normaliser_live = normaliser_live_profil,
     lignes_persistees = lignes_profil_persistees,
-    colonnes_stockage = list(
-      source_dataset = "name",
-      source_vintage = c("reference_date", "publication_date"),
-      profile_comparison_group = "profile_content_version",
-      profile_comparison_territory = "profile_content_version",
-      comparison_source_lineage = "comparison_content_version"),
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(profile_descriptor = "allowed_levels")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
@@ -370,8 +388,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_series,
     lire_live = lire_live_series,
     lignes_persistees = lignes_series_persistees,
-    colonnes_stockage = list(source_dataset = "name",
-      source_vintage = c("reference_date", "publication_date")),
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(series_dataset_descriptor = c("axis_values",
       "allowed_levels", "axis_numeric_values", "comparison_levels"))),
   observed_collection = list(
@@ -389,12 +406,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_collection,
     lire_live = lire_live_collection,
     lignes_persistees = lignes_collection_persistees,
-    colonnes_stockage = list(
-      source_dataset = "name",
-      source_vintage = c("reference_date", "publication_date"),
-      observed_collection_comparison_group = "collection_content_version",
-      observed_collection_comparison_territory = "collection_content_version",
-      observed_collection_comparison_lineage = "comparison_content_version"),
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(observed_collection_descriptor = "allowed_levels",
       observed_collection_category = "anchor_levels")),
   aedar = list(
@@ -416,8 +428,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_aedar,
     lire_live = lire_live_aedar,
     lignes_persistees = lignes_aedar_persistees,
-    colonnes_stockage = list(source_dataset = "name",
-      source_vintage = c("reference_date", "publication_date")),
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(),
     colonnes_json = list(aedar_territorial_aggregate = c("identity", "measures")))
 )
