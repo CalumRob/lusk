@@ -218,6 +218,10 @@
     eligible_territories = densite$eligible_territories)
   scalar_version <- scalar_content_version(scalar)
   write_scalar_serving_artifact(scalar, file.path(sortie, "scalar-serving", "demographie"))
+  # A real kept sortie records the global scalar token the profiles were bound to
+  # (run_pipeline.R: cache_profile_scalar_binding(profile_binding, sortie)). Adoption
+  # attests the live global binding against exactly this file.
+  cache_profile_scalar_binding(scalar_version, sortie)
   snapshot <- list(scalar = scalar,
     comparison = project_scalar_comparisons(scalar, reference$rows, scalar_version,
       reference$content_version), retired_indicator_ids = character())
