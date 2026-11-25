@@ -120,6 +120,24 @@ projeter_artefact_profil_declare <- function(artefact) {
   invisible(vivant)
 }
 
+# A comparison is bound by TWO tokens recorded at BUILD time in the Artefact de
+# ressource (see comparaison_profil_ressource): the facts version it was computed
+# on and its own content version. Apply never derives one from the resource
+# version: an Artefact whose comparison lacks either refuses with a typed reason
+# BEFORE the first write.
+.verifier_jetons_comparaison_profil <- function(comparaison) {
+  if (is.null(comparaison)) return(invisible(NULL))
+  for (jeton in c("content_version", "profile_content_version")) {
+    valeur <- comparaison[[jeton]]
+    if (is.null(valeur) || length(valeur) != 1L || is.na(valeur) ||
+        !nzchar(as.character(valeur)))
+      stop(erreur_apply("comparaison_incomplete", paste0(
+        "apply : comparaison_incomplete: la comparaison du profil n'a pas de ", jeton,
+        " — jeton jamais inventé, zéro écriture.")))
+  }
+  invisible(NULL)
+}
+
 # Replace this ONE profile's rows inside the caller's publication transaction.
 # `retire = TRUE` removes them (and marks the registry row retired) without
 # inserting anything — this is `apply --retire`, not a special path.
@@ -136,6 +154,7 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
     if (!isTRUE(retire)) {
       descriptor <- rows$descriptor
       .verifier_dependance_faits_profil(con, descriptor, artefacts = artefacts)
+      .verifier_jetons_comparaison_profil(rows$comparison)
     }
 
     # FK-safe, indicator-scoped deletes. EVERY statement carries an unnamed
@@ -179,10 +198,8 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
       .ecrire_comparaison_profil(con, comparaison)
       reference <- if (!is.null(comparaison$reference_content_version))
         as.character(comparaison$reference_content_version)[[1L]] else NULL
-      version_comparaison <- if (!is.null(comparaison$content_version))
-        as.character(comparaison$content_version)[[1L]] else as.character(version)
-      version_faits <- if (!is.null(comparaison$profile_content_version))
-        as.character(comparaison$profile_content_version)[[1L]] else as.character(version)
+      version_comparaison <- as.character(comparaison$content_version)[[1L]]
+      version_faits <- as.character(comparaison$profile_content_version)[[1L]]
       # Per-resource marker (expand-phase counterpart of the untouched global
       # profile_comparison_publication singleton).
       DBI::dbExecute(con, paste0(

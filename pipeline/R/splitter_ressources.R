@@ -171,17 +171,25 @@ verifier_jetons_comparaison <- function(handler, projection, ressource, referenc
 # les MÊMES projecteurs, jamais les laisser absentes (#1142).
 comparaison_profil_ressource <- function(projection, ressource, reference) {
   if (!is.null(projection$comparison)) return(projection$comparison)
+  # Les DEUX jetons de la comparaison sont enregistrés ICI, à la construction :
+  # `profile_content_version` = version des faits de CETTE ressource, et
+  # `content_version` = version du contenu de la comparaison, calculée comme le
+  # producteur (profile_content_version(comparaison)). `apply` ne les dérive jamais.
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["declared_profile"]],
+                                     projection)
   dependance <- champ_descripteur(projection$descriptor, "comparison_scalar")
-  if (!is.null(dependance) && length(dependance) && !is.na(dependance) &&
+  comparaison <- if (!is.null(dependance) && length(dependance) && !is.na(dependance) &&
       nzchar(as.character(dependance)[[1L]]))
     # La comparaison DPE EST celle du scalaire déclaré : elle est prouvée une
     # seule fois sous cette ressource, pas recopiée dans les tables du profil.
-    return(list(reference_content_version = reference$content_version,
-                kind = "declared_profile", comparison_scalar = dependance[[1L]]))
-  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["declared_profile"]],
-                                     projection)
-  project_declared_profile_comparisons(list(projection), reference$rows,
-    profile_content_version = version, reference_content_version = reference$content_version)
+    list(reference_content_version = reference$content_version,
+         kind = "declared_profile", comparison_scalar = dependance[[1L]],
+         profile_content_version = version)
+  else
+    project_declared_profile_comparisons(list(projection), reference$rows,
+      profile_content_version = version, reference_content_version = reference$content_version)
+  comparaison$content_version <- profile_content_version(comparaison)
+  comparaison
 }
 
 comparaison_series_ressource <- function(projection, ressource, reference) {
