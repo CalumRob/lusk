@@ -81,8 +81,13 @@ Verify read-only from `lusk_it_contract`:
 container `lusk-db-postgres-1`; `\l lusk` shows `=T/postgres`, `lusk_reader=c`, `lusk_publisher=c`;
 both checks `false`; site unaffected).
 
-Known residual risk: `lusk_it_contract_pub` owns `lusk_it_contract` and its retained
-`it_*` schemas, so a faulty test could drop them. Only test data is at stake.
+`lusk_it_contract` is for pre-publication proofs, **not persistent storage** (owner,
+2026-11-25). Any `it_*` schema in it, including ones a proof "retains for inspection", is
+disposable and may be dropped at any time; never rely on one surviving between sessions. On
+2026-11-25 all 78 accumulated `it_*` schemas were dropped (166 MB left).
+
+Known residual risk: `lusk_it_contract_pub` owns `lusk_it_contract`, so a faulty test could
+drop the database. Only test data is at stake.
 
 ## Persistent Pi test-only database and R publisher smoke
 
