@@ -605,8 +605,20 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   if (is.null(lineage)) lineage <- data.frame(comparison_context = character(),
     group_id = character(), territory_type = character(), facet_id = character(),
     source_id = character(), vintage_id = character(), stringsAsFactors = FALSE)
-  lineage$comparison_family <- "profile"
-  lineage$comparison_content_version <- as.character(comparison$content_version)
+  # The real writer injects content_version at the DBI boundary; an Artefact de
+  # ressource carries the same token as profile_content_version. Empty lineage
+  # is a valid generated comparison (a scalar-bound profile writes no rows), so
+  # both columns must be created as empty vectors, never assigned a scalar into
+  # a zero-row frame.
+  version <- as.character(comparison$content_version %||% comparison$profile_content_version)
+  if (!length(version)) version <- NA_character_
+  if (nrow(lineage)) {
+    lineage$comparison_family <- rep("profile", nrow(lineage))
+    lineage$comparison_content_version <- rep(version[[1L]], nrow(lineage))
+  } else {
+    lineage$comparison_family <- character()
+    lineage$comparison_content_version <- character()
+  }
   list(profile_comparison_group = groups, profile_comparison_territory = territories,
     comparison_source_lineage = lineage[c("comparison_family", "comparison_context",
       "group_id", "territory_type", "facet_id", "source_id", "vintage_id",
