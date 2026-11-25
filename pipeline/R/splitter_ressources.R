@@ -162,6 +162,21 @@ comparaison_scalaire_ressource <- function(projection, ressource, reference) {
 # comparaisons sans jetons (familles sans publication de comparaison) sont
 # simplement laissées telles quelles.
 verifier_jetons_comparaison <- function(handler, projection, ressource, reference, comparaison) {
+  # Profile comparisons (computed or declared placeholder) are bound by
+  # `profile_content_version` = this resource's facts version, plus their own
+  # `content_version`. Both are minted at build, so both are verified at build.
+  if (is.list(comparaison) && "profile_content_version" %in% names(comparaison)) {
+    attendu <- version_faits_ressource(handler, projection)
+    if (!identical(as.character(comparaison$profile_content_version), as.character(attendu)) ||
+        !identical(as.character(comparaison$reference_content_version),
+                   as.character(reference$content_version)))
+      stop("Profile comparison tokens are not bound to this resource's facts and the sortie ",
+        "territory reference: ", ressource, call. = FALSE)
+    jeton <- comparaison$content_version
+    if (is.null(jeton) || length(jeton) != 1L || is.na(jeton) || !nzchar(as.character(jeton)))
+      stop("Profile comparison carries no content_version: ", ressource, call. = FALSE)
+    return(invisible(TRUE))
+  }
   if (!is.list(comparaison) ||
       !all(c("scalar_content_version", "reference_content_version") %in% names(comparaison)))
     return(invisible(NULL))

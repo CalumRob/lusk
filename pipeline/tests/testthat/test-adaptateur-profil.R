@@ -270,6 +270,29 @@ test_that("a comparison without a recorded token refuses with a typed reason and
   }
 })
 
+test_that("the build verifier checks the minted profile tokens, not only the scalar ones", {
+  reference <- artefacts_fixture_reference()
+  profile <- artefacts_fixture_profile_artefact()$artefact$contenu
+  projection <- list(descriptor = profile$descriptor, facts = profile$faits$facts,
+    axes = profile$faits$axes, provenance = profile$provenance,
+    datasets = profile$faits$datasets, vintages = profile$faits$vintages)
+  handler <- REGISTRE_FORMES_RESSOURCE[["declared_profile"]]
+  bon <- comparaison_profil_ressource(projection, "distribution_dpe", reference)
+  expect_true(verifier_jetons_comparaison(handler, projection, "distribution_dpe", reference, bon))
+  for (cas in list(
+    list(champ = "profile_content_version", valeur = "autre-faits"),
+    list(champ = "reference_content_version", valeur = "autre-reference"),
+    list(champ = "content_version", valeur = NA_character_))) {
+    mauvais <- bon
+    mauvais[[cas$champ]] <- cas$valeur
+    expect_error(verifier_jetons_comparaison(handler, projection, "distribution_dpe",
+      reference, mauvais), "Profile comparison", info = cas$champ)
+  }
+  mauvais <- bon; mauvais$content_version <- NULL
+  expect_error(verifier_jetons_comparaison(handler, projection, "distribution_dpe",
+    reference, mauvais), "content_version")
+})
+
 test_that("the splitter records BOTH comparison tokens, for computed and declared comparisons", {
   reference <- artefacts_fixture_reference()
   profile <- artefacts_fixture_profile_artefact()$artefact$contenu
