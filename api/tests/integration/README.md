@@ -77,7 +77,9 @@ and `SELECT DISTINCT usename FROM pg_stat_activity WHERE datname='lusk';`), then
 those queries showed. Superusers are unaffected. Roll back with `GRANT CONNECT ON DATABASE lusk TO PUBLIC;`.
 Verify read-only from `lusk_it_contract`:
 `SELECT has_database_privilege('lusk_it_contract_pub','lusk','CONNECT')` and the same for
-`lusk_it_contract_read` must both be `false`.
+`lusk_it_contract_read` must both be `false`. Applied and verified 2026-11-25 (PostgreSQL 18
+container `lusk-db-postgres-1`; `\l lusk` shows `=T/postgres`, `lusk_reader=c`, `lusk_publisher=c`;
+both checks `false`; site unaffected).
 
 Known residual risk: `lusk_it_contract_pub` owns `lusk_it_contract` and its retained
 `it_*` schemas, so a faulty test could drop them. Only test data is at stake.
