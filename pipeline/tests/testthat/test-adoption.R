@@ -201,19 +201,35 @@ test_that("a refused dependency chain is a typed reason on the comparison, never
 test_that("global comparison tokens are ignored only when they equal the live global marker", {
   lineage <- function(jeton) data.frame(comparison_family = "scalar",
     comparison_content_version = jeton, stringsAsFactors = FALSE)
-  live <- function(jeton, marqueur) {
+  live <- function(jeton, marqueur, entree = "S", global = "S") {
     rows <- list(comparison_source_lineage = lineage(jeton))
-    attr(rows, "marqueurs_globaux") <- list(comparison_content_version = marqueur)
+    attr(rows, "marqueurs_globaux") <- list(comparison_content_version = marqueur,
+      comparison_scalar_input = entree, scalar_content_version = global)
     rows
   }
-  expect_identical(liaisons_globales_scalaire(live("g", "g"), list())$comparison_source_lineage,
-                   "comparison_content_version")
-  expect_length(liaisons_globales_scalaire(live("g", "autre"), list()), 0L)
-  expect_length(liaisons_globales_scalaire(live(c("g", "h"), "g"), list()), 0L)
-  expect_length(liaisons_globales_scalaire(live("g", NA_character_), list()), 0L)
+  sortie <- list(scalar_binding = "S")
+  # token == singleton AND singleton's scalar input == live scalar marker == sortie's
+  # recorded binding: the allowance; the single exemption declaration is shared.
+  expect_identical(liaisons_globales_scalaire(live("g", "g"), list(), sortie),
+                   EXEMPTION_JETON_LIGNAGE)
+  # token is not the singleton, several tokens, no marker, no live rows: no allowance
+  expect_length(liaisons_globales_scalaire(live("g", "autre"), list(), sortie), 0L)
+  expect_length(liaisons_globales_scalaire(live(c("g", "h"), "g"), list(), sortie), 0L)
+  expect_length(liaisons_globales_scalaire(live("g", NA_character_), list(), sortie), 0L)
   vide <- list(comparison_source_lineage = lineage("g")[0L, , drop = FALSE])
   attr(vide, "marqueurs_globaux") <- list(comparison_content_version = "g")
-  expect_length(liaisons_globales_scalaire(vide, list()), 0L)
+  expect_length(liaisons_globales_scalaire(vide, list(), sortie), 0L)
+  # token IS the singleton but the chain is not attested by the sortie: typed refusal
+  for (cas in list(
+    list(live("g", "g", entree = "autre"), sortie),             # singleton built on another snapshot
+    list(live("g", "g", global = "autre"), sortie),             # live scalar marker moved
+    list(live("g", "g"), list(scalar_binding = "autre")),       # sortie recorded another token
+    list(live("g", "g"), list(scalar_binding = NA_character_)), # sortie recorded none
+    list(live("g", "g"), list()))) {
+    err <- tryCatch(liaisons_globales_scalaire(cas[[1L]], list(), cas[[2L]]), error = identity)
+    expect_s3_class(err, "erreur_adoption")
+    expect_identical(err$refus, "jeton_comparaison_non_atteste")
+  }
 
   profil <- function(jeton, marqueur) {
     rows <- list(profile_descriptor = data.frame(comparison_scalar = NA_character_),
@@ -230,8 +246,14 @@ test_that("global comparison tokens are ignored only when they equal the live gl
   ignorer <- liaisons_globales_profil(profil("p", "p"), list())
   expect_identical(ignorer$profile_comparison_group, "profile_content_version")
   expect_identical(ignorer$profile_comparison_territory, "profile_content_version")
-  expect_identical(ignorer$comparison_source_lineage, "comparison_content_version")
+  # the lineage exemption is the SAME single declaration the scalar branch uses
+  expect_identical(ignorer$comparison_source_lineage,
+                   EXEMPTION_JETON_LIGNAGE$comparison_source_lineage)
   expect_null(liaisons_globales_profil(profil("p", "autre"), list())$profile_comparison_group)
+  # exactly one place spells the exemption out
+  corps <- vapply(c("liaisons_globales_scalaire", "liaisons_globales_profil"),
+    function(f) paste(deparse(get(f)), collapse = "\n"), character(1))
+  expect_false(any(grepl('"comparison_source_lineage"', corps, fixed = TRUE)))
 })
 
 test_that("explicit absences in a list are data: NULL and NA entries are never dropped", {

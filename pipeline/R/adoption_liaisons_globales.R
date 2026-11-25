@@ -27,14 +27,44 @@
     nzchar(marqueur) && all(jetons == marqueur)
 }
 
+# UNE seule déclaration de l'exemption du jeton de lignage (table + colonne), pour
+# toutes les formes : seul le MARQUEUR auquel on compare diffère par forme.
+EXEMPTION_JETON_LIGNAGE <- list(comparison_source_lineage = "comparison_content_version")
+
+.exemption_jeton_lignage <- function(live, marqueur) {
+  if (.jetons_egaux_marqueur(.jetons_vivants(live, "comparison_source_lineage",
+        "comparison_content_version"), marqueur)) EXEMPTION_JETON_LIGNAGE else list()
+}
+
 # Scalaire : le jeton de lignage de comparaison vivant est le contenu du singleton
 # global scalar_comparison_publication, pas celui de la comparaison de la ressource.
+# ATTESTÉ contre la sortie : ce singleton a été calculé sur le snapshot scalaire
+# global (`scalar_comparison_publication.scalar_content_version`), qui doit être le
+# marqueur scalaire vivant (`table_publication['scalar_observation']`) ET le jeton
+# que la sortie a enregistré pour ce scalaire (binding.json). La sortie n'enregistre
+# PAS de jeton de comparaison scalaire lui-même : c'est le jeton scalaire dont il
+# dérive qui est attesté, et la comparaison est ensuite prouvée ligne à ligne.
+# Si le jeton vivant EST le singleton mais que la chaîne n'est pas attestée : refus
+# typé `jeton_comparaison_non_atteste`, jamais un passage silencieux.
 liaisons_globales_scalaire <- function(live, artefacts, attestations = list()) {
   marqueurs <- attr(live, "marqueurs_globaux")
-  if (.jetons_egaux_marqueur(.jetons_vivants(live, "comparison_source_lineage",
-        "comparison_content_version"), marqueurs$comparison_content_version))
-    list(comparison_source_lineage = "comparison_content_version")
-  else list()
+  exemption <- .exemption_jeton_lignage(live, marqueurs$comparison_content_version)
+  if (!length(exemption)) return(list())
+  entree <- as.character(marqueurs$comparison_scalar_input)
+  global <- as.character(marqueurs$scalar_content_version)
+  enregistre <- as.character(attestations$scalar_binding %||% NA_character_)
+  if (length(entree) == 1L && !is.na(entree) && length(global) == 1L && !is.na(global) &&
+      length(enregistre) == 1L && !is.na(enregistre) &&
+      identical(entree, global) && identical(global, enregistre))
+    return(exemption)
+  stop(erreur_adoption("jeton_comparaison_non_atteste", paste0(
+    "adoption : jeton_comparaison_non_atteste: le lignage de comparaison scalaire porte le ",
+    "jeton global vivant, mais le snapshot scalaire dont il dérive (",
+    if (length(entree) != 1L || is.na(entree)) "<absent>" else entree,
+    ") n'est pas le marqueur scalaire vivant (",
+    if (length(global) != 1L || is.na(global)) "<absent>" else global,
+    ") enregistré par la sortie (",
+    if (length(enregistre) != 1L || is.na(enregistre)) "<absent>" else enregistre, ").")))
 }
 
 # Profil déclaré : (1) les jetons de comparaison vivants sont ceux du singleton
@@ -44,14 +74,14 @@ liaisons_globales_scalaire <- function(live, artefacts, attestations = list()) {
 # ce scalaire (binding.json) ; sinon refus typé `dependance_divergente`.
 liaisons_globales_profil <- function(live, artefacts, attestations = list()) {
   marqueurs <- attr(live, "marqueurs_globaux")
-  ignorer <- list()
-  for (cas in list(
-    list("profile_comparison_group", "profile_content_version", "profile_content_version"),
-    list("profile_comparison_territory", "profile_content_version", "profile_content_version"),
-    list("comparison_source_lineage", "comparison_content_version", "comparison_content_version")))
-    if (.jetons_egaux_marqueur(.jetons_vivants(live, cas[[1L]], cas[[2L]]),
-                               marqueurs[[cas[[3L]]]]))
-      ignorer[[cas[[1L]]]] <- cas[[2L]]
+  # La sortie n'enregistre AUCUN jeton de comparaison de profil (seulement la liaison
+  # scalaire) : ces jetons ne sont donc attestés que contre le singleton vivant
+  # profile_comparison_publication ; le contenu, lui, est prouvé ligne à ligne.
+  ignorer <- .exemption_jeton_lignage(live, marqueurs$comparison_content_version)
+  for (table in c("profile_comparison_group", "profile_comparison_territory"))
+    if (.jetons_egaux_marqueur(.jetons_vivants(live, table, "profile_content_version"),
+                               marqueurs$profile_content_version))
+      ignorer[[table]] <- "profile_content_version"
 
   descriptor <- as.list(live$profile_descriptor[1L, , drop = FALSE])
   dependance <- descriptor$comparison_scalar

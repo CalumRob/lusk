@@ -134,9 +134,14 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colo
   # The live GLOBAL comparison marker, read only to VERIFY the global-token chain
   # (adoption_liaisons_globales.R); it is never written back into compared rows.
   marqueur <- .adoption_query(con,
-    "SELECT content_version FROM scalar_comparison_publication WHERE singleton")
-  attr(out, "marqueurs_globaux") <- list(comparison_content_version =
-    if (nrow(marqueur)) as.character(marqueur$content_version[[1L]]) else NA_character_)
+    "SELECT content_version,scalar_content_version FROM scalar_comparison_publication WHERE singleton")
+  scalaire <- .adoption_query(con,
+    "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")
+  premier <- function(x, champ) if (nrow(x)) as.character(x[[champ]][[1L]]) else NA_character_
+  attr(out, "marqueurs_globaux") <- list(
+    comparison_content_version = premier(marqueur, "content_version"),
+    comparison_scalar_input = premier(marqueur, "scalar_content_version"),
+    scalar_content_version = premier(scalaire, "content_version"))
   out
 }
 
