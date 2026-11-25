@@ -108,25 +108,33 @@ lire_projections_collections_sortie <- function(sortie) {
   lapply(registre, function(producteur) producteur$project(entrees$canonical))
 }
 
-lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
+NOM_MANIFESTE_COMPARAISON_AEDAR <- "aedar_comparison_manifest.json"
+
+# Où la sortie porte ses fichiers canoniques AEDAR : le PREMIER répertoire
+# candidat qui les a tous, sinon NULL. Un seul lieu de décision, partagé par le
+# lecteur de projection et par le diagnostic d'adoption.
+localiser_aedar_sortie <- function(sortie) {
   candidats <- c(file.path(sortie, "aedar"),
                  file.path(sortie, "aedar", "canonical"),
                  file.path(sortie, "data", "processed", "aedar"),
                  Sys.getenv("LUSK_AEDAR_CANONICAL_DIR", unset = file.path("data", "processed", "aedar")))
-  for (candidat in candidats) {
-    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES)))) {
-      projection <- read_aedar_canonical(candidat)
-      # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
-      # référence de la sortie) : `apply` n'a jamais besoin de relire le
-      # territory_reference vivant pour la publier (#1139).
-      if (file.exists(file.path(candidat, "aedar_comparison_manifest.json"))) {
-        if (is.null(reference)) reference <- lire_reference_sortie(sortie)
-        projection$comparison <- comparaison_aedar_pour_artefact(candidat, reference)
-      }
-      return(projection)
-    }
-  }
+  for (candidat in candidats)
+    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES)))) return(candidat)
   NULL
+}
+
+lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
+  candidat <- localiser_aedar_sortie(sortie)
+  if (is.null(candidat)) return(NULL)
+  projection <- read_aedar_canonical(candidat)
+  # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
+  # référence de la sortie) : `apply` n'a jamais besoin de relire le
+  # territory_reference vivant pour la publier (#1139).
+  if (file.exists(file.path(candidat, NOM_MANIFESTE_COMPARAISON_AEDAR))) {
+    if (is.null(reference)) reference <- lire_reference_sortie(sortie)
+    projection$comparison <- comparaison_aedar_pour_artefact(candidat, reference)
+  }
+  projection
 }
 
 # La comparaison d'une ressource scalaire est calculée par le producteur sur

@@ -49,10 +49,33 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
     fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
   .adopt_db_publish_all(con, fixture)
   avant <- .adopt_db_digest(con)
-
-  resultat <- adopter_ressources(fixture$sortie, root = fixture$root,
-    registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
+  # Everything below goes through the CLI ENTRY FUNCTION `scripts/publication.R`
+  # calls, with the same arguments the operator types; only the connection, the
+  # lock and the pre-read projections are injected (as in apply's own proofs).
+  cli <- function(args, ...) {
+    sortie <- character()
+    tc <- textConnection("sortie", "w", local = TRUE)
+    on.exit(close(tc), add = TRUE)
+    resultat <- executer_commande_publication(args, out = tc, ...)
+    list(resultat = resultat, sortie = { flush(tc); sortie })
+  }
+  adopter <- function(args) cli(args, root = fixture$root, registre = fixture$lock,
+    projections = fixture$projections, reference = fixture$reference,
     metadata_directory = fixture$metadata_directory, con = con)
+
+  # --dry-run through the CLI: not ONE row of any serving, registry, descriptor or
+  # receipt table changes, and nothing is reported adopted.
+  total_avant <- list(.adopt_db_digest(con), .adopt_db_registry_digest(con))
+  sec <- adopter(c("adopt", fixture$sortie, "--dry-run"))
+  expect_identical(sec$resultat$adopted, character())
+  expect_true("adoption=match adopted= zero_data_writes=true" %in% sec$sortie)
+  expect_identical(list(.adopt_db_digest(con), .adopt_db_registry_digest(con)), total_avant)
+  expect_equal(as.numeric(DBI::dbGetQuery(con,
+    "SELECT count(*) AS n FROM resource_publication")$n[[1L]]), 0)
+
+  reel <- adopter(c("adopt", fixture$sortie))
+  resultat <- reel$resultat
+  expect_true(any(grepl("^adoption=match adopted=", reel$sortie)))
   attendus <- c("densite", "part_passoires", "structure_age", "distribution_dpe",
     "artif_par_habitant", "acv", "membres", "aedar")
   expect_setequal(resultat$adopted, attendus)
@@ -72,12 +95,30 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_equal(nrow(DBI::dbGetQuery(con, paste0(
     "SELECT * FROM resource_publication_event WHERE operation='adopt'"))), length(attendus))
 
-  plan <- plan_publication(root = fixture$root,
-    live = lire_listing_live_registre(con), registre = fixture$lock)
-  expect_setequal(plan$ressources$ressource, attendus)
-  expect_false(any(plan$ressources$change))
-  expect_false(any(plan$ressources$cascade))
-  expect_true(all(plan$ressources$drift_nb == 0L))
+  # The operator path to "plan shows every resource unchanged": `listing` reads the
+  # live registry read-only through the shared seam and prints the file `plan`
+  # (which never connects, #1136) consumes via LUSK_LIVE_LISTING. Both are the CLI
+  # entry functions, run on the registry the CLI adopt just wrote.
+  registre_avant <- .adopt_db_registry_digest(con)
+  listing <- cli(c("listing"), registre = fixture$lock, con = con)
+  expect_identical(.adopt_db_registry_digest(con), registre_avant)
+  fichier <- tempfile(fileext = ".json")
+  on.exit(unlink(fichier), add = TRUE, after = FALSE)
+  writeLines(listing$sortie, fichier)
+  plan <- cli(c("plan"), root = fixture$root, registre = fixture$lock, live = fichier)
+  lignes <- plan$sortie[grepl("^ressource=", plan$sortie)]
+  expect_length(lignes, length(attendus))
+  for (id in attendus)
+    expect_true(any(startsWith(lignes, paste0("ressource=", id, " "))), info = id)
+  expect_true(all(grepl("adoption=adopted", lignes, fixed = TRUE)))
+  expect_true(all(grepl("status=unchanged", lignes, fixed = TRUE)))
+  expect_true(all(grepl("cascade=no", lignes, fixed = TRUE)))
+  expect_true("changed=" %in% plan$sortie)
+  expect_true("freeze=ok" %in% plan$sortie)
+  expect_setequal(plan$resultat$ressources$ressource, attendus)
+  expect_false(any(plan$resultat$ressources$change))
+  expect_false(any(plan$resultat$ressources$cascade))
+  expect_true(all(plan$resultat$ressources$drift_nb == 0L))
 })
 
 test_that("guarded: one altered live row in each shape refuses with zero writes", {
@@ -112,9 +153,10 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
     avant <- .adopt_db_digest(con)
     registre_avant <- .adopt_db_registry_digest(con)
-    err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
-      registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
-      metadata_directory = fixture$metadata_directory, con = con), error = identity)
+    err <- tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
+      root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+      reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+      con = con, out = nullfile()), error = identity)
     expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
@@ -143,10 +185,43 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
     if (identical(ressource, "structure_age")) stop("forced adoption receipt failure")
     invisible(TRUE)
   }, .package = "lusk")
-  err <- tryCatch(adopter_ressources(fixture$sortie, root = fixture$root,
-    registre = fixture$lock, projections = fixture$projections, reference = fixture$reference,
-    metadata_directory = fixture$metadata_directory, con = con), error = identity)
+  err <- tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
+    root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+    con = con, out = nullfile()), error = identity)
   expect_match(conditionMessage(err), "forced adoption receipt failure", fixed = TRUE)
+  expect_identical(.adopt_db_digest(con), avant)
+  expect_identical(.adopt_db_registry_digest(con), registre_avant)
+})
+
+test_that("guarded: a forged live scalar binding refuses with the typed reason and zero writes", {
+  con <- .adopt_db_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .adopt_db_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
+  .adopt_db_publish_all(con, fixture)
+  # The legitimate pre-registry binding (live token == live global scalar marker ==
+  # the token the sortie recorded) is what the first guarded test adopts. Here the
+  # live token is neither: nothing may rebind it silently.
+  DBI::dbExecute(con, "ALTER TABLE profile_descriptor DISABLE TRIGGER USER")
+  DBI::dbExecute(con, paste0("UPDATE profile_descriptor SET required_scalar_version='forged' ",
+    "WHERE indicator_id='distribution_dpe'"))
+  DBI::dbExecute(con, "ALTER TABLE profile_descriptor ENABLE TRIGGER USER")
+  avant <- .adopt_db_digest(con)
+  registre_avant <- .adopt_db_registry_digest(con)
+  err <- tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
+    root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+    con = con, out = nullfile()), error = identity)
+  expect_s3_class(err, "erreur_adoption")
+  expect_match(conditionMessage(err), "distribution_dpe", fixed = TRUE)
+  expect_match(conditionMessage(err), "dependance_divergente", fixed = TRUE)
+  ligne <- err$comparaisons[err$comparaisons$ressource == "distribution_dpe", ]
+  expect_identical(ligne$motif, "dependance_divergente")
   expect_identical(.adopt_db_digest(con), avant)
   expect_identical(.adopt_db_registry_digest(con), registre_avant)
 })

@@ -172,6 +172,19 @@ avec_session_service_publication <- function(artefacts, cibles, lock = NULL,
   code(con)
 }
 
+# Listing vivant du registre en LECTURE SEULE, par le même seam de session que
+# apply/adopt (aucune ressource à geler : cibles vides). `plan` ne se connecte
+# jamais (#1136) : l'opérateur obtient son listing vif ici (`publication.R listing`)
+# et le fournit à `plan` par LUSK_LIVE_LISTING.
+lister_registre_publication <- function(lock = NULL, registre = NULL, con = NULL) {
+  avec_session_service_publication(list(), character(), lock = lock, registre = registre,
+    con = con, code = function(con)
+      DBI::dbWithTransaction(con, {
+        DBI::dbExecute(con, "SET TRANSACTION READ ONLY")
+        lire_listing_live_registre(con)
+      }))
+}
+
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de
 # connexion de service du nouveau chemin a lieu dans le seam partagé ci-dessus.
 apply_publication <- function(ids, confirm_definition = character(), retire = FALSE,

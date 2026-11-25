@@ -141,6 +141,29 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
   })
 }
 
+# La ressource `aedar` est la seule dont la sortie peut manquer des fichiers
+# (canoniques ou manifeste de comparaison) sans que le splitter échoue : il
+# l'omet, ou la bâtit sans comparaison. Adopter « tout » sur cette sortie
+# l'accepterait en silence ou planterait plus loin. Refus TYPÉ, par ressource,
+# avant toute connexion : `aedar_canonique_absent` / `aedar_manifeste_absent`.
+refus_aedar_adoption <- function(builds, artefacts) {
+  refus <- function(motif, detail)
+    data.frame(ressource = "aedar", forme = "aedar", version = NA_character_,
+      identique = FALSE, motif = motif, parties = paste0(motif, ": ", detail),
+      stringsAsFactors = FALSE)
+  ids <- as.character(builds$ressource[as.character(builds$forme) == "aedar"])
+  if (!length(ids))
+    return(refus("aedar_canonique_absent", paste0("la sortie ne porte pas les fichiers ",
+      "canoniques AEDAR (", paste(AEDAR_CANONICAL_FILES, collapse = ", "), ")")))
+  sans <- ids[vapply(ids, function(id) is.null(artefacts[[id]]$contenu$comparison),
+                     logical(1))]
+  if (length(sans))
+    return(refus("aedar_manifeste_absent", paste0("la sortie ne porte pas ",
+      NOM_MANIFESTE_COMPARAISON_AEDAR, " : la ressource ", paste(sans, collapse = ","),
+      " n'a pas de comparaison à prouver")))
+  NULL
+}
+
 adopter_ressources <- function(sortie, dry_run = FALSE, root = NULL, lock = NULL,
                                registre = NULL, con = NULL, receipts_dir = NULL,
                                commit_sha = NULL, projections = NULL, reference = NULL,
@@ -148,6 +171,10 @@ adopter_ressources <- function(sortie, dry_run = FALSE, root = NULL, lock = NULL
   builds <- splitter_sortie(sortie, root = root, projections = projections,
     reference = reference, digests = digests, metadata_directory = metadata_directory)
   artefacts <- charger_artefacts_construits(builds, root)
+  absent <- refus_aedar_adoption(builds, artefacts)
+  if (!is.null(absent))
+    stop(erreur_adoption(absent$motif, paste0("adopt : ressource aedar refusée (",
+      absent$parties, ") — zéro connexion, zéro écriture."), comparaisons = absent))
   adopter_artefacts(builds, artefacts, dry_run = dry_run, lock = lock,
     registre = registre, con = con, receipts_dir = receipts_dir, commit_sha = commit_sha,
     attestations = attestations_sortie_adoption(sortie))
