@@ -1,8 +1,12 @@
 # Slow tier (#1172): builds the full adopt fixture once (payload profiles and
 # AEDAR canonical manifest, ~22 s) and proves every resource artefact has an
 # attested lineage whose source ids are all present in the lock.
-# Subject files: pipeline/R/splitter_ressources.R, pipeline/R/adoption_publication.R,
-# pipeline/tests/testthat/test-adopt-db.R, pipeline/tests/testthat/helper-adopt-db-fixture.R
+# It really calls: .adopt_db_fixture() (builds every producer projection and the sortie
+# on disk), splitter_sortie(), charger_artefacts_construits() and
+# verifier_gel_lignage_ressource(); it never calls adopter_*, apply, the registry
+# readers/writers or any connection, so those are NOT subjects.
+# The runner reads ONLY this one line (scripts/run-slow-tests.R takes the first match).
+# Subject files: pipeline/R/splitter_ressources.R, pipeline/R/artefact_ressource.R, pipeline/R/source_digests.R, pipeline/R/apply_publication.R, pipeline/R/plan_publication.R, pipeline/R/publish_scalar.R, pipeline/R/publish_profile.R, pipeline/R/publish_profile_artifact.R, pipeline/R/aedar_aggregates.R, pipeline/tests/testthat/helper-adopt-db-fixture.R, pipeline/tests/testthat/helper-adaptateurs-formes.R, pipeline/tests/testthat/helper-artefacts-ressource.R
 # Run explicitly with testthat::test_file(..., package="lusk") from pipeline/.
 
 local({
