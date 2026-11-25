@@ -1,93 +1,76 @@
-# Golden persisted-row contracts captured from origin/main's pre-refactor
-# writers (b7f468b4 parent line, before adoption row builders). Storage/default
-# columns are represented as PostgreSQL would persist them; published_at remains
-# excluded because it is declared storage-only.
+# Golden persisted-row contracts (#1142). The expected rows are LITERALS captured
+# by running origin/main's PRE-REFACTOR writers on these fixtures; see the header of
+# helper-golden-lignes-main.R for exactly how. Nothing here derives `expected`
+# from the new row builders, so the comparison is not circular: the refactor that
+# extracted lignes_*_persistees() must persist what the old writers persisted.
+#
+# Columns that are NOT compared, and why (each is also stated in the PR):
+#   * scalar_observation.published_at : write-time stamp (now()), storage-only.
+#   * source_dataset.name             : shared last-writer-wins label, storage-only
+#                                       (STOCKAGE_SOURCE_DATASET_NAME).
+# INTENTIONAL differences from origin/main are not hidden: they are listed in
+# `.differences_intentionnelles` and pinned by their own tests below.
 
-.attendre_lignes_identiques <- function(actuel, attendu) {
-  expect_setequal(names(actuel), names(attendu))
-  for (table in names(actuel))
-    expect_identical(normaliser_adoption(actuel[[table]]),
-                     normaliser_adoption(attendu[[table]]), info = table)
+.lignes_canoniques <- function(df) {
+  cell <- function(x) {
+    if (inherits(x, "Date")) x <- as.character(x)
+    if (is.numeric(x)) return(ifelse(is.na(x), "<NA>", sprintf("%.15g", x)))
+    ifelse(is.na(x), "<NA>", as.character(x))
+  }
+  cols <- sort(names(df))
+  sort(do.call(paste, c(lapply(cols, function(c) cell(df[[c]])), sep = "\x1f")),
+       method = "radix")
 }
 
-.array_main <- function(x) {
-  if (is.null(x) || !length(x) || anyNA(x)) return(NA_character_)
-  if (length(x) == 1L && is.character(x) && startsWith(x, "{") && endsWith(x, "}")) return(x)
-  paste0("{", paste(as.character(unlist(x, use.names = FALSE)), collapse = ","), "}")
+.digest_lignes <- function(df) {
+  paste(as.character(openssl::sha256(charToRaw(paste(
+    c(paste(sort(names(df)), collapse = ","), .lignes_canoniques(df)), collapse = "\n")))),
+    collapse = "")
 }
 
-.descripteur_scalaire_main <- function(rows) {
-  champs <- c("indicator_id", "theme_id", "label", "unit", "direction",
-    "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
-  descriptor <- rows$descriptor[, champs, drop = FALSE]
-  descriptor$allowed_levels <- vapply(rows$descriptor$allowed_levels, .array_main, character(1))
-  list(scalar_descriptor = descriptor, scalar_descriptor_source = data.frame(
-    indicator_id = rep(rows$descriptor$indicator_id, lengths(rows$descriptor$allowed_sources)),
-    source_id = as.character(unlist(rows$descriptor$allowed_sources, use.names = FALSE)),
-    stringsAsFactors = FALSE))
+.golden_ignore <- list(scalar_observation = "published_at", source_dataset = "name")
+
+# Columns the OLD writers never sent and PostgreSQL filled with the schema default
+# (api/schema.sql). The new builders spell them out, because adoption compares full
+# live rows; the golden gets the very same default, with the schema line as evidence.
+.defauts_bd <- list(
+  profile_observation = list(detail_axis_name = "detail"),            # schema.sql:46 DEFAULT 'detail'
+  series_dataset_descriptor = list(absence_semantics = "unavailable"), # schema.sql:472 DEFAULT 'unavailable'
+  series_dataset_observation = list(state_role = NA_character_,        # schema.sql:507 nullable, no default
+                                    missing_reason = NA_character_),   # schema.sql:509 nullable, no default
+  observed_collection_category = list(anchor_levels = NA_character_,   # schema.sql:917 nullable
+                                      rider_label = NA_character_,     # schema.sql:917 nullable
+                                      clock_policy = "dataset"))       # schema.sql:918 DEFAULT 'dataset'
+
+.avec_defauts_bd <- function(golden, table) {
+  for (colonne in setdiff(names(.defauts_bd[[table]]), names(golden)))
+    golden[[colonne]] <- rep(.defauts_bd[[table]][[colonne]], nrow(golden))
+  golden
 }
 
-.descripteur_profil_main <- function(rows) {
-  d <- .profil_liste(rows$descriptor)
-  id <- as.character(d$indicator_id)[[1L]]
-  levels <- as.character(unlist(.profil_champ(d, "levels", "commune"), use.names = FALSE))
-  if (!length(levels)) levels <- "commune"
-  sources <- as.character(unlist(.profil_champ(d, "source", character()), use.names = FALSE))
-  list(profile_descriptor = data.frame(indicator_id = id,
-    label = as.character(.profil_champ(d, "label", id))[[1L]],
-    unit = as.character(.profil_champ(d, "unit", ""))[[1L]], allowed_levels = .array_main(levels),
-    completeness = as.character(.profil_champ(d, "completeness", "dense_complete"))[[1L]],
-    descriptor_version = as.character(.profil_champ(d, "descriptor_version", "v1"))[[1L]],
-    comparison_detail = .profil_champ(d, "comparison_detail", NA_character_),
-    comparison_sex = .profil_champ(d, "comparison_sex", NA_character_),
-    comparison_direction = as.character(.profil_champ(d, "comparison_direction", "none"))[[1L]],
-    theme_id = .profil_champ(d, "theme_id", NA_character_),
-    comparison_scalar = .profil_champ(d, "comparison_scalar", NA_character_),
-    required_scalar_version = .profil_champ(d, "required_scalar_version", NA_character_),
-    denominator_semantics = .profil_champ(d, "denominator_semantics", NA_character_),
-    detail_units_required = isTRUE(.profil_champ(d, "detail_units_required", FALSE)),
-    stringsAsFactors = FALSE), profile_descriptor_source = data.frame(
-      indicator_id = rep(id, length(sources)), source_id = sources, stringsAsFactors = FALSE))
+# Compare one table of the new builder against the golden literal, column by column
+# so a failure names the column.
+.attendre_table_golden <- function(actual, golden, table, ignore = character()) {
+  golden <- .avec_defauts_bd(golden, table)
+  ignore <- unique(c(ignore, .golden_ignore[[table]]))
+  colonnes <- setdiff(union(names(actual), names(golden)), ignore)
+  expect_setequal(setdiff(names(actual), ignore), setdiff(names(golden), ignore))
+  commun <- intersect(colonnes, intersect(names(actual), names(golden)))
+  expect_identical(nrow(actual), nrow(golden), info = table)
+  a <- normaliser_adoption(actual[commun]); g <- normaliser_adoption(golden[commun])
+  for (colonne in commun)
+    expect_identical(a[[colonne]], g[[colonne]], info = paste(table, colonne))
 }
 
-.descripteur_series_main <- function(rows) {
-  d <- rows$projection$descriptor
-  data.frame(dataset_id = d$dataset_id, indicator_id = d$indicator_id,
-    axis_kind = d$axis_kind, axis_values = .array_main(d$axis_values),
-    completeness = d$completeness, comparison_point = d$comparison_point %||% NA_character_,
-    label = d$label, unit = d$unit, direction = d$direction,
-    allowed_levels = .array_main(d$allowed_levels), descriptor_version = d$descriptor_version,
-    active_read_route = isTRUE(d$active_read_route),
-    axis_numeric_values = .array_main(d$axis_numeric_values), theme_id = d$theme_id %||% NA_character_,
-    comparison_statistic = d$comparison_statistic %||% NA_character_,
-    comparison_scope = d$comparison_scope %||% NA_character_,
-    observation_period_kind = d$observation_period_kind %||% NA_character_,
-    absence_semantics = d$absence_semantics %||% "unavailable",
-    comparison_levels = .array_main(d$comparison_levels), stringsAsFactors = FALSE)
+.attendre_golden <- function(actual, golden, ignorer = list()) {
+  for (table in names(golden))
+    .attendre_table_golden(actual[[table]], golden[[table]], table, ignorer[[table]])
+  # Anything the builder produces beyond the golden tables must be an empty table.
+  for (table in setdiff(names(actual), names(golden)))
+    expect_identical(nrow(actual[[table]]), 0L, info = paste("extra table", table))
 }
 
-.categories_collection_main <- function(projection) {
-  categories <- projection$categories
-  if (!"anchor_levels" %in% names(categories)) categories$anchor_levels <- NA_character_
-  else categories$anchor_levels <- vapply(categories$anchor_levels, .array_main, character(1))
-  if (!"rider_label" %in% names(categories)) categories$rider_label <- NA_character_
-  if (!"clock_policy" %in% names(categories)) categories$clock_policy <- "dataset"
-  categories
-}
-
-.descripteur_collection_main <- function(projection) {
-  d <- projection$descriptor
-  data.frame(indicator_id = d$indicator_id, theme_id = d$theme_id, kind = d$kind,
-    label = d$label, unit = d$unit, descriptor_version = d$descriptor_version,
-    allowed_levels = .array_main(d$allowed_levels),
-    comparison_detail = d$comparison_detail %||% NA_character_,
-    comparison_period = d$comparison_period %||% NA_character_, direction = d$direction,
-    stringsAsFactors = FALSE)
-}
-
-test_that("refactor preserves persisted rows for scalar, profile, series and collection", {
-  root <- artefacts_fixture_root()
-  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+.artefacts_golden <- function(root) {
   reference <- artefacts_fixture_reference()
   projection <- artefacts_fixture_scalar_indicator("a", "src_a",
     c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
@@ -95,177 +78,157 @@ test_that("refactor preserves persisted rows for scalar, profile, series and col
   contenu <- contenu_artefact(faits_forme(REGISTRE_FORMES_RESSOURCE[["scalar"]], projection),
     projection$descriptors, projection$provenance, comparison)
   ecrit <- ecrire_artefact_ressource("a", "scalar", contenu, root = root)
-  artefacts <- list(
-    scalar = lire_artefact_ressource("a", ecrit$version, root = root),
-    declared_profile = artefacts_fixture_profile_artefact(root = root)$artefact,
+  scalaire <- artefacts_fixture_scalar_indicator("part_passoires", "dpe_22",
+    c(10, 10, 5, 3, NA, 100, 50, 8, 8, 30))
+  faits_attendus <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["scalar"]], scalaire)
+  list(scalar = lire_artefact_ressource("a", ecrit$version, root = root),
+    declared_profile = artefacts_fixture_profile_artefact(root = root,
+      required_scalar_version = faits_attendus)$artefact,
     owned_series = adaptateur_series_artefact(root),
-    observed_collection = adaptateur_collection_artefact(root))
+    observed_collection = adaptateur_collection_artefact(root),
+    aedar = adaptateur_aedar_artefact(root))
+}
 
-  actual <- REGISTRE_FORMES_RESSOURCE$scalar$lignes_persistees(artefacts$scalar)
-  rows <- projeter_artefact_scalaire(artefacts$scalar)
-  expected <- c(.descripteur_scalaire_main(rows), list(
-    scalar_observation = rows$observations, scalar_observation_source = rows$provenance,
-    source_dataset = rows$sources, source_vintage = rows$vintages,
-    scalar_comparison_group = as.data.frame(rows$comparison$groups[c("comparison_context",
-      "group_id", "territory_type", "indicator_id", "statistic", "median", "member_count",
-      "eligible_count", "missing_count", "lineage_source_count")], stringsAsFactors = FALSE),
-    scalar_comparison_territory = as.data.frame(rows$comparison$territories[c(
-      "comparison_context", "group_id", "territory_type", "indicator_id", "territory_id",
-      "value", "status", "rank", "tie_count", "rank_size")], stringsAsFactors = FALSE)))
-  lineage <- rows$comparison$lineage
-  lineage$comparison_family <- "scalar"
-  lineage$comparison_content_version <- rows$comparison$content_version
-  expected$comparison_source_lineage <- lineage[c("comparison_family", "comparison_context",
-    "group_id", "territory_type", "facet_id", "source_id", "vintage_id",
-    "comparison_content_version")]
-  actual$scalar_observation$published_at <- NULL
-  .attendre_lignes_identiques(actual, expected)
+# Differences from origin/main that are INTENTIONAL (table -> columns), each pinned
+# by a dedicated test below. Empty means: byte-for-byte what the old writers wrote.
+.differences_intentionnelles <- list(
+  scalar = list(), declared_profile = list(), owned_series = list(),
+  # origin/main's collection adapter RE-COMPUTED the comparison with the whole
+  # artefact version as its token; this branch persists the artefact's own recorded
+  # comparison, bound to its collection_content_version (adaptateur_collection.R,
+  # "ONE source of truth for the storage token"). Pinned below.
+  observed_collection = list(
+    observed_collection_comparison_group = "collection_content_version",
+    observed_collection_comparison_territory = "collection_content_version",
+    observed_collection_comparison_lineage = "comparison_content_version"))
 
-  actual <- REGISTRE_FORMES_RESSOURCE$declared_profile$lignes_persistees(artefacts$declared_profile)
-  rows <- projeter_artefact_profil_declare(artefacts$declared_profile)
-  axes <- rows$axes[c("indicator_id", "axis_name", "axis_key", "label", "ordinal", "unit")]
-  facts <- rows$facts
-  if (!"detail_axis_name" %in% names(facts)) facts$detail_axis_name <- "detail"
-  facts <- facts[c("indicator_id", "territory_id", "territory_type", "detail_key", "sex_key",
-    "detail_axis_name", "sex_axis_name", "value", "status")]
-  expected <- c(.descripteur_profil_main(rows), list(profile_axis = axes,
-    profile_observation = facts, profile_observation_source = rows$provenance,
-    source_dataset = rows$datasets, source_vintage = rows$vintages,
-    profile_comparison_group = rows$comparison$groups,
-    profile_comparison_territory = rows$comparison$territories))
-  lineage <- rows$comparison$lineage
-  lineage$comparison_family <- "profile"
-  lineage$comparison_content_version <- rows$comparison$content_version
-  expected$comparison_source_lineage <- lineage[c("comparison_family", "comparison_context",
-    "group_id", "territory_type", "facet_id", "source_id", "vintage_id",
-    "comparison_content_version")]
-  .attendre_lignes_identiques(actual, expected)
-
-  actual <- REGISTRE_FORMES_RESSOURCE$owned_series$lignes_persistees(artefacts$owned_series)
-  rows <- projeter_artefact_series(artefacts$owned_series)
-  expected <- list(series_dataset_descriptor = .descripteur_series_main(rows))
-  points <- rows$projection$points
-  for (champ in c("state_role", "missing_reason"))
-    if (!champ %in% names(points)) points[[champ]] <- NA_character_
-  expected$series_dataset_observation <- points[c("dataset_id", "indicator_id", "territory_id",
-    "territory_type", "axis_value", "state_role", "observation_period", "value",
-    "missing_reason", "status")]
-  expected$series_observation_provenance <- rows$projection$point_provenance
-  expected$series_provenance_revision <- rows$projection$provenance
-  expected$ordered_series_comparison_group <- rows$comparison$groups
-  expected$ordered_series_comparison_group$dataset_id <- rows$dataset_id
-  expected$ordered_series_comparison_group$indicator_id <- rows$projection$descriptor$indicator_id
-  expected$ordered_series_comparison_territory <- rows$comparison$territories
-  expected$ordered_series_comparison_territory$dataset_id <- rows$dataset_id
-  expected$ordered_series_comparison_territory$indicator_id <- rows$projection$descriptor$indicator_id
-  expected$ordered_series_comparison_lineage <- rows$comparison$lineage
-  expected$ordered_series_comparison_lineage$dataset_id <- rows$dataset_id
-  expected$ordered_series_comparison_lineage$indicator_id <- rows$projection$descriptor$indicator_id
-  expected$ordered_series_comparison_zero_reason <- rows$comparison$zero_reasons
-  expected$ordered_series_comparison_zero_reason$dataset_id <- rep(rows$dataset_id,
-    nrow(expected$ordered_series_comparison_zero_reason))
-  expected$ordered_series_comparison_zero_reason$indicator_id <- rep(
-    rows$projection$descriptor$indicator_id, nrow(expected$ordered_series_comparison_zero_reason))
-  expected$ordered_series_comparison_zero_reason$axis_value <- rep(
-    rows$comparison$axis_values[[1L]], nrow(expected$ordered_series_comparison_zero_reason))
-  pairs <- unique(rows$projection$provenance[c("source_id", "vintage_id")])
-  expected$source_dataset <- data.frame(source_id = pairs$source_id,
-    name = rows$projection$provenance$source_name, stringsAsFactors = FALSE)
-  expected$source_vintage <- data.frame(source_id = pairs$source_id,
-    vintage_id = pairs$vintage_id, version = rows$projection$provenance$source_version,
-    reference_date = rows$projection$provenance$reference_date,
-    publication_date = rows$projection$provenance$publication_date, stringsAsFactors = FALSE)
-  for (table in c("series_named_reference_descriptor", "series_named_reference",
-                  "series_named_reference_provenance", "series_context_parent_policy"))
-    expected[[table]] <- actual[[table]][0L, , drop = FALSE]
-  expected$ordered_series_comparison_group <- expected$ordered_series_comparison_group[c(
-    "dataset_id", "indicator_id", "comparison_context", "group_id", "territory_type",
-    "axis_value", "statistic", "group_value", "member_count", "eligible_count",
-    "missing_count", "lineage_source_count")]
-  expected$ordered_series_comparison_territory <- expected$ordered_series_comparison_territory[c(
-    "dataset_id", "indicator_id", "comparison_context", "group_id", "territory_type",
-    "axis_value", "territory_id", "value", "status", "rank", "tie_count", "rank_size")]
-  expected$ordered_series_comparison_lineage <- expected$ordered_series_comparison_lineage[c(
-    "dataset_id", "indicator_id", "comparison_context", "group_id", "territory_type",
-    "axis_value", "provenance_revision_id")]
-  expected$ordered_series_comparison_zero_reason <- expected$ordered_series_comparison_zero_reason[c(
-    "dataset_id", "indicator_id", "comparison_context", "group_id", "territory_type",
-    "axis_value", "reason", "member_count")]
-  .attendre_lignes_identiques(actual, expected)
-
-  actual <- REGISTRE_FORMES_RESSOURCE$observed_collection$lignes_persistees(
-    artefacts$observed_collection)
-  rows <- projeter_artefact_collection(artefacts$observed_collection)
-  expected <- list(observed_collection_descriptor = .descripteur_collection_main(rows$projection),
-    observed_collection_category = .categories_collection_main(rows$projection),
-    period_detail_observation = rows$projection$facts,
-    source_dataset = rows$projection$datasets, source_vintage = rows$projection$vintages,
-    observed_collection_comparison_group = rows$comparison$groups,
-    observed_collection_comparison_territory = rows$comparison$territories)
-  expected$observed_collection_comparison_group$indicator_id <- rows$ressource
-  expected$observed_collection_comparison_territory$indicator_id <- rows$ressource
-  lineage <- rows$comparison$lineage
-  lineage$indicator_id <- rows$ressource
-  lineage$comparison_content_version <- scalar_content_version(rows$comparison)
-  expected$observed_collection_comparison_lineage <- lineage
-  .attendre_lignes_identiques(actual, expected)
+test_that("the golden literals come from the pre-refactor writers, not from this branch", {
+  expect_setequal(names(golden_lignes_main),
+    c("scalar", "declared_profile", "owned_series", "observed_collection", "aedar"))
+  # A frame can only be a golden literal if no row builder can have produced it:
+  # the helper is plain data (no function) and is not generated at load time.
+  expect_false(any(vapply(unlist(golden_lignes_main, recursive = FALSE), is.function, logical(1))))
 })
 
-test_that("refactor preserves persisted AEDAR aggregate and comparison rows", {
-  projection <- adaptateur_aedar_projection()
-  projection$facts <- projection$facts[seq_len(nrow(read_aedar_typequ_registry())), , drop = FALSE]
-  rownames(projection$facts) <- NULL
-  groups <- data.frame(comparison_context = "same_level", group_id = "g",
-    territory_type = "epci", typequ = "T1", measure = "m", statistic = "median",
-    value = 1, n_addresses = 1L, n_observed = 1L, coverage_status = "covered",
-    stringsAsFactors = FALSE)
-  density <- data.frame(group_id = "A", measure = "m", value = NA_real_,
-    status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
-    n_observed = NA_integer_, coverage_status = "unavailable", stringsAsFactors = FALSE)
-  comparison <- list(content_version = "cmp", aedar_content_version = "aedar",
-    reference_content_version = "ref", input_content_version = "input",
-    groups = groups, density_rows = density, littoral_rows = NULL)
-  artefact <- list(ressource = "aedar", version = "v", forme = "aedar", digests_lignage = list(),
-    contenu = list(faits = projection, descriptor = list(indicator_id = "aedar"),
-      provenance = projection$source, comparison = comparison))
-  actual <- lignes_aedar_persistees(artefact)
+test_that("refactor persists the rows the old scalar writer persisted", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefacts <- .artefacts_golden(root)
+  actual <- REGISTRE_FORMES_RESSOURCE$scalar$lignes_persistees(artefacts$scalar)
+  .attendre_golden(actual, golden_lignes_main$scalar, .differences_intentionnelles$scalar)
+})
 
-  # Pre-refactor publish_aedar_aggregates built this payload inline from the
-  # canonical level columns and TYPEQU metadata; keep that independent formula.
-  x <- projection$facts
-  level <- unique(as.character(x$territory_type))
-  metadata <- projection$typequ_metadata[match(x$TYPEQU, projection$typequ_metadata$TYPEQU),
-                                         , drop = FALSE]
-  identity_columns <- setdiff(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],
-    c("TYPEQU", "LIB_TYPEQU", "n_addresses", "n_observed", "coverage_status"))
-  aggregate <- data.frame(territory_type = x$territory_type, territory_id = x$territory_id,
-    typequ = x$TYPEQU, typequ_label = x$LIB_TYPEQU,
-    typequ_hierarchy_label = metadata$LIB_TYPEQU, typequ_description = metadata$description,
-    typequ_domain_code = metadata$domain_code, typequ_domain_label = metadata$domain_label,
-    typequ_subdomain_code = metadata$subdomain_code,
-    typequ_subdomain_label = metadata$subdomain_label, typequ_gamme = metadata$GAMME,
-    typequ_gamme_status = metadata$gamme_status,
-    typequ_source_order = as.integer(metadata$source_order),
-    identity = serialize_aedar_json_rows(as.data.frame(x[identity_columns], stringsAsFactors = FALSE)),
-    n_addresses = as.numeric(x$n_addresses), n_observed = as.numeric(x$n_observed),
-    coverage_status = x$coverage_status,
-    measures = serialize_aedar_json_rows(as.data.frame(x[AEDAR_AGGREGATE_MEASURES],
-      stringsAsFactors = FALSE)), source_id = projection$source$source_id,
-    vintage_id = projection$source$vintage, source_url = projection$source$url,
-    licence = projection$source$licence, attribution = projection$source$attribution,
-    reference_date = as.Date(projection$source$reference_date),
-    publication_date = as.Date(projection$source$publication_date), stringsAsFactors = FALSE)
-  summary <- project_aedar_territory_summary(projection$facts, projection$source)
-  names(summary)[names(summary) == "vintage"] <- "vintage_id"
-  .attendre_lignes_identiques(actual$aedar_territorial_aggregate, aggregate)
-  .attendre_lignes_identiques(actual$aedar_territory_summary, summary)
-  .attendre_lignes_identiques(actual$aedar_comparison_group, groups)
-  expected_density <- density
-  expected_density$comparison_content_version <- "cmp"
-  expected_density$aedar_content_version <- "aedar"
-  expected_density$reference_content_version <- "ref"
-  expected_density$input_content_version <- "input"
-  .attendre_lignes_identiques(actual$aedar_density_class_summary, expected_density)
-  expect_equal(nrow(actual$aedar_littoral_summary), 0L)
-  expect_equal(nrow(actual$aedar_comparison_territory), 0L)
+test_that("refactor persists the rows the old declared-profile writer persisted", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefacts <- .artefacts_golden(root)
+  actual <- REGISTRE_FORMES_RESSOURCE$declared_profile$lignes_persistees(
+    artefacts$declared_profile)
+  .attendre_golden(actual, golden_lignes_main$declared_profile,
+                   .differences_intentionnelles$declared_profile)
+})
+
+test_that("refactor persists the rows the old owned-series writer persisted", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefacts <- .artefacts_golden(root)
+  actual <- REGISTRE_FORMES_RESSOURCE$owned_series$lignes_persistees(artefacts$owned_series)
+  .attendre_golden(actual, golden_lignes_main$owned_series,
+                   .differences_intentionnelles$owned_series)
+})
+
+test_that("refactor persists the rows the old observed-collection writer persisted", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefacts <- .artefacts_golden(root)
+  actual <- REGISTRE_FORMES_RESSOURCE$observed_collection$lignes_persistees(
+    artefacts$observed_collection)
+  .attendre_golden(actual, golden_lignes_main$observed_collection,
+                   .differences_intentionnelles$observed_collection)
+})
+
+test_that("INTENTIONAL difference: collection comparison rows carry the artefact's own tokens", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  artefact <- .artefacts_golden(root)$observed_collection
+  comparison <- artefact$contenu$comparison
+  actual <- REGISTRE_FORMES_RESSOURCE$observed_collection$lignes_persistees(artefact)
+  jeton <- as.character(comparison$collection_content_version)
+  expect_length(jeton, 1L)
+  expect_identical(unique(as.character(
+    actual$observed_collection_comparison_group$collection_content_version)), jeton)
+  expect_identical(unique(as.character(
+    actual$observed_collection_comparison_territory$collection_content_version)), jeton)
+  expect_identical(unique(as.character(
+    actual$observed_collection_comparison_lineage$comparison_content_version)),
+    scalar_content_version(comparison))
+  # What origin/main did instead, recorded in the golden literals: it bound the
+  # rows to the WHOLE artefact version (which also hashes the comparison itself).
+  groupe <- golden_lignes_main$observed_collection$observed_collection_comparison_group
+  expect_identical(unique(as.character(groupe$collection_content_version)),
+                   as.character(artefact$version))
+  expect_false(identical(jeton, as.character(artefact$version)))
+})
+
+test_that("absent comparison_levels and a missing comparison persist as origin/main did; all-NA is pinned as a builder-only case", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  serie <- adaptateur_series_artefact(root)
+  rows <- projeter_artefact_series(serie)
+  # origin/main: `if (!is.null(d$comparison_levels)) UPDATE ... comparison_levels`,
+  # and the comparison tables only written when comparison_levels is not NULL. A
+  # descriptor without levels therefore persists NO comparison row and a NULL level
+  # set (litteral_tableau_postgres(NULL/NA) is SQL NULL, never '{}').
+  sans_niveaux <- rows
+  sans_niveaux$projection$descriptor$comparison_levels <- NULL
+  sans_niveaux$comparison <- list(reference_content_version = "reference-v1",
+                                  kind = "owned_series")
+  lignes <- .lignes_series_projection(sans_niveaux)
+  expect_true(is.na(lignes$series_dataset_descriptor$comparison_levels))
+  for (table in c("ordered_series_comparison_group", "ordered_series_comparison_territory",
+                  "ordered_series_comparison_lineage", "ordered_series_comparison_zero_reason"))
+    expect_identical(nrow(lignes[[table]]), 0L, info = table)
+  # An all-NA level vector: origin/main's writer REFUSES it ("Owned series comparison
+  # levels must be a declared subset of focal levels", checked by running main's
+  # remplacer_series with NA, c(NA, NA) and character()), so there is no old row set
+  # to preserve. The row builder only describes rows and spells it as SQL NULL, never
+  # an empty '{}' array; adoption then compares NULL to the live NULL.
+  tout_na <- rows
+  tout_na$projection$descriptor$comparison_levels <- c(NA_character_, NA_character_)
+  expect_true(is.na(.lignes_series_projection(tout_na)$series_dataset_descriptor$comparison_levels))
+})
+
+test_that("refactor persists the rows the old AEDAR writers persisted", {
+  root <- artefacts_fixture_root()
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  actual <- lignes_aedar_persistees(.artefacts_golden(root)$aedar)
+  small <- golden_lignes_main$aedar
+  # comparison_content_version / aedar_content_version are md5 hashes recorded in
+  # the ARTEFACT (an input, not a builder output) and they are not stable across R
+  # sessions (the same fixture hashes differently under testthat and under Rscript),
+  # so they cannot be pinned as literals. They are pinned by relation instead: the old
+  # writer copied the artefact comparison's own tokens onto every summary row.
+  for (table in names(small))
+    .attendre_table_golden(actual[[table]], small[[table]], table,
+      if (identical(table, "aedar_density_class_summary"))
+        c("comparison_content_version", "aedar_content_version") else character())
+  comparaison <- .artefacts_golden(root)$aedar$contenu$comparison
+  densite <- actual$aedar_density_class_summary
+  expect_identical(unique(as.character(densite$comparison_content_version)),
+                   as.character(comparaison$content_version))
+  expect_identical(unique(as.character(densite$aedar_content_version)),
+                   as.character(comparaison$aedar_content_version))
+  for (table in names(golden_aedar_volumineux)) {
+    pin <- golden_aedar_volumineux[[table]]
+    x <- actual[[table]]
+    expect_identical(nrow(x), pin$rows, info = table)
+    expect_identical(sort(names(x)), pin$columns, info = table)
+    expect_identical(.digest_lignes(x), pin$digest, info = table)
+    # Two rows of the same table, literally, for a readable failure.
+    expect_true(all(.lignes_canoniques(pin$head) %in% .lignes_canoniques(x)), info = table)
+  }
+  # Every table the builder returns is covered by one of the two pins.
+  couvertes <- c(names(small), names(golden_aedar_volumineux))
+  for (table in setdiff(names(actual), couvertes))
+    expect_identical(nrow(actual[[table]]), 0L, info = paste("extra table", table))
 })
