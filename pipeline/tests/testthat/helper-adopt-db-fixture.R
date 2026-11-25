@@ -321,7 +321,8 @@
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ",
     "AND tablename NOT IN ('resource_publication','resource_publication_descriptor',",
-    "'resource_publication_event') ",
+    "'resource_publication_event','scalar_resource_comparison_publication',",
+    "'profile_resource_comparison_publication') ",
     "ORDER BY tablename"))$tablename
   out <- lapply(tables, function(table) {
     champs <- DBI::dbListFields(con, table)
@@ -340,5 +341,78 @@
     descriptors = DBI::dbGetQuery(con,
       "SELECT * FROM resource_publication_descriptor ORDER BY publication_resource_id,resource_id"),
     receipts = DBI::dbGetQuery(con,
-      "SELECT * FROM resource_publication_event ORDER BY event_id")), NULL)
+      "SELECT * FROM resource_publication_event ORDER BY event_id"),
+    marqueurs_scalaires = DBI::dbGetQuery(con,
+      "SELECT * FROM scalar_resource_comparison_publication ORDER BY indicator_id"),
+    marqueurs_profils = DBI::dbGetQuery(con,
+      "SELECT * FROM profile_resource_comparison_publication ORDER BY indicator_id")), NULL)
+}
+
+# The API's own comparison predicates, evaluated in the database, for the resources
+# that carry a comparison. Each check cites the api/snapshot_reads.py condition it
+# mirrors; "adopt then deploy the API" must not turn any read into a 503.
+.adopt_db_predicats_api <- function(con, scalaires, profils, profils_scalaires = character()) {
+  dans <- function(ids) in_params(ids)
+  ref <- DBI::dbGetQuery(con, paste0("SELECT content_version FROM table_publication ",
+    "WHERE table_name='territory_reference'"))$content_version[[1L]]
+  registre <- function(ids) DBI::dbGetQuery(con, paste0(
+    "SELECT resource_id,reference_content_version FROM resource_publication ",
+    "WHERE resource_id IN (", dans(ids), ")"), params = as.list(ids))
+  nombre <- function(sql, ...) as.numeric(DBI::dbGetQuery(con, sql, params = list(...))[[1L]][[1L]])
+
+  # _scalar_comparison_publication_marker (snapshot_reads.py:908-936)
+  m <- DBI::dbGetQuery(con, paste0("SELECT indicator_id,content_version,scalar_content_version,",
+    "reference_content_version,group_row_count,territory_row_count,lineage_row_count ",
+    "FROM scalar_resource_comparison_publication WHERE indicator_id IN (", dans(scalaires), ")"),
+    params = as.list(scalaires))
+  testthat::expect_setequal(m$indicator_id, scalaires)                      # :924 len(markers)==len(ids)
+  testthat::expect_true(all(m$reference_content_version == ref))            # :930-933 marker[2]==live reference
+  r <- registre(scalaires)
+  testthat::expect_true(all(r$reference_content_version[match(m$indicator_id, r$resource_id)] ==
+                              m$reference_content_version))               # :933 publications[id].reference==marker
+  testthat::expect_true(all(m$content_version != "" & m$scalar_content_version != ""))  # :932
+  testthat::expect_true(all(m$group_row_count >= 1 & m$territory_row_count >= 1))       # :934
+  for (id in scalaires) {
+    mk <- m[m$indicator_id == id, ]
+    jetons <- DBI::dbGetQuery(con, paste0("SELECT DISTINCT comparison_content_version FROM ",
+      "comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=$1"),
+      params = list(id))[[1L]]
+    testthat::expect_identical(as.character(jetons), mk$content_version, info = id)      # :350 lineage==marker
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM scalar_comparison_group ",
+      "WHERE indicator_id=$1"), id), mk$group_row_count, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM scalar_comparison_territory ",
+      "WHERE indicator_id=$1"), id), mk$territory_row_count, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM comparison_source_lineage ",
+      "WHERE comparison_family='scalar' AND facet_id=$1"), id), mk$lineage_row_count, info = id)
+  }
+
+  # _profile_comparison_publication_marker (snapshot_reads.py:412-440), computed profiles
+  p <- DBI::dbGetQuery(con, paste0("SELECT indicator_id,content_version,profile_content_version,",
+    "reference_content_version,group_row_count,territory_row_count,lineage_row_count ",
+    "FROM profile_resource_comparison_publication WHERE indicator_id IN (",
+    dans(c(profils, profils_scalaires)), ")"), params = as.list(c(profils, profils_scalaires)))
+  testthat::expect_setequal(p$indicator_id, c(profils, profils_scalaires))
+  testthat::expect_true(all(p$reference_content_version == ref))
+  rp <- registre(profils)
+  testthat::expect_true(all(rp$reference_content_version[match(profils, rp$resource_id)] ==
+                              p$reference_content_version[match(profils, p$indicator_id)]))
+  for (id in profils) {
+    mk <- p[p$indicator_id == id, ]
+    testthat::expect_true(mk$group_row_count >= 1 && mk$territory_row_count >= 1, info = id)
+    jetons <- DBI::dbGetQuery(con, paste0("SELECT DISTINCT comparison_content_version FROM ",
+      "comparison_source_lineage WHERE comparison_family='profile' AND facet_id=$1"),
+      params = list(id))[[1L]]
+    testthat::expect_identical(as.character(jetons), mk$content_version, info = id)      # :350
+    for (table in c("profile_comparison_group", "profile_comparison_territory")) {
+      v <- DBI::dbGetQuery(con, paste0("SELECT DISTINCT profile_content_version,",
+        "reference_content_version FROM ", table, " WHERE indicator_id=$1"), params = list(id))
+      testthat::expect_identical(as.character(v$profile_content_version),
+                                 mk$profile_content_version, info = paste(id, table))    # :545-546 pv==marker[1]
+      testthat::expect_identical(as.character(v$reference_content_version),
+                                 mk$reference_content_version, info = paste(id, table))  # rv==marker[2]
+    }
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_group ",
+      "WHERE indicator_id=$1"), id), mk$group_row_count, info = id)
+  }
+  invisible(list(scalaires = m, profils = p))
 }

@@ -138,6 +138,27 @@ projeter_artefact_profil_declare <- function(artefact) {
   invisible(NULL)
 }
 
+# The ONE writer of the per-resource profile comparison marker (migration 047):
+# `remplacer_profil_declare` (apply) and adoption both go through it.
+ecrire_marqueur_comparaison_profil <- function(con, ressource, content_version,
+                                               profile_content_version,
+                                               reference_content_version,
+                                               groupes, territoires, lignage) {
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,",
+    "profile_content_version,reference_content_version,group_row_count,",
+    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ",
+    "ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
+    "profile_content_version=EXCLUDED.profile_content_version,",
+    "reference_content_version=EXCLUDED.reference_content_version,",
+    "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
+    "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()"),
+    params = list(ressource, as.character(content_version),
+      as.character(profile_content_version), as.character(reference_content_version),
+      as.integer(groupes), as.integer(territoires), as.integer(lignage)))
+  invisible(TRUE)
+}
+
 # Replace this ONE profile's rows inside the caller's publication transaction.
 # `retire = TRUE` removes them (and marks the registry row retired) without
 # inserting anything — this is `apply --retire`, not a special path.
@@ -202,14 +223,11 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
       version_faits <- as.character(comparaison$profile_content_version)[[1L]]
       # Per-resource marker (expand-phase counterpart of the untouched global
       # profile_comparison_publication singleton).
-      DBI::dbExecute(con, paste0(
-        "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,",
-        "profile_content_version,reference_content_version,group_row_count,",
-        "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)"),
-        params = list(ressource, version_comparaison, version_faits, reference,
-          if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
-          if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
-          if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage)))
+      ecrire_marqueur_comparaison_profil(con, ressource, version_comparaison, version_faits,
+        reference,
+        groupes = if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
+        territoires = if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
+        lignage = if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage))
     }
 
     ecrire_registre_ressource(con, ressource, "declared_profile", rows$version,

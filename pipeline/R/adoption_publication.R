@@ -117,6 +117,11 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
           # Migration 048: discovery descriptors are version-bound to the
           # registry row and travel through the SAME shared writer as apply.
           ecrire_descripteurs_ressource(con, artefact)
+          # Per-resource comparison marker, carrying over the token the live
+          # comparison rows already carry (adoption_marqueurs.R); never a row rewrite.
+          handler <- REGISTRE_FORMES_RESSOURCE[[as.character(artefact$forme)]]
+          marqueur <- if (is.function(handler$marqueur_adoption))
+            handler$marqueur_adoption(con, id, artefact, lectures[[id]], reference) else NULL
           ecrire_recette_ressource(con = con, ressource = id,
             # The DB event stores the verb allowed by api/schema.sql:1376
             # (apply/retire/adopt); the local receipt keeps the "adopted" status.
@@ -128,6 +133,10 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
             operation = "adopted", old_version = NULL,
             new_version = as.character(artefact$version), confirmed_definition = FALSE,
             lineage_digests = artefact$digests_lignage, commit_sha = commit_sha,
+            # The comparison token adopted (the API's identity key), recorded in the
+            # local receipt; the durable DB record is the marker row itself.
+            comparison_token = marqueur$content_version %||% NA_character_,
+            comparison_marker = marqueur$table %||% NA_character_,
             recorded_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"))
         })
       }

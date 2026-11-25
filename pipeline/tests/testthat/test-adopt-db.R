@@ -119,6 +119,41 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_false(any(plan$resultat$ressources$change))
   expect_false(any(plan$resultat$ressources$cascade))
   expect_true(all(plan$resultat$ressources$drift_nb == 0L))
+
+  # --- Round 9: adopt + the new API must not 503 every comparison read ------------
+  # The per-resource comparison markers exist and satisfy the api/snapshot_reads.py
+  # predicates (cited in .adopt_db_predicats_api), carrying the GLOBAL token the live
+  # comparison rows already carry, with no comparison row rewritten.
+  predicats <- .adopt_db_predicats_api(con, c("densite", "part_passoires"),
+    "structure_age", "distribution_dpe")
+  global_scalaire <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM scalar_comparison_publication WHERE singleton")$content_version[[1L]]
+  expect_true(all(predicats$scalaires$content_version == global_scalaire))
+  global_profil <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM profile_comparison_publication WHERE singleton")$content_version[[1L]]
+  expect_identical(predicats$profils$content_version[predicats$profils$indicator_id == "structure_age"],
+                   global_profil)
+  # ...and the receipt records which comparison token was adopted.
+  jetons <- vapply(resultat$receipts, function(r) as.character(r$comparison_token), character(1))
+  names(jetons) <- vapply(resultat$receipts, function(r) r$ressource, character(1))
+  expect_identical(jetons[["densite"]], global_scalaire)
+  expect_identical(jetons[["structure_age"]], global_profil)
+  expect_true(is.na(jetons[["aedar"]]))
+
+  # A later `apply` of that resource (a new artefact) replaces its marker normally:
+  # the predicates still hold, now with the new token; the untouched resource keeps
+  # the adopted one.
+  nouvelles <- fixture$projections
+  nouvelles$scalar$densite$facts$value <- nouvelles$scalar$densite$facts$value + 1000
+  splitter_sortie(fixture$sortie, root = fixture$root, projections = nouvelles,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory)
+  appliquer <- cli(c("apply", "densite"), root = fixture$root, registre = fixture$lock, con = con)
+  expect_identical(appliquer$resultat$applied, "densite")
+  apres <- .adopt_db_predicats_api(con, c("densite", "part_passoires"),
+    "structure_age", "distribution_dpe")
+  tok <- function(x, id) x$scalaires$content_version[x$scalaires$indicator_id == id]
+  expect_false(identical(tok(apres, "densite"), global_scalaire))
+  expect_identical(tok(apres, "part_passoires"), global_scalaire)
 })
 
 test_that("guarded: one altered live row in each shape refuses with zero writes", {

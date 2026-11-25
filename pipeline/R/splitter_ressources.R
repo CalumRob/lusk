@@ -369,6 +369,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # Adoption compares the writer's own persisted row builder, table by table.
     lire_live = lire_live_scalaire,
     liaisons_globales = liaisons_globales_scalaire,
+    marqueur_adoption = marqueur_adoption_scalaire,
     lignes_persistees = lignes_scalaires_persistees,
     # `colonnes_stockage` lists ONLY genuinely write-time / non-resident columns.
     # Everything else a writer persists is a fact and is compared: source_vintage
@@ -396,6 +397,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     remplacer = remplacer_profil_declare,
     lire_live = lire_live_profil_declare,
     liaisons_globales = liaisons_globales_profil,
+    marqueur_adoption = marqueur_adoption_profil,
     lignes_persistees = lignes_profil_persistees,
     colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
     colonnes_tableau = list(profile_descriptor = "allowed_levels")),

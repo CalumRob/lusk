@@ -130,6 +130,29 @@ projeter_artefact_scalaire <- function(artefact) {
   )
 }
 
+# The ONE writer of the per-resource scalar comparison marker (migration 046): used
+# by `remplacer_scalaire` (apply) and by adoption, which carries over the token the
+# live comparison rows already carry. Upsert: apply deletes the marker first, adoption
+# may meet an existing one; either way the row ends up exactly as given.
+ecrire_marqueur_comparaison_scalaire <- function(con, ressource, content_version,
+                                                 scalar_content_version,
+                                                 reference_content_version,
+                                                 groupes, territoires, lignage) {
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
+    "scalar_content_version,reference_content_version,group_row_count,",
+    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ",
+    "ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
+    "scalar_content_version=EXCLUDED.scalar_content_version,",
+    "reference_content_version=EXCLUDED.reference_content_version,",
+    "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
+    "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()"),
+    params = list(ressource, as.character(content_version),
+      as.character(scalar_content_version), as.character(reference_content_version),
+      as.integer(groupes), as.integer(territoires), as.integer(lignage)))
+  invisible(TRUE)
+}
+
 # Replace this ONE indicator's rows inside the caller's publication transaction.
 # `retire = TRUE` removes them (and marks the registry row retired) without
 # inserting anything — this is `apply --retire`, not a special path.
@@ -177,15 +200,13 @@ remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
         as.character(reference_content_version)
       # Per-resource marker (the expand-phase counterpart of the untouched
       # global scalar_comparison_publication singleton).
-      DBI::dbExecute(con, paste0(
-        "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
-        "scalar_content_version,reference_content_version,group_row_count,",
-        "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)"),
-        params = list(ressource, as.character(comparaison$content_version),
-          as.character(comparaison$scalar_content_version), reference,
-          if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
-          if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
-          if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage)))
+      ecrire_marqueur_comparaison_scalaire(con, ressource,
+        content_version = as.character(comparaison$content_version),
+        scalar_content_version = as.character(comparaison$scalar_content_version),
+        reference_content_version = reference,
+        groupes = if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
+        territoires = if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
+        lignage = if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage))
       reference_content_version <- reference
     }
 
