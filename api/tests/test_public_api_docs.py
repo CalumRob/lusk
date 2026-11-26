@@ -67,13 +67,12 @@ def test_cohort_documentation_matches_aedar_cellule_support():
     assert "AEDAR source-grain resources and named references do not" not in batch
 
 
-def test_per_resource_publication_version_maps_are_documented():
+def test_public_per_resource_publication_versions_are_documented():
     contract = " ".join(BATCH_CONTRACT.read_text(encoding="utf-8").split())
-    assert "`profile_content_versions`" in contract
-    assert "`scalar_content_versions`" in contract
-    assert "map each participating resource ID to its own registry `content_version`" in contract
-    assert "The singular `profile_content_version` remains the single-profile registry version" in contract
-    assert "is retained only when exactly one profile participates" in contract
+    assert "`profile_content_versions`" not in contract
+    assert "`scalar_content_versions`" not in contract
+    assert "`profile_content_version` is that profile's own registry `content_version`" in contract
+    assert "There is no public theme-wide version map" in contract
 
 
 def test_endpoint_request_inventory_is_deterministic():

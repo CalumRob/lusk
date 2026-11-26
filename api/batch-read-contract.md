@@ -437,14 +437,13 @@ stale, or impossible publication evidence, or impossible rank/tie spans fail
 closed with `503`.
 
 Profile, scalar, and territory-reference publications have independent clocks.
-Theme/indicator comparison envelopes include `profile_content_versions` and
-`scalar_content_versions`, which map each participating resource ID to its own
-registry `content_version`. Consumers bind each profile or scalar to its own map
-entry; different resources in one theme need not share a version. The singular
-`profile_content_version` remains the single-profile registry version and
-is retained only when exactly one profile participates; it is `null` for a
-multi-profile envelope. The legacy-shaped global `content_version` may be null or
-unrelated and is not a substitute for the per-resource maps.
+Public comparison reads are per resource: a declared-profile response's singular
+`profile_content_version` is that profile's own registry `content_version`, and a
+scalar response's `content_version` is that scalar's own registry version. A batch
+may therefore return different versions for different resources. There is no
+public theme-wide version map. The legacy-shaped global `content_version` on a
+profile comparison may be null or unrelated and is not a substitute for
+`profile_content_version`.
 
 Comparison markers remain a separate clock: `adopt` carries the live global
 lineage/facts comparison token into a resource marker, while `apply` writes the

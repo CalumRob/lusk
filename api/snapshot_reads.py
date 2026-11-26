@@ -1137,22 +1137,17 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         raise HTTPException(404, "No published facts for this theme")
     reference_version = live_territory_reference_version(conn)
     scalar_marker = None
-    scalar_content_versions = {}
     if scalar_descriptors:
         publications = live_resource_publications(
             conn, [row[0] for row in scalar_descriptors], "scalar",
             reference_content_version=reference_version)
-        scalar_content_versions = {resource_id: publication.content_version
-                                   for resource_id, publication in publications.items()}
         # Preserve the single-resource legacy marker without inventing one
         # singular version for a theme containing independently published scalars.
-        scalar_marker = ((next(iter(scalar_content_versions.values())), reference_version)
-                         if len(scalar_content_versions) == 1 else None)
-    profile_publications = live_resource_publications(
+        scalar_marker = ((next(iter(publications.values())).content_version, reference_version)
+                         if len(publications) == 1 else None)
+    live_resource_publications(
         conn, [profile["indicator"] for profile in (profiles or [])], "profile",
         reference_content_version=reference_version)
-    profile_content_versions = {resource_id: publication.content_version
-                                for resource_id, publication in profile_publications.items()}
     cohort_type, members, scope = _comparison_cohort_in_snapshot(
         conn, territory_type, territory_id, selection, snapshot_state)
     if preflight_only:
@@ -1333,7 +1328,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         "reading_cloud": reading_cloud,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "scalar_content_version": scalar_marker[0] if scalar_marker else None,
-        "scalar_content_versions": scalar_content_versions,
         "owned_series_content_versions": {
             dataset_id: {"content_version": marker[1], "reference_content_version": marker[2]}
             for dataset_id, marker in owned_markers.items()},
@@ -1344,7 +1338,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             {"territory_type": level, "territory_id": code} for level, code in selection],
         "scope": {**scope, "member_count": len(members)} if scope else None,
         "results": results, "profile_content_version": profile_version,
-        "profile_content_versions": profile_content_versions,
         "profile_comparisons": profile_results,
         **({"_fixed_context": fixed_context} if include_fixed_context else {})}
 

@@ -1,5 +1,7 @@
 """Fast, DB-free proofs of per-resource coexistence and reference rollover."""
 
+from contextlib import contextmanager
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -144,6 +146,85 @@ class TwoProfileConnection(PublicationConnection):
         return super().execute(sql, params)
 
 
+class ProfileHTTPConnection:
+    """One read-only snapshot answering the real semantic profile route's SQL."""
+
+    def __init__(self, versions):
+        self.versions = versions
+
+    @contextmanager
+    def transaction(self):
+        yield
+
+    def execute(self, sql, params=None):
+        normalized = " ".join(sql.split())
+        if normalized.startswith("SET TRANSACTION"):
+            return Cursor()
+        if "SELECT territory_type FROM territory_reference" in normalized:
+            return Cursor(row=("commune",))
+        if "FROM resource_publication" in normalized:
+            return Cursor(rows=[(resource_id, "declared_profile", self.versions[resource_id], "ref-v1")
+                                for resource_id in params[0]])
+        if "SELECT content_version,row_count FROM table_publication" in normalized:
+            return Cursor(row=("ref-v1", 2))
+        if "SELECT indicator_id,comparison_scalar FROM profile_descriptor" in normalized:
+            return Cursor(rows=[(params[2], None)])
+        if "SELECT 1 FROM profile_descriptor WHERE indicator_id=%s" in normalized:
+            return Cursor(row=(1,))
+        if "SELECT theme_id,allowed_levels FROM profile_descriptor" in normalized:
+            return Cursor(row=("habitat", ["commune"]))
+        if "FROM profile_descriptor WHERE" in normalized:
+            resource_id = params[2]
+            return Cursor(rows=[(resource_id, resource_id, "%", ["commune"], "pd1",
+                                 "d1", None, "high", None, None, "stock", False)])
+        if "FROM scalar_descriptor WHERE theme_id" in normalized:
+            return Cursor()
+        if normalized == "SELECT to_regclass(%s)":
+            return Cursor(row=(params[0] if params[0] == "profile_descriptor" else None,))
+        if "SELECT to_regclass('series_dataset_descriptor')" in normalized:
+            return Cursor(row=(None,))
+        if "FROM profile_axis" in normalized:
+            return Cursor(rows=[(resource_id, "detail", "d1", "D1", 0, "%")
+                                for resource_id in params[0]])
+        if "FROM profile_observation o" in normalized:
+            provenance = json.dumps([{"source_id": "source_a", "vintage_id": "v1",
+                "name": "Source A", "version": "2026", "reference_date": None,
+                "publication_date": None}])
+            return Cursor(rows=[(resource_id, "d1", "", 1.0, "measured", provenance)
+                                for resource_id in params[1]])
+        raise AssertionError(f"Unexpected SQL: {normalized}")
+
+
+@contextmanager
+def profile_http_client(monkeypatch, versions, comparison_results=()):
+    from fastapi.testclient import TestClient
+    from api import main
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+
+    connection = ProfileHTTPConnection(versions)
+
+    class Pool:
+        @contextmanager
+        def connection(self):
+            yield connection
+
+    monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+                        lambda *_a, **_kw: ("commune", ("c1",),
+                                            {"kind": "explicit_selection"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context", lambda *_a, **_kw: None)
+    monkeypatch.setattr(snapshot_reads, "_profile_comparison_results",
+                        lambda *_a, **_kw: list(comparison_results))
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(Pool())
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: default_resource_catalogue.__wrapped__()
+    try:
+        with TestClient(main.app) as client:
+            yield client
+    finally:
+        main.app.dependency_overrides.pop(main.get_repository, None)
+        main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+
+
 def _scalar_read(conn):
     return _scalar_contract(conn, "resource_a", "commune",
                             SimpleNamespace(reference_content_version=conn.registry["resource_a"][2]))
@@ -283,7 +364,7 @@ def test_adopted_scalar_comparison_token_can_differ_from_registry_version():
     assert conn.registry["resource_a"][1] == "a-v1"
 
 
-def test_theme_read_reports_each_profiles_own_publication_version(monkeypatch):
+def test_theme_read_serves_profiles_at_different_publication_versions(monkeypatch):
     monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
                         lambda *_a, **_kw: ("commune", ("c1", "c2"),
@@ -295,14 +376,13 @@ def test_theme_read_reports_each_profiles_own_publication_version(monkeypatch):
         TwoProfileConnection(), "commune", "c1", "fixture", None)
 
     assert result["reference_content_version"] == "ref-v1"
-    assert result["profile_content_versions"] == {
-        "profile_a": "profile-v1", "profile_b": "profile-v2"}
+    assert "profile_content_versions" not in result
     assert result["profile_content_version"] is None
     assert [row["indicator"] for row in result["profile_comparisons"]] == [
         "profile_a", "profile_b"]
 
 
-def test_theme_read_reports_each_scalars_own_publication_version(monkeypatch):
+def test_theme_read_serves_scalars_at_different_publication_versions(monkeypatch):
     class TwoScalarConnection(PublicationConnection):
         def execute(self, sql, params=None):
             if "FROM scalar_descriptor WHERE theme_id" in " ".join(sql.split()):
@@ -326,8 +406,27 @@ def test_theme_read_reports_each_scalars_own_publication_version(monkeypatch):
     result = snapshot_reads._theme_comparison_snapshot(
         TwoScalarConnection(), "commune", "c1", "fixture", ["c1", "c2"])
 
-    assert result["scalar_content_versions"] == {"resource_a": "a-v1", "resource_b": "b-v1"}
+    assert "scalar_content_versions" not in result
     assert result["scalar_content_version"] is None
+    assert [row["indicator_id"] for row in result["results"]] == ["resource_a", "resource_b"]
+
+
+def test_public_profile_comparison_emits_its_own_singular_version(monkeypatch):
+    with profile_http_client(monkeypatch, {"mix_logements": "profile-v2"}, [{
+            "indicator": "mix_logements", "facet": {"detail": "d1", "sex": None},
+            "status": "available"}]) as client:
+        response = client.post("/api/resources/read", json={
+            "resource": "mix_logements",
+            "target": {"kind": "territory", "type": "commune", "id": "c1"},
+            "intent": {"kind": "fixed_comparison", "context": "default"},
+        })
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["profile_content_version"] == "profile-v2"
+    assert body["reference_content_version"] == "ref-v1"
+    assert "profile_content_versions" not in body
+    assert "scalar_content_versions" not in body
 
 
 def _owned_series_read(conn):

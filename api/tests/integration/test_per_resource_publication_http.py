@@ -301,7 +301,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 adopted_comparison = read("profile_a", {"kind": "fixed_comparison", "context": "default"})
                 assert adopted_comparison.status_code == 200, adopted_comparison.text
                 assert adopted_comparison.json()["profile_content_version"] == "profile-v1"
-                assert adopted_comparison.json()["profile_content_versions"]["profile_a"] == "profile-v1"
+                assert "profile_content_versions" not in adopted_comparison.json()
 
                 # #1178: adopting global comparison tokens must not bind them to
                 # the registry's independent artefact versions. The retired public
@@ -318,17 +318,13 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                                 reader, "commune", FOCAL, "fixture", None)
 
                 adopted_theme = read_theme()
-                assert adopted_theme["profile_content_versions"] == {
-                    "profile_a": "profile-v1", "profile_b": "profile-v1",
-                    "profile_dpe": "profile-dpe-v1"}
+                assert "profile_content_versions" not in adopted_theme
                 assert {row["indicator"] for row in adopted_theme["profile_comparisons"]} == {
                     "profile_a", "profile_b", "profile_dpe"}
 
                 # Applying one profile does not invalidate its sibling. The
                 # retired public theme route is gone, so exercise the shared theme
                 # snapshot directly over the same guarded read role and MVCC seam.
-                from api.snapshot_reads import _theme_comparison_snapshot
-
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                     publisher.execute(f'SET search_path TO "{schema}"')
                     with publisher.transaction():
@@ -345,9 +341,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                         for row in profile_batch.json()["results"]] == [
                     ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
                 theme = read_theme()
-                assert theme["profile_content_versions"] == {
-                    "profile_a": "profile-v1", "profile_b": "profile-v2",
-                    "profile_dpe": "profile-dpe-v1"}
+                assert "profile_content_versions" not in theme
                 assert theme["profile_content_version"] is None
                 assert {row["indicator"] for row in theme["profile_comparisons"]} == {
                     "profile_a", "profile_b", "profile_dpe"}
