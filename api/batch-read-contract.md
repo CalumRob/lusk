@@ -437,14 +437,25 @@ stale, or impossible publication evidence, or impossible rank/tie spans fail
 closed with `503`.
 
 Profile, scalar, and territory-reference publications have independent clocks.
-Profile comparison responses bind `profile_content_version` and
-`reference_content_version`; scalar-backed comparisons additionally bind the
-linked scalar's required/content version. The legacy-shaped global
-`content_version` may be null or unrelated and is not a substitute for those
-dependencies. Do not synthesize a global release token or a territory type on an
-explicit-selection scope. These comparison reads remain inside the existing
-bounded, read-only repeatable-read grammar; they add no endpoint, query language,
-publication mutation, or schema.
+Theme/indicator comparison envelopes include `profile_content_versions` and
+`scalar_content_versions`, which map each participating resource ID to its own
+registry `content_version`. Consumers bind each profile or scalar to its own map
+entry; different resources in one theme need not share a version. The singular
+`profile_content_version` remains the single-profile registry version and
+is retained only when exactly one profile participates; it is `null` for a
+multi-profile envelope. The legacy-shaped global `content_version` may be null or
+unrelated and is not a substitute for the per-resource maps.
+
+Comparison markers remain a separate clock: `adopt` carries the live global
+lineage/facts comparison token into a resource marker, while `apply` writes the
+resource's new comparison token. Marker tokens bind that resource's lineage,
+group and territory rows; they are not required to equal the registry artefact
+version. Scalar-backed profile comparisons additionally bind the linked scalar's
+`required_scalar_version` to
+`scalar_resource_comparison_publication.scalar_content_version`. Do not synthesize
+a global release token or a territory type on an explicit-selection scope. These
+comparison reads remain inside the existing bounded, read-only repeatable-read
+grammar; they add no endpoint, query language, publication mutation, or schema.
 
 ## Example
 

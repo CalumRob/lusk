@@ -300,7 +300,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 assert adopted_dependent.json()["descriptor"]["required_scalar_version"] == ADOPTED_SCALAR_FACTS
                 adopted_comparison = read("profile_a", {"kind": "fixed_comparison", "context": "default"})
                 assert adopted_comparison.status_code == 200, adopted_comparison.text
-                assert adopted_comparison.json()["profile_content_version"] == ADOPTED_PROFILE_FACTS
+                assert adopted_comparison.json()["profile_content_version"] == "profile-v1"
                 assert adopted_comparison.json()["profile_content_versions"]["profile_a"] == "profile-v1"
 
                 # #1178: adopting global comparison tokens must not bind them to

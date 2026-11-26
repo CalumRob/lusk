@@ -32,7 +32,7 @@ type Vintage = { id: string; source: string; version: string; date_reference: st
 // Ask the API's producer-derived discovery code for the real public catalogue.
 // This is database-free and deliberately avoids a second copied resource registry.
 const catalogue = JSON.parse(execFileSync('python', ['-c',
-  'from api.resource_catalogue import default_resource_catalogue; import json; print(json.dumps(default_resource_catalogue().discovery_payload()))',
+  'from api.tests.resource_catalogue_fixtures import default_resource_catalogue; import json; print(json.dumps(default_resource_catalogue().discovery_payload()))',
 ], { cwd: resolve(process.cwd(), '..'), encoding: 'utf8' })) as {
   contract: string
   resources: Resource[]

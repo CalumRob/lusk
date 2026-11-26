@@ -176,6 +176,12 @@ Comparison fields use the closed comparison-result vocabulary. For declared-prof
 and numeric period/detail collection comparisons, `median` is served when exactly one
 member is comparable (the singleton median, #917); `rank`/`rank_size`/`rank_ties` and
 peer `member_ranks` remain null until at least two members are comparable.
+Comparison envelopes expose `profile_content_versions` and
+`scalar_content_versions`, mapping each participating resource ID to its own
+registry `content_version`; resources in one theme may legitimately differ. The
+singular `profile_content_version` is retained only for a single-profile
+envelope. See `batch-read-contract.md` for the separate adopted/apply comparison
+token clocks.
 A declared-profile `fixed_comparison` also accepts one declared value per profile
 axis: the descriptor's published default detail/sex point keeps the published
 comparison, while any other declared point (for example `t_km_1000` or
