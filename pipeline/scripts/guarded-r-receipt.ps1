@@ -57,6 +57,7 @@ function Write-GuardedRReceipt {
     [Parameter(Mandatory = $true)][string]$EndedAtUtc,
     [Parameter(Mandatory = $true)][bool]$Succeeded,
     [Parameter(Mandatory = $true)][int]$ExitCode,
+    [bool]$Stub = $false,
     [object[]]$LogLines = @(),
     [string]$Error = '',
     [string]$ReceiptPath = ''
@@ -79,6 +80,7 @@ function Write-GuardedRReceipt {
     started_at_utc = $StartedAtUtc
     ended_at_utc = $EndedAtUtc
     runner_version = $RunnerVersion
+    stub = $Stub
     succeeded = $Succeeded
     exit_code = $ExitCode
     log_path = $log
@@ -111,12 +113,18 @@ function Assert-GuardedRReceipt {
     [Parameter(Mandatory = $true)][string]$ReceiptPath,
     [Parameter(Mandatory = $true)][string]$RepoDir,
     [Parameter(Mandatory = $true)][string]$ExpectedHead,
-    [Parameter(Mandatory = $true)][string]$ExpectedFilter
+    [Parameter(Mandatory = $true)][string]$ExpectedFilter,
+    [switch]$AllowTestStub
   )
   if (-not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) {
     throw 'Guarded runner receipt is missing.'
   }
   $receipt = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json
+  $stubReceipt = ($receipt.stub -eq $true) -or
+    ([string]$receipt.runner_version -match 'test-stub|stub')
+  if ($stubReceipt -and -not $AllowTestStub) {
+    throw 'Test-stub receipt requires the explicit -AllowTestStub switch.'
+  }
   $identity = Get-GuardedRIdentity -RepoDir $RepoDir
   if ([string]$receipt.head -ne $ExpectedHead -or [string]$receipt.head -ne $identity.head) {
     throw 'Receipt HEAD mismatch: expected, recorded and current commits must agree.'

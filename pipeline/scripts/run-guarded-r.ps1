@@ -2,6 +2,7 @@
 # reads or names the serving passfile. All external runner guards are retained.
 # Test-only LUSK_GUARDED_R_TEST_STUB_DIR replaces Rscript and the schema snapshot,
 # skips all credential/DB setup, and refuses to coexist with real DB environment.
+# Stub receipts carry stub=true and verify only with the test-only -AllowTestStub switch.
 #   powershell -NoProfile -File pipeline/scripts/run-guarded-r.ps1 -PipelineDir <worktree>\pipeline -Filter 'adopt-db|apply-shapes-db'
 param(
   [Parameter(Mandatory = $true)][string]$PipelineDir,
@@ -172,7 +173,7 @@ try {
     $null = Write-GuardedRReceipt -RepoDir $repo -LogPath $log -ReceiptPath $receipt `
       -Filter $Filter -RunnerVersion $RunnerVersion -StartedAtUtc $startedAt `
       -EndedAtUtc $endedAt -Succeeded $success -ExitCode $effectiveExitCode `
-      -LogLines $sortie -Error $runError
+      -Stub ([bool]$testStubDir) -LogLines $sortie -Error $runError
     Write-Output "Guarded receipt: $receipt"
   } finally {
     if ($acquired) { Exit-HeavyTestLock -Mutex $mutex } else { $mutex.Dispose() }

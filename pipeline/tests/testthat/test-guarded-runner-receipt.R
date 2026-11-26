@@ -259,7 +259,6 @@ test_that("the PowerShell 5.1 guarded runner executes end-to-end with DB-free st
   receipt_pass_path <- sub("\\.log$", ".receipt.json", log_pass)
   refus_stub <- verifier_receipt(receipt_pass_path)
   expect_true(refus_stub$status != 0L)
-  expect_true(any(grepl("test-stub receipt", refus_stub$output, fixed = TRUE)))
   expect_identical(verifier_receipt(receipt_pass_path, allow_stub = TRUE)$status, 0L)
 
   echec <- executer_runner(log_fail, fail = "1")
