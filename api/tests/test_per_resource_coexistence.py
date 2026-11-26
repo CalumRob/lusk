@@ -162,6 +162,8 @@ class ProfileHTTPConnection:
             return Cursor()
         if "SELECT territory_type FROM territory_reference" in normalized:
             return Cursor(row=("commune",))
+        if "SELECT territory_id,territory_type FROM territory_reference" in normalized:
+            return Cursor(rows=[(territory_id, "commune") for territory_id in params[0]])
         if "FROM resource_publication" in normalized:
             return Cursor(rows=[(resource_id, "declared_profile", self.versions[resource_id], "ref-v1")
                                 for resource_id in params[0]])
@@ -173,6 +175,8 @@ class ProfileHTTPConnection:
             return Cursor(row=(1,))
         if "SELECT theme_id,allowed_levels FROM profile_descriptor" in normalized:
             return Cursor(row=("habitat", ["commune"]))
+        if "SELECT allowed_levels FROM profile_descriptor" in normalized:
+            return Cursor(row=(["commune"],))
         if "FROM profile_descriptor WHERE" in normalized:
             resource_id = params[2]
             return Cursor(rows=[(resource_id, resource_id, "%", ["commune"], "pd1",
@@ -409,6 +413,27 @@ def test_theme_read_serves_scalars_at_different_publication_versions(monkeypatch
     assert "scalar_content_versions" not in result
     assert result["scalar_content_version"] is None
     assert [row["indicator_id"] for row in result["results"]] == ["resource_a", "resource_b"]
+
+
+def test_public_batch_serves_two_profiles_at_different_versions(monkeypatch):
+    versions = {"age_du_bati": "profile-v1", "mix_logements": "profile-v2"}
+    with profile_http_client(monkeypatch, versions) as client:
+        response = client.post("/api/resources/read-batch", json={
+            "contract": "semantic-read-batch-v2",
+            "items": [
+                {"id": "age", "resource": "age_du_bati",
+                 "target": {"kind": "territory", "type": "commune", "id": "c1"},
+                 "intent": {"kind": "facts"}},
+                {"id": "mix", "resource": "mix_logements",
+                 "target": {"kind": "territory", "type": "commune", "id": "c1"},
+                 "intent": {"kind": "facts"}},
+            ],
+        })
+
+    assert response.status_code == 200, response.text
+    assert [(row["resource"], row["data"]["content_version"])
+            for row in response.json()["results"]] == [
+        ("age_du_bati", "profile-v1"), ("mix_logements", "profile-v2")]
 
 
 def test_public_profile_comparison_emits_its_own_singular_version(monkeypatch):
