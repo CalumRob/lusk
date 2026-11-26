@@ -125,4 +125,9 @@ main_tests_lents <- function() {
   executer_tests_lents(fichiers)
 }
 
-if (sys.nframe() == 0L) main_tests_lents()
+if (sys.nframe() == 0L) {
+  script <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[[1L]])
+  source(file.path(dirname(script), "heavy-test-lock.R"), local = TRUE)
+  executer_avec_lock_lourd(script, commandArgs(trailingOnly = TRUE))
+  main_tests_lents()
+}

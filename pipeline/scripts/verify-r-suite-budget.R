@@ -268,4 +268,9 @@ main_budget <- function() {
   invisible(resultats)
 }
 
-if (sys.nframe() == 0L) main_budget()
+if (sys.nframe() == 0L) {
+  script <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[[1L]])
+  source(file.path(dirname(script), "heavy-test-lock.R"), local = TRUE)
+  executer_avec_lock_lourd(script, commandArgs(trailingOnly = TRUE))
+  main_budget()
+}

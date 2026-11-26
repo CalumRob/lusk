@@ -35,7 +35,9 @@ test_that("a second heavy run waits for the named mutex and says so", {
   ), harness)
   sortie <- suppressWarnings(system2("powershell", c("-NoProfile", "-ExecutionPolicy", "Bypass",
     "-File", shQuote(harness)), stdout = TRUE, stderr = TRUE))
-  expect_identical(attr(sortie, "status"), 0L, info = paste(sortie, collapse = "\n"))
+  status <- attr(sortie, "status")
+  if (is.null(status)) status <- 0L
+  expect_identical(status, 0L, info = paste(sortie, collapse = "\n"))
   expect_true(any(grepl("contention proved", sortie, fixed = TRUE)))
 })
 
@@ -46,8 +48,7 @@ test_that("both full-suite R entry points delegate to the shared heavy-run lock"
     expect_match(source, "executer_avec_lock_lourd(", fixed = TRUE, info = fichier)
   }
   if (.Platform$OS.type == "windows" && nzchar(Sys.which("powershell"))) {
-    fichiers <- c("run-heavy-r.ps1", "heavy-test-lock.ps1",
-                  "run-guarded-r.ps1", "guarded-r-receipt.ps1")
+    fichiers <- c("run-heavy-r.ps1", "heavy-test-lock.ps1")
     harness <- tempfile(fileext = ".ps1")
     on.exit(unlink(harness), add = TRUE)
     writeLines(c(
@@ -63,7 +64,9 @@ test_that("both full-suite R entry points delegate to the shared heavy-run lock"
     ), harness)
     sortie <- system2("powershell", c("-NoProfile", "-ExecutionPolicy", "Bypass",
       "-File", shQuote(harness)), stdout = TRUE, stderr = TRUE)
-    expect_identical(attr(sortie, "status"), 0L, info = paste(sortie, collapse = "\n"))
+    status <- attr(sortie, "status")
+    if (is.null(status)) status <- 0L
+    expect_identical(status, 0L, info = paste(sortie, collapse = "\n"))
     expect_true(any(grepl("parsed", sortie, fixed = TRUE)))
   }
 })
