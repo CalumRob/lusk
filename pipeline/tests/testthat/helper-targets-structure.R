@@ -7,6 +7,9 @@
 if (!exists(".lusk_cache_graphe_structure", globalenv(), inherits = FALSE)) {
   assign(".lusk_cache_graphe_structure", new.env(parent = emptyenv()), globalenv())
 }
+if (!exists(".lusk_cache_imports_namespace", globalenv(), inherits = FALSE)) {
+  assign(".lusk_cache_imports_namespace", new.env(parent = emptyenv()), globalenv())
+}
 
 # Enumerated by searching Sys.getenv("LUSK_ in _targets.R and pipeline/R/.
 # LUSK_CACHE/LUSK_SORTIE are intentionally absent: structural reads replace both
@@ -130,4 +133,32 @@ manifeste_graphe <- function(noms = NULL) {
 
 reseau_graphe <- function() {
   lire_graphe_structure("reseau")
+}
+
+# targets:::edges_envir() walks the whole loaded namespace. It is a structural
+# fixture, not per-test work: retain both its edge table and simplified DAG for
+# the namespace version in this R session.
+cle_imports_namespace <- function(ns) {
+  paste(getNamespaceName(ns), getNamespaceVersion(ns), sep = "\n")
+}
+
+aretes_imports_namespace <- function(ns = asNamespace("lusk"),
+                                     cache = get(".lusk_cache_imports_namespace",
+                                                 globalenv(), inherits = FALSE)) {
+  slot <- paste("aretes", cle_imports_namespace(ns), sep = ":")
+  if (!exists(slot, cache, inherits = FALSE)) {
+    assign(slot, targets:::edges_envir(ns), cache)
+  }
+  get(slot, cache, inherits = FALSE)
+}
+
+graphe_imports_namespace <- function(ns = asNamespace("lusk"),
+                                     cache = get(".lusk_cache_imports_namespace",
+                                                 globalenv(), inherits = FALSE)) {
+  slot <- paste("graphe", cle_imports_namespace(ns), sep = ":")
+  if (!exists(slot, cache, inherits = FALSE)) {
+    aretes <- aretes_imports_namespace(ns, cache = cache)
+    assign(slot, igraph::simplify(igraph::graph_from_data_frame(aretes)), cache)
+  }
+  get(slot, cache, inherits = FALSE)
 }

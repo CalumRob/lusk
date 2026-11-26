@@ -13,6 +13,41 @@
 # profile binding is the matching real scalar token; no expected serving rows
 # are inserted directly in SQL.
 
+local({
+  etat <- new.env(parent = emptyenv())
+  etat$con <- NULL; etat$schema <- NULL; etat$fixture <- NULL
+  etat$builds <- NULL; etat$artefacts <- NULL
+  etat$digest <- NULL; etat$registry <- NULL
+
+  fixture_partage <- function() {
+    if (is.null(etat$fixture)) {
+      etat$con <- .adopt_db_connect()
+      etat$schema <- .adopt_db_schema(etat$con)
+      etat$fixture <- .adopt_db_fixture()
+      etat$builds <- splitter_sortie(etat$fixture$sortie, root = etat$fixture$root,
+        projections = etat$fixture$projections, reference = etat$fixture$reference,
+        metadata_directory = etat$fixture$metadata_directory)
+      etat$artefacts <- charger_artefacts_construits(etat$builds, etat$fixture$root)
+      expect_setequal(names(etat$artefacts), as.character(etat$builds$ressource))
+      .adopt_db_publish_all(etat$con, etat$fixture)
+      etat$digest <- .adopt_db_digest(etat$con)
+      etat$registry <- .adopt_db_registry_digest(etat$con)
+    }
+    etat
+  }
+
+  on.exit({
+    if (!is.null(etat$fixture)) {
+      unlink(c(etat$fixture$sortie, etat$fixture$root, etat$fixture$aedar_dir,
+        etat$fixture$base_metadata), recursive = TRUE)
+    }
+    if (!is.null(etat$con) && !is.null(etat$schema)) {
+      try(DBI::dbExecute(etat$con, paste0('DROP SCHEMA IF EXISTS "', etat$schema,
+        '" CASCADE')), silent = TRUE)
+    }
+    if (!is.null(etat$con)) try(DBI::dbDisconnect(etat$con), silent = TRUE)
+  }, add = TRUE)
+
 test_that("DPE-like fixture derives its semantic contract from the scalar descriptor", {
   reference <- artefacts_fixture_reference()
   source <- list(descriptor = list(indicator_id = "distribution_dpe", unit = "wrong",
@@ -39,16 +74,16 @@ test_that("DPE-like fixture derives its semantic contract from the scalar descri
 })
 
 test_that("guarded: real full-path publication adopts every shape with unchanged data and plan", {
-  con <- .adopt_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  schema <- .adopt_db_schema(con)
-  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
-          add = TRUE, after = FALSE)
-  fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
-  .adopt_db_publish_all(con, fixture)
-  avant <- .adopt_db_digest(con)
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  expect_identical(partage$digest, .adopt_db_digest(con))
+  expect_identical(partage$registry, .adopt_db_registry_digest(con))
+  .adopt_db_begin_rollback(con)
+  avant <- partage$digest
+  # fixture_partage() already ran the real splitter/loader once. Every CLI call
+  # below reuses those immutable artefacts and the real artifact store contents.
+  .adopt_db_reuse_artefacts(partage)
   # Everything below goes through the CLI ENTRY FUNCTION `scripts/publication.R`
   # calls, with the same arguments the operator types; only the connection, the
   # lock and the pre-read projections are injected (as in apply's own proofs).
@@ -65,7 +100,7 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
 
   # --dry-run through the CLI: not ONE row of any serving, registry, descriptor or
   # receipt table changes, and nothing is reported adopted.
-  total_avant <- list(.adopt_db_digest(con), .adopt_db_registry_digest(con))
+  total_avant <- list(partage$digest, partage$registry)
   sec <- adopter(c("adopt", fixture$sortie, "--dry-run"))
   expect_identical(sec$resultat$adopted, character())
   expect_true("adoption=match adopted= zero_data_writes=true" %in% sec$sortie)
@@ -208,15 +243,12 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
 })
 
 test_that("guarded: one altered live row in each shape refuses with zero writes", {
-  con <- .adopt_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  schema <- .adopt_db_schema(con)
-  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
-          add = TRUE, after = FALSE)
-  fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
-  .adopt_db_publish_all(con, fixture)
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  expect_identical(partage$digest, .adopt_db_digest(con))
+  expect_identical(partage$registry, .adopt_db_registry_digest(con))
+  .adopt_db_begin_rollback(con)
   cas <- list(
     list(ressource = "densite", table = "scalar_observation", colonne = "value",
       where = "indicator_id='densite'", num = TRUE),
@@ -229,42 +261,43 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     list(ressource = "aedar", table = "aedar_territorial_aggregate", colonne = "n_observed",
       where = "territory_type='commune'", num = TRUE))
   for (x in cas) {
+    savepoint <- paste0("adopt_alt_", gsub("[^A-Za-z0-9_]", "_", x$ressource))
+    DBI::dbExecute(con, paste("SAVEPOINT", savepoint))
     key <- DBI::dbGetQuery(con, paste0("SELECT ctid::text AS rowid FROM ", x$table,
       " WHERE ", x$where, " ORDER BY ctid LIMIT 1"))$rowid[[1L]]
-    old <- DBI::dbGetQuery(con, paste0("SELECT ", x$colonne, " FROM ", x$table,
-      " WHERE ctid='", key, "'"))[[1L]][[1L]]
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " DISABLE TRIGGER USER"))
     DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=", x$colonne,
       "+1 WHERE ctid='", key, "'"))
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
     avant <- .adopt_db_digest(con)
     registre_avant <- .adopt_db_registry_digest(con)
-    err <- tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
-      root = fixture$root, registre = fixture$lock, projections = fixture$projections,
-      reference = fixture$reference, metadata_directory = fixture$metadata_directory,
-      con = con, out = nullfile()), error = identity)
+    err <- local({
+      .adopt_db_reuse_artefacts(partage, ids = x$ressource)
+      tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
+        root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+        reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+        con = con, out = nullfile()), error = identity)
+    })
     expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
     expect_identical(.adopt_db_digest(con), avant, info = x$ressource)
     expect_identical(.adopt_db_registry_digest(con), registre_avant, info = x$ressource)
-    DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " DISABLE TRIGGER USER"))
-    DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=$1 WHERE ctid=$2"),
-      params = list(old, key))
-    DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
+    DBI::dbExecute(con, paste("ROLLBACK TO SAVEPOINT", savepoint))
+    DBI::dbExecute(con, paste("RELEASE SAVEPOINT", savepoint))
   }
+  expect_identical(.adopt_db_digest(con), partage$digest)
+  expect_identical(.adopt_db_registry_digest(con), partage$registry)
 })
 
 test_that("guarded: a forced receipt failure rolls back every adopted registry row", {
-  con <- .adopt_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  schema <- .adopt_db_schema(con)
-  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
-          add = TRUE, after = FALSE)
-  fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
-  .adopt_db_publish_all(con, fixture)
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  expect_identical(partage$digest, .adopt_db_digest(con))
+  expect_identical(partage$registry, .adopt_db_registry_digest(con))
+  .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
   avant <- .adopt_db_digest(con)
   registre_avant <- .adopt_db_registry_digest(con)
   local_mocked_bindings(ecrire_recette_ressource = function(con, ressource, ...) {
@@ -281,15 +314,13 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
 })
 
 test_that("guarded: a forged live scalar binding refuses with the typed reason and zero writes", {
-  con <- .adopt_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  schema <- .adopt_db_schema(con)
-  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
-          add = TRUE, after = FALSE)
-  fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
-  .adopt_db_publish_all(con, fixture)
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  expect_identical(partage$digest, .adopt_db_digest(con))
+  expect_identical(partage$registry, .adopt_db_registry_digest(con))
+  .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage, ids = c("distribution_dpe", "part_passoires"))
   # The legitimate pre-registry binding (live token == live global scalar marker ==
   # the token the sortie recorded) is what the first guarded test adopts. Here the
   # live token is neither: nothing may rebind it silently.
@@ -313,15 +344,13 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
 })
 
 test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) with zero writes", {
-  con <- .adopt_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  schema <- .adopt_db_schema(con)
-  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
-          add = TRUE, after = FALSE)
-  fixture <- .adopt_db_fixture()
-  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
-  .adopt_db_publish_all(con, fixture)
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  expect_identical(partage$digest, .adopt_db_digest(con))
+  expect_identical(partage$registry, .adopt_db_registry_digest(con))
+  .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage, ids = "densite")
   adopter <- function(...) executer_commande_publication(c("adopt", fixture$sortie, ...),
     root = fixture$root, registre = fixture$lock, projections = fixture$projections,
     reference = fixture$reference, metadata_directory = fixture$metadata_directory,
@@ -347,4 +376,5 @@ test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) w
     }
     expect_identical(list(.adopt_db_digest(con), .adopt_db_registry_digest(con)), avant)
   }
+})
 })

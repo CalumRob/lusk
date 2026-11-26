@@ -68,6 +68,86 @@ depassements_budget <- function(par_fichier, par_test) {
   list(tests = tests, fichiers = fichiers)
 }
 
+premiere_ligne_message <- function(message) {
+  if (inherits(message, "condition")) message <- conditionMessage(message)
+  if (length(message) != 1L || is.na(message) || !nzchar(message))
+    return("<no message>")
+  strsplit(as.character(message), "\r?\n", perl = TRUE)[[1L]][[1L]]
+}
+
+premier_message_resultat <- function(resultats) {
+  if (is.null(resultats) || !length(resultats)) return("<no message>")
+  messages <- vapply(resultats, function(attente) {
+    if (inherits(attente, "condition")) return(conditionMessage(attente))
+    if (is.list(attente) && !is.null(attente$message) && length(attente$message))
+      return(as.character(attente$message)[[1L]])
+    ""
+  }, character(1))
+  messages <- messages[nzchar(messages) & !is.na(messages)]
+  if (!length(messages)) return("<no message>")
+  premiere_ligne_message(messages[[1L]])
+}
+
+# as.data.frame(testthat_results) drops the result list for an erroring test.
+# Read messages from the original per-test results before that conversion.
+messages_resultats_tests <- function(resultats) {
+  vapply(resultats, function(test) premier_message_resultat(test$results), character(1))
+}
+
+# A testthat ERROR is not a failed expectation. Report both, plus a file that
+# failed before producing a result table, so this one run can replace test_local().
+echecs_suite <- function(par_fichier, par_test) {
+  erreurs_test <- (!is.na(par_test$failed) & par_test$failed > 0) |
+    (!is.na(par_test$error) & par_test$error > 0)
+  tests <- par_test[erreurs_test, , drop = FALSE]
+  lignes <- data.frame(
+    file = as.character(tests$file), test = as.character(tests$test),
+    kind = ifelse(!is.na(tests$error) & tests$error > 0, "ERROR", "FAIL"),
+    message = vapply(tests$first_message, premiere_ligne_message, character(1)),
+    stringsAsFactors = FALSE
+  )
+  erreurs_fichier <- if (is.null(par_fichier$errored)) rep(FALSE, nrow(par_fichier)) else
+    !is.na(par_fichier$errored) & par_fichier$errored
+  fichiers <- par_fichier[erreurs_fichier, , drop = FALSE]
+  if (nrow(fichiers)) {
+    messages <- if (is.null(fichiers$error_message)) rep(NA_character_, nrow(fichiers)) else
+      fichiers$error_message
+    lignes <- rbind(lignes, data.frame(
+      file = as.character(fichiers$file), test = "<file load>", kind = "ERROR",
+      message = vapply(messages, premiere_ligne_message, character(1)),
+      stringsAsFactors = FALSE
+    ))
+  }
+  lignes
+}
+
+formater_echecs_suite <- function(echecs) {
+  if (!nrow(echecs)) return(character())
+  c("R default suite failed:",
+    sprintf("  %s %s :: %s: %s", echecs$kind, echecs$file, echecs$test,
+            echecs$message))
+}
+
+arreter_si_echecs <- function(echecs) {
+  if (nrow(echecs))
+    stop("R default suite failed; see the file/test/message report above.",
+         call. = FALSE)
+  invisible(NULL)
+}
+
+formater_depassements_budget <- function(depassements) {
+  details <- character()
+  if (nrow(depassements$tests)) {
+    details <- c(details, paste0("  test  ", depassements$tests$file, " :: ",
+      depassements$tests$test, " (", round(depassements$tests$real, 2), " s)"))
+  }
+  if (nrow(depassements$fichiers)) {
+    details <- c(details, paste0("  file ", depassements$fichiers$file, " (",
+      round(depassements$fichiers$wall, 2), " s)"))
+  }
+  details
+}
+
 mesurer_suite_serielle <- function(prefix) {
   Sys.setenv(TESTTHAT_PARALLEL = "FALSE")
   fichiers <- sort(list.files("tests/testthat", pattern = "^test.*\\.R$"))
@@ -80,19 +160,34 @@ mesurer_suite_serielle <- function(prefix) {
       testthat::test_file(file.path("tests/testthat", f), reporter = "silent",
                           package = "lusk", load_package = "none",
                           stop_on_failure = FALSE),
-      error = function(e) NULL
+      error = identity
     )
     duree <- as.numeric(difftime(Sys.time(), t1, units = "secs"))
-    df <- if (is.null(resultat)) NULL else as.data.frame(resultat)
+    df <- if (inherits(resultat, "error")) NULL else as.data.frame(resultat)
+    message_erreur <- if (inherits(resultat, "error"))
+      premiere_ligne_message(resultat) else NA_character_
     lignes[[f]] <- data.frame(
       file = f, wall = duree,
       tests = if (is.null(df)) NA else nrow(df),
       expectations = if (is.null(df)) NA else sum(df$nb),
       in_tests = if (is.null(df)) NA else sum(df$real),
       failed = if (is.null(df)) NA else sum(df$failed),
-      errored = is.null(resultat)
+      errored = inherits(resultat, "error"), error_message = message_erreur
     )
-    if (!is.null(df)) tests[[f]] <- df[, c("file", "test", "nb", "real")]
+    if (!is.null(df)) {
+      # Passing expectations need no message walk. Restrict extraction to the
+      # failed/erroring rows so failure reporting does not tax every green file.
+      messages <- rep("<no message>", nrow(df))
+      a_rapporter <- df$failed > 0 | df$error
+      if (any(a_rapporter))
+        messages[a_rapporter] <- messages_resultats_tests(resultat[a_rapporter])
+      tests[[f]] <- data.frame(
+        file = df$file, test = df$test, nb = df$nb, real = df$real,
+        failed = df$failed, error = df$error,
+        first_message = messages,
+        stringsAsFactors = FALSE
+      )
+    }
   }
   par_fichier <- do.call(rbind, lignes)
   par_fichier <- par_fichier[order(-par_fichier$wall), , drop = FALSE]
@@ -159,22 +254,34 @@ main_budget <- function() {
     resultats <- list(par_fichier = par_fichier, par_test = par_test,
                       wall = sum(par_fichier$wall))
   }
+  if (is.null(resultats$par_fichier$errored))
+    resultats$par_fichier$errored <- FALSE
+  if (is.null(resultats$par_fichier$error_message))
+    resultats$par_fichier$error_message <- NA_character_
+  if (is.null(resultats$par_test$error)) resultats$par_test$error <- 0L
+  if (is.null(resultats$par_test$first_message))
+    resultats$par_test$first_message <- "<no message>"
   cat(paste(formater_rapport_budget(resultats, options$top), collapse = "\n"),
       "\n", sep = "")
+  echecs <- echecs_suite(resultats$par_fichier, resultats$par_test)
+  if (nrow(echecs)) {
+    cat(paste(formater_echecs_suite(echecs), collapse = "\n"), "\n", sep = "")
+    arreter_si_echecs(echecs)
+  }
   depassements <- depassements_budget(resultats$par_fichier, resultats$par_test)
   if (nrow(depassements$tests) || nrow(depassements$fichiers)) {
-    details <- c(
-      paste0("  test  ", depassements$tests$file, " :: ",
-             depassements$tests$test, " (", round(depassements$tests$real, 2), " s)"),
-      paste0("  file ", depassements$fichiers$file, " (",
-             round(depassements$fichiers$wall, 2), " s)")
-    )
     stop("R suite budget exceeded; add a reasoned exception or move the contract:\n",
-         paste(details, collapse = "\n"), call. = FALSE)
+         paste(formater_depassements_budget(depassements), collapse = "\n"),
+         call. = FALSE)
   }
   cat(sprintf("Budget OK: no unlisted test > %.0f s or file > %.0f s.\n",
               BUDGET_TEST_SECONDS, BUDGET_FILE_SECONDS))
   invisible(resultats)
 }
 
-if (sys.nframe() == 0L) main_budget()
+if (sys.nframe() == 0L) {
+  script <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[[1L]])
+  source(file.path(dirname(script), "heavy-test-lock.R"), local = TRUE)
+  executer_avec_lock_lourd(script, commandArgs(trailingOnly = TRUE))
+  main_budget()
+}

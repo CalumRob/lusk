@@ -184,7 +184,6 @@
   # (aedar_territorial_aggregate, aedar_territory_summary) get no descriptor.
   base_metadata <- tempfile("adopt-fixture-")
   metadata_directory <- file.path(base_metadata, "theme-metadata")
-  withr::defer(unlink(base_metadata, recursive = TRUE), envir = parent.frame())
   aedar_dir <- NULL
   dir.create(sortie, recursive = TRUE)
   dir.create(metadata_directory, recursive = TRUE)
@@ -280,7 +279,7 @@
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
     scalar_version = scalar_version, lock = digests, projections = projections,
     aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir,
-    metadata_directory = metadata_directory, typed = typed)
+    base_metadata = base_metadata, metadata_directory = metadata_directory, typed = typed)
 }
 
 .adopt_db_publish_all <- function(con, fixture) {
@@ -320,6 +319,89 @@
     version = comparison$aedar_content_version)
   publish_aedar_comparisons(comparison, con)
   invisible(TRUE)
+}
+
+# One published fixture serves every guarded case in test-adopt-db.R. The case
+# owns the outer transaction and always rolls it back. Production publication
+# transactions join it through savepoints; dbWriteTable() is routed through the
+# equivalent non-committing append method. PostgreSQL-only transaction mode
+# changes that cannot run after the fixture's first write are suppressed here.
+# Their own DB-free contracts remain in test-publication-cli.R and the adapter tests.
+.adopt_db_remplacer_binding <- function(nom, valeur, envir) {
+  original <- get(nom, envir = asNamespace("DBI"), inherits = FALSE)
+  assignInNamespace(nom, valeur, ns = "DBI")
+  withr::defer(assignInNamespace(nom, original, ns = "DBI"), envir = envir)
+  invisible(NULL)
+}
+
+.adopt_db_begin_rollback <- function(con) {
+  envir <- parent.frame()
+  executer_original <- DBI::dbExecute
+  executer_original(con, "BEGIN")
+  executer_original(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+  withr::defer(executer_original(con, "ROLLBACK"), envir = envir)
+  .adopt_db_remplacer_binding("dbExecute", function(con, statement, ...) {
+    if (identical(statement, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ") ||
+        identical(statement, "SET TRANSACTION READ ONLY")) return(0L)
+    executer_original(con, statement, ...)
+  }, envir = envir)
+  .adopt_db_remplacer_binding("dbWithTransaction", function(con, expr, ...) {
+    savepoint <- paste0("adopt_cas_", paste(sample(c(letters, 0:9), 12, TRUE),
+                                             collapse = ""))
+    executer_original(con, paste("SAVEPOINT", savepoint))
+    on.exit({
+      executer_original(con, paste("ROLLBACK TO SAVEPOINT", savepoint))
+      executer_original(con, paste("RELEASE SAVEPOINT", savepoint))
+    }, add = TRUE)
+    valeur <- force(expr)
+    executer_original(con, paste("RELEASE SAVEPOINT", savepoint))
+    on.exit(NULL)
+    valeur
+  }, envir = envir)
+  # RPostgres::dbWriteTable() commits even when append=TRUE. Its append method
+  # performs the same parameterised insert without owning a transaction.
+  .adopt_db_remplacer_binding("dbWriteTable",
+    function(con, name, value, append = FALSE, row.names = FALSE, ...) {
+      if (!isTRUE(append) || !identical(row.names, FALSE))
+        stop("The adopt rollback harness only appends complete fixture rows.")
+      if (!nrow(value)) return(0L)
+      DBI::dbAppendTable(con, name, value, ...)
+    }, envir = envir)
+  invisible(NULL)
+}
+
+.adopt_db_rollback <- function(con, code) {
+  .adopt_db_begin_rollback(con)
+  force(code)
+}
+
+# Splitting the sortie and reading its immutable Artefacts de ressource is pure
+# fixture work. Build it once; refusal/mutation cases keep the real CLI and DB
+# path but do not rebuild the same content-addressed files for every call.
+.adopt_db_reuse_artefacts <- function(partage, ids = NULL) {
+  builds <- partage$builds
+  artefacts <- partage$artefacts
+  if (!is.null(ids)) {
+    if (any(!ids %in% as.character(builds$ressource)))
+      stop("Unknown adopt fixture resource: ", paste(setdiff(ids, builds$ressource), collapse = ", "),
+           call. = FALSE)
+    builds <- builds[match(ids, as.character(builds$ressource)), , drop = FALSE]
+    artefacts <- artefacts[as.character(builds$ressource)]
+  }
+  envir <- parent.frame()
+  bindings <- list(
+    splitter_sortie = function(...) builds,
+    charger_artefacts_construits = function(...) artefacts,
+    construites_depuis_magasin = function(...) builds
+  )
+  # The normal all-resource proof runs this full-sortie guard for real. A focused
+  # non-AEDAR refusal uses the same already-validated sortie, so the guard's
+  # "aedar omitted from builds" branch is not that case's subject.
+  if (!is.null(ids) && !"aedar" %in% ids)
+    bindings$refus_aedar_adoption <- function(...) NULL
+  do.call(testthat::local_mocked_bindings,
+          c(bindings, list(.package = "lusk", .env = envir)))
+  invisible(NULL)
 }
 
 .adopt_db_digest <- function(con) {

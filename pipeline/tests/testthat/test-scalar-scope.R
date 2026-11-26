@@ -28,6 +28,10 @@ population_scalar_scope_fixture <- function() {
   )
 }
 
+# The full targets import graph is a once-per-session structural fixture. Build
+# it while sourcing the file (inside the 15 s file budget), not inside a test.
+.graphe_imports_scalar_scope <- graphe_imports_namespace()
+
 scope_rows_for <- function(indicator_id, territory_id, territory_type, value,
                            unit, vintage) {
   data.frame(
@@ -553,6 +557,27 @@ test_that("le producteur ciblé Offre TC produit la forme complète à quatre ni
   expect_true(all(grepl("Korrigo", rows$source_name, fixed = TRUE)))
 })
 
+test_that("le graphe d'imports du namespace est mémorisé une fois par session", {
+  ns <- asNamespace("lusk")
+  cache <- new.env(parent = emptyenv())
+  appels <- 0L
+  local_mocked_bindings(
+    edges_envir = function(envir) {
+      expect_identical(envir, ns)
+      appels <<- appels + 1L
+      data.frame(from = c("a", "b"), to = c("b", "c"),
+                 stringsAsFactors = FALSE)
+    }, .package = "targets"
+  )
+  premier <- aretes_imports_namespace(ns, cache = cache)
+  second <- aretes_imports_namespace(ns, cache = cache)
+  graphe <- graphe_imports_namespace(ns, cache = cache)
+  expect_identical(second, premier)
+  expect_identical(graphe_imports_namespace(ns, cache = cache), graphe)
+  expect_identical(appels, 1L)
+  expect_true(igraph::is_dag(graphe))
+})
+
 test_that("le graphe d'imports du namespace lusk reste acyclique (#1071)", {
   ns <- asNamespace("lusk")
   # parse_scalar_scope() résout LE contrat ; scalar_scope_contract() ne doit
@@ -564,9 +589,8 @@ test_that("le graphe d'imports du namespace lusk reste acyclique (#1071)", {
     get("parse_scalar_scope", envir = ns), merge = TRUE))
 
   # Le graphe EXACT que targets utilise pour hash_imports() — le même que
-  # tar_network() — doit rester un DAG.
-  aretes <- targets:::edges_envir(ns)
-  graphe <- igraph::simplify(igraph::graph_from_data_frame(aretes))
+  # tar_network() — est préparé une fois au chargement de ce fichier.
+  graphe <- .graphe_imports_scalar_scope
   expect_true(igraph::is_dag(graphe))
   expect_length(igraph::find_cycle(graphe)$vertices, 0L)
 })

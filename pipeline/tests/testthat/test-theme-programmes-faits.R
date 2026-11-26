@@ -151,10 +151,10 @@ test_that("construire_indicateurs_programmes : l'absence honnête — zéro fait
 test_that("les faits canoniques Programmes reconstruits des Parquets ne publient aucun détail inconnu de la déclaration courante", {
   ind <- lire_indicateurs_producteur_fixture("programmes")
   meta <- lire_theme_metadata("programmes")
-  # #1151 : la snapshot producteur retenue (2026-08-05) porte encore les 39
-  # anciens domaines ; la déclaration épinglée porte les 43 courants du jeu
-  # source. La parité inverse vit dans test-theme-programmes-domaines-scdl.R
-  # et dans le garde project_programme_period_details() au publish.
+  # La snapshot productrice retenue porte les 43 domaines courants. La
+  # normalisation SCDL et la parité inverse restent couvertes par
+  # test-theme-programmes-domaines-scdl.R et le garde
+  # project_programme_period_details() au publish.
   publies <- ind$detail[ind$key == "subventions_par_domaine" & !is.na(ind$detail)]
   declarees <- names(meta$detail_labels$subventions_par_domaine)
   expect_true(all(details_scdl_snapshot(publies) %in% declarees), info =
@@ -164,8 +164,8 @@ test_that("les faits canoniques Programmes reconstruits des Parquets ne publient
                                      "subventions_annuelles",
                                      "subventions_par_domaine"))
   expect_true(all(ind$theme == "programmes"))
-  # La snapshot retenue elle-même reste à 39 domaines (vintage 2026-08-05).
-  expect_length(unique(ind$detail[ind$key == "subventions_par_domaine"]), 39L)
+  # Le nombre attendu vient de la déclaration productrice, pas d'un snapshot figé.
+  expect_length(unique(ind$detail[ind$key == "subventions_par_domaine"]), length(declarees))
   expect_true(all(ind$unit[ind$key == "subventions_annuelles"] == "€"))
   expect_true(all(ind$unit[ind$key == "subventions_par_domaine"] == "€"))
   expect_true(all(is.na(as.matrix(ind[grep("^rang_", names(ind), value=TRUE)]))))

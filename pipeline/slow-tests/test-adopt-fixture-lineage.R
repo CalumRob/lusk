@@ -18,7 +18,7 @@ local({
 test_that("adopt fixture gives every resource an attested lineage present in the lock", {
   fixture <- .adopt_db_fixture()
   on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
-    fixture$metadata_directory), recursive = TRUE), add = TRUE)
+    fixture$base_metadata), recursive = TRUE), add = TRUE)
   builds <- splitter_sortie(fixture$sortie, root = fixture$root,
     projections = fixture$projections, reference = fixture$reference,
     metadata_directory = fixture$metadata_directory)

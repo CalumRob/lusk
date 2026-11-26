@@ -49,7 +49,9 @@ AUTORISATIONS_DB <- list(
   list(fichier = "^scripts/smoke-scalar-postgres\\.R$",
        raison = "retire in ADR-0049 step 4"),
   list(fichier = "^scripts/smoke-series-postgres\\.R$",
-       raison = "retire in ADR-0049 step 4")
+       raison = "retire in ADR-0049 step 4"),
+  list(fichier = "^scripts/it-schemas\\.R$",
+       raison = "#1177 read-only schema snapshot; hard-coded lusk_it_contract test identity, never the serving DB")
 )
 
 relatif_sous <- function(chemin, racine) {
