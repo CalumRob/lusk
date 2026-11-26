@@ -184,7 +184,6 @@
   # (aedar_territorial_aggregate, aedar_territory_summary) get no descriptor.
   base_metadata <- tempfile("adopt-fixture-")
   metadata_directory <- file.path(base_metadata, "theme-metadata")
-  withr::defer(unlink(base_metadata, recursive = TRUE), envir = parent.frame())
   aedar_dir <- NULL
   dir.create(sortie, recursive = TRUE)
   dir.create(metadata_directory, recursive = TRUE)
@@ -280,7 +279,7 @@
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
     scalar_version = scalar_version, lock = digests, projections = projections,
     aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir,
-    metadata_directory = metadata_directory, typed = typed)
+    base_metadata = base_metadata, metadata_directory = metadata_directory, typed = typed)
 }
 
 .adopt_db_publish_all <- function(con, fixture) {
