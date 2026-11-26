@@ -17,10 +17,14 @@ nouveau_depot_receipt <- function() {
   }
   git("init", "-q")
   writeLines("fixture", file.path(depot, "tracked.txt"))
-  git("add", "tracked.txt")
+  pipeline <- file.path(depot, "pipeline")
+  dir.create(pipeline)
+  writeLines("Package: lusk", file.path(pipeline, "DESCRIPTION"))
+  writeLines("list()", file.path(pipeline, "_targets.R"))
+  git("add", "tracked.txt", "pipeline")
   git("-c", "user.name=Receipt Test", "-c", "user.email=receipt@example.invalid",
       "commit", "-qm", "initial")
-  list(depot = depot, head = unname(git("rev-parse", "HEAD")))
+  list(depot = depot, pipeline = pipeline, head = unname(git("rev-parse", "HEAD")))
 }
 
 executer_receipt_powershell <- function(harness) {
@@ -166,6 +170,104 @@ test_that("the receipt verifier refuses errors, failures, leftovers, missing sum
   expect_identical(resultat$status, 0L, info = paste(resultat$output, collapse = "\n"))
   for (cas in c("errors", "failures", "leftovers", "missing_summary", "nonzero_exit"))
     expect_true(any(grepl(paste0(cas, " refused"), resultat$output, fixed = TRUE)))
+})
+
+test_that("the PowerShell 5.1 guarded runner executes end-to-end with DB-free stubs", {
+  scripts <- file.path(pkgload::pkg_path(), "scripts")
+  runner <- file.path(scripts, "run-guarded-r.ps1")
+  source_runner <- paste(readLines(runner, warn = FALSE), collapse = "\n")
+  expect_match(source_runner, "LUSK_GUARDED_R_TEST_STUB_DIR", fixed = TRUE)
+  # Fail safely before execution if the explicit test-only seam is absent.
+  if (!grepl("LUSK_GUARDED_R_TEST_STUB_DIR", source_runner, fixed = TRUE)) return()
+
+  repo <- nouveau_depot_receipt()
+  on.exit(unlink(repo$depot, recursive = TRUE), add = TRUE)
+  stub <- tempfile("guarded-runner-stub-")
+  dir.create(stub)
+  on.exit(unlink(stub, recursive = TRUE), add = TRUE)
+  writeLines(c(
+    "@echo off",
+    "if \"%~1\"==\"-e\" (",
+    "  if \"%LUSK_GUARDED_R_TEST_FAIL%\"==\"1\" (",
+    "    echo [ FAIL 1 ^| WARN 0 ^| SKIP 0 ^| PASS 419 ]",
+    "  ) else (",
+    "    echo [ FAIL 0 ^| WARN 0 ^| SKIP 0 ^| PASS 420 ]",
+    "  )",
+    "  exit /b 0",
+    ")",
+    "echo unexpected stub arguments 1>&2",
+    "exit /b 9"
+  ), file.path(stub, "Rscript.cmd"))
+  writeLines(c("@echo off", "echo it_stub_schema", "exit /b 0"),
+             file.path(stub, "it-schemas.cmd"))
+
+  real_db_variables <- c("PGPASSFILE", "LUSK_SCALAR_TEST_HOST",
+    "LUSK_SCALAR_TEST_PORT", "LUSK_SCALAR_TEST_DATABASE", "LUSK_SCALAR_TEST_USER",
+    "LUSK_SCALAR_TEST_CLEANUP", "LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "DATABASE_URL",
+    "PUBLISH_DATABASE_URL", "LUSK_PUBLISH_HOST", "LUSK_PUBLISH_DATABASE",
+    "LUSK_PUBLISH_USER", "PGOPTIONS", "PGCONNECT_TIMEOUT")
+  withr::local_envvar(c(
+    stats::setNames(rep("", length(real_db_variables)), real_db_variables),
+    LUSK_GUARDED_R_TEST_STUB_DIR = stub,
+    LUSK_GUARDED_R_TEST_FAIL = "0"
+  ))
+
+  executer_runner <- function(log, fail = "0") {
+    withr::local_envvar(LUSK_GUARDED_R_TEST_FAIL = fail)
+    sortie <- suppressWarnings(system2("powershell", c("-NoProfile",
+      "-ExecutionPolicy", "Bypass", "-File", shQuote(runner),
+      "-PipelineDir", shQuote(repo$pipeline), "-Filter", "adopt-db",
+      "-LogPath", shQuote(log)), stdout = TRUE, stderr = TRUE))
+    status <- attr(sortie, "status")
+    if (is.null(status)) status <- 0L
+    list(status = status, output = sortie)
+  }
+  verifier_receipt <- function(receipt) {
+    module <- file.path(scripts, "guarded-r-receipt.ps1")
+    harness <- tempfile(fileext = ".ps1")
+    on.exit(unlink(harness), add = TRUE)
+    writeLines(c(
+      "$ErrorActionPreference = 'Stop'",
+      sprintf(". '%s'", module),
+      sprintf("Assert-GuardedRReceipt -ReceiptPath '%s' -RepoDir '%s' -ExpectedHead '%s' -ExpectedFilter 'adopt-db' | Out-Null",
+              receipt, repo$depot, repo$head),
+      "'verified'"
+    ), harness)
+    executer_receipt_powershell(harness)
+  }
+
+  log_pass <- tempfile(fileext = ".log")
+  log_fail <- tempfile(fileext = ".log")
+  log_refuse <- tempfile(fileext = ".log")
+  on.exit(unlink(c(log_pass, log_fail, log_refuse,
+    sub("\\.log$", ".receipt.json", log_pass), sub("\\.log$", ".receipt.json", log_fail),
+    sub("\\.log$", ".receipt.json", log_refuse))), add = TRUE)
+
+  passe <- executer_runner(log_pass)
+  expect_identical(passe$status, 0L, info = paste(passe$output, collapse = "\n"))
+  expect_true(any(grepl("Leftover schemas: none", passe$output, fixed = TRUE)))
+  receipt_pass <- jsonlite::fromJSON(sub("\\.log$", ".receipt.json", log_pass),
+                                     simplifyVector = FALSE)
+  expect_true(receipt_pass$succeeded)
+  expect_identical(receipt_pass$exit_code, 0L)
+  expect_identical(receipt_pass$testthat_summary,
+                   "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]")
+  expect_identical(receipt_pass$runner_version, "1.0.0-test-stub")
+  expect_identical(verifier_receipt(sub("\\.log$", ".receipt.json", log_pass))$status, 0L)
+
+  echec <- executer_runner(log_fail, fail = "1")
+  expect_true(echec$status != 0L, info = paste(echec$output, collapse = "\n"))
+  receipt_fail <- jsonlite::fromJSON(sub("\\.log$", ".receipt.json", log_fail),
+                                     simplifyVector = FALSE)
+  expect_false(receipt_fail$succeeded)
+  expect_true(receipt_fail$exit_code != 0L)
+  expect_true(verifier_receipt(sub("\\.log$", ".receipt.json", log_fail))$status != 0L)
+
+  withr::local_envvar(LUSK_SCALAR_TEST_DATABASE = "lusk_it_contract")
+  refus <- executer_runner(log_refuse)
+  expect_true(refus$status != 0L)
+  expect_true(any(grepl("Refusing: test stub cannot be combined with real DB environment",
+                        refus$output, fixed = TRUE)))
 })
 
 test_that("the repo guarded runner retains every external guard and writes a receipt", {
