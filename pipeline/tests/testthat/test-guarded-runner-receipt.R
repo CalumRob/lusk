@@ -112,18 +112,55 @@ test_that("the receipt verifier refuses a mismatched sha and a dirty tree", {
   expect_true(any(grepl("dirty refused", resultat$output, fixed = TRUE)))
 })
 
+test_that("the compact testthat summary is accepted only when its failure count is zero", {
+  module <- file.path(pkgload::pkg_path(), "scripts", "guarded-r-receipt.ps1")
+  harness <- tempfile(fileext = ".ps1")
+  on.exit(unlink(harness), add = TRUE)
+  writeLines(c(
+    "$ErrorActionPreference = 'Stop'",
+    sprintf(". '%s'", module),
+    "$summary = Get-GuardedRReceiptLines -LogLines @('[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]')",
+    "if ($summary -ne '[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]') { throw 'compact summary was lost' }",
+    "if (-not (Test-GuardedRSummaryPassed -Summary $summary)) { throw 'clean summary was rejected' }",
+    "if (Test-GuardedRSummaryPassed -Summary '[ FAIL 1 | WARN 0 | SKIP 0 | PASS 419 ]') { throw 'failing summary was accepted' }",
+    "'compact proved'"
+  ), harness)
+  resultat <- executer_receipt_powershell(harness)
+  expect_identical(resultat$status, 0L, info = paste(resultat$output, collapse = "\n"))
+  expect_true(any(grepl("compact proved", resultat$output, fixed = TRUE)))
+})
+
 test_that("the repo guarded runner retains every external guard and writes a receipt", {
   scripts <- file.path(pkgload::pkg_path(), "scripts")
   runner <- paste(readLines(file.path(scripts, "run-guarded-r.ps1"), warn = FALSE),
                   collapse = "\n")
   for (token in c("lusk_it_contract", "lusk_it_contract_pub", "Refusing:",
-                  "Local\\LuskIntegrationContractDb", "it-schemas.R",
+                  "HeavyTestMutexName", "it-schemas.R",
                   "LEFTOVER SCHEMAS", "Leftover schemas: none",
                   "Write-GuardedRReceipt"))
     expect_match(runner, token, fixed = TRUE, info = token)
+  lock <- paste(readLines(file.path(scripts, "heavy-test-lock.ps1"), warn = FALSE),
+                collapse = "\n")
+  expect_match(lock, "Local\\LuskIntegrationContractDb", fixed = TRUE)
   snapshot <- paste(readLines(file.path(scripts, "it-schemas.R"), warn = FALSE),
                     collapse = "\n")
   for (token in c("BEGIN TRANSACTION READ ONLY", "current_database()",
-                  "current_user()", "ROLLBACK"))
+                  "current_user AS usr", "ROLLBACK"))
     expect_match(snapshot, token, fixed = TRUE, info = token)
+  harness <- tempfile(fileext = ".ps1")
+  on.exit(unlink(harness), add = TRUE)
+  writeLines(c(
+    "$ErrorActionPreference = 'Stop'",
+    sprintf("$files = @('%s', '%s')", file.path(scripts, "run-guarded-r.ps1"),
+            file.path(scripts, "guarded-r-receipt.ps1")),
+    "foreach ($file in $files) {",
+    "  $tokens = $null; $errors = $null",
+    "  $null = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors)",
+    "  if ($errors.Count) { throw ($errors | Out-String) }",
+    "}",
+    "'parsed'"
+  ), harness)
+  resultat <- executer_receipt_powershell(harness)
+  expect_identical(resultat$status, 0L, info = paste(resultat$output, collapse = "\n"))
+  expect_true(any(grepl("parsed", resultat$output, fixed = TRUE)))
 })
