@@ -60,6 +60,6 @@ test_that("adopt refusal cases reuse the immutable splitter artefacts", {
                        stringsAsFactors = FALSE)
   artefacts <- list(densite = list(version = "v1", forme = "scalar"))
   .adopt_db_reuse_artefacts(list(builds = builds, artefacts = artefacts))
-  expect_identical(splitter_sortie("unused"), builds)
-  expect_identical(charger_artefacts_construits("unused"), artefacts)
+  expect_identical(getFromNamespace("splitter_sortie", "lusk")("unused"), builds)
+  expect_identical(getFromNamespace("charger_artefacts_construits", "lusk")("unused"), artefacts)
 })

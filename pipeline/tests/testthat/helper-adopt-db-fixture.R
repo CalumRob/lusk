@@ -375,6 +375,18 @@
   force(code)
 }
 
+# Splitting the sortie and reading its immutable Artefacts de ressource is pure
+# fixture work. Build it once; refusal/mutation cases keep the real CLI and DB
+# path but do not rebuild the same content-addressed files for every call.
+.adopt_db_reuse_artefacts <- function(partage) {
+  testthat::local_mocked_bindings(
+    splitter_sortie = function(...) partage$builds,
+    charger_artefacts_construits = function(...) partage$artefacts,
+    .package = "lusk", .env = parent.frame()
+  )
+  invisible(NULL)
+}
+
 .adopt_db_digest <- function(con) {
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ",
