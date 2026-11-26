@@ -26,6 +26,7 @@ if ($testStub) {
   }
   if ($requestedLockName) { $mutexName = $requestedLockName }
   else { $mutexName = 'Local\LuskHeavyWrapperTest-' + [Guid]::NewGuid().ToString('N') }
+  if ($LockTimeoutSeconds -gt 10) { $LockTimeoutSeconds = 10 }
   Write-Output "Heavy-run TEST STUB lock: $mutexName"
 } elseif ($requestedLockName) {
   throw 'LUSK_HEAVY_TEST_LOCK_NAME requires LUSK_HEAVY_TEST_STUB=1.'

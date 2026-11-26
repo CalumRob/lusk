@@ -248,6 +248,10 @@ test_that("the PowerShell 5.1 guarded runner executes end-to-end with DB-free st
   passe <- executer_runner(log_pass)
   expect_identical(passe$status, 0L, info = paste(passe$output, collapse = "\n"))
   expect_true(any(grepl("Leftover schemas: none", passe$output, fixed = TRUE)))
+  expect_true(any(grepl("Heavy-run lock acquired: Local\\LuskGuardedRunnerTest-",
+                        passe$output, fixed = TRUE)))
+  expect_false(any(grepl("Heavy-run lock acquired: Local\\LuskIntegrationContractDb",
+                         passe$output, fixed = TRUE)))
   receipt_pass <- jsonlite::fromJSON(sub("\\.log$", ".receipt.json", log_pass),
                                      simplifyVector = FALSE)
   expect_true(receipt_pass$succeeded)

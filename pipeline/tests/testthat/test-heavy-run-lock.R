@@ -65,7 +65,8 @@ test_that("the PowerShell 5.1 heavy wrapper executes R on an isolated test lock"
   executer <- function(contenu) {
     writeLines(contenu, script)
     sortie <- suppressWarnings(system2("powershell", c("-NoProfile",
-      "-ExecutionPolicy", "Bypass", "-File", shQuote(wrapper), "-Script", shQuote(script)),
+      "-ExecutionPolicy", "Bypass", "-File", shQuote(wrapper), "-Script", shQuote(script),
+      "-LockTimeoutSeconds", "10"),
       stdout = TRUE, stderr = TRUE))
     status <- attr(sortie, "status")
     if (is.null(status)) status <- 0L

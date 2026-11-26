@@ -51,7 +51,7 @@ dispatches and reviews) does what the worker could not:
 
    Receipts: `pipeline/scripts/run-guarded-r.ps1` writes a log and a JSON receipt; verify exact HEAD,
    empty `git status --porcelain`, filter, testthat summary, `Leftover schemas: none`, start/end time
-   and runner version with `Assert-GuardedRReceipt` **without** `-AllowTestStub`; that switch is only for the DB-free stub execution test. A receipt guards against mistakes, not forgery:
+   and runner version with `Assert-GuardedRReceipt` **without** `-AllowTestStub`; that switch is only for the DB-free stub execution test. Test-only runner seams use isolated per-test mutex names, refuse real DB environment, and cap lock waits at 10 seconds; they never produce merge evidence. A receipt guards against mistakes, not forgery:
    the same Windows identity can write it. The orchestrator reruns when in doubt (unreliable model,
    suspicious diff, receipt mismatch). A skip is not a pass; mocked DB-free tests have repeatedly
    hidden real failures. #1140 was merged after running only its 4 new files and silently turned 114
