@@ -54,6 +54,8 @@ class PublicationConnection:
         if "FROM profile_descriptor" in normalized:
             return Cursor(rows=[("profile_a", "Profile", "%", ["commune"], "pd1",
                                  "d1", None, "high", None, None, "stock", False)])
+        if "SELECT to_regclass('series_dataset_descriptor')" in normalized:
+            return Cursor(row=(None,))
         if "to_regclass('scalar_resource_comparison_publication')" in normalized:
             return Cursor(row=("scalar_resource_comparison_publication",))
         if "to_regclass('profile_resource_comparison_publication')" in normalized:
@@ -96,6 +98,49 @@ class PublicationConnection:
                                 for resource_id, marker in self.profile_markers.items()}
 
 
+class TwoProfileConnection(PublicationConnection):
+    def __init__(self):
+        super().__init__()
+        self.registry["profile_b"] = ("declared_profile", "profile-v2", "ref-v1")
+        self.profile_markers["profile_b"] = (
+            "cmp-profile-v2", "profile-v2", "ref-v1", 1, 2, 1)
+
+    def execute(self, sql, params=None):
+        normalized = " ".join(sql.split())
+        if "FROM profile_descriptor" in normalized:
+            return Cursor(rows=[
+                ("profile_a", "Profile A", "%", ["commune"], "pd1",
+                 "d1", None, "high", None, None, "stock", False),
+                ("profile_b", "Profile B", "%", ["commune"], "pd2",
+                 "d1", None, "high", None, None, "stock", False),
+            ])
+        if "FROM profile_axis" in normalized:
+            return Cursor(rows=[(resource_id, "detail", "d1", "D1", 0, "%")
+                                for resource_id in ("profile_a", "profile_b")])
+        if "FROM profile_observation o" in normalized:
+            provenance = ('[{"source_id":"source_a","vintage_id":"v1","name":"Source A",'
+                          '"version":"2026","reference_date":null,"publication_date":null}]')
+            return Cursor(rows=[(resource_id, "d1", "", 10.0, "measured", provenance)
+                                for resource_id in ("profile_a", "profile_b")])
+        if "FROM profile_comparison_group" in normalized:
+            return Cursor(rows=[(resource_id, "d1", "", "median", 10.0, 2, 2, 0, 1,
+                                 version, "ref-v1", True)
+                                for resource_id, version in (("profile_a", "profile-v1"),
+                                                             ("profile_b", "profile-v2"))])
+        if "FROM profile_comparison_territory" in normalized:
+            return Cursor(rows=[(resource_id, "d1", "", "c1", 10.0, "measured", 1, 1, 2,
+                                 version, "ref-v1", True)
+                                for resource_id, version in (("profile_a", "profile-v1"),
+                                                             ("profile_b", "profile-v2"))])
+        if "FROM comparison_source_lineage l" in normalized:
+            return Cursor(rows=[(resource_id, "source_a", "v1", "Source A", "2026",
+                                 None, None, self.profile_markers[resource_id][0])
+                                for resource_id in params[4]])
+        if "SELECT to_regclass('series_dataset_descriptor')" in normalized:
+            return Cursor(row=(None,))
+        return super().execute(sql, params)
+
+
 def _scalar_read(conn):
     return _scalar_contract(conn, "resource_a", "commune",
                             SimpleNamespace(reference_content_version=conn.registry["resource_a"][2]))
@@ -125,19 +170,7 @@ def _profile_read(conn):
 
 
 def test_theme_profiles_at_different_resource_versions_coexist():
-    class TwoProfileConnection(PublicationConnection):
-        def execute(self, sql, params=None):
-            if "FROM profile_descriptor" in " ".join(sql.split()):
-                return Cursor(rows=[
-                    ("profile_a", "Profile A", "%", ["commune"], "pd1",
-                     "d1", None, "high", None, None, "stock", False),
-                    ("profile_b", "Profile B", "%", ["commune"], "pd2",
-                     "d1", None, "high", None, None, "stock", False),
-                ])
-            return super().execute(sql, params)
-
     conn = TwoProfileConnection()
-    conn.registry["profile_b"] = ("declared_profile", "profile-v2", "ref-v1")
 
     profiles, _version = profile_reads.focal_profiles(
         conn, "commune", "c1", theme_id="fixture", include_cells=False,
@@ -145,6 +178,54 @@ def test_theme_profiles_at_different_resource_versions_coexist():
 
     assert [(profile["indicator"], profile["content_version"]) for profile in profiles] == [
         ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
+    assert _version is None
+
+
+def test_theme_read_reports_each_profiles_own_publication_version(monkeypatch):
+    monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+                        lambda *_a, **_kw: ("commune", ("c1", "c2"),
+                                            {"kind": "density_class", "density_class_code": "D1"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+                        lambda *_a, **_kw: ("density_class", "D1", "commune"))
+
+    result = snapshot_reads._theme_comparison_snapshot(
+        TwoProfileConnection(), "commune", "c1", "fixture", None)
+
+    assert result["reference_content_version"] == "ref-v1"
+    assert result["profile_content_versions"] == {
+        "profile_a": "profile-v1", "profile_b": "profile-v2"}
+    assert result["profile_content_version"] is None
+    assert [row["indicator"] for row in result["profile_comparisons"]] == [
+        "profile_a", "profile_b"]
+
+
+def test_theme_read_reports_each_scalars_own_publication_version(monkeypatch):
+    class TwoScalarConnection(PublicationConnection):
+        def execute(self, sql, params=None):
+            if "FROM scalar_descriptor WHERE theme_id" in " ".join(sql.split()):
+                return Cursor(rows=[
+                    ("resource_a", "A", "count", "high", "resource_a", ["commune"], "sd1"),
+                    ("resource_b", "B", "count", "high", "resource_b", ["commune"], "sd2"),
+                ])
+            if "FROM profile_descriptor" in " ".join(sql.split()):
+                return Cursor(rows=[])
+            return super().execute(sql, params)
+
+    monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+                        lambda *_a, **_kw: ("commune", ("c1", "c2"),
+                                            {"kind": "explicit_selection"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+                        lambda *_a, **_kw: None)
+    monkeypatch.setattr(snapshot_reads, "_selected_scalar_comparison_inputs",
+                        lambda *_a, **_kw: ([], {}))
+
+    result = snapshot_reads._theme_comparison_snapshot(
+        TwoScalarConnection(), "commune", "c1", "fixture", ["c1", "c2"])
+
+    assert result["scalar_content_versions"] == {"resource_a": "a-v1", "resource_b": "b-v1"}
+    assert result["scalar_content_version"] is None
 
 
 def _owned_series_read(conn):
