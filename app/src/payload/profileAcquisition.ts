@@ -95,13 +95,6 @@ function fail(message: string): never {
   throw new PayloadError('validation', '/api/resources/read-batch', message)
 }
 
-function profileRegistryVersion(raw: Record<string, unknown>, resource: string): string | undefined {
-  const versions = raw.profile_content_versions
-  if (!isRecord(versions)) return undefined
-  const version = versions[resource]
-  return isNonEmptyText(version) ? version : undefined
-}
-
 function sameNullable(actual: unknown, expected: string | null): boolean {
   return (actual === undefined || actual === null ? null : actual) === expected
 }
@@ -526,13 +519,10 @@ export function adapterProfilComparaison(input: {
 }): ProfileComparison {
   const { declaration, descriptor, identity, focal, memberIds, coordinate, scalarDeclaration } = input
   const raw = input.comparison
-  const profileVersion = isRecord(raw)
-    ? profileRegistryVersion(raw, declaration.resource_id) ?? raw.profile_content_version
-    : undefined
   if (!isRecord(raw) || raw.resource !== declaration.resource_id ||
       raw.contract !== 'indicator-comparison-v1' || raw.indicator_id !== declaration.indicator_id ||
       raw.shape !== 'profile' || !(raw.content_version === null || isNonEmptyText(raw.content_version)) ||
-      profileVersion !== identity.contentVersion ||
+      raw.profile_content_version !== identity.contentVersion ||
       raw.reference_content_version !== identity.referenceContentVersion ||
       !isRecord(raw.target) || raw.target.kind !== 'territory' || raw.target.type !== focal.type ||
       raw.target.id !== focal.id || !isRecord(raw.scope) || raw.scope.kind !== 'explicit_selection' ||
@@ -664,7 +654,7 @@ export function adapterProfilComparaison(input: {
     facet: typeof facet === 'string' ? facet : { detail: pointFacet, sex: facet.sex },
     comparisonSources: sources,
     contentVersion: null,
-    profileContentVersion: profileVersion as string,
+    profileContentVersion: raw.profile_content_version,
     referenceContentVersion: raw.reference_content_version,
     scalarContentVersion: raw.scalar_content_version === null || raw.scalar_content_version === undefined
       ? null : raw.scalar_content_version as string,

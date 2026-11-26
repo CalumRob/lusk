@@ -162,22 +162,6 @@ describe('l’acquisition du profil déclaré', () => {
       .toMatchObject({ profileContentVersion: 'profile-c1', referenceContentVersion: 'territories-r1', contentVersion: null })
   })
 
-  it('préfère la version propre au profil au jeton global reporté par adopt', () => {
-    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
-      territories, cohort: cohortResponse() })
-    const comparison = { ...comparisonResponse(), profile_content_version: 'adopted-global-profile-token',
-      profile_content_versions: { mix_logements: 'profile-c1', sibling: 'profile-c2' } }
-    const result = adapterProfilComparaison({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
-      focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
-      coordinate: { detail: 'principales', sex: null }, comparison })
-    expect(result.profileContentVersion).toBe('profile-c1')
-    const stale = { ...comparison, profile_content_versions: {
-      ...comparison.profile_content_versions, mix_logements: 'profile-c0' } }
-    expect(() => adapterProfilComparaison({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
-      focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
-      coordinate: { detail: 'principales', sex: null }, comparison: stale })).toThrow(/version/i)
-  })
-
   it('refuse une comparaison de profil d’une autre facette ou d’une publication différente', () => {
     const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
       territories, cohort: cohortResponse() })

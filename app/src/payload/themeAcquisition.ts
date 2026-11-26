@@ -16,10 +16,8 @@ export interface PublicationTokens {
   reference_content_version?: unknown
   content_version?: unknown
   profile_content_version?: unknown
-  profile_content_versions?: unknown
   reading_content_version?: unknown
   scalar_content_version?: unknown
-  scalar_content_versions?: unknown
   collection_content_versions?: unknown
   owned_series_content_versions?: unknown
   bpe_content_version?: unknown
@@ -94,11 +92,6 @@ interface DatasetGeneration {
 const nonEmptyVersion = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim().length > 0 ? value : undefined
 
-function resourceVersion(value: unknown, resource: string): string | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  return nonEmptyVersion((value as Record<string, unknown>)[resource])
-}
-
 function stablePublicationValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stablePublicationValue)
   if (typeof value === 'object' && value !== null) {
@@ -145,25 +138,17 @@ function datasetGeneration(read: SemanticThemeRead, declaration: SemanticResourc
       `La lecture « ${read.resource} » ne publie pas la version ${field} exigée par son contrat.`, [])
   }
   if (family === 'scalar') {
-    const content = nonEmptyVersion(data.content_version)
-    const registry = resourceVersion(data.scalar_content_versions, read.resource)
-    if (registry && content && registry !== content) {
-      throw new ThemeAcquisitionCoherenceError(
-        `La lecture « ${read.resource} » publie deux versions scalaires ambiguës.`, [])
-    }
     return { family: 'scalar_observation', owner: read.resource,
-      version: required(registry ?? content, 'content_version') }
+      version: required(data.content_version, 'content_version') }
   }
   if (family === 'profile') {
+    const profile = nonEmptyVersion(data.profile_content_version)
     const content = nonEmptyVersion(data.content_version)
-    const registry = resourceVersion(data.profile_content_versions, read.resource)
-    const legacy = nonEmptyVersion(data.profile_content_version)
-    if ((registry && content && registry !== content) ||
-        (!registry && legacy && content && legacy !== content)) {
+    if (profile && content && profile !== content) {
       throw new ThemeAcquisitionCoherenceError(
         `La lecture « ${read.resource} » publie deux versions de profil ambiguës.`, [])
     }
-    const version = registry ?? legacy ?? content
+    const version = profile ?? content
     if (!version) {
       throw new ThemeAcquisitionCoherenceError(
         `La lecture « ${read.resource} » ne publie pas la version profile_content_version exigée par son contrat.`, [])
@@ -273,15 +258,12 @@ export function normalizePublicationTokens(response: ThemeResponse): Record<stri
       reference_content_version: data.reference_content_version,
       descriptor_version: data.descriptor_version,
       profile_content_version: data.profile_content_version,
-      profile_content_versions: data.profile_content_versions,
       scalar_content_version: data.scalar_content_version,
-      scalar_content_versions: data.scalar_content_versions,
       collection_content_version: data.collection_content_version,
     }]))
   }
   const fields = ['reference_content_version', 'content_version', 'scalar_content_version',
-    'scalar_content_versions', 'profile_content_version', 'profile_content_versions',
-    'reading_content_version', 'collection_content_versions',
+    'profile_content_version', 'reading_content_version', 'collection_content_versions',
     'bpe_content_version', 'bpe_reference_content_version', 'service_publication_id',
     'building_publication_id'] as const
   const normalized: Record<string, unknown> = {}
@@ -1181,8 +1163,8 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     const expected = normalizePublicationTokens(facts)
     return 'reference_content_version' in actual && 'reference_content_version' in expected &&
       actual.reference_content_version === expected.reference_content_version &&
-      ['content_version', 'profile_content_version', 'profile_content_versions',
-        'scalar_content_version', 'scalar_content_versions', 'reading_content_version'].every((name) =>
+      ['content_version', 'profile_content_version', 'scalar_content_version',
+        'reading_content_version'].every((name) =>
         !(name in actual && name in expected) || samePublicationValue(actual[name], expected[name]))
   }
   const focalByResource = new Map(focalReads.map((read) => [read.resource, read.data]))
@@ -1297,19 +1279,14 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     }
     const profile = shapes.includes('declared_profile')
     if (profile) {
-      // Each profile binds to its own registry version. Adopt may also expose
-      // the carried global comparison token in the legacy singular field; it is
-      // not this profile's focal facts clock.
-      const profileVersion = resourceVersion(data.profile_content_versions, resource) ??
-        nonEmptyVersion(data.profile_content_version)
+      // Public profile comparisons carry this resource's own registry version.
       if (!(data.content_version === null || (typeof data.content_version === 'string' && data.content_version.length > 0)) ||
           typeof focal.content_version !== 'string' || !focal.content_version ||
-          profileVersion !== focal.content_version ||
+          data.profile_content_version !== focal.content_version ||
           data.reference_content_version !== focal.reference_content_version) return false
     } else {
       const focalVersion = focal.content_version ?? focal.publication_id
-      const scalarRegistry = resourceVersion(data.scalar_content_versions, resource)
-      const comparisonVersion = scalarRegistry ?? data.content_version ?? data.publication_id
+      const comparisonVersion = data.content_version ?? data.publication_id
       if (typeof focalVersion !== 'string' || !focalVersion || typeof comparisonVersion !== 'string' ||
           !comparisonVersion || focalVersion !== comparisonVersion) return false
       if (nativeSeriesComparison && (typeof data.content_version !== 'string' ||

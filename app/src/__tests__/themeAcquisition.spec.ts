@@ -994,8 +994,6 @@ describe('theme acquisition cache', () => {
           return { id: item.id, resource: item.resource, status: 'available', data: {
             resource: item.resource, target: item.target, content_version: versions[item.resource],
             reference_content_version: 'reference-v1', value: 1, status: 'measured',
-            ...(profile ? { profile_content_version: null,
-              profile_content_versions: profileVersions } : { scalar_content_versions: scalarVersions }),
           } }
         }) }))
     })
@@ -1708,37 +1706,30 @@ describe('theme acquisition cache', () => {
     expect(semanticPublicationsCompatible(facts, comparison())).toBe(false)
   })
 
-  it('keeps per-resource profile and scalar version maps in publication tokens', () => {
-    const profileVersions = { profile_a: 'profile-a-v1', profile_b: 'profile-b-v2' }
-    const scalarVersions = { scalar_a: 'scalar-a-v1', scalar_b: 'scalar-b-v2' }
-    expect(normalizePublicationTokens({ profile_content_versions: profileVersions,
-      scalar_content_versions: scalarVersions })).toEqual({
-      profile_content_versions: profileVersions, scalar_content_versions: scalarVersions,
-    })
-    expect(normalizePublicationTokens({ resource_reads: [{ resource: 'profile_a', data: {
-      profile_content_versions: profileVersions, scalar_content_versions: scalarVersions,
-    } }] })).toEqual({ profile_a: {
-      profile_content_versions: profileVersions, scalar_content_versions: scalarVersions,
-    } })
+  it('keeps the public singular publication tokens', () => {
+    const tokens = { content_version: 'scalar-a-v1', profile_content_version: 'profile-a-v1',
+      scalar_content_version: 'scalar-token-v1' }
+    expect(normalizePublicationTokens(tokens)).toEqual(tokens)
+    expect(normalizePublicationTokens({ resource_reads: [{ resource: 'profile_a', data: tokens }] }))
+      .toEqual({ profile_a: tokens })
   })
 
-  it('compares each scalar to its own registry version map', () => {
+  it('compares each scalar to its own public content version', () => {
     const facts = { resource_reads: [{ resource: 'scalar_a', shapes: ['scalar'], data: {
       content_version: 'scalar-a-v1', reference_content_version: 'reference-v1',
       descriptor_version: 'scalar-descriptor-v1',
     } }] }
     const comparison = { comparison_reads: [{ resource: 'scalar_a', data: {
-      content_version: null, scalar_content_versions: { scalar_a: 'scalar-a-v1', scalar_b: 'scalar-b-v2' },
-      reference_content_version: 'reference-v1',
+      content_version: 'scalar-a-v1', reference_content_version: 'reference-v1',
       result: { descriptor_version: 'scalar-descriptor-v1' },
     } }] }
     expect(semanticPublicationsCompatible(facts, comparison)).toBe(true)
     const stale = structuredClone(comparison)
-    stale.comparison_reads[0]!.data.scalar_content_versions.scalar_a = 'scalar-a-v0'
+    stale.comparison_reads[0]!.data.content_version = 'scalar-a-v0'
     expect(semanticPublicationsCompatible(facts, stale)).toBe(false)
   })
 
-  it('compares each declared profile to its own registry version, not an adopted global token', () => {
+  it('compares each declared profile to its own public singular version', () => {
     const facts = { resource_reads: ['profile_a', 'profile_b'].map((resource) => ({
       resource, shapes: ['declared_profile'], data: {
         content_version: resource === 'profile_a' ? 'profile-a-v1' : 'profile-b-v2',
@@ -1748,15 +1739,15 @@ describe('theme acquisition cache', () => {
     })) }
     const comparison = { comparison_reads: ['profile_a', 'profile_b'].map((resource) => ({
       resource, data: {
-        content_version: null, profile_content_version: 'adopted-global-profile-token',
-        profile_content_versions: { profile_a: 'profile-a-v1', profile_b: 'profile-b-v2' },
+        content_version: null,
+        profile_content_version: resource === 'profile_a' ? 'profile-a-v1' : 'profile-b-v2',
         reference_content_version: 'reference-v1',
         result: { profile_descriptor_version: `${resource}-descriptor` },
       },
     })) }
     expect(semanticPublicationsCompatible(facts, comparison)).toBe(true)
     const stale = structuredClone(comparison)
-    stale.comparison_reads[1]!.data.profile_content_versions.profile_b = 'profile-b-v1'
+    stale.comparison_reads[1]!.data.profile_content_version = 'profile-b-v1'
     expect(semanticPublicationsCompatible(facts, stale)).toBe(false)
   })
 
