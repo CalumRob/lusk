@@ -41,20 +41,22 @@ dispatches and reviews) does what the worker could not:
    `pipeline/`, run `Rscript scripts/run-slow-tests.R --for <files changed by the PR…>` (all slow tests
    when `--for` is omitted); each slow-test header declares its subject files. Also run the whole tier at
    every periodic cold-build audit and before an E release (ADR-0049 decision 4).
-2. **Guarded DB proofs — receipt first.** The worker runs the full guarded filter once at handoff
-   through `pipeline/scripts/run-guarded-r.ps1`, on a clean final head. The runner writes a log and a
-   JSON receipt next to it. Verify the receipt's exact HEAD, empty `git status --porcelain`, filter,
-   testthat summary, `Leftover schemas: none`, start/end time and runner version with
-   `Assert-GuardedRReceipt`; a matching receipt replaces a rerun. Rerun only when in doubt (missing or
-   mismatched receipt, suspicious diff, unreliable evidence). Run the **whole** guarded suite of every
-   layer the PR touches (`python -m pytest api/tests/integration` for any `api/` or schema change; the
-   R `*-db` tests for any publisher change), not only new files, and compare with the same suite on
-   `origin/main`: a test green on main and red on the PR blocks merge (#1181). #1140 was merged after running only its 4 new files and
-   silently turned 114 older guarded API tests red. The Python guarded tests require `PGPASSFILE` set
-   explicitly to the default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`. A skip is not a pass;
-   mocked DB-free tests have repeatedly hidden real failures (named DBI params, missing reference,
-   unconfirmed definitions). The Python guarded tests require `PGPASSFILE` set explicitly to the
-   default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`.
+2. **Guarded DB tests — owner policy (2026-11-26).**
+   - Guarded DB tests are NOT part of the work loop. A PR runs them only if it touches database-facing code: R publishers/adapters/adopt/apply/serving writers, `api/schema.sql`, `api/migrations/`, or API code that issues SQL (readers, gates, catalogue). Other PRs (app UI, docs, pure pipeline computation, non-DB tests) run none.
+   - While iterating on a DB-touching PR: at most the single guarded file covering the code being changed, only when needed.
+   - At handoff of a DB-touching PR: ONE full run of the guarded suite of each touched layer (R `*-db` filter via the repo runner; `python -m pytest api/tests/integration` for API/schema changes), producing the receipt.
+   - Orchestrator before merge: verify the receipt against the PR head + clean tree, and compare with a baseline of the same suite on `origin/main` (rerun the baseline only when main changed in DB-facing files since the last baseline); any test green on main and red on the PR blocks the merge. Rerun the PR suite only when in doubt.
+   - No scheduled/nightly guarded runs (owner decision 2026-11-26).
+   - Slow tier: orchestrator once before merge, `--for` changed files (unchanged).
+
+   Receipts: `pipeline/scripts/run-guarded-r.ps1` writes a log and a JSON receipt; verify exact HEAD,
+   empty `git status --porcelain`, filter, testthat summary, `Leftover schemas: none`, start/end time
+   and runner version with `Assert-GuardedRReceipt`. A receipt guards against mistakes, not forgery:
+   the same Windows identity can write it. The orchestrator reruns when in doubt (unreliable model,
+   suspicious diff, receipt mismatch). A skip is not a pass; mocked DB-free tests have repeatedly
+   hidden real failures. #1140 was merged after running only its 4 new files and silently turned 114
+   older guarded API tests red (#1181) - hence the whole-suite comparison with main. The Python guarded tests require `PGPASSFILE` set explicitly to the default test
+   passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`.
 3. **Two-axis review** (Standards + Spec, `code-review` skill) on every PR; the owner's standing rule is
    no two implementations of the same operation — check new code against existing writers/readers.
 4. **Concurrent PRs** touching the same shared structures (`REGISTRE_FORMES_RESSOURCE`,
@@ -185,10 +187,11 @@ Rscript -e "testthat::test_local(filter = 'distribution-acces-batiments|modeles-
 # the serial budget: no test > 5 s and no file > 15 s unless listed with a reason.
 Rscript scripts/verify-r-suite-budget.R --csv-prefix=<path-outside-repo>/r-serial
 
-# Handoff: full guarded filter ONCE on the clean final head. The repo runner keeps
-# the hard-coded test target, passfile check, mutex, cleanup and leftover check,
-# and writes its log plus JSON receipt outside the repository.
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-guarded-r.ps1 -PipelineDir (Get-Location).Path -Filter 'adopt-db|apply-shapes-db|apply-profile-db|apply-scalar-db'
+# Guarded DB tests follow the owner policy above: non-DB PRs run none. While
+# iterating on a DB-touching PR, run at most the single guarded file needed.
+# At handoff of a DB-touching PR, run ONE full touched-layer suite via the repo
+# runner on the clean final head; it writes the log and JSON receipt.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-guarded-r.ps1 -PipelineDir (Get-Location).Path -Filter '<full R *-db filter for the touched layer>'
 
 # Workers do not run the slow tier unless the dispatch explicitly requires it.
 # The orchestrator owns the normal pre-merge slow-tier gate and receipt verification:

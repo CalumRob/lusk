@@ -475,6 +475,18 @@ $env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
 python -m pytest api/tests/integration/test_aedar_littoral_migration.py -q
 ```
 
+### Guarded-loop policy (owner decision 2026-11-26)
+
+Guarded DB tests are not part of the work loop. Only PRs touching R
+publishers/adapters/adopt/apply/serving writers, `api/schema.sql`,
+`api/migrations/`, or API code that issues SQL run them. Iteration uses at most
+the single relevant guarded file when needed; handoff runs one full suite of each
+touched layer through the repo runner and produces a receipt. The orchestrator
+verifies receipt/head/clean-tree and compares with the same suite on
+`origin/main`. No scheduled/nightly guarded runs. The focused commands below are
+instructions for eligible proofs, not a standing schedule; the complete rule is
+in `AGENTS.md`.
+
 ### Per-resource publication (migration 046 and scalar apply, #1137)
 
 Two focused, non-retained proofs cover ADR-0049 step 2. Both require the exact
@@ -629,8 +641,12 @@ Rscript -e "testthat::test_local(filter='adopt-db', stop_on_failure=TRUE)"
 
 The default-suite persisted-row comparison/orchestration contracts live in
 `test-adoption.R`. The real-writer proof is the guarded DB tier above, not an
-artefact-vs-itself comparison. A skip is not a guarded pass: the orchestrator runs
-the proof on the PR's final head.
+artefact-vs-itself comparison. A skip is not a guarded pass. Under the owner
+policy in `AGENTS.md`, only DB-touching PRs run guarded tests: at most one focused
+file while iterating, then one full touched-layer suite at handoff through the
+repo runner with a receipt. The orchestrator verifies that receipt against the
+PR head and clean tree and compares the same suite with `origin/main`; there are
+no scheduled/nightly guarded runs.
 
 ## Current retained model and migration selectors
 
@@ -655,10 +671,10 @@ python -m pytest api/tests/integration/test_aedar_publisher_http.py -k test_aeda
 # Ordinary API suite is not DB proof; report its guarded skips separately.
 python -m pytest api/tests -q
 
-# From pipeline/; serial default fixture suite, or the focused latest typed readers.
+# From pipeline/; focused default files while iterating, then ONE budget run at handoff.
 $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter='publish-series|publish-typed-reading-artifact', stop_on_failure=TRUE)"
-Rscript -e "testthat::test_local(stop_on_failure=TRUE)"
+Rscript scripts/verify-r-suite-budget.R --csv-prefix=<path-outside-repo>/r-serial
 ```
 
 The AEDAR semantic phase also writes sanitized public `read-batch` responses

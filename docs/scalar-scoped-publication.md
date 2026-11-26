@@ -279,12 +279,17 @@ focused serial log:
 `E:\Temp\opencode\lusk-1000-focused-R-serial-995-source.log` (125 PASS,
 0 FAIL/WARN/SKIP).
 
+Guarded DB tests are not part of the work loop. Only a PR that touches
+database-facing code runs them, at most the single relevant guarded file while
+iterating and one full touched-layer suite at handoff via the repo runner. There
+are no scheduled/nightly guarded runs; see the owner policy in `AGENTS.md`.
+
 Run:
 
 ```powershell
 $env:TESTTHAT_PARALLEL = 'FALSE'
 Rscript -e "testthat::test_local(filter = 'scoped-publication-plan|publication-transaction|retained-baseline-guard|scalar-scope', stop_on_failure = TRUE)"
-Rscript -e "testthat::test_local(stop_on_failure = TRUE)"   # before handoff
+Rscript scripts/verify-r-suite-budget.R --csv-prefix=<path-outside-repo>/r-serial   # one handoff run
 ```
 
 ## Production handoff (operator, separately gated)
@@ -470,10 +475,11 @@ then set `LUSK_BRIDGE_DESCRIPTOR_POLICY='replace'` and
 write, in addition to the opt-in, dump acknowledgement and five expected tokens.
 When the descriptors are identical, `preserve` applies and no token is needed.
 
-The guarded disposable-DB proof is run through
+For a DB-touching PR that needs this focused proof, it is run through
 `pipeline/scripts/run-offre-tc-bridge-db.ps1 -PgPassFile <private pgpass>`; it
 holds the shared `Local\LuskIntegrationContractDb` mutex for the whole R process
-and the R test verifies the mutex is held before it connects.
+and the R test verifies the mutex is held before it connects. This is not a
+scheduled/nightly run.
 
 ### Limits â€” what this is NOT
 
