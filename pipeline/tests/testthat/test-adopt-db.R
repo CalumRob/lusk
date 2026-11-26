@@ -320,7 +320,7 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
-  .adopt_db_reuse_artefacts(partage, ids = "distribution_dpe")
+  .adopt_db_reuse_artefacts(partage, ids = c("distribution_dpe", "part_passoires"))
   # The legitimate pre-registry binding (live token == live global scalar marker ==
   # the token the sortie recorded) is what the first guarded test adopts. Here the
   # live token is neither: nothing may rebind it silently.
