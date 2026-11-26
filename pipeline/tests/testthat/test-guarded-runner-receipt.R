@@ -72,6 +72,7 @@ test_that("the guarded receipt records the exact clean head, filter, summaries a
                    "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]")
   expect_identical(receipt$leftover_schema_line, "Leftover schemas: none")
   expect_identical(receipt$runner_version, "1.0.0")
+  expect_identical(receipt$stub, FALSE)
   expect_identical(receipt$started_at_utc, "2026-11-26T10:00:00Z")
   expect_identical(receipt$ended_at_utc, "2026-11-26T10:01:00Z")
   expect_true(receipt$succeeded)
@@ -222,15 +223,16 @@ test_that("the PowerShell 5.1 guarded runner executes end-to-end with DB-free st
     if (is.null(status)) status <- 0L
     list(status = status, output = sortie)
   }
-  verifier_receipt <- function(receipt) {
+  verifier_receipt <- function(receipt, allow_stub = FALSE) {
     module <- file.path(scripts, "guarded-r-receipt.ps1")
     harness <- tempfile(fileext = ".ps1")
     on.exit(unlink(harness), add = TRUE)
+    option <- if (allow_stub) " -AllowTestStub" else ""
     writeLines(c(
       "$ErrorActionPreference = 'Stop'",
       sprintf(". '%s'", module),
-      sprintf("Assert-GuardedRReceipt -ReceiptPath '%s' -RepoDir '%s' -ExpectedHead '%s' -ExpectedFilter 'adopt-db' | Out-Null",
-              receipt, repo$depot, repo$head),
+      sprintf("Assert-GuardedRReceipt -ReceiptPath '%s' -RepoDir '%s' -ExpectedHead '%s' -ExpectedFilter 'adopt-db'%s | Out-Null",
+              receipt, repo$depot, repo$head, option),
       "'verified'"
     ), harness)
     executer_receipt_powershell(harness)
@@ -253,7 +255,12 @@ test_that("the PowerShell 5.1 guarded runner executes end-to-end with DB-free st
   expect_identical(receipt_pass$testthat_summary,
                    "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]")
   expect_identical(receipt_pass$runner_version, "1.0.0-test-stub")
-  expect_identical(verifier_receipt(sub("\\.log$", ".receipt.json", log_pass))$status, 0L)
+  expect_identical(receipt_pass$stub, TRUE)
+  receipt_pass_path <- sub("\\.log$", ".receipt.json", log_pass)
+  refus_stub <- verifier_receipt(receipt_pass_path)
+  expect_true(refus_stub$status != 0L)
+  expect_true(any(grepl("test-stub receipt", refus_stub$output, fixed = TRUE)))
+  expect_identical(verifier_receipt(receipt_pass_path, allow_stub = TRUE)$status, 0L)
 
   echec <- executer_runner(log_fail, fail = "1")
   expect_true(echec$status != 0L, info = paste(echec$output, collapse = "\n"))
