@@ -443,7 +443,10 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
             if "to_regclass('scalar_resource_comparison_publication')" in sql:
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
-                return Cursor(rows=[(params[0][0], "scalar", "scalar-v1", "ref-v1")])
+                resource_id = params[0][0]
+                shape, version = (("scalar", "scalar-v1") if resource_id == "part_passoires"
+                                  else ("declared_profile", "profile-v1"))
+                return Cursor(rows=[(resource_id, shape, version, "ref-v1")])
             if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("ref-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:

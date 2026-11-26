@@ -181,6 +181,35 @@ def test_theme_profiles_at_different_resource_versions_coexist():
     assert _version is None
 
 
+def test_comparison_markers_match_each_resources_own_registry_version():
+    conn = TwoProfileConnection()
+    markers = snapshot_reads._profile_comparison_publication_marker(
+        conn, resource_ids=["profile_a", "profile_b"])
+    assert {resource_id: marker[1] for resource_id, marker in markers.items()} == {
+        "profile_a": "profile-v1", "profile_b": "profile-v2"}
+
+    conn.registry["profile_b"] = ("declared_profile", "profile-v3", "ref-v1")
+    with pytest.raises(HTTPException) as raised:
+        snapshot_reads._profile_comparison_publication_marker(
+            conn, resource_ids=["profile_a", "profile_b"])
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "Published profile comparison is stale or incompatible"
+
+
+def test_scalar_comparison_marker_matches_its_own_registry_version():
+    conn = PublicationConnection()
+    marker = snapshot_reads._scalar_comparison_publication_marker(
+        conn, resource_ids=["resource_a"])["resource_a"]
+    assert marker[1] == "a-v1"
+
+    conn.registry["resource_a"] = ("scalar", "a-v2", "ref-v1")
+    with pytest.raises(HTTPException) as raised:
+        snapshot_reads._scalar_comparison_publication_marker(
+            conn, resource_ids=["resource_a"])
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "Published scalar comparison is stale or incompatible"
+
+
 def test_theme_read_reports_each_profiles_own_publication_version(monkeypatch):
     monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",

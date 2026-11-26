@@ -434,6 +434,7 @@ def _profile_comparison_publication_marker(conn, family="profile", resource_ids=
         conn, expected_content_version=next(iter(marker_references)))
     for resource_id, marker in markers.items():
         if (not marker[0] or not marker[1] or marker[2] != reference_version
+                or publications[resource_id].content_version != marker[1]
                 or publications[resource_id].reference_content_version != marker[2]
                 or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published profile comparison is stale or incompatible")
@@ -930,6 +931,7 @@ def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=No
         conn, expected_content_version=next(iter(marker_references)))
     for resource_id, marker in markers.items():
         if (not marker[0] or not marker[1] or marker[2] != reference_version
+                or publications[resource_id].content_version != marker[1]
                 or publications[resource_id].reference_content_version != marker[2]
                 or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published scalar comparison is stale or incompatible")
