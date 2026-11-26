@@ -59,3 +59,43 @@ test_that("the budget report names the top offenders", {
   expect_false(any(grepl("a.R", rapport, fixed = TRUE)))
   expect_true(any(grepl("b test", rapport, fixed = TRUE)))
 })
+
+test_that("the handoff report names every failed or erroring test and its first message line", {
+  envir <- new.env(parent = globalenv())
+  sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
+  fichiers <- data.frame(
+    file = c("a.R", "b.R", "c.R"), wall = c(1, 1, 1), errored = c(FALSE, FALSE, TRUE),
+    error_message = c(NA_character_, NA_character_, "load failed\nsecond line"),
+    stringsAsFactors = FALSE
+  )
+  tests <- data.frame(
+    file = c("a.R", "a.R", "b.R"), test = c("fails", "passes", "errors"),
+    real = c(0.1, 0.1, 0.1), failed = c(2, 0, 0), error = c(0, 0, 1),
+    first_message = c("expected one\nmore detail", NA_character_, "writer exploded\nstack"),
+    stringsAsFactors = FALSE
+  )
+  echecs <- envir$echecs_suite(fichiers, tests)
+  expect_identical(echecs$file, c("a.R", "b.R", "c.R"))
+  expect_identical(echecs$test, c("fails", "errors", "<file load>"))
+  expect_identical(echecs$kind, c("FAIL", "ERROR", "ERROR"))
+  expect_identical(echecs$message, c("expected one", "writer exploded", "load failed"))
+  rapport <- envir$formater_echecs_suite(echecs)
+  expect_true(any(grepl("FAIL a.R :: fails: expected one", rapport, fixed = TRUE)))
+  expect_true(any(grepl("ERROR b.R :: errors: writer exploded", rapport, fixed = TRUE)))
+  expect_false(any(grepl("second line|stack|more detail", rapport)))
+  expect_error(envir$arreter_si_echecs(echecs), "R default suite failed")
+  expect_silent(envir$arreter_si_echecs(echecs[FALSE, , drop = FALSE]))
+})
+
+test_that("empty budget sections do not print a phantom file offender", {
+  envir <- new.env(parent = globalenv())
+  sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
+  depassements <- list(
+    tests = data.frame(file = "slow.R", test = "slow", real = 6),
+    fichiers = data.frame(file = character(), wall = numeric())
+  )
+  details <- envir$formater_depassements_budget(depassements)
+  expect_length(details, 1L)
+  expect_match(details, "slow.R :: slow", fixed = TRUE)
+  expect_false(any(grepl("file ", details, fixed = TRUE)))
+})
