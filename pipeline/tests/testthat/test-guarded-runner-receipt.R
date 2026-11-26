@@ -39,7 +39,8 @@ ecrire_harness_receipt <- function(repo, log, head, filter = "adopt-db") {
   writeLines(c(
     "$ErrorActionPreference = 'Stop'",
     sprintf(". '%s'", module),
-    sprintf("Write-GuardedRReceipt -RepoDir '%s' -LogPath '%s' -Filter '%s' -RunnerVersion '1.0.0' -StartedAtUtc '2026-11-26T10:00:00Z' -EndedAtUtc '2026-11-26T10:01:00Z' -Succeeded $true -ExitCode 0 -LogLines @('testthat results: 6 tests, 20 expectations, 0 failures', 'Leftover schemas: none')",
+    sprintf("$logLines = @(Get-Content -LiteralPath '%s')", log),
+    sprintf("Write-GuardedRReceipt -RepoDir '%s' -LogPath '%s' -Filter '%s' -RunnerVersion '1.0.0' -StartedAtUtc '2026-11-26T10:00:00Z' -EndedAtUtc '2026-11-26T10:01:00Z' -Succeeded $true -ExitCode 0 -LogLines $logLines",
             repo, log, filter),
     sprintf("Assert-GuardedRReceipt -ReceiptPath '%s' -RepoDir '%s' -ExpectedHead '%s' -ExpectedFilter '%s'", receipt, repo, head, filter),
     "'verified'"
@@ -55,7 +56,7 @@ test_that("the guarded receipt records the exact clean head, filter, summaries a
   on.exit(unlink(repo$depot, recursive = TRUE), add = TRUE)
   log <- tempfile(fileext = ".log")
   on.exit(unlink(log), add = TRUE)
-  writeLines(c("testthat results: 6 tests, 20 expectations, 0 failures",
+  writeLines(c("[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]",
                "Leftover schemas: none"), log)
   receipt_path <- ecrire_harness_receipt(repo$depot, log, repo$head)
   on.exit(unlink(receipt_path), add = TRUE)
@@ -64,7 +65,7 @@ test_that("the guarded receipt records the exact clean head, filter, summaries a
   expect_length(receipt$git_status_porcelain, 0L)
   expect_identical(receipt$filter, "adopt-db")
   expect_identical(receipt$testthat_summary,
-                   "testthat results: 6 tests, 20 expectations, 0 failures")
+                   "[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]")
   expect_identical(receipt$leftover_schema_line, "Leftover schemas: none")
   expect_identical(receipt$runner_version, "1.0.0")
   expect_identical(receipt$started_at_utc, "2026-11-26T10:00:00Z")
@@ -79,7 +80,7 @@ test_that("the receipt verifier refuses a mismatched sha and a dirty tree", {
   on.exit(unlink(repo$depot, recursive = TRUE), add = TRUE)
   log <- tempfile(fileext = ".log")
   on.exit(unlink(log), add = TRUE)
-  writeLines(c("testthat results: 6 tests, 20 expectations, 0 failures",
+  writeLines(c("[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]",
                "Leftover schemas: none"), log)
   receipt_path <- ecrire_harness_receipt(repo$depot, log, repo$head)
   on.exit(unlink(receipt_path), add = TRUE)
@@ -128,6 +129,43 @@ test_that("the compact testthat summary is accepted only when its failure count 
   resultat <- executer_receipt_powershell(harness)
   expect_identical(resultat$status, 0L, info = paste(resultat$output, collapse = "\n"))
   expect_true(any(grepl("compact proved", resultat$output, fixed = TRUE)))
+})
+
+test_that("the receipt verifier refuses errors, failures, leftovers, missing summary and nonzero exit", {
+  repo <- nouveau_depot_receipt()
+  on.exit(unlink(repo$depot, recursive = TRUE), add = TRUE)
+  log <- tempfile(fileext = ".log")
+  on.exit(unlink(log), add = TRUE)
+  writeLines("initial", log)
+  receipt <- sub("\\.log$", ".receipt.json", log)
+  on.exit(unlink(receipt), add = TRUE)
+  module <- file.path(pkgload::pkg_path(), "scripts", "guarded-r-receipt.ps1")
+  harness <- tempfile(fileext = ".ps1")
+  on.exit(unlink(harness), add = TRUE)
+  writeLines(c(
+    "$ErrorActionPreference = 'Stop'",
+    sprintf(". '%s'", module),
+    "$cases = @(",
+    "  @{ Name='errors'; Exit=0; Lines=@('[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]', 'ERROR: planted error', 'testthat results: 0 failures, 2 errors', 'Leftover schemas: none') },",
+    "  @{ Name='failures'; Exit=0; Lines=@('[ FAIL 1 | WARN 0 | SKIP 0 | PASS 419 ]', 'Leftover schemas: none') },",
+    "  @{ Name='leftovers'; Exit=0; Lines=@('[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]', 'LEFTOVER SCHEMAS: planted') },",
+    "  @{ Name='missing_summary'; Exit=0; Lines=@('Leftover schemas: none') },",
+    "  @{ Name='nonzero_exit'; Exit=1; Lines=@('[ FAIL 0 | WARN 0 | SKIP 0 | PASS 420 ]', 'Leftover schemas: none') }",
+    ")",
+    "foreach ($case in $cases) {",
+    sprintf("  [IO.File]::WriteAllLines('%s', [string[]]$case.Lines)", log),
+    sprintf("  Write-GuardedRReceipt -RepoDir '%s' -LogPath '%s' -ReceiptPath '%s' -Filter 'adopt-db' -RunnerVersion '1.0.0' -StartedAtUtc '2026-11-26T10:00:00Z' -EndedAtUtc '2026-11-26T10:01:00Z' -Succeeded ($case.Exit -eq 0) -ExitCode $case.Exit -LogLines $case.Lines | Out-Null",
+            repo$depot, log, receipt),
+    sprintf("  $refused = $false; try { Assert-GuardedRReceipt -ReceiptPath '%s' -RepoDir '%s' -ExpectedHead '%s' -ExpectedFilter 'adopt-db' | Out-Null } catch { $refused = $true }",
+            receipt, repo$depot, repo$head),
+    "  if (-not $refused) { throw \"$($case.Name) was accepted\" }",
+    "  \"$($case.Name) refused\"",
+    "}"
+  ), harness)
+  resultat <- executer_receipt_powershell(harness)
+  expect_identical(resultat$status, 0L, info = paste(resultat$output, collapse = "\n"))
+  for (cas in c("errors", "failures", "leftovers", "missing_summary", "nonzero_exit"))
+    expect_true(any(grepl(paste0(cas, " refused"), resultat$output, fixed = TRUE)))
 })
 
 test_that("the repo guarded runner retains every external guard and writes a receipt", {
