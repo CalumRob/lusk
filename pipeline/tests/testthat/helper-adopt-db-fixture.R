@@ -378,10 +378,20 @@
 # Splitting the sortie and reading its immutable Artefacts de ressource is pure
 # fixture work. Build it once; refusal/mutation cases keep the real CLI and DB
 # path but do not rebuild the same content-addressed files for every call.
-.adopt_db_reuse_artefacts <- function(partage) {
+.adopt_db_reuse_artefacts <- function(partage, ids = NULL) {
+  builds <- partage$builds
+  artefacts <- partage$artefacts
+  if (!is.null(ids)) {
+    if (any(!ids %in% as.character(builds$ressource)))
+      stop("Unknown adopt fixture resource: ", paste(setdiff(ids, builds$ressource), collapse = ", "),
+           call. = FALSE)
+    builds <- builds[match(ids, as.character(builds$ressource)), , drop = FALSE]
+    artefacts <- artefacts[as.character(builds$ressource)]
+  }
   testthat::local_mocked_bindings(
-    splitter_sortie = function(...) partage$builds,
-    charger_artefacts_construits = function(...) partage$artefacts,
+    splitter_sortie = function(...) builds,
+    charger_artefacts_construits = function(...) artefacts,
+    construites_depuis_magasin = function(...) builds,
     .package = "lusk", .env = parent.frame()
   )
   invisible(NULL)
