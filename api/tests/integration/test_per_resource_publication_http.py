@@ -1,9 +1,9 @@
 """#1140 — guarded real-SQL/HTTP proof of per-resource publication coexistence.
 
 Uses documented SQL fixtures (not a second publisher implementation): two
-scalars, one declared profile, per-resource comparison markers and the old
-global markers coexist. The dedicated read role exercises the actual API SQL
-path. Non-retained, exact test database/role identities, mutex and finally
+scalars, two independently published declared profiles, per-resource comparison
+markers and the old global markers coexist. The dedicated read role exercises
+the actual API SQL path. Non-retained, exact test database/role identities, mutex and finally
 cleanup; skips before connection without the guarded DSNs.
 """
 
@@ -278,6 +278,13 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 republished = read("profile_b")
                 assert republished.status_code == 200, republished.text
                 assert republished.json()["content_version"] == "profile-v2"
+                profile_batch = client.post("/api/resources/read-batch", json={
+                    "contract": "semantic-read-batch-v2", "items": [
+                        _item("profile_a", item_id="a"), _item("profile_b", item_id="b")]})
+                assert profile_batch.status_code == 200, profile_batch.text
+                assert [(row["resource"], row["data"]["content_version"])
+                        for row in profile_batch.json()["results"]] == [
+                    ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
                 with psycopg.connect(_dsn_with_schema(read_dsn, schema)) as reader:
                     with reader.transaction():
                         reader.execute(
