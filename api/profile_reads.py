@@ -49,9 +49,9 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
             if d[8] is None:
                 continue
             facet = scalar_descriptors.get(d[8])
+            # Adopt deliberately carries the live global comparison token;
+            # it is not the scalar resource's artefact `content_version`.
             if (scalar_markers.get(d[8]) != d[9]
-                    or scalar_publications[d[8]].content_version != d[9]
-                    or scalar_publications[d[8]].reference_content_version != reference_version
                     or not facet or facet[0] != d[2] or facet[1] != d[7]
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')

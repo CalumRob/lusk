@@ -184,7 +184,7 @@ def test_theme_profiles_at_different_resource_versions_coexist():
     assert _version is None
 
 
-def test_each_profiles_scalar_dependency_matches_its_own_publication():
+def test_each_profiles_scalar_dependency_uses_adopted_comparison_token():
     class ScalarBackedProfiles(TwoProfileConnection):
         def execute(self, sql, params=None):
             if "FROM profile_descriptor" in " ".join(sql.split()):
@@ -200,6 +200,21 @@ def test_each_profiles_scalar_dependency_matches_its_own_publication():
             return super().execute(sql, params)
 
     conn = ScalarBackedProfiles()
+    # Adopt carries the live global scalar token into both the marker and each
+    # dependent descriptor; the registry keeps the independent artefact version.
+    conn.scalar_markers["resource_a"] = (
+        "cmp-global-a", "global-scalar-token", "ref-v1", 1, 2, 1)
+    conn.scalar_markers["resource_b"] = (
+        "cmp-global-b", "global-scalar-token", "ref-v1", 1, 2, 1)
+    original_execute = conn.execute
+
+    def adopted_descriptors(sql, params=None):
+        if "FROM profile_descriptor" in " ".join(sql.split()):
+            rows = original_execute(sql, params).fetchall()
+            return Cursor(rows=[(*row[:9], "global-scalar-token", *row[10:]) for row in rows])
+        return original_execute(sql, params)
+
+    conn.execute = adopted_descriptors
     profiles, _version = profile_reads.focal_profiles(
         conn, "commune", "c1", theme_id="fixture", include_cells=False,
         include_all_descriptors=True)
@@ -208,7 +223,8 @@ def test_each_profiles_scalar_dependency_matches_its_own_publication():
         ("profile_a", "resource_a", "profile-v1"),
         ("profile_b", "resource_b", "profile-v2")]
 
-    conn.registry["resource_a"] = ("scalar", "a-v2", "ref-v1")
+    conn.scalar_markers["resource_b"] = (
+        "cmp-global-b", "different-scalar-token", "ref-v1", 1, 2, 1)
     with pytest.raises(HTTPException) as raised:
         profile_reads.focal_profiles(
             conn, "commune", "c1", theme_id="fixture", include_cells=False,
@@ -217,33 +233,28 @@ def test_each_profiles_scalar_dependency_matches_its_own_publication():
     assert raised.value.detail == "Profile scalar dependency is stale or incompatible"
 
 
-def test_comparison_markers_match_each_resources_own_registry_version():
+def test_adopted_profile_comparison_token_can_differ_from_registry_version():
     conn = TwoProfileConnection()
+    conn.profile_markers["profile_b"] = (
+        "cmp-global-profile", "global-profile-token", "ref-v1", 1, 2, 1)
+
     markers = snapshot_reads._profile_comparison_publication_marker(
         conn, resource_ids=["profile_a", "profile_b"])
-    assert {resource_id: marker[1] for resource_id, marker in markers.items()} == {
-        "profile_a": "profile-v1", "profile_b": "profile-v2"}
 
-    conn.registry["profile_b"] = ("declared_profile", "profile-v3", "ref-v1")
-    with pytest.raises(HTTPException) as raised:
-        snapshot_reads._profile_comparison_publication_marker(
-            conn, resource_ids=["profile_a", "profile_b"])
-    assert raised.value.status_code == 503
-    assert raised.value.detail == "Published profile comparison is stale or incompatible"
+    assert markers["profile_b"][1] == "global-profile-token"
+    assert conn.registry["profile_b"][1] == "profile-v2"
 
 
-def test_scalar_comparison_marker_matches_its_own_registry_version():
+def test_adopted_scalar_comparison_token_can_differ_from_registry_version():
     conn = PublicationConnection()
+    conn.scalar_markers["resource_a"] = (
+        "cmp-global-scalar", "global-scalar-token", "ref-v1", 1, 2, 1)
+
     marker = snapshot_reads._scalar_comparison_publication_marker(
         conn, resource_ids=["resource_a"])["resource_a"]
-    assert marker[1] == "a-v1"
 
-    conn.registry["resource_a"] = ("scalar", "a-v2", "ref-v1")
-    with pytest.raises(HTTPException) as raised:
-        snapshot_reads._scalar_comparison_publication_marker(
-            conn, resource_ids=["resource_a"])
-    assert raised.value.status_code == 503
-    assert raised.value.detail == "Published scalar comparison is stale or incompatible"
+    assert marker[1] == "global-scalar-token"
+    assert conn.registry["resource_a"][1] == "a-v1"
 
 
 def test_theme_read_reports_each_profiles_own_publication_version(monkeypatch):
