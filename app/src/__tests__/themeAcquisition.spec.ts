@@ -4,6 +4,7 @@ import {
   acquireThemeFacts,
   cleSelectionComparaison,
   semanticPublicationsCompatible,
+  normalizePublicationTokens,
   ThemeAcquisitionCache,
   producerCatalogue,
 } from '../payload/themeAcquisition'
@@ -843,13 +844,12 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('rejects a mixed global scalar dataset generation across actual bounded waves and re-reads every key over HTTP', async () => {
+  it('accepts independent scalar resource versions across actual bounded waves', async () => {
     vi.resetModules()
     const { acquireThemeFacts, ThemeAcquisitionCache } = await import('../payload/themeAcquisition')
-    const { semanticReadState } = await import('../payload/semanticResourceClient')
     // Facts-only declarations: 13 scalar facts force two real bounded waves
-    // (12 + 1), so the mixed generation is observed across HTTP batches, not
-    // inside one synthetic response. No default/aux key exists to fake.
+    // (12 + 1). Different resources may publish independently, so the second
+    // wave's own version is valid beside the first wave's versions.
     const resources = Array.from({ length: 13 }, (_, index) => {
       const resource_id = `coherence_scalar_${index}`
       return { resource_id, theme_id: 'habitat', indicator_id: resource_id, label: resource_id, unit: '%',
@@ -865,10 +865,8 @@ describe('theme acquisition cache', () => {
       if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
       const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       batchRequests.push(request)
-      // One publication change is observed between the two actual waves of the
-      // first acquisition: wave 1 (12 items) publishes 10cfd, wave 2 (1 item)
-      // publishes f4e, with the same reference 6fd. The clean retry publishes
-      // f4e in every wave.
+      // Wave 1 (12 resources) publishes 10cfd and wave 2 (one different
+      // resource) publishes f4e, with the same reference 6fd.
       const version = wave === 'mixed' && request.items.length === 1
         ? 'scalar-f4e' : wave === 'mixed' ? 'scalar-10cfd' : 'scalar-f4e'
       return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
@@ -879,32 +877,19 @@ describe('theme acquisition cache', () => {
     vi.stubGlobal('fetch', fetcher)
     const cache = new ThemeAcquisitionCache(
       (theme, key) => acquireThemeFacts(key!.type, key!.id, theme))
-    const item = (index: number) => ({ resource: `coherence_scalar_${index}`,
-      target: { kind: 'territory' as const, type: 'commune' as const, id: '22001' },
-      intent: { kind: 'facts' as const } })
     try {
-      await expect(cache.get('commune', '22001', 'habitat'))
-        .rejects.toThrow(/g?n?rations de publication/)
-      // Both actual waves were read before the group verdict; the first
-      // acquisition did not collapse into one synthetic batch.
+      const acquired = await cache.get('commune', '22001', 'habitat')
       expect(batchRequests).toHaveLength(2)
       expect(batchRequests.map((request) => request.items.length)).toEqual([12, 1])
       expect(batchRequests.flatMap((request) => request.items.map((entry) => entry.resource)))
         .toEqual(resources.map((resource) => resource.resource_id))
-      // The higher theme cache commits nothing and every facts key is fenced.
-      for (let index = 0; index < resources.length; index += 1) {
-        expect(semanticReadState(item(index))).toBe('unrequested')
-      }
-      wave = 'fresh'
-      // An explicit retry through the higher cache re-reads every group over
-      // HTTP; neither wave from the rejected acquisition is replayed.
-      const acquired = await cache.select('commune', '22001', 'habitat', undefined)
-      expect(batchRequests).toHaveLength(4)
-      expect(batchRequests.slice(2).map((request) => request.items.length)).toEqual([12, 1])
-      expect(acquired.focal.resource_reads?.map((read) => read.data.content_version))
-        .toEqual(Array.from({ length: 13 }, () => 'scalar-f4e'))
+      expect(acquired.focal.resource_reads?.map((read) => read.data.content_version)).toEqual([
+        ...Array.from({ length: 12 }, () => 'scalar-10cfd'), 'scalar-f4e'])
       expect(acquired.focal.resource_reads?.every((read) =>
         read.data.reference_content_version === 'reference-6fd')).toBe(true)
+      wave = 'fresh'
+      expect((await cache.get('commune', '22001', 'habitat')).focal).toBe(acquired.focal)
+      expect(batchRequests).toHaveLength(2)
     } finally { vi.unstubAllGlobals() }
   })
 
@@ -981,6 +966,43 @@ describe('theme acquisition cache', () => {
       expect(acquired.resource_reads?.map((read) => [read.resource, read.data.content_version])).toEqual([
         ['coherence_scalar_owner', 'scalar-v1'],
         ['coherence_reading_owner', 'reading-v1'],
+      ])
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('accepts different per-resource scalar and profile versions in one theme acquisition', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resources = ['profile_a', 'profile_b', 'scalar_a', 'scalar_b'].map((resource_id) => ({
+      resource_id, theme_id: 'habitat', indicator_id: resource_id,
+      label: resource_id, unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+      shapes: [resource_id.startsWith('profile_') ? 'declared_profile' : 'scalar'],
+      target_kinds: ['territory'], fields: ['value'], intents: ['facts'],
+    }))
+    const profileVersions = { profile_a: 'profile-a-v1', profile_b: 'profile-b-v2' }
+    const scalarVersions = { scalar_a: 'scalar-a-v1', scalar_b: 'scalar-b-v2' }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
+      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
+        results: request.items.map((item) => {
+          const profile = item.resource.startsWith('profile_')
+          const versions = (profile ? profileVersions : scalarVersions) as Record<string, string>
+          return { id: item.id, resource: item.resource, status: 'available', data: {
+            resource: item.resource, target: item.target, content_version: versions[item.resource],
+            reference_content_version: 'reference-v1', value: 1, status: 'measured',
+          } }
+        }) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
+      expect(acquired.resource_reads?.map((read) => [read.resource, read.data.content_version])).toEqual([
+        ['profile_a', 'profile-a-v1'], ['profile_b', 'profile-b-v2'],
+        ['scalar_a', 'scalar-a-v1'], ['scalar_b', 'scalar-b-v2'],
       ])
     } finally { vi.unstubAllGlobals() }
   })
@@ -1682,6 +1704,51 @@ describe('theme acquisition cache', () => {
     expect(semanticPublicationsCompatible(facts, comparison('descriptor-v1'))).toBe(true)
     expect(semanticPublicationsCompatible(facts, comparison('descriptor-v2'))).toBe(false)
     expect(semanticPublicationsCompatible(facts, comparison())).toBe(false)
+  })
+
+  it('keeps the public singular publication tokens', () => {
+    const tokens = { content_version: 'scalar-a-v1', profile_content_version: 'profile-a-v1',
+      scalar_content_version: 'scalar-token-v1' }
+    expect(normalizePublicationTokens(tokens)).toEqual(tokens)
+    expect(normalizePublicationTokens({ resource_reads: [{ resource: 'profile_a', data: tokens }] }))
+      .toEqual({ profile_a: tokens })
+  })
+
+  it('compares each scalar to its own public content version', () => {
+    const facts = { resource_reads: [{ resource: 'scalar_a', shapes: ['scalar'], data: {
+      content_version: 'scalar-a-v1', reference_content_version: 'reference-v1',
+      descriptor_version: 'scalar-descriptor-v1',
+    } }] }
+    const comparison = { comparison_reads: [{ resource: 'scalar_a', data: {
+      content_version: 'scalar-a-v1', reference_content_version: 'reference-v1',
+      result: { descriptor_version: 'scalar-descriptor-v1' },
+    } }] }
+    expect(semanticPublicationsCompatible(facts, comparison)).toBe(true)
+    const stale = structuredClone(comparison)
+    stale.comparison_reads[0]!.data.content_version = 'scalar-a-v0'
+    expect(semanticPublicationsCompatible(facts, stale)).toBe(false)
+  })
+
+  it('compares each declared profile to its own public singular version', () => {
+    const facts = { resource_reads: ['profile_a', 'profile_b'].map((resource) => ({
+      resource, shapes: ['declared_profile'], data: {
+        content_version: resource === 'profile_a' ? 'profile-a-v1' : 'profile-b-v2',
+        reference_content_version: 'reference-v1',
+        descriptor: { descriptor_version: `${resource}-descriptor`, comparison_scalar: null },
+      },
+    })) }
+    const comparison = { comparison_reads: ['profile_a', 'profile_b'].map((resource) => ({
+      resource, data: {
+        content_version: null,
+        profile_content_version: resource === 'profile_a' ? 'profile-a-v1' : 'profile-b-v2',
+        reference_content_version: 'reference-v1',
+        result: { profile_descriptor_version: `${resource}-descriptor` },
+      },
+    })) }
+    expect(semanticPublicationsCompatible(facts, comparison)).toBe(true)
+    const stale = structuredClone(comparison)
+    stale.comparison_reads[1]!.data.profile_content_version = 'profile-b-v1'
+    expect(semanticPublicationsCompatible(facts, stale)).toBe(false)
   })
 
   it('requires declared profile comparison dependencies to be present and match exactly', () => {

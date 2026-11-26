@@ -92,6 +92,20 @@ interface DatasetGeneration {
 const nonEmptyVersion = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim().length > 0 ? value : undefined
 
+function stablePublicationValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stablePublicationValue)
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stablePublicationValue(nested)]))
+  }
+  return value
+}
+
+function samePublicationValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(stablePublicationValue(left)) === JSON.stringify(stablePublicationValue(right))
+}
+
 function dataOwner(data: Record<string, unknown>, resource: string): string {
   const dataset = nonEmptyVersion(data.dataset_id)
   if (dataset) return dataset
@@ -106,8 +120,8 @@ function dataOwner(data: Record<string, unknown>, resource: string): string {
 /**
  * One observed published-dataset marker per declared family. The public token
  * fields are the source of truth:
- * - every scalar resource shares the global `scalar_observation` clock;
- * - every declared profile shares the global `declared_profile` clock;
+ * - every scalar resource has its own registry clock, keyed by resource ID;
+ * - every declared profile has its own registry clock, keyed by resource ID;
  * - owned series and typed readings are independent owners, keyed by their
  *   actual `dataset_id` (or resource when the producer exposes no dataset id);
  * - collections and named references are keyed by their owner resource.
@@ -124,7 +138,7 @@ function datasetGeneration(read: SemanticThemeRead, declaration: SemanticResourc
       `La lecture « ${read.resource} » ne publie pas la version ${field} exigée par son contrat.`, [])
   }
   if (family === 'scalar') {
-    return { family: 'scalar_observation', owner: 'scalar_observation',
+    return { family: 'scalar_observation', owner: read.resource,
       version: required(data.content_version, 'content_version') }
   }
   if (family === 'profile') {
@@ -139,7 +153,7 @@ function datasetGeneration(read: SemanticThemeRead, declaration: SemanticResourc
       throw new ThemeAcquisitionCoherenceError(
         `La lecture « ${read.resource} » ne publie pas la version profile_content_version exigée par son contrat.`, [])
     }
-    return { family: 'declared_profile', owner: 'declared_profile', version }
+    return { family: 'declared_profile', owner: read.resource, version }
   }
   if (family === 'ordered_series') {
     const content = nonEmptyVersion(data.content_version)
@@ -1149,8 +1163,9 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     const expected = normalizePublicationTokens(facts)
     return 'reference_content_version' in actual && 'reference_content_version' in expected &&
       actual.reference_content_version === expected.reference_content_version &&
-      ['content_version', 'profile_content_version', 'reading_content_version'].every((name) =>
-        !(name in actual && name in expected) || actual[name] === expected[name])
+      ['content_version', 'profile_content_version', 'scalar_content_version',
+        'reading_content_version'].every((name) =>
+        !(name in actual && name in expected) || samePublicationValue(actual[name], expected[name]))
   }
   const focalByResource = new Map(focalReads.map((read) => [read.resource, read.data]))
   const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -1264,10 +1279,7 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     }
     const profile = shapes.includes('declared_profile')
     if (profile) {
-      // Native profile comparisons intentionally have no global content clock:
-      // bind their independent profile/reference clocks to the acquired facts.
-      // Some legacy-shaped transports may still include an unrelated global
-      // token; validate its shape, but never use it as the dependency clock.
+      // Public profile comparisons carry this resource's own registry version.
       if (!(data.content_version === null || (typeof data.content_version === 'string' && data.content_version.length > 0)) ||
           typeof focal.content_version !== 'string' || !focal.content_version ||
           data.profile_content_version !== focal.content_version ||

@@ -67,6 +67,23 @@ def test_cohort_documentation_matches_aedar_cellule_support():
     assert "AEDAR source-grain resources and named references do not" not in batch
 
 
+def test_public_per_resource_publication_versions_are_documented():
+    contract = " ".join(BATCH_CONTRACT.read_text(encoding="utf-8").split())
+    assert "`profile_content_versions`" not in contract
+    assert "`scalar_content_versions`" not in contract
+    assert "`profile_content_version` is that profile's own registry `content_version`" in contract
+    assert "There is no public theme-wide version map" in contract
+
+
+def test_endpoint_reference_pins_public_per_resource_versions():
+    endpoints = " ".join(ENDPOINTS.read_text(encoding="utf-8").split())
+    assert "`profile_content_version` is that profile's own registry version" in endpoints
+    assert "scalar `content_version` is that scalar's own registry version" in endpoints
+    assert "A batch may return different versions for different resources" in endpoints
+    assert "`profile_content_versions`" not in endpoints
+    assert "`scalar_content_versions`" not in endpoints
+
+
 def test_endpoint_request_inventory_is_deterministic():
     schema = app.openapi()
     generated = render_inventory(schema)

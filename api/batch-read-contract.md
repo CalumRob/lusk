@@ -437,14 +437,24 @@ stale, or impossible publication evidence, or impossible rank/tie spans fail
 closed with `503`.
 
 Profile, scalar, and territory-reference publications have independent clocks.
-Profile comparison responses bind `profile_content_version` and
-`reference_content_version`; scalar-backed comparisons additionally bind the
-linked scalar's required/content version. The legacy-shaped global
-`content_version` may be null or unrelated and is not a substitute for those
-dependencies. Do not synthesize a global release token or a territory type on an
-explicit-selection scope. These comparison reads remain inside the existing
-bounded, read-only repeatable-read grammar; they add no endpoint, query language,
-publication mutation, or schema.
+Public comparison reads are per resource: a declared-profile response's singular
+`profile_content_version` is that profile's own registry `content_version`, and a
+scalar response's `content_version` is that scalar's own registry version. A batch
+may therefore return different versions for different resources. There is no
+public theme-wide version map. The legacy-shaped global `content_version` on a
+profile comparison may be null or unrelated and is not a substitute for
+`profile_content_version`.
+
+Comparison markers remain a separate clock: `adopt` carries the live global
+lineage/facts comparison token into a resource marker, while `apply` writes the
+resource's new comparison token. Marker tokens bind that resource's lineage,
+group and territory rows; they are not required to equal the registry artefact
+version. Scalar-backed profile comparisons additionally bind the linked scalar's
+`required_scalar_version` to
+`scalar_resource_comparison_publication.scalar_content_version`. Do not synthesize
+a global release token or a territory type on an explicit-selection scope. These
+comparison reads remain inside the existing bounded, read-only repeatable-read
+grammar; they add no endpoint, query language, publication mutation, or schema.
 
 ## Example
 

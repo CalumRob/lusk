@@ -419,7 +419,6 @@ def _profile_comparison_publication_marker(conn, family="profile", resource_ids=
         resource_ids = [row[0] for row in _execute_comparison_publication_read(
             conn, "SELECT indicator_id FROM profile_resource_comparison_publication").fetchall()]
     resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
-    publications = live_resource_publications(conn, resource_ids, family)
     rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
         profile_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count FROM profile_resource_comparison_publication
@@ -432,10 +431,12 @@ def _profile_comparison_publication_marker(conn, family="profile", resource_ids=
         raise HTTPException(503, "Published profile comparison is stale or incompatible")
     reference_version = live_territory_reference_version(
         conn, expected_content_version=next(iter(marker_references)))
-    for resource_id, marker in markers.items():
-        if (not marker[0] or not marker[1] or marker[2] != reference_version
-                or publications[resource_id].reference_content_version != marker[2]
-                or marker[3] < 1 or marker[4] < 1):
+    live_resource_publications(conn, resource_ids, family,
+        reference_content_version=reference_version)
+    for marker in markers.values():
+        # The marker's facts token may be a carried-over global token after
+        # adopt. Only its comparison lineage and reference bind this marker.
+        if (not marker[0] or not marker[1] or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published profile comparison is stale or incompatible")
     return markers
 
@@ -915,7 +916,6 @@ def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=No
         resource_ids = [row[0] for row in _execute_comparison_publication_read(
             conn, "SELECT indicator_id FROM scalar_resource_comparison_publication").fetchall()]
     resource_ids = sorted({str(resource_id) for resource_id in resource_ids})
-    publications = live_resource_publications(conn, resource_ids, family)
     rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,content_version,
         scalar_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count FROM scalar_resource_comparison_publication
@@ -928,10 +928,12 @@ def _scalar_comparison_publication_marker(conn, family="scalar", resource_ids=No
         raise HTTPException(503, "Published scalar comparison is stale or incompatible")
     reference_version = live_territory_reference_version(
         conn, expected_content_version=next(iter(marker_references)))
-    for resource_id, marker in markers.items():
-        if (not marker[0] or not marker[1] or marker[2] != reference_version
-                or publications[resource_id].reference_content_version != marker[2]
-                or marker[3] < 1 or marker[4] < 1):
+    live_resource_publications(conn, resource_ids, family,
+        reference_content_version=reference_version)
+    for marker in markers.values():
+        # Adopt can carry a global scalar token that differs from the artefact
+        # registry version; lineage rows below bind the token to this resource.
+        if (not marker[0] or not marker[1] or marker[3] < 1 or marker[4] < 1):
             raise HTTPException(503, "Published scalar comparison is stale or incompatible")
     return markers
 
@@ -1139,10 +1141,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         publications = live_resource_publications(
             conn, [row[0] for row in scalar_descriptors], "scalar",
             reference_content_version=reference_version)
-        versions = {publication.content_version for publication in publications.values()}
-        if len(versions) != 1:
-            raise HTTPException(503, "Scalar publication versions are not uniform")
-        scalar_marker = (next(iter(versions)), reference_version)
+        # Preserve the single-resource legacy marker without inventing one
+        # singular version for a theme containing independently published scalars.
+        scalar_marker = ((next(iter(publications.values())).content_version, reference_version)
+                         if len(publications) == 1 else None)
     profile_publications = live_resource_publications(
         conn, [profile["indicator"] for profile in (profiles or [])], "profile",
         reference_content_version=reference_version)
@@ -1157,11 +1159,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             published_profile_context = (None if comparison_statistic == "mean"
                                          else fixed_context)
             if profile_coordinates:
+                # A coordinate-selected comparison addresses exactly one profile.
+                # The shared gate above already validated that resource's live
+                # registry row and reference clock; only ambiguity remains here.
                 if len(profile_publications) != 1:
-                    raise HTTPException(503, "Profile publication is unavailable or incompatible")
-                profile_marker = next(iter(profile_publications.values()))
-                if (not profile_marker.content_version
-                        or profile_marker.reference_content_version != reference_version):
                     raise HTTPException(503, "Profile publication is unavailable or incompatible")
             elif published_profile_context:
                 _profile_comparison_publication_marker(
