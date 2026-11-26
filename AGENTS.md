@@ -53,7 +53,8 @@ dispatches and reviews) does what the worker could not:
    silently turned 114 older guarded API tests red. The Python guarded tests require `PGPASSFILE` set
    explicitly to the default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`. A skip is not a pass;
    mocked DB-free tests have repeatedly hidden real failures (named DBI params, missing reference,
-   unconfirmed definitions).
+   unconfirmed definitions). The Python guarded tests require `PGPASSFILE` set explicitly to the
+   default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`.
 3. **Two-axis review** (Standards + Spec, `code-review` skill) on every PR; the owner's standing rule is
    no two implementations of the same operation — check new code against existing writers/readers.
 4. **Concurrent PRs** touching the same shared structures (`REGISTRE_FORMES_RESSOURCE`,
