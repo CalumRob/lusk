@@ -66,4 +66,5 @@ test_that("adopt refusal cases reuse only the affected immutable artefacts", {
   expect_identical(getFromNamespace("charger_artefacts_construits", "lusk")("unused"),
                    artefacts["densite"])
   expect_identical(getFromNamespace("construites_depuis_magasin", "lusk")("unused"), attendus)
+  expect_null(getFromNamespace("refus_aedar_adoption", "lusk")(attendus, artefacts))
 })
