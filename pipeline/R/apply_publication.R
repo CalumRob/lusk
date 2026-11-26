@@ -116,7 +116,8 @@ lire_reference_live_apply <- function(con) {
 # lire une autre version (ou aucune) doit refuser avec une raison NOMMÉE,
 # jamais une erreur de trigger SQL. La référence déjà lue dans la transaction
 # est passée par `reference` : aucune seconde lecture.
-verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NULL) {
+verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NULL,
+                                           operation = "apply") {
   attendus <- unique(unlist(lapply(cibles, function(id) {
     artefact <- artefacts[[id]]
     comparaison <- if (is.list(artefact)) artefact$contenu$comparison else NULL
@@ -127,24 +128,63 @@ verifier_reference_live_apply <- function(con, artefacts, cibles, reference = NU
   if (!length(attendus)) return(invisible(TRUE))
   if (length(attendus) > 1L)
     stop(erreur_apply("reference_divergente", paste0(
-      "apply : reference_divergente: artefacts liés à plusieurs références (",
+      operation, " : reference_divergente: artefacts liés à plusieurs références (",
       paste(attendus, collapse = ","), ") — zéro écriture.")))
   version_live <- if (is.null(reference)) NULL else reference$version
   if (is.null(version_live)) version_live <- lire_reference_live_apply(con)$version
   if (is.na(version_live) || !nzchar(version_live))
     stop(erreur_apply("reference_absente", paste0(
-      "apply : reference_absente: aucune référence territoriale publiée ",
+      operation, " : reference_absente: aucune référence territoriale publiée ",
       "(table_publication['territory_reference']) — zéro écriture.")))
   if (!identical(version_live, attendus[[1L]]))
     stop(erreur_apply("reference_divergente", paste0(
-      "apply : reference_divergente: live ", version_live,
+      operation, " : reference_divergente: live ", version_live,
       ", artefact ", attendus[[1L]], " — zéro écriture.")))
   invisible(TRUE)
 }
 
+# Setup partagé de la session de service : une seule isolation, un seul verrou
+# de référence, une seule lecture et le même préflight pour apply et adopt.
+preparer_session_service_publication <- function(con, artefacts, cibles,
+                                                  operation = "apply") {
+  DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+  DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
+  reference <- lire_reference_live_apply(con)
+  verifier_reference_live_apply(con, artefacts, cibles, reference = reference,
+                                operation = operation)
+  reference
+}
+
+# SEAM PARTAGÉE apply/adopt (#1142) : le gel de lignage est évalué ici,
+# immédiatement avant l'unique dbConnect du nouveau chemin. Les deux opérations
+# passent par cette fonction; aucun allowlist ne doit être ajouté pour adopt.
+# `con` injecté sert uniquement les tests et conserve le même préflight.
+avec_session_service_publication <- function(artefacts, cibles, lock = NULL,
+                                             registre = NULL, code, con = NULL) {
+  for (ressource in cibles)
+    verifier_gel_lignage_ressource(artefacts[[ressource]], registre = registre, lock = lock)
+  owns_con <- is.null(con)
+  if (owns_con) {
+    config <- configuration_service_postgres()
+    con <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
+  }
+  on.exit(if (owns_con) try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
+  code(con)
+}
+
+# Listing vivant du registre en LECTURE SEULE, par le même seam de session que
+# apply/adopt (aucune ressource à geler : cibles vides). `plan` ne se connecte
+# jamais (#1136) : l'opérateur obtient son listing vif ici (`publication.R listing`)
+# et le fournit à `plan` par LUSK_LIVE_LISTING.
+lister_registre_publication <- function(lock = NULL, registre = NULL, con = NULL) {
+  avec_session_service_publication(list(), character(), lock = lock, registre = registre,
+    con = con, code = function(con)
+      with_publication_transaction(con, lecture_seule = TRUE,
+        lire_listing_live_registre(con)))
+}
+
 # Orchestration. `con` peut être injecté (tests) ; sinon la SEULE ouverture de
-# connexion de service du nouveau chemin a lieu ici, avec la configuration
-# privée (passfile hors dépôt). Les refus sont évalués avant toute écriture.
+# connexion de service du nouveau chemin a lieu dans le seam partagé ci-dessus.
 apply_publication <- function(ids, confirm_definition = character(), retire = FALSE,
                               root = NULL, lock = NULL, registre = NULL,
                               attributions = NULL, con = NULL,
@@ -171,23 +211,10 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   }
   verifier_adaptateurs_apply(cibles, artefacts_pre, retire = retire)
 
-  # Gel de lignage (noyau partagé) AU SEUIL DE LA CONNEXION (ADR-0048 §5
-  # amendée) : le garde est évalué ici, avant le dbConnect ci-dessous, et avant
-  # toute écriture. Le plan porte le même verdict pour l'affichage ; c'est ce
-  # garde-ci que l'audit structurel reconnaît sur le site d'ouverture.
-  for (ressource in cibles) {
-    verifier_gel_lignage_ressource(artefacts_pre[[ressource]],
-                                   registre = registre, lock = lock)
-  }
-
-  owns_con <- FALSE
-  if (is.null(con)) {
-    config <- configuration_service_postgres()
-    con <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
-    owns_con <- TRUE
-  }
-  on.exit(if (owns_con) try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
-
+  # Le seam partagé porte le gel AVANT la connexion, puis rend la session au
+  # callback. apply et adopt ne peuvent pas dériver ce garde.
+  avec_session_service_publication(artefacts_pre, cibles, lock = lock,
+    registre = registre, con = con, code = function(con) {
   # Le registre vivant est la source du plan (remplace LUSK_LIVE_LISTING).
   live <- lire_listing_live_registre(con)
   plan <- plan_publication(builds = builds, live = live, lock = lock,
@@ -198,13 +225,8 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   with_publication_transaction(con, {
     # Un seul niveau d'isolement pour TOUTE la transaction (comme le producteur
     # AEDAR le faisait) : il est positionné AVANT la première requête, ici.
-    DBI::dbExecute(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-    # Verrou du producteur de référence (593, 1) : la version live ne peut pas
-    # bouger entre la lecture et nos écritures. Une SEULE lecture des lignes de
-    # référence, partagée avec les adaptateurs, puis garde NOMMÉ avant tout write.
-    DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(593, 1)")
-    reference <- lire_reference_live_apply(con)
-    verifier_reference_live_apply(con, plan$artefacts, cibles, reference = reference)
+    reference <- preparer_session_service_publication(con, plan$artefacts, cibles,
+                                                       operation = "apply")
     for (ressource in cibles) {
       artefact <- plan$artefacts[[ressource]]
       if (is.null(artefact))
@@ -245,4 +267,5 @@ apply_publication <- function(ids, confirm_definition = character(), retire = FA
   for (recette in recettes) ecrire_recette_locale(recette, receipts_dir)
   invisible(list(applied = vapply(recettes, `[[`, character(1), "ressource"),
                  receipts = recettes, cascade = cibles))
+  })
 }

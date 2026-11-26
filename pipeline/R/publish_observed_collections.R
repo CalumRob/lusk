@@ -255,25 +255,98 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
 # et l'adaptateur de forme (adaptateur_collection.R) appellent CES fonctions ;
 # aucun SQL n'est dupliqué. Toutes les valeurs passent par des params positionnels.
 
+.lignes_collection_vides <- function() list(
+  observed_collection_comparison_group = data.frame(indicator_id = character(),
+    comparison_context = character(), group_id = character(), territory_type = character(),
+    detail_key = character(), observation_period = character(), statistic = character(),
+    median = numeric(), member_count = integer(), eligible_count = integer(),
+    missing_count = integer(), lineage_source_count = integer(),
+    collection_content_version = character(), reference_content_version = character(),
+    stringsAsFactors = FALSE),
+  observed_collection_comparison_territory = data.frame(indicator_id = character(),
+    comparison_context = character(), group_id = character(), territory_type = character(),
+    detail_key = character(), observation_period = character(), territory_id = character(),
+    value = numeric(), status = character(), rank = integer(), tie_count = integer(),
+    rank_size = integer(), collection_content_version = character(),
+    reference_content_version = character(), stringsAsFactors = FALSE),
+  observed_collection_comparison_lineage = data.frame(indicator_id = character(),
+    comparison_context = character(), group_id = character(), territory_type = character(),
+    detail_key = character(), observation_period = character(), source_id = character(),
+    vintage_id = character(), comparison_content_version = character(), stringsAsFactors = FALSE))
+
+.lignes_collection_comparaison <- function(comparison, id) {
+  if (is.null(comparison) || is.null(comparison$groups) || !nrow(comparison$groups))
+    return(.lignes_collection_vides())
+  version <- scalar_content_version(comparison)
+  groups <- as.data.frame(comparison$groups, stringsAsFactors = FALSE)
+  territories <- as.data.frame(comparison$territories, stringsAsFactors = FALSE)
+  lineage <- as.data.frame(comparison$lineage, stringsAsFactors = FALSE)
+  groups$indicator_id <- rep(id, nrow(groups))
+  territories$indicator_id <- rep(id, nrow(territories))
+  lineage$indicator_id <- rep(id, nrow(lineage))
+  lineage$comparison_content_version <- rep(version, nrow(lineage))
+  list(observed_collection_comparison_group = groups,
+    observed_collection_comparison_territory = territories,
+    observed_collection_comparison_lineage = lineage)
+}
+
+.lignes_collection_projection <- function(rows) {
+  p <- rows$projection
+  d <- p$descriptor
+  id <- as.character(d$indicator_id)[[1L]]
+  descriptor <- data.frame(indicator_id = id, theme_id = d$theme_id, kind = d$kind,
+    label = d$label, unit = d$unit, descriptor_version = d$descriptor_version,
+    allowed_levels = litteral_tableau_postgres(d$allowed_levels),
+    comparison_detail = d$comparison_detail %||% NA_character_,
+    comparison_period = d$comparison_period %||% NA_character_, direction = d$direction,
+    stringsAsFactors = FALSE)
+  table <- switch(as.character(d$kind), period_detail = "period_detail_observation",
+                  anchored_membership = "anchored_membership",
+                  stop("Unknown observed fact shape", call. = FALSE))
+  categories <- p$categories
+  if (!is.null(categories)) {
+    if (!"anchor_levels" %in% names(categories)) {
+      categories$anchor_levels <- rep(NA_character_, nrow(categories))
+    } else {
+      categories$anchor_levels <- vapply(categories$anchor_levels,
+        litteral_tableau_postgres, character(1))
+    }
+    if (!"rider_label" %in% names(categories)) categories$rider_label <- NA_character_
+    if (!"clock_policy" %in% names(categories)) categories$clock_policy <- "dataset"
+  }
+  out <- list(observed_collection_descriptor = descriptor,
+    observed_collection_category = categories, facts = p$facts,
+    source_dataset = p$datasets, source_vintage = p$vintages)
+  names(out)[names(out) == "facts"] <- table
+  c(out, .lignes_collection_comparaison(rows$comparison, id))
+}
+
+lignes_collection_persistees <- function(artefact) {
+  rows <- projeter_artefact_collection(artefact)
+  .lignes_collection_projection(list(projection = rows$projection, comparison = rows$comparison))
+}
+
 .ecrire_collection_base <- function(con, projection, version, reference_version) {
   d <- projection$descriptor; indicator <- d$indicator_id
+  lignes <- .lignes_collection_projection(list(projection = projection))
+  d <- as.list(lignes$observed_collection_descriptor)
   DBI::dbExecute(con, "DELETE FROM observed_collection_publication WHERE indicator_id=$1",
                  params = list(indicator))
   DBI::dbExecute(con, paste0("INSERT INTO observed_collection_publication",
     "(indicator_id,content_version,reference_content_version,row_count) VALUES($1,$2,$3,$4)"),
     params = list(indicator, version, as.character(reference_version)[[1L]], nrow(projection$facts)))
-  levels <- paste0("{", paste(d$allowed_levels, collapse = ","), "}")
+  levels <- d$allowed_levels
   DBI::dbExecute(con, paste0("INSERT INTO observed_collection_descriptor",
     "(indicator_id,theme_id,kind,label,unit,descriptor_version,allowed_levels,",
     "comparison_detail,comparison_period,direction) VALUES($1,$2,$3,$4,$5,$6,$7::text[],$8,$9,$10)"),
     params = list(indicator, d$theme_id, d$kind, d$label, d$unit, d$descriptor_version,
                   levels, d$comparison_detail, d$comparison_period, d$direction))
-  DBI::dbWriteTable(con, "observed_collection_category", projection$categories,
+  DBI::dbWriteTable(con, "observed_collection_category", lignes$observed_collection_category,
                     append = TRUE, row.names = FALSE)
   table <- switch(d$kind, period_detail = "period_detail_observation",
                   anchored_membership = "anchored_membership",
                   stop("Unknown observed fact shape", call. = FALSE))
-  DBI::dbWriteTable(con, table, projection$facts, append = TRUE, row.names = FALSE)
+  DBI::dbWriteTable(con, table, lignes[[table]], append = TRUE, row.names = FALSE)
   invisible(TRUE)
 }
 
@@ -291,14 +364,11 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
                   nrow(comparisons$groups), nrow(comparisons$territories), nrow(comparisons$lineage)))
   DBI::dbExecute(con, "DELETE FROM observed_collection_comparison_group WHERE indicator_id=$1",
                  params = list(indicator))
-  DBI::dbWriteTable(con, "observed_collection_comparison_group",
-    transform(comparisons$groups, indicator_id = indicator), append = TRUE, row.names = FALSE)
-  DBI::dbWriteTable(con, "observed_collection_comparison_territory",
-    transform(comparisons$territories, indicator_id = indicator), append = TRUE, row.names = FALSE)
-  if (nrow(comparisons$lineage))
-    DBI::dbWriteTable(con, "observed_collection_comparison_lineage",
-      transform(comparisons$lineage, indicator_id = indicator,
-                comparison_content_version = comparison_version), append = TRUE, row.names = FALSE)
+  lignes <- .lignes_collection_comparaison(comparisons, indicator)
+  for (table in c("observed_collection_comparison_group",
+    "observed_collection_comparison_territory", "observed_collection_comparison_lineage"))
+    if (nrow(lignes[[table]])) DBI::dbWriteTable(con, table, lignes[[table]],
+      append = TRUE, row.names = FALSE)
   invisible(TRUE)
 }
 

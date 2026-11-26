@@ -1,0 +1,127 @@
+# Adoption d'une Ressource semantique de service (ADR-0049 step 2, #1142).
+# La comparaison est exacte sur les lignes projetees par l'adaptateur de forme.
+# Elle ne connait aucune table et ne contient aucune branche par forme.
+
+# PostgreSQL dates, integer64 counts and numeric SQL values must compare by
+# value, not by an R storage class chosen by the driver. Row order is not data.
+normaliser_valeur_adoption <- function(x) {
+  # Zero-row frames legitimately have different empty column types on the two
+  # sides (logical() from a writer, character() from an empty DB fetch). No
+  # datum is lost by normalising an empty non-list column to character().
+  if (!length(x) && !is.list(x)) return(character())
+  if (length(x) && !is.list(x) && all(is.na(x))) return(rep(NA_character_, length(x)))
+  if (inherits(x, "integer64")) x <- as.integer(as.character(x))
+  if (inherits(x, "Date")) x <- as.character(x)
+  if (inherits(x, "POSIXt")) x <- format(x, "%Y-%m-%dT%H:%M:%OS6", tz = "UTC")
+  if (is.numeric(x)) x <- as.numeric(x)
+  x
+}
+
+normaliser_adoption <- function(x) {
+  if (is.data.frame(x)) {
+    x <- as.data.frame(lapply(x, normaliser_valeur_adoption), stringsAsFactors = FALSE,
+                       optional = TRUE)
+    rownames(x) <- NULL
+    if (nrow(x) > 1L) {
+      keys <- vapply(seq_len(nrow(x)), function(i)
+        paste(as.integer(serialize(x[i, , drop = FALSE], NULL)), collapse = ","),
+        character(1))
+      x <- x[order(keys), , drop = FALSE]
+    }
+    rownames(x) <- NULL
+    return(x)
+  }
+  if (is.list(x)) {
+    # Never drop a NULL / single-NA entry: an explicit absence is data, and
+    # dropping it could turn a mismatch into a match.
+    return(lapply(x, normaliser_adoption))
+  }
+  normaliser_valeur_adoption(x)
+}
+
+comparer_valeur_adoption <- function(attendu, live, ignore = character()) {
+  # A missing side equals the other ONLY when that other side carries no row:
+  # an artefact comparison with rows is never equal to a missing live one.
+  if (is.null(attendu) || is.null(live))
+    return(absence_comparaison(attendu) && absence_comparaison(live))
+  if (is.data.frame(attendu) || is.data.frame(live)) {
+    if (!is.data.frame(attendu) || !is.data.frame(live)) return(FALSE)
+    if (length(setdiff(names(live), c(names(attendu), ignore)))) return(FALSE)
+    # Extra built columns are real artefact content and must not disappear.
+    if (length(setdiff(names(attendu), c(names(live), ignore)))) return(FALSE)
+    colonnes <- intersect(names(live), names(attendu))
+    colonnes <- setdiff(colonnes, ignore)
+    attendu <- attendu[, colonnes, drop = FALSE]
+    live <- live[, colonnes, drop = FALSE]
+    return(identical(normaliser_adoption(attendu), normaliser_adoption(live)))
+  }
+  if (absence_comparaison(attendu) && absence_comparaison(live)) return(TRUE)
+  identical(normaliser_adoption(attendu), normaliser_adoption(live))
+}
+
+# NULL comparison and an empty comparison row set are the same absence. AEDAR's
+# littoral sibling uses NULL before the extension and a zero-row frame after a
+# current publication; neither contains a fact. Anything that carries a row, at
+# any depth, is NOT an absence: the test is recursive and never true for rows.
+absence_comparaison <- function(x) {
+  if (is.null(x)) return(TRUE)
+  if (is.data.frame(x)) return(nrow(x) == 0L)
+  if (!is.list(x)) return(length(x) == 0L)
+  all(vapply(x, absence_comparaison, logical(1)))
+}
+
+# Comparable form = named persisted tables. A missing/extra table is a
+# mismatch; within a table only writer-produced columns are supplied by the
+# registry's lignes_persistees(), and storage-only columns are ignored here.
+comparer_lignes_persistees <- function(attendu, live, handler, ignorer_liaisons = list()) {
+  if (!is.list(attendu) || !is.list(live) || !length(attendu) ||
+      !setequal(names(attendu), names(live)))
+    return(list(identique = FALSE,
+                parties = c(setdiff(names(attendu), names(live)),
+                            setdiff(names(live), names(attendu)))))
+  parties <- names(attendu)[!vapply(names(attendu), function(table) {
+    # Storage-only columns, plus the columns a VERIFIED global-token chain lets
+    # this comparison ignore (handler$liaisons_globales); nothing else.
+    ignore <- unique(c(as.character(handler$colonnes_stockage[[table]] %||% character()),
+                       as.character(ignorer_liaisons[[table]] %||% character())))
+    a <- attendu[[table]]; b <- live[[table]]
+    for (colonne in as.character(handler$colonnes_json[[table]] %||% character())) {
+      # PostgreSQL jsonb does not preserve object key order; compare decoded
+      # JSON by key, not by the writer's serialization order.
+      decoder <- function(x) I(lapply(x, function(value) {
+        obj <- jsonlite::fromJSON(as.character(value), simplifyVector = FALSE)
+        if (is.list(obj)) obj[sort(names(obj))] else obj
+      }))
+      a[[colonne]] <- decoder(a[[colonne]]); b[[colonne]] <- decoder(b[[colonne]])
+    }
+    comparer_valeur_adoption(a, b, ignore)
+  }, logical(1))]
+  list(identique = !length(parties), parties = unique(parties))
+}
+
+comparer_ressource_adoptation <- function(attendu, live, handler) {
+  if (!is.list(attendu) || !is.list(live) || !is.list(handler))
+    stop("Adoption comparison requires projected live and artefact rows", call. = FALSE)
+  parties <- character()
+  for (champ in handler$champs_live) {
+    a <- attendu[[champ]]
+    b <- live[[champ]]
+    if (identical(champ, "comparison")) {
+      if (absence_comparaison(a) && absence_comparaison(b)) next
+      if (absence_comparaison(a) || absence_comparaison(b)) {
+        parties <- c(parties, "comparison")
+        next
+      }
+      for (partie in handler$champs_comparaison) {
+        ignore <- as.character(handler$colonnes_comparaison[[partie]] %||% character())
+        if (!comparer_valeur_adoption(a[[partie]], b[[partie]], ignore))
+          parties <- c(parties, paste0("comparison.", partie))
+      }
+      next
+    }
+    ignore <- as.character(handler$colonnes_stockage[[champ]] %||% character())
+    if (!comparer_valeur_adoption(a, b, ignore))
+      parties <- c(parties, if (identical(champ, "projection")) "facts" else champ)
+  }
+  list(identique = !length(parties), parties = unique(parties))
+}

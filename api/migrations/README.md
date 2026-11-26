@@ -962,3 +962,74 @@ install. It also covers the current-state no-op, absent/present shapes, and
 transactional rejection of incompatible partial states. Fresh installs continue
 to use `schema.sql`. This migration does not publish data or authorize
 deployment.
+
+## Operator flow -- adopting an existing database, then planning (#1142, rollout #1143)
+
+Run from `pipeline/`, with the serving credential set process-scoped by the owner
+(never in a shared shell). **Rehearse the whole sequence first on a restored copy of
+production (never `lusk`)**, record timings and receipts, then repeat live. Order:
+fresh `pg_dump` (restore-tested) -> 046 -> 047 -> 048 -> `adopt --dry-run` -> `adopt` ->
+verify -> deploy the new API -> HTTP sweep -> contract migration (#1141) -> **sweep again**.
+
+1. `Rscript scripts/publication.R adopt <sortie> --dry-run` -- opens the same
+   session as `apply` (snapshot + reference lock), proves every resource's live rows
+   equal its artefact (every persisted column, every row of the resource, vintage
+   clocks and comparison tokens) and writes **nothing**. A refusal names each
+   diverging resource and table. Typed refusals: `aedar_canonique_absent` /
+   `aedar_manifeste_absent` (sortie without the AEDAR canonical files or
+   `aedar_comparison_manifest.json`), `dependance_divergente`,
+   `jeton_comparaison_non_atteste`, `jeton_comparaison_absent`,
+   `jeton_comparaison_multiple`, `marqueur_existant_divergent`.
+2. `Rscript scripts/publication.R adopt <sortie>` -- same proof, then ONE transaction
+   writes only: the registry rows, the version-bound descriptors (048), the
+   per-resource comparison markers (046/047) and the `adopt` receipts. **No existing
+   serving or comparison row is updated or deleted.** A per-resource marker is written
+   only for a resource whose comparison has rows (a rowless scalar-backed profile such
+   as `distribution_dpe` gets none until its next `apply`; the API never reads it). The
+   marker carries over the GLOBAL comparison token the live comparison rows already
+   carry (the API's identity key: lineage token == marker token; the scalar marker's
+   `scalar_content_version` is the `required_scalar_version` of the profiles that depend
+   on it), recorded in the local receipt as `comparison_token`. Adopt never invents a
+   token and never overwrites a marker: an existing marker identical to what adopt
+   would write is left as is, a different one refuses the adoption.
+3. Verify (run as the owner, expected counts for the full catalogue of the kept sortie;
+   `N` = number of adopted resources, `C` = adopted scalar resources with a comparison,
+   `P` = adopted computed profiles with a comparison):
+   ```sql
+   SELECT count(*) FROM resource_publication WHERE NOT retired;            -- = N
+   SELECT count(*) FROM resource_publication_event WHERE operation='adopt';-- = N
+   SELECT count(*) FROM resource_publication_descriptor d JOIN resource_publication p
+     ON d.publication_resource_id=p.resource_id AND d.content_version=p.content_version
+     WHERE NOT p.retired;                                                   -- = D (derived, see below)
+   SELECT count(*) FROM resource_publication_descriptor
+     WHERE resource_id IN ('aedar_territorial_aggregate','aedar_territory_summary'); -- = 2
+   SELECT count(*) FROM scalar_resource_comparison_publication;           -- = C
+   SELECT count(*) FROM profile_resource_comparison_publication;          -- = P
+   SELECT count(*) FROM scalar_resource_comparison_publication m
+     JOIN profile_descriptor d ON d.comparison_scalar=m.indicator_id
+     WHERE m.scalar_content_version<>d.required_scalar_version;           -- = 0
+   ```
+   **`D` is derived from the declarations, never a hard-coded offset.** Rule: one
+   descriptor per declared discovery identity of each adopted resource, i.e. one per
+   resource that declares itself as an indicator, **plus one per named reference alias**
+   its owned-series route publishes (`reference_read_route` in the theme metadata, e.g.
+   `raccordement_courbe` -> `raccordement_reference`), **plus one per extra grammar
+   identity** of a storage resource declared in `semantic-resource-contracts.json`
+   (`aedar` -> `aedar_territorial_aggregate`, `aedar_territory_summary`). The producer
+   computes exactly that; print it from the same kept sortie and metadata:
+   ```powershell
+   Rscript -e "pkgload::load_all('.',quiet=TRUE); ids <- <the N adopted resource ids>; sum(vapply(ids, function(i) length(declarations_decouverte_ressource(i)), 1L))"
+   ```
+   (the guarded proof `test-adopt-db.R` asserts `nrow(descriptors) == sum(declarations)` the same way).
+4. Deploy the new API, then run the HTTP sweep over every resource in `/api/resources`.
+5. Apply the contract migration (#1141), then **sweep again**.
+6. `Rscript scripts/publication.R listing > live.json` -- prints the live registry as
+   JSON, read-only, through the shared serving-session seam.
+7. `$env:LUSK_LIVE_LISTING = "live.json"; Rscript scripts/publication.R plan <sortie>`
+   -- `plan` never connects to a database (#1136); it reads that listing file and must
+   report every resource `status=unchanged`.
+
+`apply` takes the same `lock` / `registre` / connection options as `adopt`; a later
+`apply` of an adopted resource replaces its comparison marker normally, and an `apply`
+of a scalar cascades to its dependent profile so the scalar marker and the profile
+binding move together.

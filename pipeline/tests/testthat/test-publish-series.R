@@ -289,7 +289,11 @@ test_that("owned series publication retries, rebinds and replaces only its datas
       if (is.null(x)) data.frame() else data.frame(content_version=x$version,
         reference_content_version=x$reference %||% state$reference)
     }, reference_marker=function() data.frame(content_version=state$reference),
-    replace_dataset=function(p, version) {
+    reference_rows=function() data.frame(territory_id=c("22001", "r1"),
+      territory_type=c("commune", "region"), epci_id=NA_character_,
+      density_class_code=NA_character_, littoral_code=NA_character_,
+      littoral_classement_source=NA_character_, stringsAsFactors=FALSE),
+    replace_dataset=function(p, version, ...) {
       old <- state$units[[p$descriptor$dataset_id]]
       state$units[[p$descriptor$dataset_id]] <- list(version=version, facts=p$points,
         descriptor=p$descriptor, provenance=p$provenance, reference=state$reference,
@@ -349,7 +353,7 @@ test_that("owned series publication retries, rebinds and replaces only its datas
     ordered_series_content_version=state$units[[dataset]]$version,
     reference_content_version=state$reference, lineage_row_count=state$lineage_count)
   replace <- db$replace_dataset
-  db$replace_dataset <- function(p, version) {
+  db$replace_dataset <- function(p, version, ...) {
     replace(p, version)
     state$lineage_count <- 0L
   }

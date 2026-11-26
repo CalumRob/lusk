@@ -114,6 +114,8 @@ Each is guarded by a structural test in the style of `helper-provenance-audit.R`
 does not fit changes the seam through review; no parallel one-off path (the bridge is the
 counter-example this rule exists to prevent).
 
+**Amendment 2026-11-26 (#1142):** the serving connection seam is the shared session used by `apply`, `adopt` and `listing`; `plan` reads a listing file and never connects.
+
 ### 9. Checks belong to the declaration
 
 `verif_*` real-data checks move into `verifie = ...` on the resource or intermediate declaration.

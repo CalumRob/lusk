@@ -280,7 +280,7 @@ retained_backend_markers <- function(con) {
              "selected_reading", "economy_typed_reading",
              "economy_activity_evidence", "milieux_typed_reading",
              "milieux_reading_absence")
-  placeholders <- paste0("$", seq_along(names), collapse = ",")
+  placeholders <- in_params(names)
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT table_name, content_version, reference_content_version ",
     "FROM table_publication WHERE table_name IN (", placeholders, ")"),

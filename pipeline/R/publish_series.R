@@ -781,6 +781,104 @@ register_owned_series_publishers <- function(registry, metadata, habitat_metadat
   registry
 }
 
+.serie_vide <- function(fields, types = rep("character", length(fields)))
+  as.data.frame(setNames(lapply(types, function(type) switch(type,
+    character = character(), numeric = numeric(), integer = integer(), logical = logical())),
+    fields), stringsAsFactors = FALSE)
+
+.lignes_series_projection <- function(rows) {
+  p <- rows$projection
+  d <- p$descriptor
+  id <- as.character(d$dataset_id)[[1L]]
+  indicator <- as.character(d$indicator_id)[[1L]]
+  descriptor <- data.frame(dataset_id = id, indicator_id = indicator,
+    axis_kind = d$axis_kind, axis_values = litteral_tableau_postgres(d$axis_values),
+    completeness = d$completeness, comparison_point = d$comparison_point %||% NA_character_,
+    label = d$label, unit = d$unit, direction = d$direction,
+    allowed_levels = litteral_tableau_postgres(d$allowed_levels), descriptor_version = d$descriptor_version,
+    active_read_route = isTRUE(d$active_read_route),
+    axis_numeric_values = litteral_tableau_postgres(d$axis_numeric_values),
+    theme_id = d$theme_id %||% NA_character_,
+    comparison_statistic = d$comparison_statistic %||% NA_character_,
+    comparison_scope = d$comparison_scope %||% NA_character_,
+    observation_period_kind = d$observation_period_kind %||% NA_character_,
+    absence_semantics = d$absence_semantics %||% "unavailable",
+    comparison_levels = litteral_tableau_postgres(d$comparison_levels),
+    stringsAsFactors = FALSE)
+  points <- p$points
+  for (champ in c("state_role", "missing_reason"))
+    if (!champ %in% names(points)) points[[champ]] <- NA_character_
+  points <- points[c("dataset_id", "indicator_id", "territory_id", "territory_type",
+    "axis_value", "state_role", "observation_period", "value", "missing_reason", "status")]
+  comparison <- rows$comparison
+  if (is.null(comparison)) comparison <- list()
+  group_fields <- c("dataset_id", "indicator_id", "comparison_context", "group_id",
+    "territory_type", "axis_value", "statistic", "group_value", "member_count",
+    "eligible_count", "missing_count", "lineage_source_count")
+  territory_fields <- c("dataset_id", "indicator_id", "comparison_context", "group_id",
+    "territory_type", "axis_value", "territory_id", "value", "status", "rank", "tie_count",
+    "rank_size")
+  lineage_fields <- c("dataset_id", "indicator_id", "comparison_context", "group_id",
+    "territory_type", "axis_value", "provenance_revision_id")
+  zero_fields <- c("dataset_id", "indicator_id", "comparison_context", "group_id",
+    "territory_type", "axis_value", "reason", "member_count")
+  groups <- if (is.null(comparison$groups)) .serie_vide(group_fields,
+    c(rep("character", 7L), "numeric", rep("integer", 4L))) else {
+    x <- as.data.frame(comparison$groups, stringsAsFactors = FALSE)
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[group_fields]
+  }
+  territories <- if (is.null(comparison$territories)) .serie_vide(territory_fields,
+    c(rep("character", 8L), "numeric", "character", rep("integer", 3L))) else {
+    x <- as.data.frame(comparison$territories, stringsAsFactors = FALSE)
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[territory_fields]
+  }
+  lineage <- if (is.null(comparison$lineage)) .serie_vide(lineage_fields) else {
+    x <- as.data.frame(comparison$lineage, stringsAsFactors = FALSE)
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x)); x[lineage_fields]
+  }
+  zero <- if (is.null(comparison$zero_reasons)) .serie_vide(zero_fields,
+    c(rep("character", 7L), "integer")) else {
+    x <- as.data.frame(comparison$zero_reasons, stringsAsFactors = FALSE)
+    x$dataset_id <- rep(id, nrow(x)); x$indicator_id <- rep(indicator, nrow(x))
+    x$axis_value <- rep(as.character(comparison$axis_values[[1L]]), nrow(x)); x[zero_fields]
+  }
+  named <- function(champ, fields) if (is.null(p[[champ]])) .serie_vide(fields) else
+    as.data.frame(p[[champ]][fields], stringsAsFactors = FALSE)
+  provenance <- p$provenance
+  pairs <- unique(provenance[c("source_id", "vintage_id")])
+  list(series_dataset_descriptor = descriptor, series_dataset_observation = points,
+    series_observation_provenance = p$point_provenance,
+    series_provenance_revision = provenance,
+    series_named_reference_descriptor = named("named_reference_descriptors",
+      c("dataset_id", "indicator_id", "reference_id", "reference_label", "reference_role",
+        "reference_statistic", "required", "reference_indicator_id", "active_read_route")),
+    series_named_reference = named("named_reference",
+      c("dataset_id", "indicator_id", "reference_id", "axis_value", "observation_period",
+        "value", "status", "missing_reason")),
+    series_named_reference_provenance = named("named_reference_provenance",
+      c("dataset_id", "indicator_id", "reference_id", "axis_value", "provenance_revision_id")),
+    series_context_parent_policy = named("context_parent_policy",
+      c("dataset_id", "indicator_id", "focal_level", "parent_level")),
+    ordered_series_comparison_group = groups,
+    ordered_series_comparison_territory = territories,
+    ordered_series_comparison_lineage = lineage,
+    ordered_series_comparison_zero_reason = zero,
+    source_dataset = data.frame(source_id = pairs$source_id,
+      name = provenance$source_name[match(paste(pairs$source_id, pairs$vintage_id),
+        paste(provenance$source_id, provenance$vintage_id))], stringsAsFactors = FALSE),
+    source_vintage = data.frame(source_id = pairs$source_id, vintage_id = pairs$vintage_id,
+      version = provenance$source_version[match(paste(pairs$source_id, pairs$vintage_id),
+        paste(provenance$source_id, provenance$vintage_id))],
+      reference_date = provenance$reference_date[match(paste(pairs$source_id, pairs$vintage_id),
+        paste(provenance$source_id, provenance$vintage_id))],
+      publication_date = provenance$publication_date[match(paste(pairs$source_id, pairs$vintage_id),
+        paste(provenance$source_id, provenance$vintage_id))], stringsAsFactors = FALSE))
+}
+
+lignes_series_persistees <- function(artefact) {
+  .lignes_series_projection(projeter_artefact_series(artefact))
+}
+
 owned_series_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
   list(
@@ -795,12 +893,14 @@ owned_series_postgres_adapter <- function(con) {
       params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
+    reference_rows=function() DBI::dbGetQuery(con,
+      "SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference"),
     # ADR-0049 step 2 (#1139): `replace_dataset` is the ONE writer of this
     # dataset's serving tables. The owned-series shape adapter calls it with an
     # injected reference (already validated by `apply`) instead of reading the
     # live reference again; there is no second copy of this SQL anywhere.
     replace_dataset=function(projection, version, reference_version=NULL,
-                             reference_rows=NULL) {
+                             reference_rows=NULL, comparison=NULL) {
       validate_owned_series_projection(projection)
       d <- projection$descriptor; dataset_id <- d$dataset_id
       reference <- if (is.null(reference_version)) DBI::dbGetQuery(con,
@@ -828,6 +928,10 @@ owned_series_postgres_adapter <- function(con) {
           stop("Dense-complete duration publication contains unregistered territory/territories: ",
             describe(unexpected),call.=FALSE)
       }
+      if (!is.null(d$comparison_levels) &&
+          (is.null(comparison) || !nrow(comparison$groups)))
+        stop("Owned-series writer requires the publisher's persisted comparison", call. = FALSE)
+      lignes <- .lignes_series_projection(list(projection = projection, comparison = comparison))
        # source_dataset.name is a mutable current label, updated only here after
        # the owner no-op decision. Vintage clocks remain strict below, and each
        # immutable provenance revision keeps the label recorded at publication.
@@ -836,13 +940,9 @@ owned_series_postgres_adapter <- function(con) {
         # registry needed by dependent facts. Both tables go through the ONE
         # shared source writer (#1138 review); the mutable dataset label is
         # refreshed, immutable vintage rows are insert-only and clock-checked.
-        provenance <- projection$provenance
-        datasets_serveur <- data.frame(source_id=provenance$source_id,
-          name=provenance$source_name, stringsAsFactors=FALSE)
-        vintages_serveur <- data.frame(source_id=provenance$source_id,
-          vintage_id=provenance$vintage_id, version=provenance$source_version,
-          reference_date=provenance$reference_date,
-          publication_date=provenance$publication_date, stringsAsFactors=FALSE)
+        provenance <- lignes$series_provenance_revision
+        datasets_serveur <- lignes$source_dataset
+        vintages_serveur <- lignes$source_vintage
         .ecrire_sources_serveur(con, datasets_serveur, vintages = NULL,
                                 conflict = "update")
         .ecrire_sources_serveur(con, datasets = NULL, vintages_serveur,
@@ -892,75 +992,55 @@ owned_series_postgres_adapter <- function(con) {
        # Immutable series_provenance_revision rows are deliberately untouched.
        DBI::dbExecute(con,"DELETE FROM series_dataset_descriptor WHERE dataset_id=$1",
          params=list(dataset_id))
-       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
-      numeric_axis <- if (is.null(d$axis_numeric_values)) NA_character_ else paste0("{",paste(d$axis_numeric_values,collapse=","),"}")
+       array_literal <- litteral_tableau_postgres
+       d <- as.list(lignes$series_dataset_descriptor)
+       numeric_axis <- d$axis_numeric_values
        DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id,comparison_statistic,comparison_scope,observation_period_kind) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14,$15,$16,$17)",
-        params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
-          d$comparison_point %||% NA_character_,d$label,d$unit,d$direction,
-          array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id %||% NA_character_,
-           d$comparison_statistic %||% NA_character_,d$comparison_scope %||% NA_character_,d$observation_period_kind %||% NA_character_))
-      if (!is.null(d$absence_semantics)) DBI::dbExecute(con,
-        "UPDATE series_dataset_descriptor SET absence_semantics=$1 WHERE dataset_id=$2 AND indicator_id=$3",
-        params=list(d$absence_semantics,dataset_id,d$indicator_id))
-      if (!is.null(d$comparison_levels)) DBI::dbExecute(con,
-        "UPDATE series_dataset_descriptor SET comparison_levels=$1::text[] WHERE dataset_id=$2 AND indicator_id=$3",
-        params=list(array_literal(d$comparison_levels),dataset_id,d$indicator_id))
-      if (!is.null(projection$context_parent_policy)) DBI::dbWriteTable(con,
-        "series_context_parent_policy",projection$context_parent_policy,append=TRUE,row.names=FALSE)
-      point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
-        "observation_period","value","status")
-      optional_columns <- intersect(c("state_role","missing_reason"),names(projection$points))
-      DBI::dbWriteTable(con,"series_dataset_observation",projection$points[
-        c(point_columns,optional_columns)],append=TRUE,row.names=FALSE)
-      DBI::dbWriteTable(con,"series_observation_provenance",projection$point_provenance,append=TRUE,row.names=FALSE)
-      if (!is.null(projection$named_reference)) {
-        if (!is.null(projection$named_reference_descriptors))
-          DBI::dbWriteTable(con,"series_named_reference_descriptor",projection$named_reference_descriptors,append=TRUE,row.names=FALSE)
-        DBI::dbWriteTable(con,"series_named_reference",projection$named_reference[
-          c("dataset_id","indicator_id","reference_id","axis_value","observation_period","value","status","missing_reason")],append=TRUE,row.names=FALSE)
-        DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
-      }
-      if (!is.null(d$comparison_levels)) {
-        territory_rows <- if (is.null(reference_rows)) DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code,littoral_code,littoral_classement_source FROM territory_reference") else reference_rows
-        comparison <- project_ordered_series_comparisons(projection,territory_rows,version,
-          as.character(reference$content_version[[1L]]))
-        DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",
-          params=list(dataset_id,d$indicator_id))
-        groups <- comparison$groups; groups$dataset_id <- dataset_id; groups$indicator_id <- d$indicator_id
-        DBI::dbWriteTable(con,"ordered_series_comparison_group",groups[c("dataset_id","indicator_id",
-          "comparison_context","group_id","territory_type","axis_value","statistic","group_value",
-          "member_count","eligible_count","missing_count","lineage_source_count")],append=TRUE,row.names=FALSE)
-        lineage <- comparison$lineage
-        if (nrow(lineage)) {
-          lineage$dataset_id <- dataset_id; lineage$indicator_id <- d$indicator_id
-          DBI::dbWriteTable(con,"ordered_series_comparison_lineage",lineage[
-            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","provenance_revision_id")],append=TRUE,row.names=FALSE)
-        }
-        zero_reasons <- comparison$zero_reasons
-        if (nrow(zero_reasons)) {
-          zero_reasons$dataset_id <- dataset_id; zero_reasons$indicator_id <- d$indicator_id
-          zero_reasons$axis_value <- comparison$axis_values[[1L]]
-          DBI::dbWriteTable(con,"ordered_series_comparison_zero_reason",zero_reasons[
-            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","reason","member_count")],append=TRUE,row.names=FALSE)
-        }
-        territories <- comparison$territories; territories$dataset_id <- dataset_id; territories$indicator_id <- d$indicator_id
-        DBI::dbWriteTable(con,"ordered_series_comparison_territory",territories[c("dataset_id","indicator_id",
-          "comparison_context","group_id","territory_type","axis_value","territory_id","value","status",
-          "rank","tie_count","rank_size")],append=TRUE,row.names=FALSE)
-        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,comparison_axes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[]) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,comparison_axes=EXCLUDED.comparison_axes,published_at=now()",
-          params=list(dataset_id,d$indicator_id,comparison$content_version,version,
-            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories),
-            nrow(comparison$lineage),array_literal(comparison$axis_values)))
-      }
+         params=list(dataset_id,d$indicator_id,d$axis_kind,d$axis_values,d$completeness,
+           d$comparison_point,d$label,d$unit,d$direction,
+           d$allowed_levels,d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id,
+           d$comparison_statistic,d$comparison_scope,d$observation_period_kind))
+       DBI::dbExecute(con,
+         "UPDATE series_dataset_descriptor SET absence_semantics=$1 WHERE dataset_id=$2 AND indicator_id=$3",
+         params=list(d$absence_semantics,dataset_id,d$indicator_id))
+       if (!all(is.na(unlist(d$comparison_levels)))) DBI::dbExecute(con,
+         "UPDATE series_dataset_descriptor SET comparison_levels=$1::text[] WHERE dataset_id=$2 AND indicator_id=$3",
+         params=list(d$comparison_levels,dataset_id,d$indicator_id))
+       for (table in c("series_context_parent_policy", "series_dataset_observation",
+         "series_observation_provenance", "series_named_reference_descriptor",
+         "series_named_reference", "series_named_reference_provenance"))
+         if (nrow(lignes[[table]])) DBI::dbWriteTable(con, table, lignes[[table]],
+           append = TRUE, row.names = FALSE)
+       if (!is.null(comparison)) {
+         DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",
+           params=list(dataset_id,d$indicator_id))
+         for (table in c("ordered_series_comparison_group", "ordered_series_comparison_territory",
+           "ordered_series_comparison_lineage", "ordered_series_comparison_zero_reason"))
+           if (nrow(lignes[[table]])) DBI::dbWriteTable(con, table, lignes[[table]],
+             append=TRUE,row.names=FALSE)
+         DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,comparison_axes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[]) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,comparison_axes=EXCLUDED.comparison_axes,published_at=now()",
+           params=list(dataset_id,d$indicator_id,comparison$content_version,version,
+             reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories),
+             nrow(comparison$lineage),array_literal(comparison$axis_values)))
+       }
     })
 }
 
 publish_owned_series_projection <- function(projection, db) {
   validate_owned_series_projection(projection)
   if (!is.function(db$transaction) || !is.function(db$lock) ||
-      !is.function(db$dataset_marker) || !is.function(db$reference_marker) || !is.function(db$replace_dataset))
+      !is.function(db$dataset_marker) || !is.function(db$reference_marker) ||
+      !is.function(db$reference_rows) || !is.function(db$replace_dataset))
     stop("Invalid owned series database adapter",call.=FALSE)
   version <- scalar_content_version(projection); dataset <- projection$descriptor$dataset_id
+  publier_avec_comparaison <- function(dependency_arg) {
+    territory_rows <- db$reference_rows()
+    comparison <- if (is.null(projection$descriptor$comparison_levels)) NULL else
+      project_ordered_series_comparisons(projection, territory_rows, version,
+        as.character(dependency_arg$content_version[[1L]]))
+    db$replace_dataset(projection, version, comparison = comparison,
+      reference_version = dependency_arg$content_version[[1L]], reference_rows = territory_rows)
+  }
   protocol_db <- list(transaction = db$transaction, lock = db$lock,
                       marker = function(owner) db$dataset_marker(owner))
   result <- publish_owner_snapshot(
@@ -972,8 +1052,10 @@ publish_owned_series_projection <- function(projection, db) {
           !nzchar(as.character(ref$content_version[[1L]])))
         stop("Territory reference publication is unavailable", call.=FALSE)
     },
-    publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
-    rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
+    publish_content = function(version_arg, dependency_arg) publier_avec_comparaison(dependency_arg),
+    rebind_dependency = function(reference_version)
+      publier_avec_comparaison(data.frame(content_version = reference_version,
+        stringsAsFactors = FALSE)),
     requires_republish = function(marker, ref) {
       if (!is.data.frame(marker) || !nrow(marker) ||
           !"reference_content_version" %in% names(marker)) return(TRUE)

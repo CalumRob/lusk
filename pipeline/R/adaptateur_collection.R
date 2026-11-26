@@ -35,8 +35,9 @@ projeter_artefact_collection <- function(artefact) {
   reference <- if (is.list(comparison) && !is.null(comparison$reference_content_version))
     as.character(comparison$reference_content_version)[[1L]] else NULL
   list(ressource = id, forme = "observed_collection", version = artefact$version,
-       projection = projection, reference_content_version = reference,
-       declarations = declarations, digests_lignage = artefact$digests_lignage)
+       projection = projection, comparison = contenu$comparison,
+       reference_content_version = reference, declarations = declarations,
+       digests_lignage = artefact$digests_lignage)
 }
 
 remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,
@@ -81,13 +82,24 @@ remplacer_collection <- function(con, ressource, rows = NULL, version = NULL,
     d <- projection$descriptor
     .ecrire_sources_serveur(con, projection$datasets, projection$vintages,
                            conflict = "nothing")
-    .ecrire_collection_base(con, projection, rows$version, reference)
+    # ONE source of truth for the storage token: the artefact's comparison
+    # binds every persisted comparison row to collection_content_version, and
+    # validate_observed_collection_comparison_publication() (api/schema.sql)
+    # requires the base and comparison markers to carry that SAME token. Never
+    # substitute the whole-artefact version here: it also hashes the comparison
+    # and cannot equal the token the comparison rows themselves carry.
+    collection_version <- if (is.list(rows$comparison) &&
+      length(rows$comparison$collection_content_version) == 1L &&
+      !is.na(rows$comparison$collection_content_version))
+      as.character(rows$comparison$collection_content_version)[[1L]] else
+      as.character(rows$version)[[1L]]
+    .ecrire_collection_base(con, projection, collection_version, reference)
     if (identical(as.character(d$kind), "period_detail")) {
-      comparisons <- project_observed_collection_comparisons(
-        projection, reference_rows, rows$version, reference)
-      comparison_version <- scalar_content_version(comparisons)
-      .ecrire_collection_comparaison(con, ressource, comparisons, comparison_version,
-                                     rows$version, reference)
+      if (is.null(rows$comparison) || !nrow(rows$comparison$groups))
+        stop("Period/detail artefact must carry its persisted comparison", call. = FALSE)
+      comparison_version <- scalar_content_version(rows$comparison)
+      .ecrire_collection_comparaison(con, ressource, rows$comparison, comparison_version,
+                                      collection_version, reference)
     }
     ecrire_registre_ressource(con, ressource, "observed_collection", rows$version,
       reference_content_version = reference, retired = FALSE)

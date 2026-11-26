@@ -243,3 +243,80 @@ test_that("remplacer --retire removes only this profile and keeps the registry r
   expect_true(any(grepl("INSERT INTO resource_publication", executes)))
   expect_true(any(grepl("retired=EXCLUDED.retired", executes)))
 })
+
+test_that("a comparison without a recorded token refuses with a typed reason and zero writes", {
+  fx <- fixture_profil_unitaire()
+  on.exit(unlink(fx$root, recursive = TRUE), add = TRUE)
+  rows <- projeter_artefact_profil_declare(fx$artefact)
+  for (jeton in c("content_version", "profile_content_version")) {
+    sans <- rows
+    sans$comparison[[jeton]] <- NULL
+    capture <- new.env(parent = emptyenv())
+    capture$appels <- list(); capture$ecritures <- list()
+    mocks <- fixture_dbi_capture(capture, NULL)
+    local_mocked_bindings(
+      dbWithTransaction = mocks$dbWithTransaction, dbExecute = mocks$dbExecute,
+      dbWriteTable = mocks$dbWriteTable, dbGetQuery = mocks$dbGetQuery,
+      dbQuoteString = mocks$dbQuoteString, .package = "DBI")
+    err <- tryCatch(remplacer_profil_declare(structure(list(), class = "mock"),
+      "distribution_dpe", sans, sans$version,
+      artefacts = list(part_passoires = fx$artefact_dependance)), error = identity)
+    expect_s3_class(err, "erreur_apply")
+    expect_identical(err$refus, "comparaison_incomplete", info = jeton)
+    expect_match(conditionMessage(err), jeton, fixed = TRUE)
+    # Refused BEFORE the first statement: no DELETE, no INSERT, no write.
+    expect_length(capture$appels, 0L)
+    expect_length(capture$ecritures, 0L)
+  }
+})
+
+test_that("the build verifier checks the minted profile tokens, not only the scalar ones", {
+  reference <- artefacts_fixture_reference()
+  profile <- artefacts_fixture_profile_artefact()$artefact$contenu
+  projection <- list(descriptor = profile$descriptor, facts = profile$faits$facts,
+    axes = profile$faits$axes, provenance = profile$provenance,
+    datasets = profile$faits$datasets, vintages = profile$faits$vintages)
+  handler <- REGISTRE_FORMES_RESSOURCE[["declared_profile"]]
+  bon <- comparaison_profil_ressource(projection, "distribution_dpe", reference)
+  expect_true(verifier_jetons_comparaison(handler, projection, "distribution_dpe", reference, bon))
+  for (cas in list(
+    list(champ = "profile_content_version", valeur = "autre-faits"),
+    list(champ = "reference_content_version", valeur = "autre-reference"),
+    list(champ = "content_version", valeur = NA_character_))) {
+    mauvais <- bon
+    mauvais[[cas$champ]] <- cas$valeur
+    expect_error(verifier_jetons_comparaison(handler, projection, "distribution_dpe",
+      reference, mauvais), "Profile comparison", info = cas$champ)
+  }
+  mauvais <- bon; mauvais$content_version <- NULL
+  expect_error(verifier_jetons_comparaison(handler, projection, "distribution_dpe",
+    reference, mauvais), "content_version")
+})
+
+test_that("the splitter records BOTH comparison tokens, for computed and declared comparisons", {
+  reference <- artefacts_fixture_reference()
+  profile <- artefacts_fixture_profile_artefact()$artefact$contenu
+  base <- list(descriptor = profile$descriptor, facts = profile$faits$facts,
+    axes = profile$faits$axes, provenance = profile$provenance,
+    datasets = profile$faits$datasets, vintages = profile$faits$vintages)
+  # Declared scalar dependency: the comparison is a token-bearing placeholder.
+  declare <- comparaison_profil_ressource(base, "distribution_dpe", reference)
+  # Computed comparison (no scalar dependency).
+  base$descriptor$comparison_scalar <- NULL
+  local_mocked_bindings(project_declared_profile_comparisons = function(profiles, rows,
+      profile_content_version, reference_content_version)
+    list(groups = data.frame(), territories = data.frame(), lineage = data.frame(),
+         profile_content_version = profile_content_version,
+         reference_content_version = reference_content_version))
+  calcule <- comparaison_profil_ressource(base, "distribution_dpe", reference)
+  for (comparaison in list(declare, calcule)) {
+    expect_true(is.character(comparaison$content_version) && nzchar(comparaison$content_version))
+    expect_true(is.character(comparaison$profile_content_version) &&
+                nzchar(comparaison$profile_content_version))
+    expect_identical(comparaison$reference_content_version, reference$content_version)
+    # The version is the producer's own function of the comparison, never the
+    # resource version.
+    sans <- comparaison; sans$content_version <- NULL
+    expect_identical(comparaison$content_version, profile_content_version(sans))
+  }
+})

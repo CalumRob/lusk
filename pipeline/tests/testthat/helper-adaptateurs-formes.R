@@ -74,10 +74,16 @@ adaptateur_series_projection <- function(dataset_id = "artif_par_habitant",
 adaptateur_series_artefact <- function(root, dataset_id = "artif_par_habitant",
                                        value = 10, reference_version = "reference-v1") {
   projection <- adaptateur_series_projection(dataset_id, value)
+  projection$descriptor$direction <- "high"
+  projection$descriptor$comparison_point <- "M3"
+  projection$descriptor$comparison_statistic <- "median"
+  projection$descriptor$comparison_levels <- "commune"
+  projection$descriptor$comparison_axis_values <- c("M2", "M3")
+  reference <- artefacts_fixture_reference(reference_version)
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["owned_series"]], projection),
     projection$descriptor, projection$provenance,
-    list(reference_content_version = reference_version, kind = "owned_series"))
+    comparaison_series_ressource(projection, dataset_id, reference))
   ecrit <- ecrire_artefact_ressource(dataset_id, "owned_series", contenu,
     digests_lignage = digests_lignage_ressource("ocsge", artefacts_fixture_digests("ocsge")),
     root = root)
@@ -237,26 +243,34 @@ adaptateur_aedar_comparaison <- function(projection, with_littoral = FALSE,
     stringsAsFactors = FALSE)
   names(x$groups)[names(x$groups) == "TYPEQU"] <- "typequ"
   rownames(x$groups) <- NULL
-  mesures <- unique(x$groups$measure)
+  mesures <- aedar_aggregate_reading_bindings()$measure
  groupes_du_contexte <- function(context)
     unique(x$groups$group_id[x$groups$comparison_context == context])
   classes <- groupes_du_contexte("density_class")
   summariser <- function(ids) {
-    do.call(rbind, lapply(ids, function(id) data.frame(
-      group_id = id, measure = mesures[[1L]], value = NA_real_,
-      status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
-      n_observed = NA_integer_, coverage_status = NA_character_,
-      stringsAsFactors = FALSE)))
+    do.call(rbind, lapply(ids, function(id) do.call(rbind, lapply(mesures,
+      function(mesure) data.frame(group_id = id, measure = mesure, value = NA_real_,
+        status = "unavailable", n_typequ = NA_integer_, n_addresses = NA_integer_,
+        n_observed = NA_integer_, coverage_status = "unavailable",
+        source_id = projection$source$source_id, vintage = projection$source$vintage,
+        source_url = projection$source$url, licence = projection$source$licence,
+        attribution = projection$source$attribution,
+        reference_date = as.Date(projection$source$reference_date),
+        publication_date = as.Date(projection$source$publication_date),
+        stringsAsFactors = FALSE)))))
   }
   density <- summariser(classes)
   littoral <- if (with_littoral) summariser(groupes_du_contexte("littoral")) else NULL
   x$density_rows <- density
   x$littoral_rows <- littoral
   x$density_class_summaries <- list(class_count = length(classes),
-    measure_count = 1L, typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
+    measure_count = length(mesures), typequ_count = length(read_aedar_typequ_registry()$TYPEQU),
     row_count = nrow(density))
+  # One summary row per (littoral status, measure): the marker's measure_count
+  # is the number of measures, not 1, or the deferred DB trigger's
+  # row_count = status_count * measure_count contract fails at commit.
   x$littoral_summaries <- list(status_count = if (with_littoral) length(groupes_du_contexte("littoral")) else 0L,
-    measure_count = if (with_littoral) 1L else 0L,
+    measure_count = if (with_littoral) length(mesures) else 0L,
     row_count = if (with_littoral) nrow(littoral) else 0L)
   x$publication_mode <- "reference_only"
   x$source_snapshot_id <- AEDAR_AGGREGATE_VINTAGE
@@ -282,7 +296,7 @@ adaptateur_collection_artefact <- function(root, indicator = "acv", value = 5) {
   contenu <- contenu_artefact(
     faits_forme(REGISTRE_FORMES_RESSOURCE[["observed_collection"]], projection),
     projection$descriptor, projection$provenance,
-    list(reference_content_version = "reference-v1", kind = "observed_collection"))
+    comparaison_collection_ressource(projection, indicator, artefacts_fixture_reference()))
   ecrit <- ecrire_artefact_ressource(indicator, "observed_collection", contenu,
     digests_lignage = digests_lignage_ressource("programme_source",
       artefacts_fixture_digests("programme_source")), root = root)

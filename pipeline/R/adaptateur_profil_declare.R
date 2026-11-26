@@ -44,6 +44,9 @@ projeter_artefact_profil_declare <- function(artefact) {
   contenu <- artefact$contenu
   descriptor <- .profil_liste(contenu$descriptor, id)
   declarations <- extraire_declaration_ressource(descriptor)
+  # `details` duplicates the persisted detail axis; axes are compared as their
+  # own grain and the descriptor projection must not invent a second live copy.
+  descriptor$details <- NULL
   grain <- contenu$faits
   if (is.null(grain)) grain <- list()
   extraire <- function(nom) {
@@ -51,11 +54,19 @@ projeter_artefact_profil_declare <- function(artefact) {
   }
   vides <- .profile_rows_vides()
   axes <- extraire("axes") %||% vides$axes
+  axes$indicator_id <- rep(id, nrow(axes))
+  if (!"unit" %in% names(axes)) axes$unit <- NA_character_
   facts <- extraire("facts")
   if (is.null(facts) && is.data.frame(grain)) facts <- grain
   if (is.null(facts)) facts <- vides$facts
   if (!is.data.frame(facts))
     stop("Declared-profile artefact is missing its observation grain", call. = FALSE)
+  # Persisted coordinate names are the shared projection contract. The writer
+  # used to perform this rename privately; adoption must compare the same rows.
+  names(facts)[names(facts) == "detail"] <- "detail_key"
+  names(facts)[names(facts) == "sex"] <- "sex_key"
+  facts$indicator_id <- rep(id, nrow(facts))
+  facts$sex_axis_name <- if (length(descriptor$sexes)) "sex" else NA_character_
   datasets <- extraire("datasets") %||% vides$datasets
   vintages <- extraire("vintages") %||% vides$vintages
   provenance <- contenu$provenance %||% vides$provenance
@@ -109,6 +120,48 @@ projeter_artefact_profil_declare <- function(artefact) {
   invisible(vivant)
 }
 
+# A comparison is bound by TWO tokens recorded at BUILD time in the Artefact de
+# ressource (see comparaison_profil_ressource): the facts version it was computed
+# on and its own content version. Apply never derives one from the resource
+# version: an Artefact whose comparison lacks either refuses with a typed reason
+# BEFORE the first write.
+.verifier_jetons_comparaison_profil <- function(comparaison) {
+  if (is.null(comparaison)) return(invisible(NULL))
+  for (jeton in c("content_version", "profile_content_version")) {
+    valeur <- comparaison[[jeton]]
+    if (is.null(valeur) || length(valeur) != 1L || is.na(valeur) ||
+        !nzchar(as.character(valeur)))
+      stop(erreur_apply("comparaison_incomplete", paste0(
+        "apply : comparaison_incomplete: la comparaison du profil n'a pas de ", jeton,
+        " — jeton jamais inventé, zéro écriture.")))
+  }
+  invisible(NULL)
+}
+
+# The ONE writer of the per-resource profile comparison marker (migration 047):
+# `remplacer_profil_declare` (apply) and adoption both go through it.
+ecrire_marqueur_comparaison_profil <- function(con, ressource, content_version,
+                                               profile_content_version,
+                                               reference_content_version,
+                                               groupes, territoires, lignage,
+                                               ecraser = TRUE) {
+  # `ecraser = FALSE` (adoption): a plain INSERT, never an overwrite.
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,",
+    "profile_content_version,reference_content_version,group_row_count,",
+    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)",
+    if (isTRUE(ecraser)) paste0(
+      " ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
+      "profile_content_version=EXCLUDED.profile_content_version,",
+      "reference_content_version=EXCLUDED.reference_content_version,",
+      "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
+      "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()") else ""),
+    params = list(ressource, as.character(content_version),
+      as.character(profile_content_version), as.character(reference_content_version),
+      as.integer(groupes), as.integer(territoires), as.integer(lignage)))
+  invisible(TRUE)
+}
+
 # Replace this ONE profile's rows inside the caller's publication transaction.
 # `retire = TRUE` removes them (and marks the registry row retired) without
 # inserting anything — this is `apply --retire`, not a special path.
@@ -125,6 +178,7 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
     if (!isTRUE(retire)) {
       descriptor <- rows$descriptor
       .verifier_dependance_faits_profil(con, descriptor, artefacts = artefacts)
+      .verifier_jetons_comparaison_profil(rows$comparison)
     }
 
     # FK-safe, indicator-scoped deletes. EVERY statement carries an unnamed
@@ -168,20 +222,15 @@ remplacer_profil_declare <- function(con, ressource, rows = NULL, version = NULL
       .ecrire_comparaison_profil(con, comparaison)
       reference <- if (!is.null(comparaison$reference_content_version))
         as.character(comparaison$reference_content_version)[[1L]] else NULL
-      version_comparaison <- if (!is.null(comparaison$content_version))
-        as.character(comparaison$content_version)[[1L]] else as.character(version)
-      version_faits <- if (!is.null(comparaison$profile_content_version))
-        as.character(comparaison$profile_content_version)[[1L]] else as.character(version)
+      version_comparaison <- as.character(comparaison$content_version)[[1L]]
+      version_faits <- as.character(comparaison$profile_content_version)[[1L]]
       # Per-resource marker (expand-phase counterpart of the untouched global
       # profile_comparison_publication singleton).
-      DBI::dbExecute(con, paste0(
-        "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,",
-        "profile_content_version,reference_content_version,group_row_count,",
-        "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)"),
-        params = list(ressource, version_comparaison, version_faits, reference,
-          if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
-          if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
-          if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage)))
+      ecrire_marqueur_comparaison_profil(con, ressource, version_comparaison, version_faits,
+        reference,
+        groupes = if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
+        territoires = if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
+        lignage = if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage))
     }
 
     ecrire_registre_ressource(con, ressource, "declared_profile", rows$version,

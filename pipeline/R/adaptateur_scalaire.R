@@ -96,11 +96,25 @@ projeter_artefact_scalaire <- function(artefact) {
                    drop = FALSE]
   source_ids <- sort(unique(as.character(paires$source_id)))
   sources <- data.frame(source_id = source_ids, name = source_ids, stringsAsFactors = FALSE)
+  # The source clocks are persisted facts: take them from the artefact's own
+  # grain (faits$vintages, carried by the splitter from the producer's vintages),
+  # never rebuild them. A pair the artefact carries no clock for stays NA, so
+  # adoption compares it with the live row and refuses instead of assuming.
+  portees <- contenu$faits[["vintages"]]
+  portees_cle <- if (is.data.frame(portees))
+    paste(as.character(portees$source_id), as.character(portees$vintage_id)) else character()
+  paires_cle <- paste(as.character(paires$source_id), as.character(paires$vintage_id))
+  position <- match(paires_cle, portees_cle)
+  clock <- function(champ, defaut = NA_character_) {
+    if (!is.data.frame(portees) || !champ %in% names(portees)) return(rep(defaut, nrow(paires)))
+    valeurs <- portees[[champ]][position]
+    if (inherits(portees[[champ]], "Date")) valeurs else as.character(valeurs)
+  }
   vintages <- data.frame(source_id = as.character(paires$source_id),
     vintage_id = as.character(paires$vintage_id),
-    version = as.character(paires$vintage_id),
-    reference_date = rep(NA_character_, nrow(paires)),
-    publication_date = rep(NA_character_, nrow(paires)), stringsAsFactors = FALSE)
+    version = ifelse(is.na(position), as.character(paires$vintage_id), clock("version")),
+    reference_date = clock("reference_date"),
+    publication_date = clock("publication_date"), stringsAsFactors = FALSE)
 
   list(
     ressource = id, forme = "scalar", version = artefact$version,
@@ -110,9 +124,37 @@ projeter_artefact_scalaire <- function(artefact) {
                  stringsAsFactors = FALSE)),
     sources = sources, vintages = vintages,
     observations = observations, provenance = provenance,
+    eligible_territories = contenu$faits[["eligible_territories"]],
     comparison = comparison, declarations = declarations,
     digests_lignage = artefact$digests_lignage
   )
+}
+
+# The ONE writer of the per-resource scalar comparison marker (migration 046): used
+# by `remplacer_scalaire` (apply) and by adoption, which carries over the token the
+# live comparison rows already carry. Upsert: apply deletes the marker first, adoption
+# may meet an existing one; either way the row ends up exactly as given.
+ecrire_marqueur_comparaison_scalaire <- function(con, ressource, content_version,
+                                                 scalar_content_version,
+                                                 reference_content_version,
+                                                 groupes, territoires, lignage,
+                                                 ecraser = TRUE) {
+  # `ecraser = FALSE` (adoption): a plain INSERT; an existing row is a conflict error,
+  # never an overwrite (adoption refuses it earlier with a typed reason).
+  DBI::dbExecute(con, paste0(
+    "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
+    "scalar_content_version,reference_content_version,group_row_count,",
+    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)",
+    if (isTRUE(ecraser)) paste0(
+      " ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
+      "scalar_content_version=EXCLUDED.scalar_content_version,",
+      "reference_content_version=EXCLUDED.reference_content_version,",
+      "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
+      "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()") else ""),
+    params = list(ressource, as.character(content_version),
+      as.character(scalar_content_version), as.character(reference_content_version),
+      as.integer(groupes), as.integer(territoires), as.integer(lignage)))
+  invisible(TRUE)
 }
 
 # Replace this ONE indicator's rows inside the caller's publication transaction.
@@ -162,15 +204,13 @@ remplacer_scalaire <- function(con, ressource, rows = NULL, version = NULL,
         as.character(reference_content_version)
       # Per-resource marker (the expand-phase counterpart of the untouched
       # global scalar_comparison_publication singleton).
-      DBI::dbExecute(con, paste0(
-        "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,",
-        "scalar_content_version,reference_content_version,group_row_count,",
-        "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)"),
-        params = list(ressource, as.character(comparaison$content_version),
-          as.character(comparaison$scalar_content_version), reference,
-          if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
-          if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
-          if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage)))
+      ecrire_marqueur_comparaison_scalaire(con, ressource,
+        content_version = as.character(comparaison$content_version),
+        scalar_content_version = as.character(comparaison$scalar_content_version),
+        reference_content_version = reference,
+        groupes = if (is.null(comparaison$groups)) 0L else nrow(comparaison$groups),
+        territoires = if (is.null(comparaison$territories)) 0L else nrow(comparaison$territories),
+        lignage = if (is.null(comparaison$lineage)) 0L else nrow(comparaison$lineage))
       reference_content_version <- reference
     }
 

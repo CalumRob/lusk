@@ -5,6 +5,22 @@
 # (RPostgres refuse une liste nommée) ; tout guillemetage passe par
 # DBI::dbQuoteString — aucun littéral SQL fabriqué à la main.
 
+# PostgreSQL array literal for DBI COPY/parameters. NULL, NA and empty vectors
+# are SQL NULL (never '{}'): absent arrays must not masquerade as an empty
+# array. Values in these contracts are closed enums/numbers, but quote/escape
+# defensively so no list/raw column can reach COPY as bytea.
+litteral_tableau_postgres <- function(x) {
+  if (is.null(x)) return(NA_character_)
+  if (length(x) == 1L && is.character(x) && !is.na(x) &&
+      startsWith(x, "{") && endsWith(x, "}")) return(x)
+  x <- as.character(unlist(x, use.names = FALSE))
+  if (!length(x) || anyNA(x)) return(NA_character_)
+  besoin <- grepl('[^[:alnum:]_.:-]', x)
+  x[besoin] <- paste0('"', gsub('\\', '\\\\', x[besoin], fixed = TRUE),
+                     gsub('"', '\\"', x[besoin], fixed = TRUE), '"')
+  paste0("{", paste(x, collapse = ","), "}")
+}
+
 .quoter_sql_serveur <- function(con, x) {
   if (length(x) == 1L && is.na(x)) return("NULL")
   as.character(DBI::dbQuoteString(con, as.character(x)))

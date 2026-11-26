@@ -33,11 +33,20 @@ lire_projections_scalaires_sortie <- function(sortie, metadata_directory = NULL,
     for (id in as.character(projection$descriptors$indicator_id)) {
       subset_field <- function(field)
         projection[[field]][projection[[field]]$indicator_id == id, , drop = FALSE]
+      provenance <- subset_field("provenance")
+      # The resource's source clocks (version, reference/publication dates) are
+      # persisted facts of source_vintage: carry the rows this resource's own
+      # provenance references, so adoption can compare them instead of exempting them.
+      cle <- function(x) paste(as.character(x$source_id), as.character(x$vintage_id))
+      vintages <- projection$vintages
+      vintages <- if (is.data.frame(vintages))
+        vintages[cle(vintages) %in% cle(provenance), , drop = FALSE] else NULL
       projections[[id]] <- list(
         facts = subset_field("facts"),
         descriptors = subset_field("descriptors"),
-        provenance = subset_field("provenance"),
-        eligible_territories = projection$eligible_territories)
+        provenance = provenance,
+        eligible_territories = projection$eligible_territories,
+        vintages = vintages)
     }
   }
   projections
@@ -99,25 +108,33 @@ lire_projections_collections_sortie <- function(sortie) {
   lapply(registre, function(producteur) producteur$project(entrees$canonical))
 }
 
-lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
+NOM_MANIFESTE_COMPARAISON_AEDAR <- "aedar_comparison_manifest.json"
+
+# Où la sortie porte ses fichiers canoniques AEDAR : le PREMIER répertoire
+# candidat qui les a tous, sinon NULL. Un seul lieu de décision, partagé par le
+# lecteur de projection et par le diagnostic d'adoption.
+localiser_aedar_sortie <- function(sortie) {
   candidats <- c(file.path(sortie, "aedar"),
                  file.path(sortie, "aedar", "canonical"),
                  file.path(sortie, "data", "processed", "aedar"),
                  Sys.getenv("LUSK_AEDAR_CANONICAL_DIR", unset = file.path("data", "processed", "aedar")))
-  for (candidat in candidats) {
-    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES)))) {
-      projection <- read_aedar_canonical(candidat)
-      # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
-      # référence de la sortie) : `apply` n'a jamais besoin de relire le
-      # territory_reference vivant pour la publier (#1139).
-      if (file.exists(file.path(candidat, "aedar_comparison_manifest.json"))) {
-        if (is.null(reference)) reference <- lire_reference_sortie(sortie)
-        projection$comparison <- comparaison_aedar_pour_artefact(candidat, reference)
-      }
-      return(projection)
-    }
-  }
+  for (candidat in candidats)
+    if (all(file.exists(file.path(candidat, AEDAR_CANONICAL_FILES)))) return(candidat)
   NULL
+}
+
+lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
+  candidat <- localiser_aedar_sortie(sortie)
+  if (is.null(candidat)) return(NULL)
+  projection <- read_aedar_canonical(candidat)
+  # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
+  # référence de la sortie) : `apply` n'a jamais besoin de relire le
+  # territory_reference vivant pour la publier (#1139).
+  if (file.exists(file.path(candidat, NOM_MANIFESTE_COMPARAISON_AEDAR))) {
+    if (is.null(reference)) reference <- lire_reference_sortie(sortie)
+    projection$comparison <- comparaison_aedar_pour_artefact(candidat, reference)
+  }
+  projection
 }
 
 # La comparaison d'une ressource scalaire est calculée par le producteur sur
@@ -145,6 +162,21 @@ comparaison_scalaire_ressource <- function(projection, ressource, reference) {
 # comparaisons sans jetons (familles sans publication de comparaison) sont
 # simplement laissées telles quelles.
 verifier_jetons_comparaison <- function(handler, projection, ressource, reference, comparaison) {
+  # Profile comparisons (computed or declared placeholder) are bound by
+  # `profile_content_version` = this resource's facts version, plus their own
+  # `content_version`. Both are minted at build, so both are verified at build.
+  if (is.list(comparaison) && "profile_content_version" %in% names(comparaison)) {
+    attendu <- version_faits_ressource(handler, projection)
+    if (!identical(as.character(comparaison$profile_content_version), as.character(attendu)) ||
+        !identical(as.character(comparaison$reference_content_version),
+                   as.character(reference$content_version)))
+      stop("Profile comparison tokens are not bound to this resource's facts and the sortie ",
+        "territory reference: ", ressource, call. = FALSE)
+    jeton <- comparaison$content_version
+    if (is.null(jeton) || length(jeton) != 1L || is.na(jeton) || !nzchar(as.character(jeton)))
+      stop("Profile comparison carries no content_version: ", ressource, call. = FALSE)
+    return(invisible(TRUE))
+  }
   if (!is.list(comparaison) ||
       !all(c("scalar_content_version", "reference_content_version") %in% names(comparaison)))
     return(invisible(NULL))
@@ -157,8 +189,58 @@ verifier_jetons_comparaison <- function(handler, projection, ressource, referenc
   invisible(TRUE)
 }
 
-# Comparaison déjà portée par la projection du producteur (profil, série,
-# collection, AEDAR) — aucune forme ne la recalcule localement.
+# Les producteurs écrivent aujourd'hui les comparaisons après leur artefact de
+# forme. Le splitter doit donc les matérialiser dans l'Artefact de ressource avec
+# les MÊMES projecteurs, jamais les laisser absentes (#1142).
+comparaison_profil_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  # Les DEUX jetons de la comparaison sont enregistrés ICI, à la construction :
+  # `profile_content_version` = version des faits de CETTE ressource, et
+  # `content_version` = version du contenu de la comparaison, calculée comme le
+  # producteur (profile_content_version(comparaison)). `apply` ne les dérive jamais.
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["declared_profile"]],
+                                     projection)
+  dependance <- champ_descripteur(projection$descriptor, "comparison_scalar")
+  comparaison <- if (!is.null(dependance) && length(dependance) && !is.na(dependance) &&
+      nzchar(as.character(dependance)[[1L]]))
+    # La comparaison DPE EST celle du scalaire déclaré : elle est prouvée une
+    # seule fois sous cette ressource, pas recopiée dans les tables du profil.
+    list(reference_content_version = reference$content_version,
+         kind = "declared_profile", comparison_scalar = dependance[[1L]],
+         profile_content_version = version)
+  else
+    project_declared_profile_comparisons(list(projection), reference$rows,
+      profile_content_version = version, reference_content_version = reference$content_version)
+  comparaison$content_version <- profile_content_version(comparaison)
+  comparaison
+}
+
+comparaison_series_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  levels <- champ_descripteur(projection$descriptor, "comparison_levels")
+  if (is.null(levels) || !length(levels))
+    return(list(reference_content_version = reference$content_version,
+                kind = "owned_series"))
+  version <- version_faits_ressource(REGISTRE_FORMES_RESSOURCE[["owned_series"]], projection)
+  project_ordered_series_comparisons(projection, reference$rows, version,
+    reference$content_version)
+}
+
+comparaison_collection_ressource <- function(projection, ressource, reference) {
+  if (!is.null(projection$comparison)) return(projection$comparison)
+  kind <- champ_descripteur(projection$descriptor, "kind")
+  # The normal collection publisher binds comparison rows to the projection's
+  # content version (descriptor + facts + provenance), not the whole artefact
+  # version that also contains this comparison.
+  version <- scalar_content_version(projection)
+  if (identical(as.character(kind), "period_detail"))
+    return(project_observed_collection_comparisons(projection, reference$rows,
+      version, reference$content_version))
+  list(reference_content_version = reference$content_version, kind = "observed_collection")
+}
+
+# Comparaison déjà portée par la projection AEDAR — aucune forme ne la recalcule
+# localement lorsque le producteur l'a immuablement matérialisée.
 comparaison_persistee <- function(champ) {
   force(champ)
   function(projection, ressource, reference) projection[[champ]] %||% NULL
@@ -193,7 +275,10 @@ lier_dependance_faits_profil <- function(descripteur, projections) {
 lier_dependance_aucune <- function(descripteur, projections) descripteur
 
 faits_forme <- function(handler, projection) {
-  if (!is.null(handler$champs_faits)) return(projection[handler$champs_faits])
+  # `intersect` keeps an optional grain (the scalar `vintages`) out of the hash
+  # when a projection does not carry it, instead of adding a NULL entry.
+  if (!is.null(handler$champs_faits))
+    return(projection[intersect(handler$champs_faits, names(projection))])
   exclus <- unique(c(handler$champ_descripteur, handler$champ_provenance, "comparison"))
   projection[setdiff(names(projection), exclus)]
 }
@@ -252,11 +337,22 @@ comparer_definition_canonique <- function(projeter = projeter_description_canoni
   }
 }
 
+# `source_dataset.name` is the ONE storage-only column shared by every shape, and
+# the reason is ownership, not convenience: `source_dataset` is a SHARED table
+# keyed by source_id alone, written by every shape and every historical publisher
+# (ecriture_sources_serveur.R: ON CONFLICT DO NOTHING for the scalar adapter, DO
+# UPDATE SET name=EXCLUDED.name for profile / series / collection / AEDAR). Its
+# label is therefore last-writer-wins across resources and is not a fact of any one
+# Artefact de ressource; the scalar adapter does not even carry a label (it writes
+# name = source_id). The row's existence, source_id and every source_vintage column
+# are still compared. Evidence recorded in the PR for #1142.
+STOCKAGE_SOURCE_DATASET_NAME <- "name"
+
 REGISTRE_FORMES_RESSOURCE <- list(
   scalar = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_scalaires_sortie(sortie, metadata_directory, reference),
-    champs_faits = c("facts", "eligible_territories"),
+    champs_faits = c("facts", "eligible_territories", "vintages"),
     champ_descripteur = "descriptors",
     champ_provenance = "provenance",
     champ_comparaison = NULL,
@@ -269,7 +365,20 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # (loaded before this file) and attached here as registry fields.
     lier_dependance = lier_dependance_aucune,
     projeter = projeter_artefact_scalaire,
-    remplacer = remplacer_scalaire),
+    remplacer = remplacer_scalaire,
+    # Adoption compares the writer's own persisted row builder, table by table.
+    lire_live = lire_live_scalaire,
+    liaisons_globales = liaisons_globales_scalaire,
+    planifier_marqueur_adoption = planifier_marqueur_adoption_scalaire,
+    lignes_persistees = lignes_scalaires_persistees,
+    # `colonnes_stockage` lists ONLY genuinely write-time / non-resident columns.
+    # Everything else a writer persists is a fact and is compared: source_vintage
+    # clocks and every comparison / content-version token. The sole write-time
+    # column is scalar_observation.published_at (stamped now() on insert); the sole
+    # non-resident one is source_dataset.name (see STOCKAGE_SOURCE_DATASET_NAME).
+    colonnes_stockage = list(scalar_observation = "published_at",
+      source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
+    colonnes_tableau = list(scalar_descriptor = "allowed_levels")),
   declared_profile = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_profils_sortie(sortie, metadata_directory),
@@ -277,7 +386,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_profil_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL,
     # Shape adapter (ADR-0049 seam, #1138): the ONLY writer of this shape's
@@ -285,22 +394,37 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # this file) and attached here as registry fields.
     lier_dependance = lier_dependance_faits_profil,
     projeter = projeter_artefact_profil_declare,
-    remplacer = remplacer_profil_declare),
+    remplacer = remplacer_profil_declare,
+    lire_live = lire_live_profil_declare,
+    liaisons_globales = liaisons_globales_profil,
+    planifier_marqueur_adoption = planifier_marqueur_adoption_profil,
+    lignes_persistees = lignes_profil_persistees,
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
+    colonnes_tableau = list(profile_descriptor = "allowed_levels")),
   owned_series = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_series_sortie(sortie),
-    champs_faits = NULL,
+    # Only persisted serving grains belong to the Artefact de ressource.
+    # dataset_name/vintage/excluded are build-time inputs, not live rows.
+    champs_faits = c("points", "point_provenance", "named_reference",
+                     "named_reference_descriptors", "named_reference_provenance",
+                     "context_parent_policy"),
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_series_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per dataset. The OCS-GE
     # state series (artif_par_habitant) publishes through this adapter, so no
     # typed-reading code is needed to keep it live.
     projeter = projeter_artefact_series,
-    remplacer = remplacer_series),
+    remplacer = remplacer_series,
+    lire_live = lire_live_series,
+    lignes_persistees = lignes_series_persistees,
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
+    colonnes_tableau = list(series_dataset_descriptor = c("axis_values",
+      "allowed_levels", "axis_numeric_values", "comparison_levels"))),
   observed_collection = list(
     lire = function(sortie, reference, metadata_directory)
       lire_projections_collections_sortie(sortie),
@@ -308,12 +432,17 @@ REGISTRE_FORMES_RESSOURCE <- list(
     champ_descripteur = "descriptor",
     champ_provenance = "provenance",
     champ_comparaison = "comparison",
-    comparaison = comparaison_persistee("comparison"),
+    comparaison = comparaison_collection_ressource,
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per collection.
     projeter = projeter_artefact_collection,
-    remplacer = remplacer_collection),
+    remplacer = remplacer_collection,
+    lire_live = lire_live_collection,
+    lignes_persistees = lignes_collection_persistees,
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
+    colonnes_tableau = list(observed_collection_descriptor = "allowed_levels",
+      observed_collection_category = "anchor_levels")),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
       projection <- lire_projection_aedar_sortie(sortie, reference)
@@ -330,7 +459,12 @@ REGISTRE_FORMES_RESSOURCE <- list(
     # aggregate, TYPEQU metadata, comparison, density and littoral summaries in
     # one transaction, plus the registry row.
     projeter = projeter_artefact_aedar,
-    remplacer = remplacer_aedar)
+    remplacer = remplacer_aedar,
+    lire_live = lire_live_aedar,
+    lignes_persistees = lignes_aedar_persistees,
+    colonnes_stockage = list(source_dataset = STOCKAGE_SOURCE_DATASET_NAME),
+    colonnes_tableau = list(),
+    colonnes_json = list(aedar_territorial_aggregate = c("identity", "measures")))
 )
 
 lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference = NULL) {

@@ -2121,24 +2121,18 @@ ecrire_aedar_comparaison_rows <- function(con, x, groups, density_rows,
   DBI::dbExecute(con,"DELETE FROM aedar_density_class_summary")
   DBI::dbExecute(con,"DELETE FROM aedar_littoral_summary")
   DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
+  lignes <- .lignes_comparaison_aedar(x, groups, density_rows, littoral_rows)
+  groups <- lignes$aedar_comparison_group
   if (nrow(groups)) for (debut in seq.int(1L,nrow(groups),by=chunk_size)) {
     fin <- min(debut+chunk_size-1L,nrow(groups))
     DBI::dbWriteTable(con,"aedar_comparison_group",groups[debut:fin,,drop=FALSE],
       append=TRUE,row.names=FALSE)
   } else DBI::dbWriteTable(con,"aedar_comparison_group",groups,append=TRUE,row.names=FALSE)
-  tokens <- c("comparison_content_version"=x$content_version,
-    "aedar_content_version"=x$aedar_content_version,
-    "reference_content_version"=x$reference_content_version,
-    "input_content_version"=x$input_content_version)
-  colonnes <- c("group_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status")
-  density_payload <- density_rows[colonnes]
-  for (nom in names(tokens)) density_payload[[nom]] <- unname(tokens[[nom]])
-  DBI::dbWriteTable(con,"aedar_density_class_summary",density_payload,append=TRUE,row.names=FALSE)
-  if (!is.null(littoral_rows) && nrow(littoral_rows)) {
-    littoral_payload <- littoral_rows[colonnes]
-    for (nom in names(tokens)) littoral_payload[[nom]] <- unname(tokens[[nom]])
-    DBI::dbWriteTable(con,"aedar_littoral_summary",littoral_payload,append=TRUE,row.names=FALSE)
-  }
+  DBI::dbWriteTable(con,"aedar_density_class_summary",
+    lignes$aedar_density_class_summary,append=TRUE,row.names=FALSE)
+  if (nrow(lignes$aedar_littoral_summary))
+    DBI::dbWriteTable(con,"aedar_littoral_summary",
+      lignes$aedar_littoral_summary,append=TRUE,row.names=FALSE)
   # Aucun fait figé ici : mode, snapshot et nombre de territoires viennent du
   # contrat du producteur / de l'Artefact, pas d'un littéral du writer partagé.
   contrat <- function(champ) {
@@ -2285,6 +2279,92 @@ serialize_aedar_json_rows <- function(x) {
   json_rows
 }
 
+.lignes_aedar_agregat <- function(projection, summary = TRUE) {
+  facts <- projection$facts
+  source <- projection$source
+  published_columns <- c("territory_type","territory_id","typequ","typequ_label",
+    "typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label",
+    "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme","typequ_gamme_status",
+    "typequ_source_order","identity","n_addresses","n_observed","coverage_status","measures",
+    "source_id","vintage_id","source_url","licence","attribution","reference_date",
+    "publication_date")
+  payload <- list()
+  for (level in AEDAR_AGGREGATE_LEVELS) {
+    indices <- which(facts$territory_type == level)
+    if (!length(indices)) next
+    x <- facts[indices, , drop = FALSE]
+    metadata <- projection$typequ_metadata[match(x$TYPEQU, projection$typequ_metadata$TYPEQU),
+                                           , drop = FALSE]
+    identity_columns <- setdiff(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],
+      c("TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status"))
+    payload[[length(payload) + 1L]] <- data.frame(
+      territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
+      typequ_label=x$LIB_TYPEQU,typequ_hierarchy_label=metadata$LIB_TYPEQU,
+      typequ_description=metadata$description,typequ_domain_code=metadata$domain_code,
+      typequ_domain_label=metadata$domain_label,typequ_subdomain_code=metadata$subdomain_code,
+      typequ_subdomain_label=metadata$subdomain_label,typequ_gamme=metadata$GAMME,
+      typequ_gamme_status=metadata$gamme_status,typequ_source_order=as.integer(metadata$source_order),
+      identity=serialize_aedar_json_rows(as.data.frame(x[identity_columns],stringsAsFactors=FALSE)),
+      n_addresses=as.numeric(x$n_addresses),n_observed=as.numeric(x$n_observed),
+      coverage_status=x$coverage_status,
+      measures=serialize_aedar_json_rows(as.data.frame(x[AEDAR_AGGREGATE_MEASURES],stringsAsFactors=FALSE)),
+      source_id=projection$source$source_id,vintage_id=projection$source$vintage,
+      source_url=projection$source$url,licence=projection$source$licence,
+      attribution=projection$source$attribution,
+      reference_date=as.Date(projection$source$reference_date),
+      publication_date=as.Date(projection$source$publication_date),stringsAsFactors=FALSE)
+  }
+  aggregate <- do.call(rbind, payload)
+  aggregate <- aggregate[published_columns]
+  summary_rows <- if (isTRUE(summary)) project_aedar_territory_summary(facts, source) else NULL
+  if (!is.null(summary_rows)) names(summary_rows)[names(summary_rows) == "vintage"] <- "vintage_id"
+  list(aedar_territorial_aggregate = aggregate, aedar_territory_summary = summary_rows)
+}
+
+.lignes_comparaison_aedar <- function(x, groups, density_rows, littoral_rows = NULL) {
+  tokens <- c(comparison_content_version=x$content_version,
+    aedar_content_version=x$aedar_content_version,
+    reference_content_version=x$reference_content_version,
+    input_content_version=x$input_content_version)
+  colonnes <- c("group_id","measure","value","status","n_typequ","n_addresses",
+                "n_observed","coverage_status")
+  summariser <- function(rows) {
+    payload <- rows[colonnes]
+    for (nom in names(tokens)) payload[[nom]] <- unname(tokens[[nom]])
+    payload
+  }
+  summary_vide <- data.frame(group_id = character(), measure = character(),
+    value = numeric(), status = character(), n_typequ = integer(),
+    n_addresses = integer(), n_observed = integer(), coverage_status = character(),
+    comparison_content_version = character(), aedar_content_version = character(),
+    reference_content_version = character(), input_content_version = character(),
+    stringsAsFactors = FALSE)
+  territories <- if (is.null(x$territories)) data.frame(
+    comparison_context = character(), group_id = character(), territory_type = character(),
+    territory_id = character(), typequ = character(), measure = character(), value = numeric(),
+    status = character(), n_addresses = integer(), n_observed = integer(),
+    coverage_status = character(), rank = integer(), rank_size = integer(),
+    stringsAsFactors = FALSE) else x$territories
+  list(aedar_comparison_group = groups,
+    aedar_comparison_territory = territories,
+    aedar_density_class_summary = summariser(density_rows),
+    aedar_littoral_summary = if (is.null(littoral_rows)) summary_vide else
+      summariser(littoral_rows))
+}
+
+lignes_aedar_persistees <- function(artefact) {
+  rows <- projeter_artefact_aedar(artefact)
+  source <- rows$projection$source
+  c(.lignes_aedar_agregat(rows$projection),
+    .lignes_comparaison_aedar(rows$comparison, rows$comparison$groups,
+      rows$comparison$density_rows, rows$comparison$littoral_rows),
+    list(source_dataset = data.frame(source_id = source$source_id, name = source$name,
+      stringsAsFactors = FALSE),
+      source_vintage = data.frame(source_id = source$source_id, vintage_id = source$vintage,
+        version = source$vintage, reference_date = as.Date(source$reference_date),
+        publication_date = as.Date(source$publication_date), stringsAsFactors = FALSE)))
+}
+
 read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
   {
     resource_paths<-download_aedar_sources(raw_dir)
@@ -2401,22 +2481,9 @@ publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
           selected <- level_indices[start:min(start+chunk_size-1L,length(level_indices))]
           x <- facts[selected,,drop=FALSE]
           typequ_metadata <- projection$typequ_metadata[match(x$TYPEQU,projection$typequ_metadata$TYPEQU),,drop=FALSE]
-          rows <- data.frame(territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
-            typequ_label=x$LIB_TYPEQU,
-            typequ_hierarchy_label=typequ_metadata$LIB_TYPEQU,
-            typequ_description=typequ_metadata$description,
-            typequ_domain_code=typequ_metadata$domain_code,typequ_domain_label=typequ_metadata$domain_label,
-            typequ_subdomain_code=typequ_metadata$subdomain_code,typequ_subdomain_label=typequ_metadata$subdomain_label,
-            typequ_gamme=typequ_metadata$GAMME,typequ_gamme_status=typequ_metadata$gamme_status,
-            typequ_source_order=as.integer(typequ_metadata$source_order),
-            identity=serialize_aedar_json_rows(as.data.frame(x[identity_columns],stringsAsFactors=FALSE)),
-            n_addresses=as.numeric(x$n_addresses),n_observed=as.numeric(x$n_observed),coverage_status=x$coverage_status,
-            measures=serialize_aedar_json_rows(as.data.frame(x[AEDAR_AGGREGATE_MEASURES],stringsAsFactors=FALSE)),
-            source_id=projection$source$source_id,vintage_id=projection$source$vintage,
-            source_url=projection$source$url,licence=projection$source$licence,
-            attribution=projection$source$attribution,
-            reference_date=as.Date(projection$source$reference_date),publication_date=as.Date(projection$source$publication_date),
-            stringsAsFactors=FALSE)
+          rows <- .lignes_aedar_agregat(list(facts=x,
+            typequ_metadata=projection$typequ_metadata,source=projection$source),
+            summary=FALSE)$aedar_territorial_aggregate
           batch_json <- as.character(jsonlite::toJSON(rows,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
           affected <- DBI::dbExecute(db,upsert_sql,params=list(batch_json))
           attempted_rows <- attempted_rows+nrow(rows)
@@ -2460,10 +2527,7 @@ publish_aedar_aggregates <- function(projection, db, reference_version = NULL,
       identical(summary_existing$aedar_source_content_version[[1L]],version) &&
       identical(existing$content_version[[1L]],version)
     if (!summary_unchanged) {
-      payload <- summary_facts[c("territory_type","territory_id","measure","value","status","n_typequ","n_addresses","n_observed","coverage_status","source_id","vintage","source_url","licence","attribution","reference_date","publication_date")]
-      # The producer projection calls this source-owned identity `vintage`; the
-      # summary table follows the shared provenance schema's `vintage_id` name.
-      names(payload)[names(payload)=="vintage"] <- "vintage_id"
+      payload <- .lignes_aedar_agregat(projection)$aedar_territory_summary
       json <- as.character(jsonlite::toJSON(payload,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
       DBI::dbExecute(db,"DELETE FROM aedar_territory_summary")
       DBI::dbExecute(db,"INSERT INTO aedar_territory_summary(territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date) SELECT territory_type,territory_id,measure,value,status,n_typequ,n_addresses,n_observed,coverage_status,source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date FROM jsonb_to_recordset($1::jsonb) AS x(territory_type text,territory_id text,measure text,value double precision,status text,n_typequ integer,n_addresses bigint,n_observed bigint,coverage_status text,source_id text,vintage_id text,source_url text,licence text,attribution text,reference_date date,publication_date date)",params=list(json))

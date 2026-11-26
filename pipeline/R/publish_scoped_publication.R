@@ -269,13 +269,13 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids) {
 scoped_publication_markers <- function(con, plan) {
   names <- c("territory_reference", "scalar_observation", "declared_profile")
   if (length(plan$reading_owners)) names <- c(names, "selected_reading")
-  placeholders <- paste0("$", seq_along(names), collapse = ",")
+  placeholders <- in_params(names)
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT table_name, content_version, reference_content_version ",
     "FROM table_publication WHERE table_name IN (", placeholders, ")"),
     params = unname(as.list(names)))
   owners <- as.character(plan$bound_profiles)
-  profile_placeholders <- paste0("$", seq_along(owners), collapse = ",")
+  profile_placeholders <- in_params(owners)
   profile_descriptors <- DBI::dbGetQuery(con, paste0(
     "SELECT indicator_id, descriptor_version, required_scalar_version ",
     "FROM profile_descriptor WHERE indicator_id IN (", profile_placeholders,
