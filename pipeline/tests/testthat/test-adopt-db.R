@@ -81,6 +81,9 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
   avant <- partage$digest
+  # fixture_partage() already ran the real splitter/loader once. Every CLI call
+  # below reuses those immutable artefacts and the real artifact store contents.
+  .adopt_db_reuse_artefacts(partage)
   # Everything below goes through the CLI ENTRY FUNCTION `scripts/publication.R`
   # calls, with the same arguments the operator types; only the connection, the
   # lock and the pre-read projections are injected (as in apply's own proofs).
@@ -105,9 +108,6 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_equal(as.numeric(DBI::dbGetQuery(con,
     "SELECT count(*) AS n FROM resource_publication")$n[[1L]]), 0)
 
-  # The dry-run above proved the real splitter/loader path. Reuse those immutable
-  # artefacts for the remaining CLI calls in this mutating case.
-  .adopt_db_reuse_artefacts(partage)
   reel <- adopter(c("adopt", fixture$sortie))
   resultat <- reel$resultat
   expect_true(any(grepl("^adoption=match adopted=", reel$sortie)))
@@ -249,7 +249,6 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
-  .adopt_db_reuse_artefacts(partage)
   cas <- list(
     list(ressource = "densite", table = "scalar_observation", colonne = "value",
       where = "indicator_id='densite'", num = TRUE),
@@ -272,10 +271,13 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
     avant <- .adopt_db_digest(con)
     registre_avant <- .adopt_db_registry_digest(con)
-    err <- tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
-      root = fixture$root, registre = fixture$lock, projections = fixture$projections,
-      reference = fixture$reference, metadata_directory = fixture$metadata_directory,
-      con = con, out = nullfile()), error = identity)
+    err <- local({
+      .adopt_db_reuse_artefacts(partage, ids = x$ressource)
+      tryCatch(executer_commande_publication(c("adopt", fixture$sortie),
+        root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+        reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+        con = con, out = nullfile()), error = identity)
+    })
     expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
@@ -318,7 +320,7 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
-  .adopt_db_reuse_artefacts(partage)
+  .adopt_db_reuse_artefacts(partage, ids = "distribution_dpe")
   # The legitimate pre-registry binding (live token == live global scalar marker ==
   # the token the sortie recorded) is what the first guarded test adopts. Here the
   # live token is neither: nothing may rebind it silently.
@@ -348,7 +350,7 @@ test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) w
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
-  .adopt_db_reuse_artefacts(partage)
+  .adopt_db_reuse_artefacts(partage, ids = "densite")
   adopter <- function(...) executer_commande_publication(c("adopt", fixture$sortie, ...),
     root = fixture$root, registre = fixture$lock, projections = fixture$projections,
     reference = fixture$reference, metadata_directory = fixture$metadata_directory,
