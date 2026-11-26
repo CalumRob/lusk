@@ -87,6 +87,18 @@ test_that("the handoff report names every failed or erroring test and its first 
   expect_silent(envir$arreter_si_echecs(echecs[FALSE, , drop = FALSE]))
 })
 
+test_that("testthat error messages survive the timing data-frame conversion", {
+  envir <- new.env(parent = globalenv())
+  sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
+  erreur <- structure(list(message = "writer exploded\nsecond line"),
+    class = c("expectation_error", "expectation", "error", "condition"))
+  echec <- structure(list(message = "expected TRUE\nmore detail"),
+    class = c("expectation_failure", "expectation", "error", "condition"))
+  resultats <- list(list(results = list(erreur)), list(results = list(echec)))
+  expect_identical(envir$messages_resultats_tests(resultats),
+                   c("writer exploded", "expected TRUE"))
+})
+
 test_that("empty budget sections do not print a phantom file offender", {
   envir <- new.env(parent = globalenv())
   sys.source(file.path(pkgload::pkg_path(), "scripts", "verify-r-suite-budget.R"), envir = envir)
