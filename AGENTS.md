@@ -171,6 +171,8 @@ directory path. A **git worktree is a different path → a different hash → an
 library itself never does). On R startup renv then prints "None of the packages recorded in the
 lockfile are currently installed. Use renv::restore()...". **This is a trap.**
 
+**Workers and reviewers never read, list or write the renv cache (`%LOCALAPPDATA%\R\cache\...`) or anything else under the owner's user profile** (owner has denied such access repeatedly). The only allowed environment check is, from the worktree's `pipeline/`, `Rscript -e "cat(requireNamespace('dplyr'), requireNamespace('testthat'), requireNamespace('pkgload'))"` → `TRUE TRUE TRUE`; the startup notice "The project is out-of-sync" is normal. If the check fails, STOP and report — the orchestrator populates the library (copy procedure below).
+
 **NEVER run `renv::restore()`, `renv::install()`, `source('renv/activate.R')`, or any `renv::` function from a worktree.** It re-triggers bootstrap/restore against the shared cache, wipes/truncates the worktree library mid-copy, breaks the environment, and can disturb the main checkout's working renv. If a command seems to need renv, STOP and report to the orchestrator instead.
 
 The environment is already live: R's startup `.Rprofile` auto-activates renv, and the packages
