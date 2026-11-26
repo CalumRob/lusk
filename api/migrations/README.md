@@ -1000,7 +1000,7 @@ verify -> deploy the new API -> HTTP sweep -> contract migration (#1141) -> **sw
    SELECT count(*) FROM resource_publication_event WHERE operation='adopt';-- = N
    SELECT count(*) FROM resource_publication_descriptor d JOIN resource_publication p
      ON d.publication_resource_id=p.resource_id AND d.content_version=p.content_version
-     WHERE NOT p.retired;                                                   -- = N + 1 (AEDAR has two)
+     WHERE NOT p.retired;                                                   -- = D (derived, see below)
    SELECT count(*) FROM resource_publication_descriptor
      WHERE resource_id IN ('aedar_territorial_aggregate','aedar_territory_summary'); -- = 2
    SELECT count(*) FROM scalar_resource_comparison_publication;           -- = C
@@ -1009,6 +1009,18 @@ verify -> deploy the new API -> HTTP sweep -> contract migration (#1141) -> **sw
      JOIN profile_descriptor d ON d.comparison_scalar=m.indicator_id
      WHERE m.scalar_content_version<>d.required_scalar_version;           -- = 0
    ```
+   **`D` is derived from the declarations, never a hard-coded offset.** Rule: one
+   descriptor per declared discovery identity of each adopted resource, i.e. one per
+   resource that declares itself as an indicator, **plus one per named reference alias**
+   its owned-series route publishes (`reference_read_route` in the theme metadata, e.g.
+   `raccordement_courbe` -> `raccordement_reference`), **plus one per extra grammar
+   identity** of a storage resource declared in `semantic-resource-contracts.json`
+   (`aedar` -> `aedar_territorial_aggregate`, `aedar_territory_summary`). The producer
+   computes exactly that; print it from the same kept sortie and metadata:
+   ```powershell
+   Rscript -e "pkgload::load_all('.',quiet=TRUE); ids <- <the N adopted resource ids>; sum(vapply(ids, function(i) length(declarations_decouverte_ressource(i)), 1L))"
+   ```
+   (the guarded proof `test-adopt-db.R` asserts `nrow(descriptors) == sum(declarations)` the same way).
 4. Deploy the new API, then run the HTTP sweep over every resource in `/api/resources`.
 5. Apply the contract migration (#1141), then **sweep again**.
 6. `Rscript scripts/publication.R listing > live.json` -- prints the live registry as

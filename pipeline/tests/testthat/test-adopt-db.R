@@ -89,10 +89,15 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
     "SELECT d.publication_resource_id,d.content_version,p.content_version AS registry_version ",
     "FROM resource_publication_descriptor d JOIN resource_publication p ",
     "ON p.resource_id=d.publication_resource_id ORDER BY d.publication_resource_id"))
-  # One descriptor per resource, except AEDAR which declares BOTH its grammar
-  # identities (aedar_territorial_aggregate, aedar_territory_summary).
-  expect_equal(nrow(descriptors), length(attendus) + 1L)
+  # The expected count is DERIVED from the declarations, not an offset: one descriptor
+  # per declared discovery identity of each adopted resource (an indicator, plus one per
+  # named reference alias its owned-series route publishes, or the grammar identities of
+  # a storage resource such as AEDAR's two).
+  declares <- vapply(attendus, function(id) length(declarations_decouverte_ressource(id,
+    fixture$metadata_directory)), integer(1))
+  expect_equal(nrow(descriptors), sum(declares))
   expect_equal(sum(descriptors$publication_resource_id == "aedar"), 2L)
+  expect_identical(declares[["aedar"]], 2L)
   expect_setequal(descriptors$publication_resource_id, attendus)
   expect_identical(descriptors$content_version, descriptors$registry_version)
   expect_equal(nrow(DBI::dbGetQuery(con, paste0(
