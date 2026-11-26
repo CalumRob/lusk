@@ -175,10 +175,16 @@ mesurer_suite_serielle <- function(prefix) {
       errored = inherits(resultat, "error"), error_message = message_erreur
     )
     if (!is.null(df)) {
+      # Passing expectations need no message walk. Restrict extraction to the
+      # failed/erroring rows so failure reporting does not tax every green file.
+      messages <- rep("<no message>", nrow(df))
+      a_rapporter <- df$failed > 0 | df$error
+      if (any(a_rapporter))
+        messages[a_rapporter] <- messages_resultats_tests(resultat[a_rapporter])
       tests[[f]] <- data.frame(
         file = df$file, test = df$test, nb = df$nb, real = df$real,
         failed = df$failed, error = df$error,
-        first_message = messages_resultats_tests(resultat),
+        first_message = messages,
         stringsAsFactors = FALSE
       )
     }
