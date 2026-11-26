@@ -89,7 +89,10 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
     "SELECT d.publication_resource_id,d.content_version,p.content_version AS registry_version ",
     "FROM resource_publication_descriptor d JOIN resource_publication p ",
     "ON p.resource_id=d.publication_resource_id ORDER BY d.publication_resource_id"))
-  expect_equal(nrow(descriptors), length(attendus))
+  # One descriptor per resource, except AEDAR which declares BOTH its grammar
+  # identities (aedar_territorial_aggregate, aedar_territory_summary).
+  expect_equal(nrow(descriptors), length(attendus) + 1L)
+  expect_equal(sum(descriptors$publication_resource_id == "aedar"), 2L)
   expect_setequal(descriptors$publication_resource_id, attendus)
   expect_identical(descriptors$content_version, descriptors$registry_version)
   expect_equal(nrow(DBI::dbGetQuery(con, paste0(
@@ -139,6 +142,29 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_identical(jetons[["densite"]], global_scalaire)
   expect_identical(jetons[["structure_age"]], global_profil)
   expect_true(is.na(jetons[["aedar"]]))
+  # A rowless scalar-backed placeholder has no live token to carry and the API never
+  # reads its marker: adopt writes none (the next apply does).
+  expect_true(is.na(jetons[["distribution_dpe"]]))
+  expect_equal(as.numeric(DBI::dbGetQuery(con, paste0("SELECT count(*) FROM ",
+    "profile_resource_comparison_publication WHERE indicator_id='distribution_dpe'"))[[1L]]), 0)
+  # The scalar-backed profile's binding: the dependency's marker scalar_content_version
+  # == the descriptor's required_scalar_version (profile_reads.py:52), asserted inside
+  # .adopt_db_predicats_api. Spelled out here: both are the GLOBAL live scalar token.
+  expect_identical(
+    DBI::dbGetQuery(con, paste0("SELECT scalar_content_version FROM ",
+      "scalar_resource_comparison_publication WHERE indicator_id='part_passoires'"))[[1L]],
+    DBI::dbGetQuery(con, paste0("SELECT required_scalar_version FROM profile_descriptor ",
+      "WHERE indicator_id='distribution_dpe'"))[[1L]])
+
+  # AEDAR discovery (api/resource_catalogue.py:1026-1033): both grammar identities of the
+  # single `aedar` storage resource have a live version-bound descriptor.
+  catalogue <- .adopt_db_catalogue(con)
+  aedar <- catalogue[catalogue$resource_id %in%
+    c("aedar_territorial_aggregate", "aedar_territory_summary"), ]
+  expect_setequal(aedar$resource_id, c("aedar_territorial_aggregate", "aedar_territory_summary"))
+  expect_true(all(aedar$publication_id == "aedar"))
+  expect_true(all(aedar$live))
+  expect_true(all(catalogue$live))   # and every other adopted descriptor is live too
 
   # A later `apply` of that resource (a new artefact) replaces its marker normally:
   # the predicates still hold, now with the new token; the untouched resource keeps
@@ -154,6 +180,26 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   tok <- function(x, id) x$scalaires$content_version[x$scalaires$indicator_id == id]
   expect_false(identical(tok(apres, "densite"), global_scalaire))
   expect_identical(tok(apres, "part_passoires"), global_scalaire)
+
+  # Apply of the DEPENDENCY: the cascade (#1138) moves the scalar marker and the profile
+  # binding together, so profile_reads.py:52 still holds with the NEW token.
+  avant_liaison <- DBI::dbGetQuery(con, paste0("SELECT required_scalar_version FROM ",
+    "profile_descriptor WHERE indicator_id='distribution_dpe'"))[[1L]]
+  nouvelles$scalar$part_passoires$facts$value <- nouvelles$scalar$part_passoires$facts$value + 500
+  splitter_sortie(fixture$sortie, root = fixture$root, projections = nouvelles,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory)
+  appliquer <- cli(c("apply", "part_passoires"), root = fixture$root,
+    registre = fixture$lock, con = con)
+  expect_true(all(c("part_passoires", "distribution_dpe") %in% appliquer$resultat$applied))
+  apres2 <- .adopt_db_predicats_api(con, c("densite", "part_passoires"),
+    "structure_age", "distribution_dpe")
+  apres_liaison <- DBI::dbGetQuery(con, paste0("SELECT required_scalar_version FROM ",
+    "profile_descriptor WHERE indicator_id='distribution_dpe'"))[[1L]]
+  expect_false(identical(apres_liaison, avant_liaison))          # the binding really moved
+  expect_identical(tok(apres2, "part_passoires") == tok(apres, "part_passoires"), FALSE)
+  expect_identical(DBI::dbGetQuery(con, paste0("SELECT scalar_content_version FROM ",
+    "scalar_resource_comparison_publication WHERE indicator_id='part_passoires'"))[[1L]],
+    apres_liaison)
 })
 
 test_that("guarded: one altered live row in each shape refuses with zero writes", {
@@ -259,4 +305,41 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
   expect_identical(ligne$motif, "dependance_divergente")
   expect_identical(.adopt_db_digest(con), avant)
   expect_identical(.adopt_db_registry_digest(con), registre_avant)
+})
+
+test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) with zero writes", {
+  con <- .adopt_db_connect()
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  schema <- .adopt_db_schema(con)
+  on.exit(DBI::dbExecute(con, paste0('DROP SCHEMA IF EXISTS "', schema, '" CASCADE')),
+          add = TRUE, after = FALSE)
+  fixture <- .adopt_db_fixture()
+  on.exit(unlink(c(fixture$sortie, fixture$root, fixture$aedar_dir,
+    fixture$metadata_directory), recursive = TRUE), add = TRUE, after = FALSE)
+  .adopt_db_publish_all(con, fixture)
+  adopter <- function(...) executer_commande_publication(c("adopt", fixture$sortie, ...),
+    root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+    con = con, out = nullfile())
+  ref <- DBI::dbGetQuery(con, paste0("SELECT content_version FROM table_publication ",
+    "WHERE table_name='territory_reference'"))[[1L]]
+  jeton <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM scalar_comparison_publication WHERE singleton")[[1L]]
+  # A divergent marker (another token) already exists for densite: refused, untouched.
+  DBI::dbExecute(con, paste0("INSERT INTO scalar_resource_comparison_publication(indicator_id,",
+    "content_version,scalar_content_version,reference_content_version,group_row_count,",
+    "territory_row_count,lineage_row_count) VALUES('densite','autre-jeton','s',$1,1,1,1)"),
+    params = list(ref))
+  avant <- list(.adopt_db_digest(con), .adopt_db_registry_digest(con))
+  for (args in list(character(), "--dry-run")) {
+    err <- tryCatch(adopter(args), error = identity)
+    if (length(args)) {
+      # dry-run reports the refusal instead of raising, and still writes nothing
+      expect_false(inherits(err, "error"))
+    } else {
+      expect_s3_class(err, "erreur_adoption")
+      expect_match(conditionMessage(err), "marqueur_existant_divergent", fixed = TRUE)
+    }
+    expect_identical(list(.adopt_db_digest(con), .adopt_db_registry_digest(con)), avant)
+  }
 })

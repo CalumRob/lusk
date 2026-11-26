@@ -178,10 +178,18 @@
 .adopt_db_fixture <- function() {
   sortie <- tempfile("adopt-sortie-")
   root <- artefacts_fixture_root()
-  metadata_directory <- tempfile("adopt-metadata-")
+  # The semantic grammar (producer-semantic-resources-v1) lives BESIDE the theme-metadata
+  # directory (registre_ressource.R: declarations_semantiques_publication), as in the
+  # package's inst/extdata: without it AEDAR's two grammar identities
+  # (aedar_territorial_aggregate, aedar_territory_summary) get no descriptor.
+  base_metadata <- tempfile("adopt-fixture-")
+  metadata_directory <- file.path(base_metadata, "theme-metadata")
+  withr::defer(unlink(base_metadata, recursive = TRUE), envir = parent.frame())
   aedar_dir <- NULL
   dir.create(sortie, recursive = TRUE)
   dir.create(metadata_directory, recursive = TRUE)
+  file.copy(system.file("extdata", "semantic-resource-contracts.json", package = "lusk"),
+            base_metadata)
   file.copy(list.files(system.file("extdata", "theme-metadata", package = "lusk"),
     pattern = "^theme_.*\\.json$", full.names = TRUE), metadata_directory)
   jsonlite::write_json(list(theme = "programmes", indicator_keys = list("membres", "acv"),
@@ -193,12 +201,9 @@
       acv = list(sources = list("programme_source")))),
     file.path(metadata_directory, "theme_programmes_fixture.json"), auto_unbox = TRUE,
     null = "null", pretty = TRUE)
-  jsonlite::write_json(list(theme = "mobilite", indicator_keys = list("aedar"),
-    sources = list(aedar = "aedar_bretagne"),
-    source_records = list(aedar_bretagne = list(name = "AEDAR")),
-    indicator_pages = list(aedar = list(sources = list("aedar_bretagne")))),
-    file.path(metadata_directory, "theme_mobilite_fixture.json"), auto_unbox = TRUE,
-    null = "null", pretty = TRUE)
+  # No fake "aedar" indicator declaration: AEDAR is discovered through the producer's
+  # semantic grammar (aedar_territorial_aggregate / aedar_territory_summary), exactly as
+  # in production; an indicator entry would shadow it (declarations_decouverte_ressource).
   base <- artefacts_fixture_reference()$rows
   canonical <- data.frame(territoire = base$territory_id, type = base$territory_type,
     nom = base$territory_id, departement = rep(NA_character_, nrow(base)),
@@ -349,29 +354,56 @@
 }
 
 # The API's own comparison predicates, evaluated in the database, for the resources
-# that carry a comparison. Each check cites the api/snapshot_reads.py condition it
-# mirrors; "adopt then deploy the API" must not turn any read into a 503.
-.adopt_db_predicats_api <- function(con, scalaires, profils, profils_scalaires = character()) {
+# that carry a comparison. Each check cites the api/ reader condition it mirrors;
+# "adopt then deploy the API" must not turn any scalar/profile read into a 503.
+#   resource_publication.py = api/resource_publication.py (live_resource_publications)
+#   snapshot_reads.py       = api/snapshot_reads.py
+#   profile_reads.py        = api/profile_reads.py (focal_profiles)
+# Deliberately NOT mirrored (request/cohort-dependent, not a property of adopted rows):
+#   * `member_count == len(members)` (snapshot_reads.py:544,1010) depends on the cohort
+#     of the request; we check the cohort-independent `eligible+missing == member_count`.
+#   * profile_reads.py `len(versions) != 1` ("Profile publication versions are not
+#     uniform"): uniformity of registry content_version across the profiles a REQUEST
+#     selects; it depends on the theme/indicator filter and equally constrains `apply`.
+#   * the typed-reading and HTTP layers (the end-to-end sweep is #1143's rehearsal).
+.adopt_db_predicats_api <- function(con, scalaires, profils, profils_scalaires = character(),
+                                    dependances = c(distribution_dpe = "part_passoires")) {
   dans <- function(ids) in_params(ids)
+  nombre <- function(sql, ...) as.numeric(DBI::dbGetQuery(con, sql, params = list(...))[[1L]][[1L]])
   ref <- DBI::dbGetQuery(con, paste0("SELECT content_version FROM table_publication ",
     "WHERE table_name='territory_reference'"))$content_version[[1L]]
-  registre <- function(ids) DBI::dbGetQuery(con, paste0(
-    "SELECT resource_id,reference_content_version FROM resource_publication ",
-    "WHERE resource_id IN (", dans(ids), ")"), params = as.list(ids))
-  nombre <- function(sql, ...) as.numeric(DBI::dbGetQuery(con, sql, params = list(...))[[1L]][[1L]])
+
+  # live_resource_publications (resource_publication.py:22-50): rows exist, retired=false,
+  # non-empty content_version; the reader fails if len(rows) != len(ids).
+  registre <- function(ids) {
+    r <- DBI::dbGetQuery(con, paste0("SELECT resource_id,shape,content_version,",
+      "reference_content_version FROM resource_publication WHERE resource_id IN (", dans(ids),
+      ") AND retired=false"), params = as.list(ids))
+    testthat::expect_setequal(r$resource_id, ids)                       # :22-50 len(rows)==len(ids)
+    testthat::expect_true(all(!is.na(r$content_version) & nzchar(r$content_version)))
+    r
+  }
+  # SQL boolean copies of the readers' validity expressions
+  groupe_valide <- "(statistic='median' AND eligible_count+missing_count=member_count AND ((eligible_count=0 AND median IS NULL) OR (eligible_count>0 AND median IS NOT NULL AND median NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))))"
+  territoire_valide <- paste0("((status='measured' AND value IS NOT NULL AND rank IS NOT NULL ",
+    "AND tie_count IS NOT NULL AND rank_size IS NOT NULL AND tie_count>=1 AND rank_size>=1 ",
+    "AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size AND rank+tie_count<=rank_size+1) OR ",
+    "(status IN ('suppressed','unsupported','not_available','not_published') AND value IS NULL ",
+    "AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL))")
 
   # _scalar_comparison_publication_marker (snapshot_reads.py:908-936)
+  rs <- registre(scalaires)
   m <- DBI::dbGetQuery(con, paste0("SELECT indicator_id,content_version,scalar_content_version,",
     "reference_content_version,group_row_count,territory_row_count,lineage_row_count ",
     "FROM scalar_resource_comparison_publication WHERE indicator_id IN (", dans(scalaires), ")"),
     params = as.list(scalaires))
-  testthat::expect_setequal(m$indicator_id, scalaires)                      # :924 len(markers)==len(ids)
-  testthat::expect_true(all(m$reference_content_version == ref))            # :930-933 marker[2]==live reference
-  r <- registre(scalaires)
-  testthat::expect_true(all(r$reference_content_version[match(m$indicator_id, r$resource_id)] ==
-                              m$reference_content_version))               # :933 publications[id].reference==marker
-  testthat::expect_true(all(m$content_version != "" & m$scalar_content_version != ""))  # :932
-  testthat::expect_true(all(m$group_row_count >= 1 & m$territory_row_count >= 1))       # :934
+  testthat::expect_setequal(m$indicator_id, scalaires)                      # :924
+  testthat::expect_length(unique(m$reference_content_version), 1L)          # :926-928 len(marker_references)==1
+  testthat::expect_true(all(m$reference_content_version == ref))            # :929-933 == live territory reference
+  testthat::expect_true(all(rs$reference_content_version[match(m$indicator_id, rs$resource_id)] ==
+                              m$reference_content_version))               # :933 publications[id].reference
+  testthat::expect_true(all(nzchar(m$content_version) & nzchar(m$scalar_content_version))) # :932 not marker[0]/[1]
+  testthat::expect_true(all(m$group_row_count >= 1 & m$territory_row_count >= 1))           # :934
   for (id in scalaires) {
     mk <- m[m$indicator_id == id, ]
     jetons <- DBI::dbGetQuery(con, paste0("SELECT DISTINCT comparison_content_version FROM ",
@@ -384,21 +416,37 @@
       "WHERE indicator_id=$1"), id), mk$territory_row_count, info = id)
     testthat::expect_equal(nombre(paste0("SELECT count(*) FROM comparison_source_lineage ",
       "WHERE comparison_family='scalar' AND facet_id=$1"), id), mk$lineage_row_count, info = id)
+    # :1010-1013 group + territory results valid
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM scalar_comparison_group ",
+      "WHERE indicator_id=$1 AND NOT ", groupe_valide), id), 0, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM scalar_comparison_territory ",
+      "WHERE indicator_id=$1 AND NOT ", territoire_valide), id), 0, info = id)
+    # :1014-1017/353 _published_comparison_sources: each group's lineage_source_count is
+    # the number of lineage rows JOINed to source_dataset and source_vintage.
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM scalar_comparison_group g WHERE ",
+      "g.indicator_id=$1 AND g.lineage_source_count <> (SELECT count(*) FROM ",
+      "comparison_source_lineage l JOIN source_dataset sd USING(source_id) ",
+      "JOIN source_vintage sv USING(source_id,vintage_id) WHERE l.comparison_family='scalar' ",
+      "AND l.comparison_context=g.comparison_context AND l.group_id=g.group_id ",
+      "AND l.territory_type=g.territory_type AND l.facet_id=g.indicator_id)"), id), 0, info = id)
   }
 
   # _profile_comparison_publication_marker (snapshot_reads.py:412-440), computed profiles
+  todos <- c(profils, profils_scalaires)
+  rp <- registre(todos)
   p <- DBI::dbGetQuery(con, paste0("SELECT indicator_id,content_version,profile_content_version,",
     "reference_content_version,group_row_count,territory_row_count,lineage_row_count ",
     "FROM profile_resource_comparison_publication WHERE indicator_id IN (",
-    dans(c(profils, profils_scalaires)), ")"), params = as.list(c(profils, profils_scalaires)))
-  testthat::expect_setequal(p$indicator_id, c(profils, profils_scalaires))
-  testthat::expect_true(all(p$reference_content_version == ref))
-  rp <- registre(profils)
-  testthat::expect_true(all(rp$reference_content_version[match(profils, rp$resource_id)] ==
-                              p$reference_content_version[match(profils, p$indicator_id)]))
+    dans(profils), ")"), params = as.list(profils))
+  testthat::expect_setequal(p$indicator_id, profils)                        # :428
+  testthat::expect_length(unique(p$reference_content_version), 1L)          # :430-432
+  testthat::expect_true(all(p$reference_content_version == ref))            # :433-436
+  testthat::expect_true(all(rp$reference_content_version[match(p$indicator_id, rp$resource_id)] ==
+                              p$reference_content_version))               # :437
+  testthat::expect_true(all(nzchar(p$content_version) & nzchar(p$profile_content_version))) # :436 not marker[0]/[1]
+  testthat::expect_true(all(p$group_row_count >= 1 & p$territory_row_count >= 1))           # :438
   for (id in profils) {
     mk <- p[p$indicator_id == id, ]
-    testthat::expect_true(mk$group_row_count >= 1 && mk$territory_row_count >= 1, info = id)
     jetons <- DBI::dbGetQuery(con, paste0("SELECT DISTINCT comparison_content_version FROM ",
       "comparison_source_lineage WHERE comparison_family='profile' AND facet_id=$1"),
       params = list(id))[[1L]]
@@ -413,6 +461,55 @@
     }
     testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_group ",
       "WHERE indicator_id=$1"), id), mk$group_row_count, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_territory ",
+      "WHERE indicator_id=$1"), id), mk$territory_row_count, info = id)
+    # :544-550 group/territory results valid (cohort-independent part)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_group ",
+      "WHERE indicator_id=$1 AND NOT ", groupe_valide), id), 0, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_territory ",
+      "WHERE indicator_id=$1 AND NOT ", territoire_valide), id), 0, info = id)
+    testthat::expect_equal(nombre(paste0("SELECT count(*) FROM profile_comparison_group g WHERE ",
+      "g.indicator_id=$1 AND g.lineage_source_count <> (SELECT count(*) FROM ",
+      "comparison_source_lineage l JOIN source_dataset sd USING(source_id) ",
+      "JOIN source_vintage sv USING(source_id,vintage_id) WHERE l.comparison_family='profile' ",
+      "AND l.comparison_context=g.comparison_context AND l.group_id=g.group_id ",
+      "AND l.territory_type=g.territory_type AND l.facet_id=g.indicator_id)"), id), 0, info = id)
+  }
+
+  # focal_profiles (profile_reads.py:22-55): every scalar-backed profile
+  testthat::expect_length(unique(rp$reference_content_version), 1L)         # :22-25 uniform reference
+  testthat::expect_true(all(rp$reference_content_version == ref))           # :26-27 live_territory_reference_version
+  for (profil in profils_scalaires) {
+    dep <- unname(dependances[[profil]])
+    d <- DBI::dbGetQuery(con, paste0("SELECT unit,comparison_direction,allowed_levels,",
+      "comparison_scalar,required_scalar_version FROM profile_descriptor WHERE indicator_id=$1"),
+      params = list(profil))
+    s <- DBI::dbGetQuery(con, paste0("SELECT s.unit,s.direction,s.comparison_facet,",
+      "(SELECT bool_and(l=ANY(s.allowed_levels)) FROM unnest(p.allowed_levels) l) AS niveaux ",
+      "FROM scalar_descriptor s, profile_descriptor p WHERE s.indicator_id=$1 AND p.indicator_id=$2"),
+      params = list(dep, profil))
+    mk <- DBI::dbGetQuery(con, paste0("SELECT scalar_content_version FROM ",
+      "scalar_resource_comparison_publication WHERE indicator_id=$1"), params = list(dep))
+    testthat::expect_identical(d$comparison_scalar, dep, info = profil)
+    # :52 scalar_markers.get(dep) != required_scalar_version => 503 (THE adopt-then-503 condition)
+    testthat::expect_identical(mk$scalar_content_version, d$required_scalar_version, info = profil)
+    testthat::expect_true(nzchar(d$required_scalar_version), info = profil)
+    testthat::expect_identical(registre(dep)$reference_content_version, ref, info = profil)  # :53
+    testthat::expect_true(nrow(s) == 1L && s$unit == d$unit && s$direction == d$comparison_direction &&
+      isTRUE(s$niveaux) && s$comparison_facet == dep, info = profil)                          # :54-55
   }
   invisible(list(scalaires = m, profils = p))
+}
+
+# AEDAR discovery: api/resource_catalogue.py:1026-1033 serves a resource only through a
+# `resource_publication_descriptor` row joined to a NON-retired `resource_publication`
+# row with the SAME content_version (`live`). One storage resource (`aedar`) projects
+# both grammar identities.
+.adopt_db_catalogue <- function(con) {
+  DBI::dbGetQuery(con, paste0(
+    "SELECT p.resource_id AS publication_id,p.content_version,d.resource_id,",
+    "COALESCE(p.content_version=d.content_version AND NOT p.retired,false) AS live ",
+    "FROM resource_publication_descriptor d LEFT JOIN resource_publication p ",
+    "ON d.publication_resource_id=p.resource_id AND d.content_version=p.content_version ",
+    "ORDER BY p.resource_id,d.resource_id"))
 }
