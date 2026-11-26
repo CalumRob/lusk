@@ -444,22 +444,22 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(("scalar_comparison_publication",))
             if "FROM resource_publication" in sql:
                 resource_id = params[0][0]
-                shape, version = (("scalar", "scalar-v1") if resource_id == "part_passoires"
+                shape, version = (("scalar", "scalar-v1") if resource_id == scalar[0]
                                   else ("declared_profile", "profile-v1"))
                 return Cursor(rows=[(resource_id, shape, version, "ref-v1")])
             if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor(("ref-v1",))
             if "FROM scalar_resource_comparison_publication" in sql:
-                return Cursor(rows=[("part_passoires", "pub", "scalar-v1", "ref-v1", 1, 2,
+                return Cursor(rows=[(scalar[0], "pub", "scalar-v1", "ref-v1", 1, 2,
                     "scalar-v1", "ref-v1", "ref-v1")])
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2, True)])
+                return Cursor(rows=[(scalar[0], "median", 12.0, 2, 2, 0, 2, True)])
             if "FROM scalar_comparison_territory" in sql:
-                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2, True)])
+                return Cursor(rows=[(scalar[0], 10.0, "measured", 1, 1, 2, True)])
             if "FROM comparison_source_lineage l" in sql:
                 if params and params[0] == "profile":
                     return Cursor(rows=[("housing_profile", *source, "pub-v1") for source in lineage])
-                return Cursor(rows=[("part_passoires", *source, "pub") for source in lineage])
+                return Cursor(rows=[(scalar[0], *source, "pub") for source in lineage])
             if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
                 indicator = "dpe_profile" if "JOIN scalar_observation_source os" in sql else "housing_profile"
                 return Cursor(rows=[(indicator, *source) for source in lineage])
