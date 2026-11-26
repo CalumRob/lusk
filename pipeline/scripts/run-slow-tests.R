@@ -97,14 +97,22 @@ executer_tests_lents <- function(fichiers) {
          paste(vapply(resultats[erreurs], conditionMessage, character(1)),
                collapse = "\n"), call. = FALSE)
   }
-  tableaux <- lapply(resultats, as.data.frame)
-  echecs <- sum(vapply(tableaux, function(df) sum(df$failed, na.rm = TRUE),
-                       numeric(1)))
-  attentes <- sum(vapply(tableaux, function(df) sum(df$nb, na.rm = TRUE),
-                         numeric(1)))
-  cat(sprintf("Slow tier: %d expectations | %d failures\n", attentes, echecs))
-  if (echecs > 0L) stop("Slow tier has failing expectations.", call. = FALSE)
+  bilan <- compter_resultats_tests_lents(lapply(resultats, as.data.frame))
+  cat(sprintf("Slow tier: %d expectations | %d failures | %d errors\n",
+              bilan$attentes, bilan$echecs, bilan$erreurs))
+  if (bilan$echecs > 0L || bilan$erreurs > 0L)
+    stop("Slow tier has failing or erroring tests.", call. = FALSE)
   invisible(resultats)
+}
+
+# A testthat ERROR (an exception inside a test) is NOT a failed expectation: it sets
+# the per-test `error` flag and leaves `failed` at 0. Count both, or an erroring slow
+# test reads as green.
+compter_resultats_tests_lents <- function(tableaux) {
+  somme <- function(colonne) sum(vapply(tableaux, function(df)
+    if (colonne %in% names(df)) sum(as.numeric(df[[colonne]]), na.rm = TRUE) else 0,
+    numeric(1)))
+  list(attentes = somme("nb"), echecs = somme("failed"), erreurs = somme("error"))
 }
 
 main_tests_lents <- function() {
