@@ -114,6 +114,8 @@ def test_v1_single_and_batch_missing_dual_series_facet_preserve_base_detail(monk
             self.statements.append(sql)
             if sql.startswith("SET TRANSACTION"):
                 return None
+            if "FROM resource_publication" in sql:
+                return Cursor(("prix_m2", "owned_series", "series-v1", "ref-v1"))
             if "FROM series_descriptor WHERE indicator_id" in sql:
                 return Cursor((["2024"],))
             raise AssertionError(sql)

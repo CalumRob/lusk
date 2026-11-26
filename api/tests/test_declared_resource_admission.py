@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from api import snapshot_reads
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.resource_requests import ResourceReadItem
+from api.publication_outcomes import PublicationUnavailable
 from api.semantic_resource_reader import SemanticResourceReader
 
 # Producer-declared mobility scalars whose numeric publication is intentionally
@@ -88,6 +89,8 @@ class ReaderConnection:
     """Resolution queries the semantic reader performs before the snapshot adapter."""
 
     def execute(self, sql, params=None):
+        if "FROM resource_publication" in sql:
+            return Cursor()
         if "FROM scalar_observation" in sql:
             return Cursor(row=(0,))
         if "territory_id=ANY" in sql:
@@ -129,10 +132,14 @@ def test_semantic_reader_admits_the_declared_resource_on_comparison_intents(item
     connection = ReaderConnection()
 
     if stage == "preflight":
-        reader.preflight(connection, item, default_resource_catalogue())
-    else:
-        reader.read(connection, item, default_resource_catalogue())
+        with pytest.raises(PublicationUnavailable) as raised:
+            reader.preflight(connection, item, default_resource_catalogue())
+        assert raised.value.status_code == 503
+        assert raised.value.detail == "Resource publication is unavailable"
+        assert calls == []
+        return
 
+    reader.read(connection, item, default_resource_catalogue())
     assert len(calls) == 1, calls
     called_stage, indicator_id, kwargs = calls[0]
     assert (called_stage, indicator_id) == (stage, UNPUBLISHED_RESOURCES[0])

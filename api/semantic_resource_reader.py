@@ -13,7 +13,9 @@ from api.profile_reads import focal_profiles
 from api.publication_outcomes import family_for_resource, publication_unavailable
 from api.resource_catalogue import (ResourceCatalogue, database_resource_catalogue,
                                      default_resource_grammar)
-from api.resource_publication import live_territory_reference_version
+from api.resource_publication import (live_resource_publication,
+                                      live_territory_reference_version,
+                                      publication_resource_id)
 
 
 class SemanticResourceReader:
@@ -141,6 +143,16 @@ class SemanticResourceReader:
     def _publication_family(resource):
         """Name the publication family from the producer declaration."""
         return family_for_resource(resource)
+
+    def _require_live_publication(self, conn, resource):
+        """Apply the one registry gate after grammar identity admission.
+
+        Grammar-known but unpublished resources are publication absence, not an
+        unknown identity. Shape readers may repeat this read inside their own
+        snapshot contract; none may invent a parallel admission rule.
+        """
+        return live_resource_publication(
+            conn, publication_resource_id(resource), self._publication_family(resource))
 
     @staticmethod
     def _required_relation_groups(resource):
@@ -368,6 +380,7 @@ class SemanticResourceReader:
         catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
+        self._require_live_publication(conn, resource)
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f != "axis_comparisons"]

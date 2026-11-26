@@ -5,7 +5,7 @@ module projects those declarations and the image-owned shape grammar; it never
 reads theme metadata files or maintains an API-side resource inventory.
 """
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import lru_cache
 import itertools
 import json
@@ -65,6 +65,10 @@ class IndicatorResource:
     # non-Cellule resources and for producers with page.cellule.declare=false,
     # which defer their coordinate space to the published descriptor.
     cellule: dict | None = None
+    # Registry identity may differ from the semantic API identity (AEDAR's two
+    # grammar resources share one publication resource). Discovery hides this
+    # admission detail; reads use it for the one shared registry gate.
+    publication_resource_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,7 +95,7 @@ class ResourceCatalogue:
                 {"field": side["field"], "fields": side["fields"]}
                 for side in physical_relations
             ]
-            for key in ("storage_relation", "publication_table"):
+            for key in ("storage_relation", "publication_table", "publication_resource_id"):
                 declaration.pop(key, None)
             public_resources.append(declaration)
         return {
@@ -1007,7 +1011,8 @@ def project_resource_catalogue(metadata_by_theme: dict,
                 publication_table=declaration.get("publication_table"),
                 side_relations=tuple(declaration.get("side_relations", ())),
                 measure_facets=measure_facets,
-                cellule=aedar_cellule))
+                cellule=aedar_cellule,
+                publication_resource_id=declaration.get("publication_resource_id", resource_id)))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == SERVING_DISPOSITION_EXCLUDED_LEGACY)
@@ -1082,6 +1087,8 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
                             or route.get("reference_indicator") != resource_id):
                         raise ValueError(f"published indicator descriptor disagrees with registry: {resource_id}")
                 resource = matches[0]
+                if resource_id != publication_id:
+                    resource = replace(resource, publication_resource_id=publication_id)
                 declarations.extend(projected.declarations)
             else:
                 raise ValueError(f"published resource shape is not registered: {resource_id}")
