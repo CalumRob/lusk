@@ -164,8 +164,8 @@ test_that("les faits canoniques Programmes reconstruits des Parquets ne publient
                                      "subventions_annuelles",
                                      "subventions_par_domaine"))
   expect_true(all(ind$theme == "programmes"))
-  # La snapshot retenue elle-même porte les 43 domaines courants.
-  expect_length(unique(ind$detail[ind$key == "subventions_par_domaine"]), 43L)
+  # Le nombre attendu vient de la déclaration productrice, pas d'un snapshot figé.
+  expect_length(unique(ind$detail[ind$key == "subventions_par_domaine"]), length(declarees))
   expect_true(all(ind$unit[ind$key == "subventions_annuelles"] == "€"))
   expect_true(all(ind$unit[ind$key == "subventions_par_domaine"] == "€"))
   expect_true(all(is.na(as.matrix(ind[grep("^rang_", names(ind), value=TRUE)]))))
