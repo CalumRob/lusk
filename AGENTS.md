@@ -46,6 +46,12 @@ dispatches and reviews) does what the worker could not:
    `LUSK_TEST_*` / `LUSK_SCALAR_TEST_*`, private `PGPASSFILE`, cleanup opt-in), on the PR's final head,
    then confirm no schema of that run remains (read-only query as the test role). Mocked DB-free tests
    have repeatedly hidden real failures (named DBI params, missing reference, unconfirmed definitions).
+   Run the **whole** guarded suite of every layer the PR touches (`python -m pytest api/tests/integration`
+   for any `api/` or schema change; the R `*-db` tests for any publisher change), not only the PR's new
+   files, and compare with the same suite on `origin/main`: any test green on main and red on the PR
+   blocks the merge. #1140 was merged after running only its 4 new files and silently turned 114
+   older guarded API tests red (#1181). The Python guarded tests require `PGPASSFILE` set explicitly
+   to the default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`.
 3. **Two-axis review** (Standards + Spec, `code-review` skill) on every PR; the owner's standing rule is
    no two implementations of the same operation — check new code against existing writers/readers.
 4. **Concurrent PRs** touching the same shared structures (`REGISTRE_FORMES_RESSOURCE`,
