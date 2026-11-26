@@ -1,6 +1,10 @@
 # Heavy suite entry points share one machine-wide lock; filtered tests stay lock-free.
 
 test_that("a second heavy run waits for the named mutex and says so", {
+  # The handoff budget process already owns this mutex; contention is proved by
+  # the filtered lock-free run instead of self-deadlocking inside the suite.
+  skip_if(identical(Sys.getenv("LUSK_HEAVY_TEST_LOCK_HELD", unset = ""), "1"),
+          "the enclosing heavy run already holds the mutex")
   skip_if_not(.Platform$OS.type == "windows")
   skip_if_not(nzchar(Sys.which("powershell")))
   scripts <- file.path(pkgload::pkg_path(), "scripts")
