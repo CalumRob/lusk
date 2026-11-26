@@ -261,15 +261,15 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     list(ressource = "aedar", table = "aedar_territorial_aggregate", colonne = "n_observed",
       where = "territory_type='commune'", num = TRUE))
   for (x in cas) {
+    savepoint <- paste0("adopt_alt_", gsub("[^A-Za-z0-9_]", "_", x$ressource))
+    DBI::dbExecute(con, paste("SAVEPOINT", savepoint))
     key <- DBI::dbGetQuery(con, paste0("SELECT ctid::text AS rowid FROM ", x$table,
       " WHERE ", x$where, " ORDER BY ctid LIMIT 1"))$rowid[[1L]]
-    old <- DBI::dbGetQuery(con, paste0("SELECT ", x$colonne, " FROM ", x$table,
-      " WHERE ctid='", key, "'"))[[1L]][[1L]]
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " DISABLE TRIGGER USER"))
     DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=", x$colonne,
       "+1 WHERE ctid='", key, "'"))
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
-    avant_table <- .adopt_db_table_digest(con, x$table)
+    avant <- .adopt_db_digest(con)
     registre_avant <- .adopt_db_registry_digest(con)
     err <- local({
       .adopt_db_reuse_artefacts(partage, ids = x$ressource)
@@ -281,12 +281,10 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
-    expect_identical(.adopt_db_table_digest(con, x$table), avant_table, info = x$ressource)
+    expect_identical(.adopt_db_digest(con), avant, info = x$ressource)
     expect_identical(.adopt_db_registry_digest(con), registre_avant, info = x$ressource)
-    DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " DISABLE TRIGGER USER"))
-    DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=$1 WHERE ctid=$2"),
-      params = list(old, key))
-    DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
+    DBI::dbExecute(con, paste("ROLLBACK TO SAVEPOINT", savepoint))
+    DBI::dbExecute(con, paste("RELEASE SAVEPOINT", savepoint))
   }
   expect_identical(.adopt_db_digest(con), partage$digest)
   expect_identical(.adopt_db_registry_digest(con), partage$registry)

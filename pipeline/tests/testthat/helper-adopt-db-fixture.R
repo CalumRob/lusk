@@ -404,14 +404,6 @@
   invisible(NULL)
 }
 
-.adopt_db_table_digest <- function(con, table) {
-  champs <- DBI::dbListFields(con, table)
-  ordre <- paste(vapply(champs, function(champ)
-    as.character(DBI::dbQuoteIdentifier(con, champ)), character(1)), collapse = ",")
-  serialize(DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " ORDER BY ", ordre)),
-            NULL)
-}
-
 .adopt_db_digest <- function(con) {
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ",
@@ -419,7 +411,12 @@
     "'resource_publication_event','scalar_resource_comparison_publication',",
     "'profile_resource_comparison_publication') ",
     "ORDER BY tablename"))$tablename
-  out <- lapply(tables, .adopt_db_table_digest, con = con)
+  out <- lapply(tables, function(table) {
+    champs <- DBI::dbListFields(con, table)
+    ordre <- paste(vapply(champs, function(champ)
+      as.character(DBI::dbQuoteIdentifier(con, champ)), character(1)), collapse = ",")
+    DBI::dbGetQuery(con, paste0("SELECT * FROM ", table, " ORDER BY ", ordre))
+  })
   names(out) <- tables
   serialize(out, NULL)
 }
