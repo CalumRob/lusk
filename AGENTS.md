@@ -41,17 +41,19 @@ dispatches and reviews) does what the worker could not:
    `pipeline/`, run `Rscript scripts/run-slow-tests.R --for <files changed by the PR…>` (all slow tests
    when `--for` is omitted); each slow-test header declares its subject files. Also run the whole tier at
    every periodic cold-build audit and before an E release (ADR-0049 decision 4).
-2. **Guarded DB proofs.** Workers have no `lusk_it_contract` credentials, so their guarded tests skip;
-   a skip is not a pass. Run them yourself per `api/tests/integration/README.md` (process-scoped
-   `LUSK_TEST_*` / `LUSK_SCALAR_TEST_*`, private `PGPASSFILE`, cleanup opt-in), on the PR's final head,
-   then confirm no schema of that run remains (read-only query as the test role). Mocked DB-free tests
-   have repeatedly hidden real failures (named DBI params, missing reference, unconfirmed definitions).
-   Run the **whole** guarded suite of every layer the PR touches (`python -m pytest api/tests/integration`
-   for any `api/` or schema change; the R `*-db` tests for any publisher change), not only the PR's new
-   files, and compare with the same suite on `origin/main`: any test green on main and red on the PR
-   blocks the merge. #1140 was merged after running only its 4 new files and silently turned 114
-   older guarded API tests red (#1181). The Python guarded tests require `PGPASSFILE` set explicitly
-   to the default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`.
+2. **Guarded DB proofs — receipt first.** The worker runs the full guarded filter once at handoff
+   through `pipeline/scripts/run-guarded-r.ps1`, on a clean final head. The runner writes a log and a
+   JSON receipt next to it. Verify the receipt's exact HEAD, empty `git status --porcelain`, filter,
+   testthat summary, `Leftover schemas: none`, start/end time and runner version with
+   `Assert-GuardedRReceipt`; a matching receipt replaces a rerun. Rerun only when in doubt (missing or
+   mismatched receipt, suspicious diff, unreliable evidence). Run the **whole** guarded suite of every
+   layer the PR touches (`python -m pytest api/tests/integration` for any `api/` or schema change; the
+   R `*-db` tests for any publisher change), not only new files, and compare with the same suite on
+   `origin/main`: a test green on main and red on the PR blocks merge (#1181). #1140 was merged after running only its 4 new files and
+   silently turned 114 older guarded API tests red. The Python guarded tests require `PGPASSFILE` set
+   explicitly to the default test passfile (`%APPDATA%\PostgreSQL\pgpass.conf`), never `pgpass-prod.conf`. A skip is not a pass;
+   mocked DB-free tests have repeatedly hidden real failures (named DBI params, missing reference,
+   unconfirmed definitions).
 3. **Two-axis review** (Standards + Spec, `code-review` skill) on every PR; the owner's standing rule is
    no two implementations of the same operation — check new code against existing writers/readers.
 4. **Concurrent PRs** touching the same shared structures (`REGISTRE_FORMES_RESSOURCE`,
@@ -173,23 +175,34 @@ resolve from the populated worktree library + the user library. Run R commands f
 (never activate renv yourself). Keep three verification loops distinct:
 
 ```
-# During iteration: filter to the affected test files (the value is a regex).
+# During iteration: only the affected default/guarded test files (the value is a regex).
+# Filtered runs stay lock-free; do not run the whole default suite each round.
 Rscript -e "testthat::test_local(filter = 'distribution-acces-batiments|modeles-lecture', stop_on_failure = TRUE)"
 
-# Before handoff: the complete default fixture suite.
-Rscript -e "testthat::test_local(stop_on_failure = TRUE)"
+# Handoff: this ONE run replaces a separate plain test_local(). It reports every
+# failed/erroring test (file, test, first message line), exits non-zero, and checks
+# the serial budget: no test > 5 s and no file > 15 s unless listed with a reason.
+Rscript scripts/verify-r-suite-budget.R --csv-prefix=<path-outside-repo>/r-serial
 
-# Serial regression budget: no test > 5 s and no file > 15 s unless listed with a reason.
-Rscript scripts/verify-r-suite-budget.R
-# Reuse an existing timing CSV pair without rerunning: append --from-csv-prefix=<path>.
+# Handoff: full guarded filter ONCE on the clean final head. The repo runner keeps
+# the hard-coded test target, passfile check, mutex, cleanup and leftover check,
+# and writes its log plus JSON receipt outside the repository.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-guarded-r.ps1 -PipelineDir (Get-Location).Path -Filter 'adopt-db|apply-shapes-db|apply-profile-db|apply-scalar-db'
 
-# Orchestrator slow tier: all tests, or only tests whose declared subjects changed.
-Rscript scripts/run-slow-tests.R
+# Workers do not run the slow tier unless the dispatch explicitly requires it.
+# The orchestrator owns the normal pre-merge slow-tier gate and receipt verification:
 Rscript scripts/run-slow-tests.R --for pipeline/R/example.R tests/testthat/example.R
+# Reuse an existing timing CSV pair without rerunning the default suite:
+Rscript scripts/verify-r-suite-budget.R --from-csv-prefix=<path-outside-repo>/r-serial
 
 # Slow parity audit: run for targets/orchestration changes or before a release.
 Rscript scripts/verify-targets-byte-identical.R
 ```
+
+The full default/budget run, slow tier and guarded runner share one machine-wide heavy-run lock:
+`Local\LuskIntegrationContractDb` on Windows, `/tmp/lusk-integration-contract-db.lock` on the Pi.
+They wait rather than overlap; a contending invocation prints that it is waiting. Filtered iteration
+runs deliberately stay lock-free. Timing evidence is taken with no other heavy run on the machine.
 
 The byte-identical parity audit lives under `pipeline/slow-tests/`, outside the default
 testthat suite. It cold-builds each theme and the full graph against `run_pipeline()` and can take
