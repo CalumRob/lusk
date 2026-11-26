@@ -92,7 +92,8 @@ try {
     $ErrorActionPreference = 'Continue'
     & Rscript -e "testthat::test_local(filter='$Filter', stop_on_failure=FALSE)" 2>&1 |
       ForEach-Object { $sortie += "$_"; "$_" } |
-      Tee-Object -LiteralPath $log -Append
+      # Windows PowerShell 5.1: -Append belongs to the -FilePath parameter set.
+      Tee-Object -FilePath $log -Append
     $testExitCode = $LASTEXITCODE
     if ($null -eq $testExitCode) { $testExitCode = 1 }
     $ErrorActionPreference = 'Stop'
