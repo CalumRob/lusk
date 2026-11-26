@@ -1145,7 +1145,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         # singular version for a theme containing independently published scalars.
         scalar_marker = ((next(iter(publications.values())).content_version, reference_version)
                          if len(publications) == 1 else None)
-    live_resource_publications(
+    profile_publications = live_resource_publications(
         conn, [profile["indicator"] for profile in (profiles or [])], "profile",
         reference_content_version=reference_version)
     cohort_type, members, scope = _comparison_cohort_in_snapshot(
@@ -1159,11 +1159,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             published_profile_context = (None if comparison_statistic == "mean"
                                          else fixed_context)
             if profile_coordinates:
+                # A coordinate-selected comparison addresses exactly one profile.
+                # The shared gate above already validated that resource's live
+                # registry row and reference clock; only ambiguity remains here.
                 if len(profile_publications) != 1:
-                    raise HTTPException(503, "Profile publication is unavailable or incompatible")
-                profile_marker = next(iter(profile_publications.values()))
-                if (not profile_marker.content_version
-                        or profile_marker.reference_content_version != reference_version):
                     raise HTTPException(503, "Profile publication is unavailable or incompatible")
             elif published_profile_context:
                 _profile_comparison_publication_marker(

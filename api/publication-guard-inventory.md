@@ -361,7 +361,6 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_series_comparison_snapshot` | `—` | Series comparison point is not a declared axis |
 | `fatal` | `snapshot_reads.py` | `_series_comparison_snapshot` | `—` | Series publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
-| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Published scalar comparison omits a declared indicator |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Demographic cloud reading identity is ambiguous or absent |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Selected demographic cloud facts are unavailable or incompatible |

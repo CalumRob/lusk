@@ -149,8 +149,9 @@ class TwoProfileConnection(PublicationConnection):
 class ProfileHTTPConnection:
     """One read-only snapshot answering the real semantic profile route's SQL."""
 
-    def __init__(self, versions):
+    def __init__(self, versions, profile_ids=None):
         self.versions = versions
+        self.profile_ids = profile_ids
 
     @contextmanager
     def transaction(self):
@@ -170,7 +171,12 @@ class ProfileHTTPConnection:
         if "SELECT content_version,row_count FROM table_publication" in normalized:
             return Cursor(row=("ref-v1", 2))
         if "SELECT indicator_id,comparison_scalar FROM profile_descriptor" in normalized:
-            return Cursor(rows=[(params[2], None)])
+            return Cursor(rows=[(resource_id, None) for resource_id in
+                                (self.profile_ids or [params[2]])])
+        if "SELECT comparison_detail,comparison_sex,comparison_scalar FROM profile_descriptor" in normalized:
+            return Cursor(row=("principales", None, None))
+        if "SELECT axis_key FROM profile_axis" in normalized:
+            return Cursor(rows=[("principales",), ("vacants",)])
         if "SELECT 1 FROM profile_descriptor WHERE indicator_id=%s" in normalized:
             return Cursor(row=(1,))
         if "SELECT theme_id,allowed_levels FROM profile_descriptor" in normalized:
@@ -178,9 +184,9 @@ class ProfileHTTPConnection:
         if "SELECT allowed_levels FROM profile_descriptor" in normalized:
             return Cursor(row=(["commune"],))
         if "FROM profile_descriptor WHERE" in normalized:
-            resource_id = params[2]
             return Cursor(rows=[(resource_id, resource_id, "%", ["commune"], "pd1",
-                                 "d1", None, "high", None, None, "stock", False)])
+                                 "d1", None, "high", None, None, "stock", False)
+                                for resource_id in (self.profile_ids or [params[2]])])
         if "FROM scalar_descriptor WHERE theme_id" in normalized:
             return Cursor()
         if normalized == "SELECT to_regclass(%s)":
@@ -200,12 +206,12 @@ class ProfileHTTPConnection:
 
 
 @contextmanager
-def profile_http_client(monkeypatch, versions, comparison_results=()):
+def profile_http_client(monkeypatch, versions, comparison_results=(), profile_ids=None):
     from fastapi.testclient import TestClient
     from api import main
     from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
-    connection = ProfileHTTPConnection(versions)
+    connection = ProfileHTTPConnection(versions, profile_ids=profile_ids)
 
     class Pool:
         @contextmanager
@@ -434,6 +440,37 @@ def test_public_batch_serves_two_profiles_at_different_versions(monkeypatch):
     assert [(row["resource"], row["data"]["content_version"])
             for row in response.json()["results"]] == [
         ("age_du_bati", "profile-v1"), ("mix_logements", "profile-v2")]
+
+
+def test_public_non_default_profile_coordinate_runs_real_preflight(monkeypatch):
+    with profile_http_client(monkeypatch, {"mix_logements": "profile-v2"}, [{
+            "indicator": "mix_logements", "facet": {"detail": "vacants", "sex": None},
+            "status": "available"}]) as client:
+        response = client.post("/api/resources/read", json={
+            "resource": "mix_logements",
+            "target": {"kind": "territory", "type": "commune", "id": "c1"},
+            "coordinates": {"detail": ["vacants"]},
+            "intent": {"kind": "fixed_comparison", "context": "default"},
+        })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["profile_content_version"] == "profile-v2"
+    assert response.json()["result"]["source_facet"] == {"detail": "vacants", "sex": None}
+
+
+def test_public_non_default_profile_coordinate_refuses_ambiguous_profiles(monkeypatch):
+    with profile_http_client(monkeypatch,
+            {"age_du_bati": "profile-v1", "mix_logements": "profile-v2"},
+            profile_ids=["age_du_bati", "mix_logements"]) as client:
+        response = client.post("/api/resources/read", json={
+            "resource": "mix_logements",
+            "target": {"kind": "territory", "type": "commune", "id": "c1"},
+            "coordinates": {"detail": ["vacants"]},
+            "intent": {"kind": "fixed_comparison", "context": "default"},
+        })
+
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == "Profile publication is unavailable or incompatible"
 
 
 def test_public_profile_comparison_emits_its_own_singular_version(monkeypatch):
