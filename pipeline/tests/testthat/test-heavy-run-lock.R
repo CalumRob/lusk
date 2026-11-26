@@ -45,6 +45,35 @@ test_that("a second heavy run waits for the named mutex and says so", {
   expect_true(any(grepl("contention proved", sortie, fixed = TRUE)))
 })
 
+test_that("the PowerShell 5.1 heavy wrapper executes R and propagates its exit code", {
+  skip_if(identical(Sys.getenv("LUSK_HEAVY_TEST_LOCK_HELD", unset = ""), "1"),
+          "the enclosing heavy run already holds the mutex")
+  skip_if_not(.Platform$OS.type == "windows")
+  skip_if_not(nzchar(Sys.which("powershell")))
+  wrapper <- file.path(pkgload::pkg_path(), "scripts", "run-heavy-r.ps1")
+  script <- tempfile(fileext = ".R")
+  on.exit(unlink(script), add = TRUE)
+  executer <- function(contenu) {
+    writeLines(contenu, script)
+    sortie <- suppressWarnings(system2("powershell", c("-NoProfile",
+      "-ExecutionPolicy", "Bypass", "-File", shQuote(wrapper), "-Script", shQuote(script)),
+      stdout = TRUE, stderr = TRUE))
+    status <- attr(sortie, "status")
+    if (is.null(status)) status <- 0L
+    list(status = status, output = sortie)
+  }
+
+  passe <- executer('cat("heavy wrapper executed\\n")')
+  expect_identical(passe$status, 0L, info = paste(passe$output, collapse = "\n"))
+  expect_true(any(grepl("heavy wrapper executed", passe$output, fixed = TRUE)))
+  expect_true(any(grepl("Heavy-run lock acquired: Local\\LuskIntegrationContractDb",
+                        passe$output, fixed = TRUE)))
+
+  echec <- executer('stop("heavy wrapper failure")')
+  expect_true(echec$status != 0L, info = paste(echec$output, collapse = "\n"))
+  expect_true(any(grepl("heavy wrapper failure", echec$output, fixed = TRUE)))
+})
+
 test_that("both full-suite R entry points delegate to the shared heavy-run lock", {
   scripts <- file.path(pkgload::pkg_path(), "scripts")
   for (fichier in c("verify-r-suite-budget.R", "run-slow-tests.R")) {
