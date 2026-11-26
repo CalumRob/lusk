@@ -14,6 +14,7 @@ import pytest
 
 from api.tests.integration.resource_publication_helper import publish_resource
 from api.tests.integration.test_postgres_publication import canonical_db_env
+from api.tests.resource_grammar_fixtures import SHAPES, five_shape_grammar, semantic_resource_id
 
 
 pytestmark = pytest.mark.integration
@@ -204,4 +205,66 @@ def test_unknown_and_retired_resource_classification(canonical_db_env, case):
             main.app.dependency_overrides.pop(main.get_repository, None)
         else:
             main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()
+
+
+@pytest.mark.parametrize(("kind", "family", "relation"), SHAPES)
+def test_declared_but_unpublished_resource_is_an_item_outcome_over_real_http(
+        canonical_db_env, tmp_path, kind, family, relation):
+    """Grammar identity is admission; the registry alone decides availability."""
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    grammar = five_shape_grammar(tmp_path)
+    resource_id = semantic_resource_id(kind)
+    with psycopg.connect(canonical_db_env["publish_dsn"]) as connection:
+        connection.execute(
+            "INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune','Focal')",
+            (FOCAL,),
+        )
+        connection.execute(
+            "INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',1)",
+        )
+
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
+                          open=True, kwargs={"autocommit": True})
+    previous_repository = main.app.dependency_overrides.get(main.get_repository)
+    previous_grammar = main.app.dependency_overrides.get(main.get_resource_grammar)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_resource_grammar] = lambda: grammar
+    try:
+        with TestClient(main.app) as client:
+            item = {
+                "resource": resource_id,
+                "target": {"kind": "territory", "type": "commune", "id": FOCAL},
+                "intent": {"kind": "facts"},
+            }
+            single = client.post("/api/resources/read", json=item)
+            assert single.status_code == 503, single.text
+            assert single.json()["detail"] == "Resource publication is unavailable"
+
+            batch = client.post("/api/resources/read-batch", json={
+                "contract": "semantic-read-batch-v2",
+                "items": [{"id": "unpublished", **item}],
+            })
+            assert batch.status_code == 200, batch.text
+            assert batch.json()["results"] == [{
+                "id": "unpublished", "resource": resource_id,
+                "status": "publication_unavailable", "reason": "publication_absent",
+                "family": family,
+            }]
+            discovery = client.get("/api/resources")
+            assert discovery.status_code == 200, discovery.text
+            assert discovery.json()["resources"] == []
+    finally:
+        if previous_repository is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_repository
+        if previous_grammar is None:
+            main.app.dependency_overrides.pop(main.get_resource_grammar, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_grammar] = previous_grammar
         pool.close()

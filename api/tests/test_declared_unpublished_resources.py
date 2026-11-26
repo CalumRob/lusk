@@ -4,26 +4,18 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
-from pathlib import Path
-import shutil
 
 import pytest
 from fastapi.testclient import TestClient
 
 from api import main
 from api.repository import ReadRepository
-from api.resource_catalogue import ResourceGrammar
-
-
-ROOT = Path(__file__).parents[2]
-SHAPES = (
-    ("scalar", "scalar", "scalar_descriptor"),
-    ("declared_profile", "profile", "profile_descriptor"),
-    ("ordered_series", "ordered_series", "series_descriptor"),
-    ("period_detail", "collection", "observed_collection_descriptor"),
-    ("aedar_source_grain", "aedar", "aedar_territorial_aggregate"),
+from api.tests.resource_grammar_fixtures import (
+    PUBLISHED_SCALAR, SHAPES, five_shape_grammar, semantic_resource_id,
 )
-PUBLISHED = "published_scalar"
+
+
+PUBLISHED = PUBLISHED_SCALAR
 FOCAL = "22001"
 
 
@@ -84,33 +76,10 @@ class Pool:
 
 @pytest.fixture(scope="module")
 def grammar(tmp_path_factory):
-    directory = tmp_path_factory.mktemp("declared-unpublished-grammar")
-    source = ROOT / "pipeline/inst/extdata"
-    contract = json.loads((source / "semantic-resource-contracts.json").read_text(encoding="utf-8"))
-    declarations = [
-        {
-            "resource_id": resource_id,
-            "kind": kind,
-            "fields": ["value"],
-            "storage_relation": relation,
-            "allowed_levels": ["commune"],
-            "intents": ["facts"],
-        }
-        for resource_id, (kind, _family, relation) in (
-            ("declared_" + kind, (kind, family, relation))
-            for kind, family, relation in SHAPES if kind != "aedar_source_grain"
-        )
-    ]
-    declarations.append({
-        "resource_id": PUBLISHED, "kind": "scalar", "fields": ["value"],
-        "storage_relation": "scalar_descriptor", "allowed_levels": ["commune"],
-        "intents": ["facts"],
-    })
-    contract["resources"].extend(declarations)
-    path = directory / "semantic-resource-contracts.json"
-    path.write_text(json.dumps(contract), encoding="utf-8")
-    shutil.copy2(source / "aedar-typequ-universe.json", directory)
-    return ResourceGrammar(path, contract)
+    return five_shape_grammar(
+        tmp_path_factory.mktemp("declared-unpublished-grammar"),
+        include_published_scalar=True,
+    )
 
 
 @pytest.fixture
@@ -152,7 +121,7 @@ def request(resource_id):
 
 @pytest.mark.parametrize(("kind", "family", "relation"), SHAPES)
 def test_declared_but_unpublished_single_read_is_typed_unavailable(client, kind, family, relation):
-    resource_id = "aedar_territorial_aggregate" if kind == "aedar_source_grain" else "declared_" + kind
+    resource_id = semantic_resource_id(kind)
 
     response = client.post("/api/resources/read", json=request(resource_id))
 
@@ -163,7 +132,7 @@ def test_declared_but_unpublished_single_read_is_typed_unavailable(client, kind,
 @pytest.mark.parametrize(("kind", "family", "relation"), SHAPES)
 def test_declared_but_unpublished_batch_item_does_not_block_published_sibling(
         client, kind, family, relation):
-    resource_id = "aedar_territorial_aggregate" if kind == "aedar_source_grain" else "declared_" + kind
+    resource_id = semantic_resource_id(kind)
 
     response = client.post("/api/resources/read-batch", json={
         "contract": "semantic-read-batch-v2",
