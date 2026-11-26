@@ -323,9 +323,10 @@
 
 # One published fixture serves every guarded case in test-adopt-db.R. The case
 # owns the outer transaction and always rolls it back. Production publication
-# transactions join it through savepoints; PostgreSQL-only transaction mode
+# transactions join it through savepoints; dbWriteTable() is routed through the
+# equivalent non-committing append method. PostgreSQL-only transaction mode
 # changes that cannot run after the fixture's first write are suppressed here.
-# Their own DB-free contract remains in test-publication-cli.R.
+# Their own DB-free contracts remain in test-publication-cli.R and the adapter tests.
 .adopt_db_remplacer_binding <- function(nom, valeur, envir) {
   original <- get(nom, envir = asNamespace("DBI"), inherits = FALSE)
   assignInNamespace(nom, valeur, ns = "DBI")
@@ -357,6 +358,15 @@
     on.exit(NULL)
     valeur
   }, envir = envir)
+  # RPostgres::dbWriteTable() commits even when append=TRUE. Its append method
+  # performs the same parameterised insert without owning a transaction.
+  .adopt_db_remplacer_binding("dbWriteTable",
+    function(con, name, value, append = FALSE, row.names = FALSE, ...) {
+      if (!isTRUE(append) || !identical(row.names, FALSE))
+        stop("The adopt rollback harness only appends complete fixture rows.")
+      if (!nrow(value)) return(0L)
+      DBI::dbAppendTable(con, name, value, ...)
+    }, envir = envir)
   invisible(NULL)
 }
 
