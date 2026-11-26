@@ -21,13 +21,10 @@ PAGES_SCALAIRES_MOBILITE <- c(
   "raccordement_tc"
 )
 
-# Les clés déclarées que le Parquet Mobilité COMMIS ne porte pas encore : la
-# publication réelle des faits appartient au prochain run (l'artefact conservé
-# est le snapshot précédent). La parité des FAITS les exclut explicitement —
-# jamais un test qui prétend les avoir publiées.
-PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION <- c(
-  "stations_service", "stations_service_1000", "bornes_recharge_1000"
-)
+# Le Parquet Mobilité COMMIS porte désormais les trois densités de ravitaillement
+# (#953). Toute page déclarée mais encore absente doit être nommée ici ; la liste
+# vide signifie que la totalité du périmètre est publiée.
+PAGES_SCALAIRES_MOBILITE_EN_ATTENTE_DE_PUBLICATION <- character()
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
 
@@ -361,10 +358,9 @@ test_that("parité pages scalaires ↔ Parquet Mobilité conservé : niveaux, un
   skip_if_not(dir.exists(racine_public), "public/data absent — la racine du dépôt est introuvable")
   meta <- lire_theme_metadata("mobilite")
   faits <- nanoparquet::read_parquet(file.path(racine_public, "indicateurs_mobilite.parquet"))
-  # L'artefact COMMIS est le snapshot de la publication précédente : il ne
-  # porte pas encore les trois densités de ravitaillement (#953), dont les
-  # faits naîtront au prochain run. La parité couvre les clés publiées, et le
-  # diff est explicitement nommé — jamais une clé oubliée derrière un filtre.
+  # L'artefact COMMIS porte les trois densités de ravitaillement (#953). La
+  # parité couvre toutes les clés déclarées, et tout diff restant doit être
+  # explicitement nommé — jamais une clé oubliée derrière un filtre.
   cles_publiees <- intersect(PAGES_SCALAIRES_MOBILITE, unique(faits$key))
   expect_setequal(
     setdiff(PAGES_SCALAIRES_MOBILITE, cles_publiees),

@@ -164,13 +164,15 @@ test_that("raccordement scalar projection binds its producer metadata, source vi
   canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_mobilite.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(canonical_dir, "vintages.parquet"))
   current <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
-  # Le Parquet conservé est le snapshot de la publication PRÉCÉDENTE : il ne
-  # se lie pas au canon courant (la fraîcheur du raccordement a changé). La
-  # métadonnée servie est désormais exactement la projection du canon (#953),
-  # il n'existe plus de copie « historique » à opposer — la vérité producteur
-  # reste la liaison NÉGATIVE ci-dessous.
-  expect_error(validate_raccordement_scalar_bundle(canonical, current, vintages),
-    "Raccordement scalar source vintage is unavailable in its metadata bundle")
+  # Le Parquet conservé porte désormais le vintage courant du raccordement : la
+  # liaison positive est prouvée, puis une provenance falsifiée reste refusée.
+  expect_silent(validate_raccordement_scalar_bundle(canonical, current, vintages))
+  fausse_provenance <- canonical
+  fausse_provenance$vintage_version[
+    fausse_provenance$key %in% c("raccordement_tc", "raccordement_courbe")
+  ] <- "forged"
+  expect_error(validate_raccordement_scalar_bundle(fausse_provenance, current, vintages),
+    "Raccordement scalar provenance disagrees with its producer vintage")
 
   artifact <- lire_artefact_raccordement_national()
   candidate_vintages <- vintages_mobilite()
