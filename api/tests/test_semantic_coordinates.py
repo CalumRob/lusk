@@ -15,6 +15,8 @@ class Connection:
 
     def execute(self, sql, params=None):
         self.statements.append(sql)
+        if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+            return Cursor([(territory_id, "commune") for territory_id in params[0]])
         if "FROM resource_publication" in sql:
             return Cursor([("prix_m2", "owned_series", "series-v1", "ref-v1")])
         if "FROM observed_collection_category" in sql:
@@ -78,8 +80,8 @@ def test_dynamic_axis_domain_comes_from_published_descriptor_not_facts():
     with pytest.raises(HTTPException) as error:
         reader().preflight(conn, invalid, catalogue)
     assert error.value.status_code == 422
-    # Shared registry gate plus descriptor lookup; the facts reader was never invoked.
-    assert len(conn.statements) == 3
+    # Shared identity/registry gates plus descriptor lookup; no facts read.
+    assert len(conn.statements) == 4
 
 
 @pytest.mark.parametrize("coordinate,rows,expected", [

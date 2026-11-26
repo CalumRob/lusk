@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env  # noqa: F401
 
 pytestmark = pytest.mark.integration
@@ -28,7 +29,7 @@ PUBLISHED_LABEL = "Places de stationnement vélo pour 1 000 hab."
 PUBLISHED_UNIT = "places / 1 000 hab."
 FOCAL, PEER = "29001", "29002"
 DENSITY_CLASS = "D1"
-PUBLICATION_UNAVAILABLE = "Declared resource publication is unavailable"
+PUBLICATION_UNAVAILABLE = "Resource publication is unavailable"
 
 
 def _seed(conn):
@@ -89,6 +90,12 @@ def _seed(conn):
     conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
         scalar_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count) VALUES (true,'comparison-v1','scalar-v1','territory-v1',1,2,2)""")
+    conn.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
+        content_version,scalar_content_version,reference_content_version,group_row_count,
+        territory_row_count,lineage_row_count) VALUES (%s,'comparison-v1','scalar-v1','territory-v1',1,2,2)""",
+        (PUBLISHED_RESOURCE,))
+    publish_indicator(conn, PUBLISHED_RESOURCE, "scalar", "scalar-v1",
+                      reference_content_version="territory-v1")
 
 
 def _territory(target_id=FOCAL):

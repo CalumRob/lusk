@@ -22,6 +22,7 @@ import pytest
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _dsn_with_schema)
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 
 pytestmark = pytest.mark.integration
 
@@ -210,6 +211,8 @@ def _seed(connection):
     connection.execute("""INSERT INTO table_publication(
         table_name,content_version,row_count,reference_content_version)
         VALUES ('scalar_observation','oc-scalar-v1',2,'oc-ref-v1')""")
+    publish_indicator(connection, "densite", "scalar", "oc-scalar-v1",
+                      reference_content_version="oc-ref-v1")
 
 
 def _client(db, monkeypatch):
@@ -396,16 +399,16 @@ def test_v2_hard_request_and_global_integrity_failures_abort_the_request(outcome
                       {"type": "epci", "id": "oc-c1"}]})]))
         with psycopg.connect(outcome_db["publisher_dsn"], autocommit=True) as publisher:
             publisher.execute(f'SET search_path TO "{outcome_db["schema"]}"')
-            publisher.execute("""UPDATE table_publication
+            publisher.execute("""UPDATE resource_publication
                 SET reference_content_version='oc-old-ref'
-                WHERE table_name='scalar_observation'""")
+                WHERE resource_id='densite'""")
         stale = client.post("/api/resources/read-batch", json=_v2([
             _item("stale", "densite"), _item("absent", "structure_age")]))
         with psycopg.connect(outcome_db["publisher_dsn"], autocommit=True) as publisher:
             publisher.execute(f'SET search_path TO "{outcome_db["schema"]}"')
-            publisher.execute("""UPDATE table_publication
+            publisher.execute("""UPDATE resource_publication
                 SET reference_content_version='oc-ref-v1'
-                WHERE table_name='scalar_observation'""")
+                WHERE resource_id='densite'""")
     finally:
         _close(outcome_db, pool)
     assert unknown.status_code == 404
@@ -421,7 +424,7 @@ def test_v2_hard_request_and_global_integrity_failures_abort_the_request(outcome
         assert "results" not in response.json()
     assert stale.status_code == 503
     assert "results" not in stale.json()
-    assert stale.json()["detail"] == "Scalar publication is stale or incompatible"
+    assert stale.json()["detail"] == "Territory reference publication is stale or incompatible"
 
 
 def test_publication_change_between_items_keeps_one_repeatable_read_snapshot(outcome_db, monkeypatch):

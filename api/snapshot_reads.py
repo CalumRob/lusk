@@ -1769,7 +1769,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                     FROM ordered_series_comparison_publication p
                     JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
                     WHERE p.dataset_id=%s AND p.indicator_id=%s""",
-                    (route[0], route[3], reference_version)).fetchone()
+                    (reference_version, route[0], route[3])).fetchone()
                 if (not publication or not publication[0] or publication[1] != marker_by_dataset[route[0]][1]
                         or publication[2] != marker_by_dataset[route[0]][3]
                         or publication[5] != marker_by_dataset[route[0]][1]
@@ -1844,7 +1844,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 s.content_version,%s AS territory_version,p.comparison_axes
               FROM ordered_series_comparison_publication p
               JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
-              WHERE p.dataset_id=%s AND p.indicator_id=%s""",(dataset_id,indicator_id,reference_version)).fetchone()
+              WHERE p.dataset_id=%s AND p.indicator_id=%s""",(reference_version,dataset_id,indicator_id)).fetchone()
             if (not publication or not publication[0] or publication[1]!=content_version or
                     publication[2]!=territory_version or publication[5]!=content_version or
                     publication[6]!=territory_version or publication[3]<1 or publication[4]<1):

@@ -10,7 +10,8 @@ from fastapi import HTTPException
 from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
                               validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
-from api.publication_outcomes import family_for_resource, publication_unavailable
+from api.publication_outcomes import (PublicationUnavailable, family_for_resource,
+                                      publication_unavailable)
 from api.resource_catalogue import (ResourceCatalogue, database_resource_catalogue,
                                      default_resource_grammar)
 from api.resource_publication import (live_resource_publication,
@@ -151,8 +152,10 @@ class SemanticResourceReader:
         unknown identity. Shape readers may repeat this read inside their own
         snapshot contract; none may invent a parallel admission rule.
         """
-        return live_resource_publication(
-            conn, publication_resource_id(resource), self._publication_family(resource))
+        registry_id = publication_resource_id(resource)
+        if registry_id is None:
+            return None
+        return live_resource_publication(conn, registry_id, self._publication_family(resource))
 
     @staticmethod
     def _required_relation_groups(resource):
@@ -185,29 +188,12 @@ class SemanticResourceReader:
             groups.append(("observed_collection_descriptor",))
         return groups
 
-    def admit(self, conn, items, catalogue: ResourceCatalogue | None = None, *,
-              snapshot_state=None, work_budget=200_000):
-        """v2-only identity admission charged to the same request work budget.
-
-        Cheap grammar/identity checks only: declared territory level, focal and
-        selected-member identity/type, required relation groups and cohort
-        filter identities. Cohort members are not enumerated here; the existing
-        preflight resolves them once, within the remaining work budget, and a
-        request-local cache reuses that resolution for the same cohort target.
-        v1 never calls this method.
-        """
-        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
+    @staticmethod
+    def _territory_identities(items):
         identities = []
         cohort_targets = {}
-        relation_groups = []
         for item in items:
-            resource = catalogue.resources_by_id.get(item.resource)
-            if resource is None:
-                raise HTTPException(422, "unknown semantic resource")
-            relation_groups.extend(self._required_relation_groups(resource))
             if item.target.kind == "territory":
-                if item.target.type not in resource.allowed_levels:
-                    raise HTTPException(422, "Territory target type is not declared for this resource")
                 identities.append((item.target.id, item.target.type, "focal"))
             elif item.target.kind == "territory_cohort":
                 key = (item.target.type, item.target.department_id, item.target.epci_id)
@@ -215,27 +201,10 @@ class SemanticResourceReader:
             if item.intent.kind == "selected_comparison":
                 for member in item.intent.members:
                     identities.append((member.id, member.type, "member"))
-        relation_checks = len({relation for group in relation_groups for relation in group})
-        needs_reference = bool(identities or cohort_targets)
-        filter_checks = sum((1 if target.department_id is not None else 0) +
-                            (1 if target.epci_id is not None else 0)
-                            for target in cohort_targets.values())
-        cost = (len(items) + len(identities) + relation_checks +
-                (1 if needs_reference else 0) + filter_checks)
-        if cost > work_budget:
-            raise HTTPException(413, "Resource request exceeds the bounded work limit")
-        if isinstance(snapshot_state, dict):
-            snapshot_state["v2_admission"] = True
-        seen_relations = {}
-        for group in relation_groups:
-            for relation in group:
-                if relation not in seen_relations:
-                    seen_relations[relation] = bool(conn.execute(
-                        "SELECT to_regclass(%s)", (relation,)).fetchone()[0])
-            if not any(seen_relations[relation] for relation in group):
-                raise HTTPException(503, "Required publication storage relation is unavailable")
-        if needs_reference:
-            live_territory_reference_version(conn)
+        return identities, cohort_targets
+
+    @staticmethod
+    def _validate_territory_identities(conn, identities, cohort_targets):
         if identities:
             ids = sorted({identity for identity, _type, _role in identities})
             rows = conn.execute(
@@ -262,6 +231,50 @@ class SemanticResourceReader:
                     (target.epci_id,)).fetchone()
                 if not parent:
                     raise HTTPException(422, "Cohort EPCI filter is not a published EPCI")
+
+    def admit(self, conn, items, catalogue: ResourceCatalogue | None = None, *,
+              snapshot_state=None, work_budget=200_000):
+        """v2-only identity admission charged to the same request work budget.
+
+        Cheap grammar/identity checks only: declared territory level, focal and
+        selected-member identity/type, required relation groups and cohort
+        filter identities. Cohort members are not enumerated here; the existing
+        preflight resolves them once, within the remaining work budget, and a
+        request-local cache reuses that resolution for the same cohort target.
+        v1 never calls this method.
+        """
+        catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
+        identities, cohort_targets = self._territory_identities(items)
+        relation_groups = []
+        for item in items:
+            resource = catalogue.resources_by_id.get(item.resource)
+            if resource is None:
+                raise HTTPException(422, "unknown semantic resource")
+            relation_groups.extend(self._required_relation_groups(resource))
+            if item.target.kind == "territory" and item.target.type not in resource.allowed_levels:
+                raise HTTPException(422, "Territory target type is not declared for this resource")
+        relation_checks = len({relation for group in relation_groups for relation in group})
+        needs_reference = bool(identities or cohort_targets)
+        filter_checks = sum((1 if target.department_id is not None else 0) +
+                            (1 if target.epci_id is not None else 0)
+                            for target in cohort_targets.values())
+        cost = (len(items) + len(identities) + relation_checks +
+                (1 if needs_reference else 0) + filter_checks)
+        if cost > work_budget:
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
+        if isinstance(snapshot_state, dict):
+            snapshot_state["v2_admission"] = True
+        seen_relations = {}
+        for group in relation_groups:
+            for relation in group:
+                if relation not in seen_relations:
+                    seen_relations[relation] = bool(conn.execute(
+                        "SELECT to_regclass(%s)", (relation,)).fetchone()[0])
+            if not any(seen_relations[relation] for relation in group):
+                raise HTTPException(503, "Required publication storage relation is unavailable")
+        if needs_reference:
+            live_territory_reference_version(conn)
+        self._validate_territory_identities(conn, identities, cohort_targets)
         return cost
 
     @staticmethod
@@ -380,7 +393,16 @@ class SemanticResourceReader:
         catalogue = catalogue or database_resource_catalogue(conn, default_resource_grammar())
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
-        self._require_live_publication(conn, resource)
+        identities, cohort_targets = self._territory_identities([item])
+        self._validate_territory_identities(conn, identities, {})
+        try:
+            self._require_live_publication(conn, resource)
+        except PublicationUnavailable:
+            # A missing publication must not mask an invalid cohort filter. For a
+            # live publication the normal cohort resolver performs these checks,
+            # so avoid issuing the same parent lookups twice.
+            self._validate_territory_identities(conn, identities, cohort_targets)
+            raise
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f != "axis_comparisons"]

@@ -54,6 +54,8 @@ class _Connection:
     def execute(self, sql, params=None):
         if "FROM resource_publication" in sql:
             return _Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
+        if "territory_id=ANY" in sql:
+            return _Cursor([(territory_id, "commune") for territory_id in params[0]])
         if "SELECT DISTINCT typequ" in sql:
             return _Cursor([(code,) for code in (params[0] if params else ())])
         if "SELECT count(*)" in sql:

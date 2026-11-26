@@ -57,7 +57,8 @@ class Connection:
         if "table_name='territory_reference'" in normalized:
             return Cursor([("ref-v1", 1)])
         if "territory_id=ANY" in normalized:
-            return Cursor([(FOCAL, "commune")])
+            return Cursor([(territory_id, "commune") for territory_id in params[0]
+                           if territory_id == FOCAL])
         if "FROM profile_descriptor" in normalized:
             return Cursor([(["commune"],)])
         if "SELECT count(*) FROM aedar_territorial_aggregate" in normalized:
@@ -166,6 +167,28 @@ def test_never_declared_identity_remains_request_wide_422(client, kind, family, 
 
     assert response.status_code == 422, response.text
     assert response.json()["detail"] == "unknown semantic resource"
+
+
+def test_declared_but_unpublished_keeps_hard_territory_errors(client):
+    missing_focal = client.post("/api/resources/read", json=request("declared_scalar") | {
+        "target": {"kind": "territory", "type": "commune", "id": "missing"},
+    })
+    missing_member = client.post("/api/resources/read", json=request("declared_scalar") | {
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": FOCAL}, {"type": "commune", "id": "missing"},
+        ]},
+    })
+    wrong_member_type = client.post("/api/resources/read", json=request("declared_scalar") | {
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "epci", "id": FOCAL},
+        ]},
+    })
+
+    assert missing_focal.status_code == 404
+    assert missing_focal.json()["detail"] == "Focal territory not found"
+    assert missing_member.status_code == 404, missing_member.text
+    assert missing_member.json()["detail"] == "Selected comparison territory not found"
+    assert wrong_member_type.status_code == 422
 
 
 @pytest.mark.parametrize(("kind", "family", "relation"), SHAPES)

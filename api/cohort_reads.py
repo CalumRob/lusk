@@ -857,7 +857,7 @@ def _typed_reading_context(conn, item, resource, cohort):
         if not side_marker or not side_marker[0]:
             publication_unavailable("typed_reading",
                 "Typed-reading evidence publication is unavailable or stale")
-        if side_marker[1] != reference[0]:
+        if side_marker[1] != reference_version:
             raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
         if ((side["publication_table"] == resource.publication_table or
              side.get("same_content_version_as") == "resource") and side_marker[0] != marker[0]):

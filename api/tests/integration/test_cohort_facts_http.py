@@ -6,7 +6,9 @@ from contextlib import contextmanager
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 pytestmark = pytest.mark.integration
 
@@ -372,6 +374,27 @@ def cohort_http(canonical_db_env):
                 table_name,content_version,row_count,reference_content_version)
                 VALUES ('ordered_series','cohort-legacy-series-v1',3,'cohort-reference-v1')""")
 
+            publish_indicator(publisher, "densite", "scalar", "cohort-scalar-v1",
+                              reference_content_version="cohort-reference-v1")
+            publish_indicator(publisher, "prix_m2", "owned_series", "cohort-series-v1",
+                              reference_content_version="cohort-reference-v1",
+                              publication_id="dvf_prix_m2", scalar_version="cohort-scalar-v1")
+            publisher.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
+                content_version,scalar_content_version,reference_content_version,group_row_count,
+                territory_row_count,lineage_row_count) VALUES ('prix_m2',
+                'cohort-prix-scalar-comparison-v1','cohort-scalar-v1','cohort-reference-v1',1,2,1)""")
+            publish_indicator(publisher, "structure_age", "declared_profile", "cohort-profile-v1",
+                              reference_content_version="cohort-reference-v1")
+            publish_indicator(publisher, "subventions_par_domaine", "observed_collection",
+                              "cohort-domain-v1", reference_content_version="cohort-reference-v1")
+            publish_indicator(publisher, "couverture_programmes", "observed_collection",
+                              "cohort-membership-v1", reference_content_version="cohort-reference-v1")
+            publish_indicator(publisher, "artif_par_habitant", "owned_series", "cohort-artif-v1",
+                              reference_content_version="cohort-reference-v1",
+                              publication_id="cohort_artif_states")
+            publish_indicator(publisher, "subventions_annuelles", "owned_series",
+                              "cohort-legacy-series-v1", reference_content_version="cohort-reference-v1")
+
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
     query_counter = {"count": 0}
@@ -394,7 +417,11 @@ def cohort_http(canonical_db_env):
                 yield CountingConnection(connection)
 
     previous = main.app.dependency_overrides.get(main.get_repository)
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountingPool())
+    # Typed readings intentionally remain on their legacy per-theme markers in
+    # the expand phase; the producer catalogue supplies admission for them.
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
     try:
         with TestClient(main.app) as client:
             yield CohortHTTP(client, canonical_db_env["publish_dsn"], query_counter)
@@ -403,6 +430,10 @@ def cohort_http(canonical_db_env):
             main.app.dependency_overrides.pop(main.get_repository, None)
         else:
             main.app.dependency_overrides[main.get_repository] = previous
+        if previous_catalogue is None:
+            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
         pool.close()
 
 
@@ -563,6 +594,8 @@ def test_dual_shape_fixed_comparison_keeps_pooled_and_annual_ranks_independent(c
     cohort_http.publish(
         ("UPDATE table_publication SET content_version='cohort-scalar-rank-v1' "
          "WHERE table_name='scalar_observation'", ()),
+        ("UPDATE resource_publication SET content_version='cohort-scalar-rank-v1' "
+         "WHERE resource_id='prix_m2'", ()),
         ("UPDATE scalar_observation SET value=700 WHERE indicator_id='prix_m2' "
          "AND territory_id='cohort-c1'", ()),
         ("UPDATE scalar_observation SET value=900 WHERE indicator_id='prix_m2' "
@@ -571,6 +604,10 @@ def test_dual_shape_fixed_comparison_keeps_pooled_and_annual_ranks_independent(c
          "content_version='cohort-prix-scalar-comparison-rank-v1', "
          "scalar_content_version='cohort-scalar-rank-v1', published_at=transaction_timestamp() "
          "WHERE singleton", ()),
+        ("UPDATE scalar_resource_comparison_publication SET "
+         "content_version='cohort-prix-scalar-comparison-rank-v1', "
+         "scalar_content_version='cohort-scalar-rank-v1', published_at=transaction_timestamp() "
+         "WHERE indicator_id='prix_m2'", ()),
         ("UPDATE scalar_comparison_group SET median=800,eligible_count=2,missing_count=0 "
          "WHERE comparison_context='density_class' AND group_id='D1' "
          "AND territory_type='commune' AND indicator_id='prix_m2'", ()),
@@ -585,6 +622,10 @@ def test_dual_shape_fixed_comparison_keeps_pooled_and_annual_ranks_independent(c
          "AND facet_id='prix_m2'", ()),
         ("UPDATE series_dataset_publication SET content_version='cohort-series-rank-v1',row_count=4, "
          "published_at=transaction_timestamp() WHERE dataset_id='dvf_prix_m2'", ()),
+        ("UPDATE resource_publication SET content_version='cohort-series-rank-v1' "
+         "WHERE resource_id='dvf_prix_m2'", ()),
+        ("UPDATE resource_publication_descriptor SET content_version='cohort-series-rank-v1' "
+         "WHERE publication_resource_id='dvf_prix_m2'", ()),
         ("UPDATE series_dataset_observation SET value=230,status='measured',missing_reason=NULL "
          "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2' "
          "AND territory_id='cohort-c1' AND axis_value='2025'", ()),
@@ -667,10 +708,10 @@ def test_dual_shape_fixed_comparison_keeps_pooled_and_annual_ranks_independent(c
 def test_dual_shape_publications_and_descriptor_fail_closed_and_batch_is_all_or_none(cohort_http):
     item = _prix_m2_item()
     cases = [
-        ([("UPDATE table_publication SET reference_content_version='bad-reference' "
-           "WHERE table_name='scalar_observation'", ())],
-         "UPDATE table_publication SET reference_content_version='cohort-reference-v1' "
-         "WHERE table_name='scalar_observation'"),
+        ([("UPDATE resource_publication SET reference_content_version='bad-reference' "
+           "WHERE resource_id='prix_m2'", ())],
+         "UPDATE resource_publication SET reference_content_version='cohort-reference-v1' "
+         "WHERE resource_id='prix_m2'"),
         ([("ALTER TABLE series_dataset_publication DISABLE TRIGGER series_dataset_publication_complete", ()),
           ("UPDATE series_dataset_publication SET reference_content_version='bad-reference' "
            "WHERE dataset_id='dvf_prix_m2'", ()),
@@ -1165,13 +1206,13 @@ def test_cohort_work_output_and_dependency_failures_remain_bounded(cohort_http, 
         patch.setattr(resource_execution, "MAX_RESPONSE_BYTES", 100)
         over_response = cohort_http.read("densite")
 
-    cohort_http.publish(("UPDATE table_publication SET reference_content_version='stale-reference' "
-                         "WHERE table_name='scalar_observation'", ()))
+    cohort_http.publish(("UPDATE resource_publication SET reference_content_version='stale-reference' "
+                         "WHERE resource_id='densite'", ()))
     try:
         stale = cohort_http.read("densite")
     finally:
-        cohort_http.publish(("UPDATE table_publication SET reference_content_version='cohort-reference-v1' "
-                             "WHERE table_name='scalar_observation'", ()))
+        cohort_http.publish(("UPDATE resource_publication SET reference_content_version='cohort-reference-v1' "
+                             "WHERE resource_id='densite'", ()))
 
     assert invalid_scope.status_code == 422
     assert invalid_coordinate.status_code == 422
@@ -1239,6 +1280,10 @@ def test_batch_observes_one_repeatable_read_snapshot_across_preflight_and_reads(
                      "AND territory_id='cohort-c1'", ()),
                     ("UPDATE table_publication SET content_version='cohort-scalar-v2' "
                      "WHERE table_name='scalar_observation'", ()),
+                    ("UPDATE resource_publication SET content_version='cohort-scalar-v2' "
+                     "WHERE resource_id='densite'", ()),
+                    ("UPDATE resource_publication_descriptor SET content_version='cohort-scalar-v2' "
+                     "WHERE publication_resource_id='densite'", ()),
                 )
             return estimate
 

@@ -38,7 +38,7 @@ def five_shape_grammar(directory, *, include_published_scalar=False):
             "fields": ["value"],
             "storage_relation": relation,
             "allowed_levels": ["commune"],
-            "intents": ["facts"],
+            "intents": ["facts", "fixed_comparison", "selected_comparison"],
         })
     if include_published_scalar:
         contract["resources"].append({

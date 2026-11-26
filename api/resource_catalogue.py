@@ -1082,9 +1082,18 @@ def database_resource_catalogue(conn, grammar: ResourceGrammar) -> ResourceCatal
                 if len(matches) != 1:
                     raise ValueError(f"published indicator descriptor is not projectable: {resource_id}")
                 if resource_id != publication_id:
-                    route = (metadata.get("owned_series_routes") or {}).get(publication_id)
-                    if (not isinstance(route, dict) or not route.get("reference_read_route")
-                            or route.get("reference_indicator") != resource_id):
+                    routes = metadata.get("owned_series_routes") or {}
+                    route = routes.get(resource_id) or routes.get(publication_id)
+                    is_alias = (isinstance(route, dict)
+                                and routes.get(publication_id) is route
+                                and route.get("reference_read_route")
+                                and route.get("reference_indicator") == resource_id)
+                    page = (metadata.get("indicator_pages") or {}).get(resource_id) or {}
+                    is_dataset = (isinstance(route, dict)
+                                  and routes.get(resource_id) is route
+                                  and (route.get("dataset_id")
+                                       or page.get("series_dataset_id")) == publication_id)
+                    if not (is_alias or is_dataset):
                         raise ValueError(f"published indicator descriptor disagrees with registry: {resource_id}")
                 resource = matches[0]
                 if resource_id != publication_id:

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
@@ -56,6 +57,8 @@ def test_capture_native_scalar_page_batches(canonical_db_env, tmp_path, scenario
                 VALUES ('densite',%s,'serie_historique','serie_historique')""", (territory_id,))
         conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
             VALUES ('scalar_observation','densite-v1',%s,'ref-v1')""", (len(observations),))
+        publish_indicator(conn, "densite", "scalar", "densite-v1",
+                          reference_content_version="ref-v1")
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
