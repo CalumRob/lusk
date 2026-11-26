@@ -17,7 +17,10 @@ seed_owned_series_artifact_fixtures <- function(payload, vintages, metadata, des
   invisible(destination)
 }
 
-synthetic_raccordement_projection_fixture <- function() {
+synthetic_raccordement_projection_fixture <- local({
+  fixture <- NULL
+  function() {
+    if (is.null(fixture)) fixture <<- {
   minutes <- seq.int(0L,360L,by=5L); axis_keys <- paste0("t",sprintf("%04d",minutes))
   metadata <- list(theme="mobilite",owned_series_routes=list(raccordement_courbe=list(
     dataset_id="raccordement_curve",indicator_id="raccordement_courbe",theme_id="mobilite",
@@ -51,7 +54,10 @@ synthetic_raccordement_projection_fixture <- function() {
   projection <- project_raccordement_owned_series(canonical,vintages,metadata,
     producer_contract=list(date_mesure="2026-10-21"))
   list(metadata=metadata,canonical=canonical,vintages=vintages,projection=projection)
-}
+    }
+    fixture
+  }
+})
 
 series_milieux_fixture <- local({
   payload <- NULL
@@ -429,7 +435,7 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
 
 test_that("production series input is projected from the canonical Parquet and metadata", {
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  payload <- series_milieux_fixture()
   vintages <- vintages_milieux()
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
   output <- tempfile("series-serving-fixture-")
@@ -514,7 +520,7 @@ test_that("owned-series selectors resolve only their owner and preserve all-chec
 })
 
 test_that("production owned-series reader and check route project both canonical fixture units", {
-  payload <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  payload <- series_milieux_fixture()
   habitat <- series_habitat_fixture()
   habitat_vintages <- vintages_habitat()
   sortie <- tempfile("owned-series-canonical-"); dir.create(sortie)
@@ -722,7 +728,7 @@ test_that("owned raccordement publisher projects its declared serving-only refer
   on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
   nanoparquet::write_parquet(canonical,file.path(sortie,"indicateurs_mobilite.parquet"))
   nanoparquet::write_parquet(vintages,file.path(sortie,"vintages.parquet"))
-  milieux_fixture <- compute_payload_test(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  milieux_fixture <- series_milieux_fixture()
   nanoparquet::write_parquet(milieux_fixture$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
   metadata_file <- file.path(sortie,"theme_mobilite.json")
   jsonlite::write_json(metadata,metadata_file,auto_unbox=TRUE)
