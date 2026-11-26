@@ -25,9 +25,13 @@ pytestmark = pytest.mark.integration
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schema.sql"
 FOCAL, PEER = "fixture-c1", "fixture-c2"
+ADOPTED_SCALAR_COMPARISON = "global-scalar-comparison-token"
+ADOPTED_SCALAR_FACTS = "global-scalar-token"
+ADOPTED_PROFILE_COMPARISON = "global-profile-comparison-token"
+ADOPTED_PROFILE_FACTS = "global-profile-token"
 
 
-def _metadata(resource_id, *, profile=False):
+def _metadata(resource_id, *, profile=False, comparison_scalar=None):
     page = {
         "indicator": resource_id, "label": resource_id, "unit": "%" if profile else "count",
         "direction": "high", "levels": ["commune"], "sources": ["source_a"],
@@ -40,7 +44,8 @@ def _metadata(resource_id, *, profile=False):
         "indicator_pages": {resource_id: page},
     }
     if profile:
-        page["comparison"] = {"unit": "%", "details": ["d1", "d2"], "detail": "d1"}
+        page["comparison"] = ({"unit": "%", "indicator": comparison_scalar} if comparison_scalar else
+                              {"unit": "%", "details": ["d1", "d2"], "detail": "d1"})
         page["pyramid"] = {"dimensions": ["detail"]}
         metadata["profile_contracts"] = {resource_id: {
             "allowed_levels": ["commune"], "completeness": "dense_complete",
@@ -53,16 +58,20 @@ def _metadata(resource_id, *, profile=False):
     return {"kind": "indicator", "metadata": metadata}
 
 
-def _descriptor(connection, resource_id, version, *, profile=False):
+def _descriptor(connection, resource_id, version, *, profile=False, comparison_scalar=None):
     from psycopg.types.json import Jsonb
 
     connection.execute("""INSERT INTO resource_publication_descriptor(
         resource_id,publication_resource_id,content_version,descriptor)
         VALUES (%s,%s,%s,%s)""", (resource_id, resource_id, version,
-                                  Jsonb(_metadata(resource_id, profile=profile))))
+                                  Jsonb(_metadata(resource_id, profile=profile,
+                                                  comparison_scalar=comparison_scalar))))
 
 
-def _seed_scalar(connection, resource_id, version, value):
+def _seed_scalar(connection, resource_id, version, value, *,
+                 comparison_token=None, facts_token=None):
+    comparison_token = comparison_token or version + "-comparison"
+    facts_token = facts_token or version
     connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,
         direction,comparison_facet,allowed_levels,denominator_semantics,completeness,
         descriptor_version) VALUES (%s,'fixture',%s,'count','high',%s,ARRAY['commune'],
@@ -89,24 +98,42 @@ def _seed_scalar(connection, resource_id, version, value):
     connection.execute("""INSERT INTO comparison_source_lineage(comparison_family,
         comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,
         comparison_content_version) VALUES ('scalar','density_class','D1','commune',%s,
-        'source_a','v1',%s)""", (resource_id, version + "-comparison"))
+        'source_a','v1',%s)""", (resource_id, comparison_token))
     connection.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
         content_version,scalar_content_version,reference_content_version,group_row_count,
         territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',1,2,1)""",
-        (resource_id, version + "-comparison", version))
+        (resource_id, comparison_token, facts_token))
     connection.execute("""INSERT INTO resource_publication(resource_id,shape,content_version,
         reference_content_version) VALUES (%s,'scalar',%s,'ref-v1')""", (resource_id, version))
     _descriptor(connection, resource_id, version)
 
 
-def _seed_profile(connection, resource_id="profile_a", version="profile-v1"):
-    label = "Profile A" if resource_id == "profile_a" else "Profile B"
+def _set_profile_comparison_tokens(connection, resource_id, comparison_token, facts_token):
+    """Set the adoption/apply comparison clocks without touching artefact versions."""
+    connection.execute("""UPDATE profile_comparison_group
+        SET profile_content_version=%s WHERE indicator_id=%s""", (facts_token, resource_id))
+    connection.execute("""UPDATE profile_comparison_territory
+        SET profile_content_version=%s WHERE indicator_id=%s""", (facts_token, resource_id))
+    connection.execute("""UPDATE comparison_source_lineage
+        SET comparison_content_version=%s
+        WHERE comparison_family='profile' AND facet_id=%s""", (comparison_token, resource_id))
+    connection.execute("""UPDATE profile_resource_comparison_publication
+        SET content_version=%s,profile_content_version=%s WHERE indicator_id=%s""",
+        (comparison_token, facts_token, resource_id))
+
+
+def _seed_profile(connection, resource_id="profile_a", version="profile-v1", *,
+                  comparison_token=None, facts_token=None, comparison_scalar=None,
+                  required_scalar_version=None):
+    label = resource_id.replace("_", " ").title()
     connection.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,
         allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,
-        comparison_direction,denominator_semantics,detail_units_required)
+        comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics,
+        detail_units_required)
         VALUES (%s,'fixture',%s,%s,ARRAY['commune'],'dense_complete',%s,
-        'd1',NULL,'high','stock',false)""", (
-            resource_id, label, "%", version + "-descriptor"))
+        %s,NULL,'high',%s,%s,'stock',false)""", (
+            resource_id, label, "%", version + "-descriptor",
+            None if comparison_scalar else "d1", comparison_scalar, required_scalar_version))
     connection.execute("INSERT INTO profile_descriptor_source VALUES (%s,'source_a')",
                        (resource_id,))
     connection.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,
@@ -121,29 +148,33 @@ def _seed_profile(connection, resource_id="profile_a", version="profile-v1"):
             connection.execute("""INSERT INTO profile_observation_source(indicator_id,
                 territory_id,detail_key,sex_key,source_id,vintage_id) VALUES (%s,%s,%s,'',
                 'source_a','v1')""", (resource_id, territory_id, detail))
-    connection.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,
-        territory_type,indicator_id,detail_key,sex_key,statistic,median,member_count,
-        eligible_count,missing_count,lineage_source_count,profile_content_version,
-        reference_content_version) VALUES ('density_class','D1','commune',%s,'d1','',
-        'median',15,2,2,0,1,%s,'ref-v1')""", (resource_id, version))
-    connection.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,
-        territory_type,indicator_id,detail_key,sex_key,territory_id,value,status,rank,
-        tie_count,rank_size,profile_content_version,reference_content_version)
-        VALUES ('density_class','D1','commune',%s,'d1','',%s,10,'measured',1,1,2,%s,'ref-v1'),
-               ('density_class','D1','commune',%s,'d1','',%s,20,'measured',2,1,2,%s,'ref-v1')""",
-        (resource_id, FOCAL, version, resource_id, PEER, version))
-    connection.execute("""INSERT INTO comparison_source_lineage(comparison_family,
-        comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,
-        comparison_content_version) VALUES ('profile','density_class','D1','commune',%s,
-        'source_a','v1',%s)""", (resource_id, version + "-comparison"))
-    connection.execute("""INSERT INTO profile_resource_comparison_publication(indicator_id,
-        content_version,profile_content_version,reference_content_version,group_row_count,
-        territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',1,2,1)""",
-        (resource_id, version + "-comparison", version))
+    if not comparison_scalar:
+        connection.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,
+            territory_type,indicator_id,detail_key,sex_key,statistic,median,member_count,
+            eligible_count,missing_count,lineage_source_count,profile_content_version,
+            reference_content_version) VALUES ('density_class','D1','commune',%s,'d1','',
+            'median',15,2,2,0,1,%s,'ref-v1')""", (resource_id, version))
+        connection.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,
+            territory_type,indicator_id,detail_key,sex_key,territory_id,value,status,rank,
+            tie_count,rank_size,profile_content_version,reference_content_version)
+            VALUES ('density_class','D1','commune',%s,'d1','',%s,10,'measured',1,1,2,%s,'ref-v1'),
+                   ('density_class','D1','commune',%s,'d1','',%s,20,'measured',2,1,2,%s,'ref-v1')""",
+            (resource_id, FOCAL, version, resource_id, PEER, version))
+        connection.execute("""INSERT INTO comparison_source_lineage(comparison_family,
+            comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,
+            comparison_content_version) VALUES ('profile','density_class','D1','commune',%s,
+            'source_a','v1',%s)""", (resource_id, version + "-comparison"))
+        connection.execute("""INSERT INTO profile_resource_comparison_publication(indicator_id,
+            content_version,profile_content_version,reference_content_version,group_row_count,
+            territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',1,2,1)""",
+            (resource_id, version + "-comparison", version))
+        _set_profile_comparison_tokens(connection, resource_id,
+            comparison_token or version + "-comparison", facts_token or version)
     connection.execute("""INSERT INTO resource_publication(resource_id,shape,content_version,
         reference_content_version) VALUES (%s,'declared_profile',%s,'ref-v1')""",
         (resource_id, version))
-    _descriptor(connection, resource_id, version, profile=True)
+    _descriptor(connection, resource_id, version, profile=True,
+                comparison_scalar=comparison_scalar)
 
 
 def _republish_profile(connection, resource_id, version):
@@ -152,19 +183,12 @@ def _republish_profile(connection, resource_id, version):
         WHERE indicator_id=%s""", (resource_id,))
     connection.execute("""UPDATE profile_descriptor SET descriptor_version=%s
         WHERE indicator_id=%s""", (version + "-descriptor", resource_id))
-    connection.execute("""UPDATE profile_comparison_group
-        SET median=median+5,profile_content_version=%s WHERE indicator_id=%s""",
-        (version, resource_id))
-    connection.execute("""UPDATE profile_comparison_territory
-        SET value=value+5,profile_content_version=%s WHERE indicator_id=%s""",
-        (version, resource_id))
-    connection.execute("""UPDATE comparison_source_lineage
-        SET comparison_content_version=%s
-        WHERE comparison_family='profile' AND facet_id=%s""",
-        (version + "-comparison", resource_id))
-    connection.execute("""UPDATE profile_resource_comparison_publication
-        SET content_version=%s,profile_content_version=%s WHERE indicator_id=%s""",
-        (version + "-comparison", version, resource_id))
+    connection.execute("""UPDATE profile_comparison_group SET median=median+5
+        WHERE indicator_id=%s""", (resource_id,))
+    connection.execute("""UPDATE profile_comparison_territory SET value=value+5
+        WHERE indicator_id=%s""", (resource_id,))
+    _set_profile_comparison_tokens(connection, resource_id,
+        version + "-comparison", version)
     connection.execute("""UPDATE resource_publication SET content_version=%s
         WHERE resource_id=%s""", (version, resource_id))
     connection.execute("""DELETE FROM resource_publication_descriptor
@@ -193,10 +217,16 @@ def _seed(connection):
         connection.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
             profile_content_version,reference_content_version,group_row_count,territory_row_count)
             VALUES (true,'global-profile-comparison-v1','global-profile-v1','ref-v1',1,2)""")
-        _seed_scalar(connection, "resource_a", "a-v1", 12.0)
-        _seed_scalar(connection, "resource_b", "b-v1", 8.0)
-        _seed_profile(connection)
-        _seed_profile(connection, "profile_b", "profile-v1")
+        _seed_scalar(connection, "resource_a", "a-v1", 12.0,
+            comparison_token=ADOPTED_SCALAR_COMPARISON, facts_token=ADOPTED_SCALAR_FACTS)
+        _seed_scalar(connection, "resource_b", "b-v1", 8.0,
+            comparison_token=ADOPTED_SCALAR_COMPARISON, facts_token=ADOPTED_SCALAR_FACTS)
+        _seed_profile(connection, comparison_token=ADOPTED_PROFILE_COMPARISON,
+            facts_token=ADOPTED_PROFILE_FACTS)
+        _seed_profile(connection, "profile_b", "profile-v1",
+            comparison_token=ADOPTED_PROFILE_COMPARISON, facts_token=ADOPTED_PROFILE_FACTS)
+        _seed_profile(connection, "profile_dpe", "profile-dpe-v1",
+            comparison_scalar="resource_a", required_scalar_version=ADOPTED_SCALAR_FACTS)
 
 
 def _item(resource_id, *, intent=None, item_id=None):
@@ -248,7 +278,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 discovered = client.get("/api/resources")
                 assert discovered.status_code == 200, discovered.text
                 assert {row["resource_id"] for row in discovered.json()["resources"]} == {
-                    "resource_a", "resource_b", "profile_a", "profile_b"}
+                    "resource_a", "resource_b", "profile_a", "profile_b", "profile_dpe"}
 
                 # Requested resource clocks, not the deliberately old global tokens.
                 a = read("resource_a")
@@ -264,8 +294,37 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 sibling = read("profile_b")
                 assert sibling.status_code == 200, sibling.text
                 assert sibling.json()["content_version"] == "profile-v1"
+                adopted_dependent = read("profile_dpe")
+                assert adopted_dependent.status_code == 200, adopted_dependent.text
+                assert adopted_dependent.json()["content_version"] == "profile-dpe-v1"
+                assert adopted_dependent.json()["descriptor"]["required_scalar_version"] == ADOPTED_SCALAR_FACTS
+                adopted_comparison = read("profile_a", {"kind": "fixed_comparison", "context": "default"})
+                assert adopted_comparison.status_code == 200, adopted_comparison.text
+                assert adopted_comparison.json()["profile_content_version"] == ADOPTED_PROFILE_FACTS
+                assert adopted_comparison.json()["profile_content_versions"]["profile_a"] == "profile-v1"
 
-                # #1178: applying one profile does not invalidate its sibling. The
+                # #1178: adopting global comparison tokens must not bind them to
+                # the registry's independent artefact versions. The retired public
+                # theme route is gone, so read its shared snapshot over the same
+                # guarded role and repeatable-read seam.
+                from api.snapshot_reads import _theme_comparison_snapshot
+
+                def read_theme():
+                    with psycopg.connect(_dsn_with_schema(read_dsn, schema)) as reader:
+                        with reader.transaction():
+                            reader.execute(
+                                "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                            return _theme_comparison_snapshot(
+                                reader, "commune", FOCAL, "fixture", None)
+
+                adopted_theme = read_theme()
+                assert adopted_theme["profile_content_versions"] == {
+                    "profile_a": "profile-v1", "profile_b": "profile-v1",
+                    "profile_dpe": "profile-dpe-v1"}
+                assert {row["indicator"] for row in adopted_theme["profile_comparisons"]} == {
+                    "profile_a", "profile_b", "profile_dpe"}
+
+                # Applying one profile does not invalidate its sibling. The
                 # retired public theme route is gone, so exercise the shared theme
                 # snapshot directly over the same guarded read role and MVCC seam.
                 from api.snapshot_reads import _theme_comparison_snapshot
@@ -285,17 +344,13 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 assert [(row["resource"], row["data"]["content_version"])
                         for row in profile_batch.json()["results"]] == [
                     ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
-                with psycopg.connect(_dsn_with_schema(read_dsn, schema)) as reader:
-                    with reader.transaction():
-                        reader.execute(
-                            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-                        theme = _theme_comparison_snapshot(
-                            reader, "commune", FOCAL, "fixture", None)
+                theme = read_theme()
                 assert theme["profile_content_versions"] == {
-                    "profile_a": "profile-v1", "profile_b": "profile-v2"}
+                    "profile_a": "profile-v1", "profile_b": "profile-v2",
+                    "profile_dpe": "profile-dpe-v1"}
                 assert theme["profile_content_version"] is None
                 assert {row["indicator"] for row in theme["profile_comparisons"]} == {
-                    "profile_a", "profile_b"}
+                    "profile_a", "profile_b", "profile_dpe"}
 
                 # Publishing scalar B moves only B; A remains readable with old global markers present.
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
