@@ -55,11 +55,15 @@ test_that("a failed inner publication rolls back its savepoint before the fixtur
   expect_identical(tail(sql, 1L), "ROLLBACK")
 })
 
-test_that("adopt refusal cases reuse the immutable splitter artefacts", {
-  builds <- data.frame(ressource = "densite", forme = "scalar", version = "v1",
-                       stringsAsFactors = FALSE)
-  artefacts <- list(densite = list(version = "v1", forme = "scalar"))
-  .adopt_db_reuse_artefacts(list(builds = builds, artefacts = artefacts))
-  expect_identical(getFromNamespace("splitter_sortie", "lusk")("unused"), builds)
-  expect_identical(getFromNamespace("charger_artefacts_construits", "lusk")("unused"), artefacts)
+test_that("adopt refusal cases reuse only the affected immutable artefacts", {
+  builds <- data.frame(ressource = c("densite", "structure_age"),
+    forme = c("scalar", "profile"), version = c("v1", "v2"), stringsAsFactors = FALSE)
+  artefacts <- list(densite = list(version = "v1", forme = "scalar"),
+    structure_age = list(version = "v2", forme = "profile"))
+  .adopt_db_reuse_artefacts(list(builds = builds, artefacts = artefacts), ids = "densite")
+  attendus <- builds[builds$ressource == "densite", , drop = FALSE]
+  expect_identical(getFromNamespace("splitter_sortie", "lusk")("unused"), attendus)
+  expect_identical(getFromNamespace("charger_artefacts_construits", "lusk")("unused"),
+                   artefacts["densite"])
+  expect_identical(getFromNamespace("construites_depuis_magasin", "lusk")("unused"), attendus)
 })
