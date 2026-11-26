@@ -101,7 +101,11 @@ function Invoke-GuardedRSchemaSnapshot {
 
 # 3. One guarded/heavy run at a time across all sessions, including cleanup and
 # receipt writing. A contender waits and prints the shared mutex name.
-$mutex = New-Object System.Threading.Mutex($false, $script:HeavyTestMutexName)
+$mutexName = $script:HeavyTestMutexName
+if ($testStubDir) {
+  $mutexName = 'Local\LuskGuardedRunnerTest-' + [Guid]::NewGuid().ToString('N')
+}
+$mutex = New-Object System.Threading.Mutex($false, $mutexName)
 $acquired = $false
 $sortie = @()
 $avant = @(); $apres = @(); $restes = @()
@@ -112,9 +116,9 @@ $runError = ''
 $success = $false
 $startedAt = (Get-Date).ToUniversalTime().ToString('o')
 try {
-  $null = Enter-HeavyTestLock -Mutex $mutex
+  $null = Enter-HeavyTestLock -Mutex $mutex -Name $mutexName
   $acquired = $true
-  Write-Output "Heavy-run lock acquired: $script:HeavyTestMutexName"
+  Write-Output "Heavy-run lock acquired: $mutexName"
   $startedAt = (Get-Date).ToUniversalTime().ToString('o')
   $avant = @(Invoke-GuardedRSchemaSnapshot |
     Where-Object { $_ -notmatch '^\[1\]' })

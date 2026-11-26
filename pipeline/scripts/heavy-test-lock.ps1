@@ -5,15 +5,16 @@ $script:HeavyTestMutexName = 'Local\LuskIntegrationContractDb'
 function Enter-HeavyTestLock {
   param(
     [Parameter(Mandatory = $true)][System.Threading.Mutex]$Mutex,
-    [int]$TimeoutSeconds = 3600
+    [int]$TimeoutSeconds = 3600,
+    [string]$Name = $script:HeavyTestMutexName
   )
   if ($TimeoutSeconds -lt 1) { throw 'LockTimeoutSeconds must be positive' }
   $acquired = $Mutex.WaitOne([TimeSpan]::FromSeconds(1))
   if (-not $acquired) {
-    Write-Output "Waiting for $script:HeavyTestMutexName ..."
+    Write-Output "Waiting for $Name ..."
     $acquired = $Mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds - 1))
   }
-  if (-not $acquired) { throw "Timed out waiting for $script:HeavyTestMutexName" }
+  if (-not $acquired) { throw "Timed out waiting for $Name" }
   $true
 }
 
