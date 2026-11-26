@@ -28,6 +28,10 @@ population_scalar_scope_fixture <- function() {
   )
 }
 
+# The full targets import graph is a once-per-session structural fixture. Build
+# it while sourcing the file (inside the 15 s file budget), not inside a test.
+.graphe_imports_scalar_scope <- graphe_imports_namespace()
+
 scope_rows_for <- function(indicator_id, territory_id, territory_type, value,
                            unit, vintage) {
   data.frame(

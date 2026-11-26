@@ -6,6 +6,24 @@ enregistrement <- function(id, sha) {
        vintage = "2026-11", date_reference = "2026-11-18")
 }
 
+# Unlike the structural manifest helper (which deliberately substitutes isolated
+# paths), this command is evaluated. Bind it once per R session to stable caller
+# paths so its embedded cache/sortie arguments are the ones this proof populates.
+if (!exists(".lusk_digests_run_session", globalenv(), inherits = FALSE)) {
+  session <- local({
+    cache <- tempfile("cache-eval-digests-session-")
+    sortie <- tempfile("sortie-eval-digests-session-")
+    dir.create(cache); dir.create(sortie)
+    commande <- withr::with_dir(pkgload::pkg_path(), withr::with_envvar(
+      c(LUSK_THEMES = "", LUSK_MODE = "full", LUSK_CACHE = cache, LUSK_SORTIE = sortie),
+      targets::tar_manifest(names = "digests_run")$command
+    ))
+    list(cache = cache, sortie = sortie, commande = commande)
+  })
+  assign(".lusk_digests_run_session", session, globalenv())
+}
+.digests_run_session <- get(".lusk_digests_run_session", globalenv(), inherits = FALSE)
+
 test_that("l'agrégat du cache garde une seule empreinte par source_id", {
   cache <- tempfile("cache-aggregate-")
   dir.create(cache)
@@ -65,16 +83,14 @@ test_that("aucune commande du graphe ne contient de splice bquote non résolu (#
 })
 
 test_that("la commande réelle de digests_run s'évalue et publie tous les ids lus (#1112)", {
-  cache <- tempfile("cache-eval-digests-")
-  sortie <- tempfile("sortie-eval-digests-")
-  dir.create(cache); dir.create(sortie)
-  on.exit(unlink(c(cache, sortie), recursive = TRUE), add = TRUE)
+  cache <- .digests_run_session$cache
+  sortie <- .digests_run_session$sortie
 
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)
   withr::local_envvar(LUSK_THEMES = "", LUSK_MODE = "full",
                       LUSK_CACHE = cache, LUSK_SORTIE = sortie)
-  commande <- targets::tar_manifest(names = "digests_run")$command
+  commande <- .digests_run_session$commande
   # `publier_geometrie` a déjà écrit les trois lectures réseau dans le fichier.
   ecrire_digests_source(stats::setNames(
     lapply(names(LECTURES_RESEAU), function(id) enregistrement(id, paste0("sha-", id))),
