@@ -61,8 +61,11 @@ class PublicationConnection:
         if "to_regclass('profile_resource_comparison_publication')" in normalized:
             return Cursor(row=("profile_resource_comparison_publication",))
         if "FROM scalar_resource_comparison_publication" in normalized:
-            return Cursor(rows=[(resource_id, *self.scalar_markers[resource_id])
-                                for resource_id in params[0] if resource_id in self.scalar_markers])
+            scalar_version_only = "SELECT indicator_id,scalar_content_version" in normalized
+            return Cursor(rows=[
+                (resource_id, self.scalar_markers[resource_id][1]) if scalar_version_only else
+                (resource_id, *self.scalar_markers[resource_id])
+                for resource_id in params[0] if resource_id in self.scalar_markers])
         if "FROM profile_resource_comparison_publication" in normalized:
             return Cursor(rows=[(resource_id, *self.profile_markers[resource_id])
                                 for resource_id in params[0] if resource_id in self.profile_markers])
@@ -179,6 +182,39 @@ def test_theme_profiles_at_different_resource_versions_coexist():
     assert [(profile["indicator"], profile["content_version"]) for profile in profiles] == [
         ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
     assert _version is None
+
+
+def test_each_profiles_scalar_dependency_matches_its_own_publication():
+    class ScalarBackedProfiles(TwoProfileConnection):
+        def execute(self, sql, params=None):
+            if "FROM profile_descriptor" in " ".join(sql.split()):
+                return Cursor(rows=[
+                    ("profile_a", "Profile A", "%", ["commune"], "pd1",
+                     None, None, "high", "resource_a", "a-v1", "stock", False),
+                    ("profile_b", "Profile B", "%", ["commune"], "pd2",
+                     None, None, "high", "resource_b", "b-v1", "stock", False),
+                ])
+            if "FROM scalar_descriptor" in " ".join(sql.split()):
+                return Cursor(rows=[(resource_id, "%", "high", ["commune"], resource_id)
+                                    for resource_id in params[0]])
+            return super().execute(sql, params)
+
+    conn = ScalarBackedProfiles()
+    profiles, _version = profile_reads.focal_profiles(
+        conn, "commune", "c1", theme_id="fixture", include_cells=False,
+        include_all_descriptors=True)
+    assert [(profile["indicator"], profile["comparison_scalar"],
+             profile["content_version"]) for profile in profiles] == [
+        ("profile_a", "resource_a", "profile-v1"),
+        ("profile_b", "resource_b", "profile-v2")]
+
+    conn.registry["resource_a"] = ("scalar", "a-v2", "ref-v1")
+    with pytest.raises(HTTPException) as raised:
+        profile_reads.focal_profiles(
+            conn, "commune", "c1", theme_id="fixture", include_cells=False,
+            include_all_descriptors=True)
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "Profile scalar dependency is stale or incompatible"
 
 
 def test_comparison_markers_match_each_resources_own_registry_version():

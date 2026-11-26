@@ -50,6 +50,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                 continue
             facet = scalar_descriptors.get(d[8])
             if (scalar_markers.get(d[8]) != d[9]
+                    or scalar_publications[d[8]].content_version != d[9]
                     or scalar_publications[d[8]].reference_content_version != reference_version
                     or not facet or facet[0] != d[2] or facet[1] != d[7]
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
