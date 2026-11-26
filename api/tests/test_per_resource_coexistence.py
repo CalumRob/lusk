@@ -124,6 +124,29 @@ def _profile_read(conn):
                                         include_cells=False)
 
 
+def test_theme_profiles_at_different_resource_versions_coexist():
+    class TwoProfileConnection(PublicationConnection):
+        def execute(self, sql, params=None):
+            if "FROM profile_descriptor" in " ".join(sql.split()):
+                return Cursor(rows=[
+                    ("profile_a", "Profile A", "%", ["commune"], "pd1",
+                     "d1", None, "high", None, None, "stock", False),
+                    ("profile_b", "Profile B", "%", ["commune"], "pd2",
+                     "d1", None, "high", None, None, "stock", False),
+                ])
+            return super().execute(sql, params)
+
+    conn = TwoProfileConnection()
+    conn.registry["profile_b"] = ("declared_profile", "profile-v2", "ref-v1")
+
+    profiles, _version = profile_reads.focal_profiles(
+        conn, "commune", "c1", theme_id="fixture", include_cells=False,
+        include_all_descriptors=True)
+
+    assert [(profile["indicator"], profile["content_version"]) for profile in profiles] == [
+        ("profile_a", "profile-v1"), ("profile_b", "profile-v2")]
+
+
 def _owned_series_read(conn):
     return snapshot_reads._owned_series_snapshot(
         conn, "series_a", "commune", "c1", "series_a", preflight_only=True)

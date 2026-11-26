@@ -25,11 +25,11 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         raise HTTPException(503, 'Profile publication is unavailable or incompatible')
     reference_version = live_territory_reference_version(
         conn, expected_content_version=next(iter(reference_versions)))
-    versions = {publication.content_version for publication in publications.values()}
-    if len(versions) != 1:
-        raise HTTPException(503, 'Profile publication versions are not uniform')
-    version = next(iter(versions))
-    marker = (version, reference_version)
+    # ADR-0049: each profile is a resource with its own published version. The
+    # reference clock stays shared, but no sibling profile's version authorizes
+    # this profile's facts. Single-resource callers retain the legacy scalar
+    # marker; a theme with multiple versions has no singular profile version.
+    version = next(iter(publications.values())).content_version if len(publications) == 1 else None
     dependencies = [d[8] for d in descriptors if d[8] is not None]
     if dependencies:
         scalar_publications = live_resource_publications(
@@ -55,7 +55,9 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')
     if not include_cells:
-        return [{'indicator': d[0], 'comparison_scalar': d[8],
+        return [{'indicator': d[0],
+                 'content_version': publications[d[0]].content_version,
+                 'comparison_scalar': d[8],
                  'reference_content_version': publications[d[0]].reference_content_version}
                 for d in descriptors if include_all_descriptors or d[8]], version
     ids = [d[0] for d in descriptors]
@@ -128,4 +130,4 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
             'axes': [{'name': name, 'key': key, 'label': label, 'order': order,
                       'unit': detail_units[key] if name == 'detail' else unit} for name,key,label,order,unit in axes],
             'cells': cell_results})
-    return profiles, marker[0]
+    return profiles, version
