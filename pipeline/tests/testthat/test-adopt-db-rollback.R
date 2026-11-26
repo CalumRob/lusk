@@ -54,3 +54,12 @@ test_that("a failed inner publication rolls back its savepoint before the fixtur
   expect_true(any(grepl("^RELEASE SAVEPOINT ", sql)))
   expect_identical(tail(sql, 1L), "ROLLBACK")
 })
+
+test_that("adopt refusal cases reuse the immutable splitter artefacts", {
+  builds <- data.frame(ressource = "densite", forme = "scalar", version = "v1",
+                       stringsAsFactors = FALSE)
+  artefacts <- list(densite = list(version = "v1", forme = "scalar"))
+  .adopt_db_reuse_artefacts(list(builds = builds, artefacts = artefacts))
+  expect_identical(splitter_sortie("unused"), builds)
+  expect_identical(charger_artefacts_construits("unused"), artefacts)
+})
