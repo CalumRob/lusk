@@ -16,6 +16,7 @@
 local({
   etat <- new.env(parent = emptyenv())
   etat$con <- NULL; etat$schema <- NULL; etat$fixture <- NULL
+  etat$builds <- NULL; etat$artefacts <- NULL
   etat$digest <- NULL; etat$registry <- NULL
 
   fixture_partage <- function() {
@@ -23,6 +24,11 @@ local({
       etat$con <- .adopt_db_connect()
       etat$schema <- .adopt_db_schema(etat$con)
       etat$fixture <- .adopt_db_fixture()
+      etat$builds <- splitter_sortie(etat$fixture$sortie, root = etat$fixture$root,
+        projections = etat$fixture$projections, reference = etat$fixture$reference,
+        metadata_directory = etat$fixture$metadata_directory)
+      etat$artefacts <- charger_artefacts_construits(etat$builds, etat$fixture$root)
+      expect_setequal(names(etat$artefacts), as.character(etat$builds$ressource))
       .adopt_db_publish_all(etat$con, etat$fixture)
       etat$digest <- .adopt_db_digest(etat$con)
       etat$registry <- .adopt_db_registry_digest(etat$con)
@@ -99,6 +105,9 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
   expect_equal(as.numeric(DBI::dbGetQuery(con,
     "SELECT count(*) AS n FROM resource_publication")$n[[1L]]), 0)
 
+  # The dry-run above proved the real splitter/loader path. Reuse those immutable
+  # artefacts for the remaining CLI calls in this mutating case.
+  .adopt_db_reuse_artefacts(partage)
   reel <- adopter(c("adopt", fixture$sortie))
   resultat <- reel$resultat
   expect_true(any(grepl("^adoption=match adopted=", reel$sortie)))
@@ -240,6 +249,7 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
   cas <- list(
     list(ressource = "densite", table = "scalar_observation", colonne = "value",
       where = "indicator_id='densite'", num = TRUE),
@@ -285,6 +295,7 @@ test_that("guarded: a forced receipt failure rolls back every adopted registry r
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
   avant <- .adopt_db_digest(con)
   registre_avant <- .adopt_db_registry_digest(con)
   local_mocked_bindings(ecrire_recette_ressource = function(con, ressource, ...) {
@@ -307,6 +318,7 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
   # The legitimate pre-registry binding (live token == live global scalar marker ==
   # the token the sortie recorded) is what the first guarded test adopts. Here the
   # live token is neither: nothing may rebind it silently.
@@ -336,6 +348,7 @@ test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) w
   expect_identical(partage$digest, .adopt_db_digest(con))
   expect_identical(partage$registry, .adopt_db_registry_digest(con))
   .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
   adopter <- function(...) executer_commande_publication(c("adopt", fixture$sortie, ...),
     root = fixture$root, registre = fixture$lock, projections = fixture$projections,
     reference = fixture$reference, metadata_directory = fixture$metadata_directory,
