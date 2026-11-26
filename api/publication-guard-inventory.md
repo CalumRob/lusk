@@ -215,7 +215,6 @@ Boundary notes for reviewers:
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile detail units are unavailable |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication is incomplete |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication is unavailable or incompatible |
-| `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile publication versions are not uniform |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile scalar dependency is stale or incompatible |
 | `fatal` | `profile_reads.py` | `focal_profiles` | `—` | Profile scalar dependency is stale or incompatible |
 | `fatal` | `repository.py` | `search_territories` | `—` | Territory reference exceeds search scan bound |
@@ -364,7 +363,6 @@ Boundary notes for reviewers:
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Profile publication is unavailable or incompatible |
 | `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Published scalar comparison omits a declared indicator |
-| `fatal` | `snapshot_reads.py` | `_theme_comparison_snapshot` | `—` | Scalar publication versions are not uniform |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Demographic cloud reading identity is ambiguous or absent |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Selected demographic cloud facts are unavailable or incompatible |
 | `fatal` | `typed_reading_snapshots.py` | `_demographic_reading_cloud` | `—` | Selected demographic cloud members have missing reading facts |

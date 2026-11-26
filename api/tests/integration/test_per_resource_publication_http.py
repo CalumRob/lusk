@@ -99,13 +99,14 @@ def _seed_scalar(connection, resource_id, version, value):
     _descriptor(connection, resource_id, version)
 
 
-def _seed_profile(connection):
-    resource_id, version = "profile_a", "profile-v1"
+def _seed_profile(connection, resource_id="profile_a", version="profile-v1"):
+    label = "Profile A" if resource_id == "profile_a" else "Profile B"
     connection.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,
         allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,
         comparison_direction,denominator_semantics,detail_units_required)
-        VALUES (%s,'fixture','Profile A',%s,ARRAY['commune'],'dense_complete',%s,
-        'd1',NULL,'high','stock',false)""", (resource_id, "%", version + "-descriptor"))
+        VALUES (%s,'fixture',%s,%s,ARRAY['commune'],'dense_complete',%s,
+        'd1',NULL,'high','stock',false)""", (
+            resource_id, label, "%", version + "-descriptor"))
     connection.execute("INSERT INTO profile_descriptor_source VALUES (%s,'source_a')",
                        (resource_id,))
     connection.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,
@@ -145,6 +146,32 @@ def _seed_profile(connection):
     _descriptor(connection, resource_id, version, profile=True)
 
 
+def _republish_profile(connection, resource_id, version):
+    """Apply one profile generation while leaving its sibling untouched (#1178)."""
+    connection.execute("""UPDATE profile_observation SET value=value+5
+        WHERE indicator_id=%s""", (resource_id,))
+    connection.execute("""UPDATE profile_descriptor SET descriptor_version=%s
+        WHERE indicator_id=%s""", (version + "-descriptor", resource_id))
+    connection.execute("""UPDATE profile_comparison_group
+        SET median=median+5,profile_content_version=%s WHERE indicator_id=%s""",
+        (version, resource_id))
+    connection.execute("""UPDATE profile_comparison_territory
+        SET value=value+5,profile_content_version=%s WHERE indicator_id=%s""",
+        (version, resource_id))
+    connection.execute("""UPDATE comparison_source_lineage
+        SET comparison_content_version=%s
+        WHERE comparison_family='profile' AND facet_id=%s""",
+        (version + "-comparison", resource_id))
+    connection.execute("""UPDATE profile_resource_comparison_publication
+        SET content_version=%s,profile_content_version=%s WHERE indicator_id=%s""",
+        (version + "-comparison", version, resource_id))
+    connection.execute("""UPDATE resource_publication SET content_version=%s
+        WHERE resource_id=%s""", (version, resource_id))
+    connection.execute("""DELETE FROM resource_publication_descriptor
+        WHERE publication_resource_id=%s""", (resource_id,))
+    _descriptor(connection, resource_id, version, profile=True)
+
+
 def _seed(connection):
     with connection.transaction():
         connection.execute("""INSERT INTO territory_reference(territory_id,territory_type,
@@ -169,6 +196,7 @@ def _seed(connection):
         _seed_scalar(connection, "resource_a", "a-v1", 12.0)
         _seed_scalar(connection, "resource_b", "b-v1", 8.0)
         _seed_profile(connection)
+        _seed_profile(connection, "profile_b", "profile-v1")
 
 
 def _item(resource_id, *, intent=None, item_id=None):
@@ -220,7 +248,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 discovered = client.get("/api/resources")
                 assert discovered.status_code == 200, discovered.text
                 assert {row["resource_id"] for row in discovered.json()["resources"]} == {
-                    "resource_a", "resource_b", "profile_a"}
+                    "resource_a", "resource_b", "profile_a", "profile_b"}
 
                 # Requested resource clocks, not the deliberately old global tokens.
                 a = read("resource_a")
@@ -233,8 +261,36 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 profile = read("profile_a")
                 assert profile.status_code == 200, profile.text
                 assert profile.json()["content_version"] == "profile-v1"
+                sibling = read("profile_b")
+                assert sibling.status_code == 200, sibling.text
+                assert sibling.json()["content_version"] == "profile-v1"
 
-                # Publishing B moves only B; A remains readable with old global markers present.
+                # #1178: applying one profile does not invalidate its sibling. The
+                # retired public theme route is gone, so exercise the shared theme
+                # snapshot directly over the same guarded read role and MVCC seam.
+                from api.snapshot_reads import _theme_comparison_snapshot
+
+                with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                    publisher.execute(f'SET search_path TO "{schema}"')
+                    with publisher.transaction():
+                        _republish_profile(publisher, "profile_b", "profile-v2")
+                assert read("profile_a").json()["content_version"] == "profile-v1"
+                republished = read("profile_b")
+                assert republished.status_code == 200, republished.text
+                assert republished.json()["content_version"] == "profile-v2"
+                with psycopg.connect(_dsn_with_schema(read_dsn, schema)) as reader:
+                    with reader.transaction():
+                        reader.execute(
+                            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                        theme = _theme_comparison_snapshot(
+                            reader, "commune", FOCAL, "fixture", None)
+                assert theme["profile_content_versions"] == {
+                    "profile_a": "profile-v1", "profile_b": "profile-v2"}
+                assert theme["profile_content_version"] is None
+                assert {row["indicator"] for row in theme["profile_comparisons"]} == {
+                    "profile_a", "profile_b"}
+
+                # Publishing scalar B moves only B; A remains readable with old global markers present.
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                     publisher.execute(f'SET search_path TO "{schema}"')
                     with publisher.transaction():
