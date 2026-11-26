@@ -98,7 +98,7 @@ try {
     $ErrorActionPreference = 'Stop'
   } finally { Pop-Location }
   $summary = Get-GuardedRReceiptLines -LogLines $sortie
-  if ($testExitCode -eq 0 -and -not (Test-GuardedRSummaryPassed -Summary $summary)) {
+  if ($testExitCode -eq 0 -and -not (Test-GuardedRSummaryPassed -Summary $summary -LogLines $sortie)) {
     $testExitCode = 1
   }
   if ($testExitCode -ne 0) { $runError = "Rscript exited with code $testExitCode." }

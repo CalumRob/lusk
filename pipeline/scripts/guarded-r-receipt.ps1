@@ -19,10 +19,8 @@ function Get-GuardedRIdentity {
 function Get-GuardedRReceiptLines {
   param([object[]]$LogLines)
   $lines = @($LogLines | ForEach-Object { [string]$_ })
-  $summary = @($lines | Where-Object {
-    $_ -match '^\[ (FAIL|PASS) ' -or $_ -match 'testthat results' -or
-      $_ -match '(^|\s)Tests:'
-  } | Select-Object -Last 1)
+  $summary = @($lines | Where-Object { $_ -match '^\[ FAIL ' } |
+    Select-Object -Last 1)
   if ($summary.Count) { return [string]$summary[0] }
   '<missing testthat summary>'
 }
@@ -95,9 +93,16 @@ function Write-GuardedRReceipt {
 }
 
 function Test-GuardedRSummaryPassed {
-  param([Parameter(Mandatory = $true)][string]$Summary)
-  if ($Summary -match '^\[ FAIL ([0-9]+)') { return ([int]$Matches[1] -eq 0) }
-  if ($Summary -match '([1-9][0-9]*) failures?') { return $false }
+  param(
+    [Parameter(Mandatory = $true)][string]$Summary,
+    [object[]]$LogLines = @()
+  )
+  if ($Summary -notmatch '^\[ FAIL 0 \|') { return $false }
+  foreach ($line in $LogLines) {
+    $text = [string]$line
+    if ($text -match '^\s*ERROR:') { return $false }
+    if ($text -match '\b([1-9][0-9]*) errors?\b') { return $false }
+  }
   $true
 }
 
@@ -121,11 +126,13 @@ function Assert-GuardedRReceipt {
     throw 'Receipt verification requires an empty git status --porcelain.'
   }
   if ([string]$receipt.filter -ne $ExpectedFilter) { throw 'Receipt filter mismatch.' }
-  if ([string]$receipt.testthat_summary -notmatch '^\[ (FAIL|PASS) |testthat results|Tests:') {
-    throw 'Receipt has no testthat summary line.'
+  if ([string]$receipt.testthat_summary -notmatch '^\[ FAIL ') {
+    throw 'Receipt has no compact testthat summary line.'
   }
-  if (-not (Test-GuardedRSummaryPassed -Summary ([string]$receipt.testthat_summary))) {
-    throw 'Receipt records failing tests.'
+  $logLines = @(Get-Content -LiteralPath ([string]$receipt.log_path))
+  if (-not (Test-GuardedRSummaryPassed -Summary ([string]$receipt.testthat_summary) `
+      -LogLines $logLines)) {
+    throw 'Receipt records failing or erroring tests.'
   }
   if ([string]$receipt.leftover_schema_line -ne 'Leftover schemas: none') {
     throw 'Receipt does not prove that no schema was left behind.'
