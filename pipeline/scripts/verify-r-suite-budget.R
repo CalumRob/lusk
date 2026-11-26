@@ -88,6 +88,12 @@ premier_message_resultat <- function(resultats) {
   premiere_ligne_message(messages[[1L]])
 }
 
+# as.data.frame(testthat_results) drops the result list for an erroring test.
+# Read messages from the original per-test results before that conversion.
+messages_resultats_tests <- function(resultats) {
+  vapply(resultats, function(test) premier_message_resultat(test$results), character(1))
+}
+
 # A testthat ERROR is not a failed expectation. Report both, plus a file that
 # failed before producing a result table, so this one run can replace test_local().
 echecs_suite <- function(par_fichier, par_test) {
@@ -169,11 +175,10 @@ mesurer_suite_serielle <- function(prefix) {
       errored = inherits(resultat, "error"), error_message = message_erreur
     )
     if (!is.null(df)) {
-      resultats_tests <- if (is.null(df$result)) rep(list(NULL), nrow(df)) else df$result
       tests[[f]] <- data.frame(
         file = df$file, test = df$test, nb = df$nb, real = df$real,
         failed = df$failed, error = df$error,
-        first_message = vapply(resultats_tests, premier_message_resultat, character(1)),
+        first_message = messages_resultats_tests(resultat),
         stringsAsFactors = FALSE
       )
     }
