@@ -38,7 +38,7 @@ test_that("refactor persists the rows the old AEDAR writers persisted", {
     pin <- golden_aedar_volumineux[[table]]
     x <- actual[[table]]
     expect_identical(nrow(x), pin$rows, info = table)
-    expect_identical(sort(names(x)), pin$columns, info = table)
+    expect_identical(sort(enc2utf8(names(x)), method = "radix"), pin$columns, info = table)
     expect_identical(.digest_lignes(x), pin$digest, info = table)
     # Two rows of the same table, literally, for a readable failure.
     expect_true(all(.lignes_canoniques(pin$head) %in% .lignes_canoniques(x)), info = table)

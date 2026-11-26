@@ -22,7 +22,11 @@
 # AEDAR is dense over the whole TYPEQU registry (2350 aggregate rows and 293280
 # comparison-group rows), too large to inline: tables over 200 rows are pinned by
 # row count, sorted column set, two literal head rows and a SHA-256 of the canonical
-# text of every row (see .digest_lignes() in test-adoption-persisted-rows.R).
+# text of every row (see .digest_lignes() in helper-golden-lignes-outils.R).
+# This file is ASCII-only on purpose: non-ASCII characters are `\uXXXX` escapes, so the
+# literals mean the same whatever locale / encoding R was launched in (a UTF-8 file read
+# in a Windows-1252 session otherwise yields unmarked, invalid strings). Digests and
+# column sets are computed with enc2utf8() and radix (C-locale) ordering.
 golden_lignes_main <- 
 list(scalar = list(source_dataset = structure(list(source_id = "src_a", 
     name = "src_a"), class = "data.frame", row.names = c(NA, 
@@ -401,7 +405,7 @@ NA_integer_, NA_integer_, NA_integer_, NA_integer_)), row.names = c(NA,
         "5a297c90c1aa74a82d7dedf8dbb0e8f2", "5a297c90c1aa74a82d7dedf8dbb0e8f2"
         )), class = "data.frame", row.names = c(NA, -5L))), aedar = list(
     source_dataset = structure(list(source_id = "aedar_bretagne", 
-        name = "Accès aux équipements depuis les adresses résidentielles — Bretagne"), class = "data.frame", row.names = c(NA, 
+        name = "Acc\u00e8s aux \u00e9quipements depuis les adresses r\u00e9sidentielles \u2014 Bretagne"), class = "data.frame", row.names = c(NA, 
     -1L)), source_vintage = structure(list(source_id = "aedar_bretagne", 
         vintage_id = "2026-v1", version = "2026-v1", reference_date = NA, 
         publication_date = structure(20726, class = "Date")), class = "data.frame", row.names = c(NA, 
@@ -820,11 +824,11 @@ list(aedar_comparison_group = list(rows = 293280L, columns = c("comparison_conte
     "vintage_id"), digest = "18b750e42089e81bc0e2dc39380fc82011b0711b5f028acd8336b9e4fc2b8041", 
     head = structure(list(territory_type = c("commune", "commune"
     ), territory_id = c("c1", "c1"), typequ = c("A104", "A105"
-    ), typequ_label = c("GENDARMERIE", "COUR D’APPEL"), typequ_hierarchy_label = c("GENDARMERIE", 
-    "COUR D’APPEL"), typequ_description = c("Description 1", 
+    ), typequ_label = c("GENDARMERIE", "COUR D\u2019APPEL"), typequ_hierarchy_label = c("GENDARMERIE", 
+    "COUR D\u2019APPEL"), typequ_description = c("Description 1", 
     "Description 2"), typequ_domain_code = c("D1", "D2"), typequ_domain_label = c("Domain 1", 
     "Domain 2"), typequ_subdomain_code = c("S1", "S2"), typequ_subdomain_label = c("Subdomain 1", 
-    "Subdomain 2"), typequ_gamme = c("Proximité", "Hors Gamme"
+    "Subdomain 2"), typequ_gamme = c("Proximit\u00e9", "Hors Gamme"
     ), typequ_gamme_status = c("classified", "hors_gamme"), typequ_source_order = 1:2, 
         identity = c("{\"code_insee\":\"c1\",\"code_departement\":\"c1\",\"nom_commune\":\"c1\",\"code_region\":\"c1\",\"epci_code\":\"c1\"}", 
         "{\"code_insee\":\"c1\",\"code_departement\":\"c1\",\"nom_commune\":\"c1\",\"code_region\":\"c1\",\"epci_code\":\"c1\"}"
@@ -834,8 +838,8 @@ list(aedar_comparison_group = list(rows = 293280L, columns = c("comparison_conte
         ), source_id = c("aedar_bretagne", "aedar_bretagne"), 
         vintage_id = c("2026-v1", "2026-v1"), source_url = c("https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne", 
         "https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne"
-        ), licence = c("ODbL", "ODbL"), attribution = c("© OpenStreetMap contributors; données AEDAR — licence ODbL", 
-        "© OpenStreetMap contributors; données AEDAR — licence ODbL"
+        ), licence = c("ODbL", "ODbL"), attribution = c("\u00a9 OpenStreetMap contributors; donn\u00e9es AEDAR \u2014 licence ODbL", 
+        "\u00a9 OpenStreetMap contributors; donn\u00e9es AEDAR \u2014 licence ODbL"
         ), reference_date = c(NA, NA), publication_date = c("2026-09-30", 
         "2026-09-30")), row.names = 1:2, class = "data.frame")), 
     aedar_territory_summary = list(rows = 400L, columns = c("attribution", 
@@ -851,7 +855,7 @@ list(aedar_comparison_group = list(rows = 293280L, columns = c("comparison_conte
         "covered"), source_id = c("aedar_bretagne", "aedar_bretagne"
         ), vintage_id = c("2026-v1", "2026-v1"), source_url = c("https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne", 
         "https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne"
-        ), licence = c("ODbL", "ODbL"), attribution = c("© OpenStreetMap contributors; données AEDAR — licence ODbL", 
-        "© OpenStreetMap contributors; données AEDAR — licence ODbL"
+        ), licence = c("ODbL", "ODbL"), attribution = c("\u00a9 OpenStreetMap contributors; donn\u00e9es AEDAR \u2014 licence ODbL", 
+        "\u00a9 OpenStreetMap contributors; donn\u00e9es AEDAR \u2014 licence ODbL"
         ), reference_date = c(NA, NA), publication_date = c("2026-09-30", 
         "2026-09-30")), row.names = 1:2, class = "data.frame")))

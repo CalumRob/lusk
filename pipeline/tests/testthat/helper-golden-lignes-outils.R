@@ -3,21 +3,25 @@
 # (slow-tests/test-adoption-aedar-golden-rows.R). The golden LITERALS themselves live
 # in helper-golden-lignes-main.R (captured from origin/main's pre-refactor writers).
 
+# Encoding-robust by construction: every string is converted with enc2utf8() BEFORE it
+# is sorted or hashed, so the result does not depend on the locale R was launched in
+# (an unmarked native string made `sort(method = "radix")` fail under a non-UTF-8
+# locale). The golden literals themselves are ASCII-only (`\uXXXX` escapes).
 .lignes_canoniques <- function(df) {
   cell <- function(x) {
     if (inherits(x, "Date")) x <- as.character(x)
     if (is.numeric(x)) return(ifelse(is.na(x), "<NA>", sprintf("%.15g", x)))
-    ifelse(is.na(x), "<NA>", as.character(x))
+    enc2utf8(ifelse(is.na(x), "<NA>", enc2utf8(as.character(x))))
   }
-  cols <- sort(names(df))
-  sort(do.call(paste, c(lapply(cols, function(c) cell(df[[c]])), sep = "\x1f")),
+  cols <- sort(enc2utf8(names(df)), method = "radix")
+  sort(enc2utf8(do.call(paste, c(lapply(cols, function(c) cell(df[[c]])), sep = "\x1f"))),
        method = "radix")
 }
 
 .digest_lignes <- function(df) {
-  paste(as.character(openssl::sha256(charToRaw(paste(
-    c(paste(sort(names(df)), collapse = ","), .lignes_canoniques(df)), collapse = "\n")))),
-    collapse = "")
+  paste(as.character(openssl::sha256(charToRaw(enc2utf8(paste(
+    c(paste(sort(enc2utf8(names(df)), method = "radix"), collapse = ","),
+      .lignes_canoniques(df)), collapse = "\n"))))), collapse = "")
 }
 
 # Columns that are NOT compared against the golden, and why (also stated in the PR):
