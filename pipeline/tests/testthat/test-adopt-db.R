@@ -100,7 +100,7 @@ test_that("guarded: real full-path publication adopts every shape with unchanged
 
   # --dry-run through the CLI: not ONE row of any serving, registry, descriptor or
   # receipt table changes, and nothing is reported adopted.
-  total_avant <- list(.adopt_db_digest(con), .adopt_db_registry_digest(con))
+  total_avant <- list(partage$digest, partage$registry)
   sec <- adopter(c("adopt", fixture$sortie, "--dry-run"))
   expect_identical(sec$resultat$adopted, character())
   expect_true("adoption=match adopted= zero_data_writes=true" %in% sec$sortie)
@@ -269,7 +269,7 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=", x$colonne,
       "+1 WHERE ctid='", key, "'"))
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
-    avant <- .adopt_db_digest(con)
+    avant_table <- .adopt_db_table_digest(con, x$table)
     registre_avant <- .adopt_db_registry_digest(con)
     err <- local({
       .adopt_db_reuse_artefacts(partage, ids = x$ressource)
@@ -281,13 +281,15 @@ test_that("guarded: one altered live row in each shape refuses with zero writes"
     expect_true(inherits(err, "erreur_adoption"), info = x$ressource)
     expect_match(conditionMessage(err), x$ressource, fixed = TRUE, info = x$ressource)
     expect_match(conditionMessage(err), x$table, fixed = TRUE, info = x$ressource)
-    expect_identical(.adopt_db_digest(con), avant, info = x$ressource)
+    expect_identical(.adopt_db_table_digest(con, x$table), avant_table, info = x$ressource)
     expect_identical(.adopt_db_registry_digest(con), registre_avant, info = x$ressource)
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " DISABLE TRIGGER USER"))
     DBI::dbExecute(con, paste0("UPDATE ", x$table, " SET ", x$colonne, "=$1 WHERE ctid=$2"),
       params = list(old, key))
     DBI::dbExecute(con, paste0("ALTER TABLE ", x$table, " ENABLE TRIGGER USER"))
   }
+  expect_identical(.adopt_db_digest(con), partage$digest)
+  expect_identical(.adopt_db_registry_digest(con), partage$registry)
 })
 
 test_that("guarded: a forced receipt failure rolls back every adopted registry row", {
