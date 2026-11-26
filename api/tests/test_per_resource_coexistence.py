@@ -233,6 +233,32 @@ def test_each_profiles_scalar_dependency_uses_adopted_comparison_token():
     assert raised.value.detail == "Profile scalar dependency is stale or incompatible"
 
 
+def test_adopted_scalar_dependency_rejects_the_guarded_fixtures_unit_mismatch():
+    class MismatchedUnitConnection(TwoProfileConnection):
+        def execute(self, sql, params=None):
+            normalized = " ".join(sql.split())
+            if "FROM profile_descriptor" in normalized:
+                return Cursor(rows=[(
+                    "profile_dpe", "Profile DPE", "%", ["commune"], "pd1",
+                    None, None, "high", "resource_a", "global-scalar-token", "stock", False)])
+            if "FROM scalar_descriptor" in normalized:
+                return Cursor(rows=[("resource_a", "count", "high", ["commune"], "resource_a")])
+            return super().execute(sql, params)
+
+    conn = MismatchedUnitConnection()
+    conn.registry["profile_dpe"] = ("declared_profile", "profile-dpe-v1", "ref-v1")
+    conn.scalar_markers["resource_a"] = (
+        "global-scalar-comparison-token", "global-scalar-token", "ref-v1", 1, 2, 1)
+
+    with pytest.raises(HTTPException) as raised:
+        profile_reads.focal_profiles(
+            conn, "commune", "c1", indicator_id="profile_dpe", include_cells=False,
+            include_all_descriptors=True)
+
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "Profile scalar dependency is stale or incompatible"
+
+
 def test_adopted_profile_comparison_token_can_differ_from_registry_version():
     conn = TwoProfileConnection()
     conn.profile_markers["profile_b"] = (

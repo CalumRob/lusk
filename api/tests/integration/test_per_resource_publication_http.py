@@ -68,14 +68,14 @@ def _descriptor(connection, resource_id, version, *, profile=False, comparison_s
                                                   comparison_scalar=comparison_scalar))))
 
 
-def _seed_scalar(connection, resource_id, version, value, *,
+def _seed_scalar(connection, resource_id, version, value, *, unit="count",
                  comparison_token=None, facts_token=None):
     comparison_token = comparison_token or version + "-comparison"
     facts_token = facts_token or version
     connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,
         direction,comparison_facet,allowed_levels,denominator_semantics,completeness,
-        descriptor_version) VALUES (%s,'fixture',%s,'count','high',%s,ARRAY['commune'],
-        'count','dense_complete',%s)""", (resource_id, resource_id, resource_id,
+        descriptor_version) VALUES (%s,'fixture',%s,%s,'high',%s,ARRAY['commune'],
+        'count','dense_complete',%s)""", (resource_id, resource_id, unit, resource_id,
                                          version + "-descriptor"))
     connection.execute("INSERT INTO scalar_descriptor_source VALUES (%s,'source_a')",
                        (resource_id,))
@@ -217,7 +217,7 @@ def _seed(connection):
         connection.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
             profile_content_version,reference_content_version,group_row_count,territory_row_count)
             VALUES (true,'global-profile-comparison-v1','global-profile-v1','ref-v1',1,2)""")
-        _seed_scalar(connection, "resource_a", "a-v1", 12.0,
+        _seed_scalar(connection, "resource_a", "a-v1", 12.0, unit="%",
             comparison_token=ADOPTED_SCALAR_COMPARISON, facts_token=ADOPTED_SCALAR_FACTS)
         _seed_scalar(connection, "resource_b", "b-v1", 8.0,
             comparison_token=ADOPTED_SCALAR_COMPARISON, facts_token=ADOPTED_SCALAR_FACTS)
