@@ -388,12 +388,19 @@
     builds <- builds[match(ids, as.character(builds$ressource)), , drop = FALSE]
     artefacts <- artefacts[as.character(builds$ressource)]
   }
-  testthat::local_mocked_bindings(
+  envir <- parent.frame()
+  bindings <- list(
     splitter_sortie = function(...) builds,
     charger_artefacts_construits = function(...) artefacts,
-    construites_depuis_magasin = function(...) builds,
-    .package = "lusk", .env = parent.frame()
+    construites_depuis_magasin = function(...) builds
   )
+  # The normal all-resource proof runs this full-sortie guard for real. A focused
+  # non-AEDAR refusal uses the same already-validated sortie, so the guard's
+  # "aedar omitted from builds" branch is not that case's subject.
+  if (!is.null(ids) && !"aedar" %in% ids)
+    bindings$refus_aedar_adoption <- function(...) NULL
+  do.call(testthat::local_mocked_bindings,
+          c(bindings, list(.package = "lusk", .env = envir)))
   invisible(NULL)
 }
 
