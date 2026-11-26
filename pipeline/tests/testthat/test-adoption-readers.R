@@ -73,7 +73,8 @@ test_that("readers select by the resource key, never by the artefact's own keys"
   }
   # No SELECT names a column list: every persisted column is read.
   # (only the global marker lookups, which are not resource rows, name columns.)
-  lignes <- factice$journal$sql[!grepl("_publication ", factice$journal$sql)]
+  lignes <- factice$journal$sql[!grepl("_publication |FROM profile_descriptor WHERE comparison_scalar",
+                                       factice$journal$sql)]
   expect_false(any(grepl("^SELECT [a-z_]+,", lignes)))
 })
 

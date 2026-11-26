@@ -53,25 +53,42 @@ test_that("the scalar marker's scalar_content_version is the token the live depe
   vu <- NULL
   local_mocked_bindings(ecrire_marqueur_comparaison_scalaire = function(con, ressource, ...) {
     vu <<- list(...); invisible(TRUE) })
-  profil <- list(forme = "declared_profile", contenu = list(descriptor =
-    list(comparison_scalar = "part_passoires")))
-  lectures <- list(distribution_dpe = list(profile_descriptor = data.frame(
-    required_scalar_version = "token-global-scalaire")))
+  dependants <- function(...) {
+    live <- scalaire_vivant()
+    attr(live, "dependants_vivants") <- data.frame(
+      indicator_id = paste0("p", seq_along(c(...))), required_scalar_version = c(...),
+      stringsAsFactors = FALSE)
+    live
+  }
   plan <- planifier_marqueur_adoption_scalaire("part_passoires", artefact_scalaire,
-    scalaire_vivant(), list(version = "r"), lectures, list(distribution_dpe = profil))
+    dependants("token-global-scalaire"), list(version = "r"))
   ecrire_marqueur_adoption(NULL, plan)
-  expect_identical(vu$scalar_content_version %||% vu[[2L]], "token-global-scalaire")
-  # no dependent: the artefact's own facts version (nobody reads it)
+  expect_identical(vu[[2L]], "token-global-scalaire")
+  # SUBSET HOLE: the dependents come from the live descriptor of the same session, so an
+  # adopt run that holds NEITHER the dependent's artefact NOR its reading (empty
+  # `artefacts` / `lectures`) still carries the dependent's token, not the fallback.
+  plan <- planifier_marqueur_adoption_scalaire("part_passoires", artefact_scalaire,
+    dependants("token-global-scalaire"), list(version = "r"), lectures = list(),
+    artefacts = list())
+  ecrire_marqueur_adoption(NULL, plan)
+  expect_identical(vu[[2L]], "token-global-scalaire")
+  expect_false(identical(vu[[2L]], "faits-v"))
+  # no live dependent: the artefact's own facts version (nobody reads it)
   plan <- planifier_marqueur_adoption_scalaire("densite", artefact_scalaire, scalaire_vivant(),
-    list(version = "r"), lectures, list(distribution_dpe = profil))
+    list(version = "r"))
   ecrire_marqueur_adoption(NULL, plan)
   expect_identical(vu[[2L]], "faits-v")
-  # dependents carrying two different tokens: refused
-  lectures$autre <- list(profile_descriptor = data.frame(required_scalar_version = "autre"))
+  # live dependents carrying two different tokens: refused
   err <- tryCatch(planifier_marqueur_adoption_scalaire("part_passoires", artefact_scalaire,
-    scalaire_vivant(), list(version = "r"), lectures,
-    list(distribution_dpe = profil, autre = profil)), error = identity)
+    dependants("a", "b"), list(version = "r")), error = identity)
   expect_identical(err$refus, "jeton_comparaison_multiple")
+  # the live reader asks the database for them (one positional query, keyed by scalar)
+  sql <- NULL; params <- NULL
+  local_mocked_bindings(.adoption_query = function(con, sql_, params_ = NULL) {
+    sql <<- sql_; params <<- params_; data.frame() })
+  .adoption_dependants_vivants(NULL, "part_passoires")
+  expect_match(sql, "FROM profile_descriptor WHERE comparison_scalar=$1", fixed = TRUE)
+  expect_identical(params, list("part_passoires"))
 })
 
 test_that("profile adoption carries both live tokens; a rowless placeholder writes nothing", {

@@ -80,13 +80,10 @@ planifier_marqueur_adoption_scalaire <- function(ressource, artefact, live, refe
   # `required_scalar_version` que portent les profils vivants qui en dépendent
   # (profile_reads.py:focal_profiles). Ce jeton a déjà été prouvé (version des faits de
   # l'artefact, ou chaîne globale attestée par la sortie) avant d'arriver ici.
-  dependants <- names(artefacts)[vapply(names(artefacts), function(id) {
-    a <- artefacts[[id]]
-    identical(as.character(a$forme), "declared_profile") &&
-      identical(as.character(champ_descripteur(a$contenu$descriptor, "comparison_scalar"))[1L], ressource)
-  }, logical(1))]
-  portes <- unlist(lapply(dependants, function(id)
-    lectures[[id]]$profile_descriptor$required_scalar_version), use.names = FALSE)
+  # The dependents are read from the LIVE `profile_descriptor` in the same session
+  # (lire_live_scalaire), not from the artefacts of this run: whatever subset is adopted,
+  # a live dependent absent from the run still constrains the token the API will check.
+  portes <- attr(live, "dependants_vivants")$required_scalar_version
   faits <- .jeton_vivant_unique(ressource, portes) %||% as.character(comparaison$scalar_content_version)
   valeurs <- list(content_version = jeton, scalar_content_version = faits,
     reference_content_version = as.character(reference$version),

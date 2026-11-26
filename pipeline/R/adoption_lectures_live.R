@@ -114,6 +114,10 @@
       lignes_attendues[[table]], colonnes_tableau[[table]])
 }
 
+.adoption_dependants_vivants <- function(con, scalaire)
+  .adoption_query(con, paste0("SELECT indicator_id,required_scalar_version FROM ",
+    "profile_descriptor WHERE comparison_scalar=$1 ORDER BY indicator_id"), list(scalaire))
+
 lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colonnes_tableau = list(),
                               colonnes_stockage = list()) {
   id <- as.character(ressource)
@@ -144,6 +148,9 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colo
     scalar_content_version = premier(scalaire, "content_version"))
   # An existing per-resource marker is read here so adoption can refuse a divergent one
   # (adoption_marqueurs.R) and never overwrite it.
+  # Live profiles bound to this scalar (profile_reads.py:52 compares their
+  # required_scalar_version with this scalar's marker), whatever the adopted subset.
+  attr(out, "dependants_vivants") <- .adoption_dependants_vivants(con, id)
   attr(out, "marqueur_existant") <- .adoption_query(con, paste0(
     "SELECT indicator_id,content_version,scalar_content_version,reference_content_version,",
     "group_row_count,territory_row_count,lineage_row_count ",
