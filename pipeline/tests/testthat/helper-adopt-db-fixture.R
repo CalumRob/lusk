@@ -322,6 +322,50 @@
   invisible(TRUE)
 }
 
+# One published fixture serves every guarded case in test-adopt-db.R. The case
+# owns the outer transaction and always rolls it back. Production publication
+# transactions join it through savepoints; PostgreSQL-only transaction mode
+# changes that cannot run after the fixture's first write are suppressed here.
+# Their own DB-free contract remains in test-publication-cli.R.
+.adopt_db_remplacer_binding <- function(nom, valeur, envir) {
+  original <- get(nom, envir = asNamespace("DBI"), inherits = FALSE)
+  assignInNamespace(nom, valeur, ns = "DBI")
+  withr::defer(assignInNamespace(nom, original, ns = "DBI"), envir = envir)
+  invisible(NULL)
+}
+
+.adopt_db_begin_rollback <- function(con) {
+  envir <- parent.frame()
+  executer_original <- DBI::dbExecute
+  executer_original(con, "BEGIN")
+  executer_original(con, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+  withr::defer(executer_original(con, "ROLLBACK"), envir = envir)
+  .adopt_db_remplacer_binding("dbExecute", function(con, statement, ...) {
+    if (identical(statement, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ") ||
+        identical(statement, "SET TRANSACTION READ ONLY")) return(0L)
+    executer_original(con, statement, ...)
+  }, envir = envir)
+  .adopt_db_remplacer_binding("dbWithTransaction", function(con, expr, ...) {
+    savepoint <- paste0("adopt_cas_", paste(sample(c(letters, 0:9), 12, TRUE),
+                                             collapse = ""))
+    executer_original(con, paste("SAVEPOINT", savepoint))
+    on.exit({
+      executer_original(con, paste("ROLLBACK TO SAVEPOINT", savepoint))
+      executer_original(con, paste("RELEASE SAVEPOINT", savepoint))
+    }, add = TRUE)
+    valeur <- force(expr)
+    executer_original(con, paste("RELEASE SAVEPOINT", savepoint))
+    on.exit(NULL)
+    valeur
+  }, envir = envir)
+  invisible(NULL)
+}
+
+.adopt_db_rollback <- function(con, code) {
+  .adopt_db_begin_rollback(con)
+  force(code)
+}
+
 .adopt_db_digest <- function(con) {
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ",

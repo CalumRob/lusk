@@ -4,12 +4,8 @@ mock_con_rollback_adopt <- function() {
   sql <- character()
   con <- structure(list(id = "fake-adopt"), class = "fake_adopt_con")
   testthat::local_mocked_bindings(
-    dbBegin = function(con, ...) { sql <<- c(sql, "BEGIN"); invisible(TRUE) },
-    dbRollback = function(con, ...) { sql <<- c(sql, "ROLLBACK"); invisible(TRUE) },
     dbExecute = function(con, statement, ...) { sql <<- c(sql, statement); 0L },
-    dbWithTransaction = function(con, expr, ...)
-      stop("an outer DBI transaction must not be opened inside the fixture transaction"),
-    .package = "DBI"
+    .package = "DBI", .env = parent.frame()
   )
   list(con = con, sql = function() sql)
 }
