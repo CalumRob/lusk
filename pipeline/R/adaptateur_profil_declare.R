@@ -143,16 +143,19 @@ projeter_artefact_profil_declare <- function(artefact) {
 ecrire_marqueur_comparaison_profil <- function(con, ressource, content_version,
                                                profile_content_version,
                                                reference_content_version,
-                                               groupes, territoires, lignage) {
+                                               groupes, territoires, lignage,
+                                               ecraser = TRUE) {
+  # `ecraser = FALSE` (adoption): a plain INSERT, never an overwrite.
   DBI::dbExecute(con, paste0(
     "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,",
     "profile_content_version,reference_content_version,group_row_count,",
-    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ",
-    "ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
-    "profile_content_version=EXCLUDED.profile_content_version,",
-    "reference_content_version=EXCLUDED.reference_content_version,",
-    "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
-    "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()"),
+    "territory_row_count,lineage_row_count) VALUES($1,$2,$3,$4,$5,$6,$7)",
+    if (isTRUE(ecraser)) paste0(
+      " ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,",
+      "profile_content_version=EXCLUDED.profile_content_version,",
+      "reference_content_version=EXCLUDED.reference_content_version,",
+      "group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,",
+      "lineage_row_count=EXCLUDED.lineage_row_count,published_at=now()") else ""),
     params = list(ressource, as.character(content_version),
       as.character(profile_content_version), as.character(reference_content_version),
       as.integer(groupes), as.integer(territoires), as.integer(lignage)))

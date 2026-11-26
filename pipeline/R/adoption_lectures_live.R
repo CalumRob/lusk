@@ -142,6 +142,12 @@ lire_live_scalaire <- function(con, ressource, reference, lignes_attendues, colo
     comparison_content_version = premier(marqueur, "content_version"),
     comparison_scalar_input = premier(marqueur, "scalar_content_version"),
     scalar_content_version = premier(scalaire, "content_version"))
+  # An existing per-resource marker is read here so adoption can refuse a divergent one
+  # (adoption_marqueurs.R) and never overwrite it.
+  attr(out, "marqueur_existant") <- .adoption_query(con, paste0(
+    "SELECT indicator_id,content_version,scalar_content_version,reference_content_version,",
+    "group_row_count,territory_row_count,lineage_row_count ",
+    "FROM scalar_resource_comparison_publication WHERE indicator_id=$1"), list(id))
   out
 }
 
@@ -174,6 +180,10 @@ lire_live_profil_declare <- function(con, ressource, reference, lignes_attendues
     scalar_content_version = premier(scalaire, "content_version"),
     comparison_content_version = premier(comparaison, "content_version"),
     profile_content_version = premier(comparaison, "profile_content_version"))
+  attr(out, "marqueur_existant") <- .adoption_query(con, paste0(
+    "SELECT indicator_id,content_version,profile_content_version,reference_content_version,",
+    "group_row_count,territory_row_count,lineage_row_count ",
+    "FROM profile_resource_comparison_publication WHERE indicator_id=$1"), list(id))
   out
 }
 

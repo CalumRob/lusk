@@ -28,7 +28,8 @@ verifier_lecteurs_adoption <- function(artefacts) {
 # Comparaison pure d'un jeu d'artefacts contre des lignes live déjà lues. Elle
 # est séparée de l'orchestration pour que tous les refus soient cumulés avant
 # tout write, au lieu de s'arrêter au premier indicateur fautif.
-comparer_adoption_artefacts <- function(artefacts, lectures, attestations = list()) {
+comparer_adoption_artefacts <- function(artefacts, lectures, attestations = list(),
+                                        reference = NULL) {
   resultats <- lapply(names(artefacts), function(id) {
     artefact <- artefacts[[id]]
     handler <- REGISTRE_FORMES_RESSOURCE[[artefact$forme]]
@@ -43,6 +44,11 @@ comparer_adoption_artefacts <- function(artefacts, lectures, attestations = list
       comparaison <- comparer_lignes_persistees(handler$lignes_persistees(artefact), live,
                                                 handler, ignorer)
       comparaison$motif <- if (comparaison$identique) NA_character_ else "divergence"
+      # Rows equal: the per-resource marker the adoption would write must be derivable
+      # from the live tokens (no invented token, no divergent existing marker). Planned
+      # HERE so --dry-run and a real adopt refuse identically, before any write.
+      if (comparaison$identique && is.function(handler$planifier_marqueur_adoption))
+        handler$planifier_marqueur_adoption(id, artefact, live, reference, lectures, artefacts)
       comparaison
     }, error = function(e) if (inherits(e, "erreur_adoption"))
       list(identique = FALSE, motif = e$refus,
@@ -99,7 +105,7 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
                             handler$colonnes_stockage %||% list())
         }, error = function(e) e)
       }
-      comparaisons <- comparer_adoption_artefacts(artefacts, lectures, attestations)
+      comparaisons <- comparer_adoption_artefacts(artefacts, lectures, attestations, reference)
       if (!dry_run && any(!comparaisons$identique)) {
         details <- paste0(comparaisons$ressource[!comparaisons$identique],
                           " (", comparaisons$parties[!comparaisons$identique], ")")
@@ -120,8 +126,9 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
           # Per-resource comparison marker, carrying over the token the live
           # comparison rows already carry (adoption_marqueurs.R); never a row rewrite.
           handler <- REGISTRE_FORMES_RESSOURCE[[as.character(artefact$forme)]]
-          marqueur <- if (is.function(handler$marqueur_adoption))
-            handler$marqueur_adoption(con, id, artefact, lectures[[id]], reference) else NULL
+          marqueur <- if (is.function(handler$planifier_marqueur_adoption))
+            ecrire_marqueur_adoption(con, handler$planifier_marqueur_adoption(
+              id, artefact, lectures[[id]], reference, lectures, artefacts)) else NULL
           ecrire_recette_ressource(con = con, ressource = id,
             # The DB event stores the verb allowed by api/schema.sql:1376
             # (apply/retire/adopt); the local receipt keeps the "adopted" status.
