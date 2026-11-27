@@ -21,3 +21,18 @@ test_that("adoption refuses post-049 before reading any dropped marker", {
   expect_match(conditionMessage(err), "migration 049", fixed = TRUE)
   expect_match(conditionMessage(err), "zéro écriture", fixed = TRUE)
 })
+
+test_that("adoption delegates the global-marker probe to the shared publication guard", {
+  con <- structure(list(), class = "probe-con")
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    verifier_schema_publication_globale = function(con, refusal = NULL) {
+      seen <<- list(con = con, refusal = refusal)
+      stop(refusal)
+    }, .package = "lusk")
+  err <- tryCatch(verifier_schema_adoption_globale(con), error = identity)
+  expect_identical(seen$con, con)
+  expect_s3_class(seen$refusal, "erreur_adoption")
+  expect_identical(seen$refusal$refus, "adoption_globale_retiree")
+  expect_identical(err, seen$refusal)
+})
