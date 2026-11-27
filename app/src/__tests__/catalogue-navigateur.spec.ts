@@ -71,9 +71,9 @@ describe('catalogue navigateur servi (#868) — projection réduite, canon compl
     expect(Array.isArray(canon.story_keys)).toBe(true)
     expect('source_records' in canon).toBe(true)
     expect('subgroups' in canon).toBe(true)
-    // Producer-only semantic resources remain when the theme declares any;
-    // a theme with no retained semantic resource omits the empty block.
-    if ('semantic_resources' in canon) expect(Array.isArray(canon.semantic_resources)).toBe(true)
+    // Typed-reading retirement removed the former selected-reading declarations;
+    // the producer canon must not silently recreate an empty or populated block.
+    expect(canon.semantic_resources ?? []).toEqual([])
     if (theme === 'programmes') {
       expect('observed_collection_contracts' in canon).toBe(true)
     }
