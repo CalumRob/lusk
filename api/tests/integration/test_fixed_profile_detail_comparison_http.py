@@ -182,8 +182,10 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
 
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         seed = _seed(conn)
-        versions = dict(conn.execute("""SELECT table_name,content_version FROM table_publication
-            WHERE table_name IN ('declared_profile','territory_reference')""").fetchall())
+        versions = dict(conn.execute("""SELECT resource_id,content_version FROM resource_publication
+            WHERE resource_id=%s""", (RESOURCE,)).fetchall())
+        versions["territory_reference"] = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()[0]
     focal = seed["focal"]
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
