@@ -215,31 +215,6 @@ def cohort_http(canonical_db_env):
             publisher.execute("""INSERT INTO series_observation_provenance
                 VALUES ('cohort_artif_states','artif_par_habitant','cohort-c1','M2','cohort-artif-revision'),
                        ('cohort_artif_states','artif_par_habitant','cohort-c1','M3','cohort-artif-revision')""")
-            publisher.execute("""INSERT INTO milieux_reading_source(
-                territory_id,territory_type,groupe,field_key,source_id,vintage_id,source_name,source_version,
-                reference_date,publication_date,observation_period,population_revision_id)
-                VALUES ('cohort-c1','commune','artificialisation','population','cohort-source','cohort-v1',
-                    'Cohort source','2026','2026-01-01','2026-01-02','2020','cohort-milieux-population')""")
-            publisher.execute("""INSERT INTO milieux_reading_source(
-                territory_id,territory_type,groupe,field_key,source_id,vintage_id,source_name,source_version,
-                reference_date,publication_date,observation_period,dataset_id,dataset_content_version,
-                state_role,axis_value,provenance_revision_id)
-                VALUES ('cohort-c1','commune','artificialisation','artif_m2_par_habitant',
-                    'cohort-source','cohort-v1','Cohort source','2026','2026-01-01','2026-01-02',
-                    '2021','cohort_artif_states','cohort-artif-v1','M2','M2','cohort-artif-revision'),
-                       ('cohort-c1','commune','artificialisation','artif_m3_par_habitant',
-                    'cohort-source','cohort-v1','Cohort source','2026','2026-01-01','2026-01-02',
-                    '2021','cohort_artif_states','cohort-artif-v1','M3','M3','cohort-artif-revision')""")
-            publisher.execute("""INSERT INTO milieux_reading_absence(
-                territory_id,territory_type,reason,source_id,vintage_id,source_snapshot_sha256)
-                VALUES ('cohort-c2','commune','source_record_absent','cohort-source','cohort-v1',%s),
-                       ('cohort-c3','commune','source_record_absent','cohort-source','cohort-v1',%s)""",
-                ('a' * 64, 'a' * 64))
-            publisher.execute("""INSERT INTO table_publication(
-                table_name,content_version,row_count,reference_content_version)
-                VALUES ('milieux_typed_reading','cohort-milieux-v1',1,'cohort-reference-v1'),
-                       ('milieux_reading_absence','cohort-milieux-v1',2,'cohort-reference-v1')""")
-
             publisher.execute("""INSERT INTO series_dataset_publication
                 (dataset_id,content_version,reference_content_version,row_count)
                 VALUES ('dvf_prix_m2','cohort-series-v1','cohort-reference-v1',3)""")
