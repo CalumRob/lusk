@@ -64,14 +64,13 @@
 }
 
 .guarded_apply_schema <- function(con) {
-  schema <- paste0("it_apply_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
-  DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
-  DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
-  sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
-                         warn = FALSE), collapse = "\n")
-  for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
-  .guarded_apply_publish_reference(con)
-  schema
+  .guarded_schema_build(con, "it_apply_", function(schema) {
+    sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
+                           warn = FALSE), collapse = "\n")
+    for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
+    .guarded_apply_publish_reference(con)
+    schema
+  })$value
 }
 
 # Build scalar artefacts for one indicator and their lock registry.

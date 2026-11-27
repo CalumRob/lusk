@@ -33,10 +33,7 @@
   con
 }
 
-.adopt_db_schema <- function(con) {
-  schema <- paste0("it_adopt_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
-  DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
-  DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
+.adopt_db_initialize_schema <- function(con, schema) {
   # Adoption is proved on the populated POST-046/PRE-049 expand schema. Pin the
   # reviewed base object rather than the current fresh schema, which intentionally
   # no longer carries the global markers this one-time operation consumes.
@@ -47,7 +44,14 @@
     stop("Could not read pinned pre-049 schema: ", paste(status, collapse = "\n"))
   sql <- paste(status, collapse = "\n")
   for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
-  schema
+  invisible(schema)
+}
+
+.adopt_db_schema <- function(con) {
+  .guarded_schema_build(con, "it_adopt_", function(schema) {
+    .adopt_db_initialize_schema(con, schema)
+    schema
+  })$value
 }
 
 .adopt_db_scalar_indicator <- function(id, source, values) {

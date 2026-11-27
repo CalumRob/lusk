@@ -19,16 +19,32 @@ local({
   fixture_partage <- function() {
     if (is.null(etat$fixture)) {
       etat$con <- .adopt_db_connect()
-      etat$schema <- .adopt_db_schema(etat$con)
-      etat$fixture <- .adopt_db_fixture()
-      etat$builds <- splitter_sortie(etat$fixture$sortie, root = etat$fixture$root,
-        projections = etat$fixture$projections, reference = etat$fixture$reference,
-        metadata_directory = etat$fixture$metadata_directory)
-      etat$artefacts <- charger_artefacts_construits(etat$builds, etat$fixture$root)
-      expect_setequal(names(etat$artefacts), as.character(etat$builds$ressource))
-      .adopt_db_publish_all(etat$con, etat$fixture)
-      etat$digest <- .adopt_db_digest(etat$con)
-      etat$registry <- .adopt_db_registry_digest(etat$con)
+      built <- .guarded_schema_build(etat$con, "it_adopt_", function(schema) {
+        fixture <- NULL
+        completed <- FALSE
+        on.exit(if (!completed && !is.null(fixture)) unlink(c(
+          fixture$sortie, fixture$root, fixture$aedar_dir, fixture$base_metadata),
+          recursive = TRUE), add = TRUE)
+        .adopt_db_initialize_schema(etat$con, schema)
+        fixture <- .adopt_db_fixture()
+        builds <- splitter_sortie(fixture$sortie, root = fixture$root,
+          projections = fixture$projections, reference = fixture$reference,
+          metadata_directory = fixture$metadata_directory)
+        artefacts <- charger_artefacts_construits(builds, fixture$root)
+        expect_setequal(names(artefacts), as.character(builds$ressource))
+        .adopt_db_publish_all(etat$con, fixture)
+        digest <- .adopt_db_digest(etat$con)
+        registry <- .adopt_db_registry_digest(etat$con)
+        completed <- TRUE
+        list(fixture = fixture, builds = builds, artefacts = artefacts,
+          digest = digest, registry = registry)
+      })
+      etat$schema <- built$schema
+      etat$fixture <- built$value$fixture
+      etat$builds <- built$value$builds
+      etat$artefacts <- built$value$artefacts
+      etat$digest <- built$value$digest
+      etat$registry <- built$value$registry
     }
     etat
   }
