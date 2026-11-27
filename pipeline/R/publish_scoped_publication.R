@@ -198,7 +198,7 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids) {
     target_profile_version = target_profile$version,
     current_profile_version = current_profile$version,
     target_profile_comparison_version = target_profile$comparison_version,
-    current_profile_comparison_version = current_profile$comparison_version,
+    current_profile_comparison_version = current_profile$comparison_version
   )
 }
 
