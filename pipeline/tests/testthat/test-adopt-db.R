@@ -4,11 +4,8 @@
 # only that schema is dropped in on.exit.
 #
 # Fixture-scale limitation (deliberate, no SQL seeds): the normal full backend
-# entry point also publishes four typed-reading families which adoption ignores
-# and whose complete canonical fixtures are not available at this scale. These
-# proofs call publish_retained_backend_snapshot(atomic=TRUE) with ONLY those
-# retired families stubbed to no-ops. Territory reference, scalar snapshot,
-# declared profile, comparisons and every serving write are the real publishers.
+# entry point publishes the retained territory reference, scalar/profile snapshots
+# and OCS-GE state series. Every serving write is the real publisher.
 # project_retained_scalar_snapshot supplies the bounded fixture snapshot and the
 # profile binding is the matching real scalar token; no expected serving rows
 # are inserted directly in SQL.
@@ -341,6 +338,34 @@ test_that("guarded: a forged live scalar binding refuses with the typed reason a
   expect_identical(ligne$motif, "dependance_divergente")
   expect_identical(.adopt_db_digest(con), avant)
   expect_identical(.adopt_db_registry_digest(con), registre_avant)
+})
+
+test_that("guarded: post-049 adopt refuses before dropped-marker access with zero writes", {
+  partage <- fixture_partage()
+  con <- partage$con
+  fixture <- partage$fixture
+  .adopt_db_begin_rollback(con)
+  .adopt_db_reuse_artefacts(partage)
+  adopter <- function(...) executer_commande_publication(c("adopt", fixture$sortie, ...),
+    root = fixture$root, registre = fixture$lock, projections = fixture$projections,
+    reference = fixture$reference, metadata_directory = fixture$metadata_directory,
+    con = con, out = nullfile())
+  # Prove the same fixture still adopts before 049, then apply the actual
+  # contract migration inside this disposable outer rollback transaction.
+  invisible(adopter())
+  migration <- readLines(testthat::test_path("..", "..", "..", "api", "migrations",
+    "049_retire_typed_readings.sql"), warn = FALSE)
+  migration <- migration[!trimws(migration) %in% c("BEGIN;", "COMMIT;")]
+  for (statement in split_postgres_sql(paste(migration, collapse = "\n")))
+    DBI::dbExecute(con, statement)
+  avant <- list(.adopt_db_digest(con), .adopt_db_registry_digest(con))
+  for (args in list(character(), "--dry-run")) {
+    err <- tryCatch(adopter(args), error = identity)
+    expect_s3_class(err, "erreur_adoption")
+    expect_identical(err$refus, "adoption_globale_retiree")
+    expect_match(conditionMessage(err), "migration 049", fixed = TRUE)
+    expect_identical(list(.adopt_db_digest(con), .adopt_db_registry_digest(con)), avant)
+  }
 })
 
 test_that("guarded: an existing divergent marker refuses adopt (and --dry-run) with zero writes", {

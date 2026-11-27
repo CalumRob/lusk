@@ -37,8 +37,15 @@
   schema <- paste0("it_adopt_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
   DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
   DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
-  sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
-                         warn = FALSE), collapse = "\n")
+  # Adoption is proved on the populated POST-046/PRE-049 expand schema. Pin the
+  # reviewed base object rather than the current fresh schema, which intentionally
+  # no longer carries the global markers this one-time operation consumes.
+  root <- normalizePath(testthat::test_path("..", "..", ".."), winslash = "/", mustWork = TRUE)
+  status <- system2("git", c("-C", root, "show", "a0807c71:api/schema.sql"),
+                    stdout = TRUE, stderr = TRUE)
+  if (!is.null(attr(status, "status")) && attr(status, "status") != 0L)
+    stop("Could not read pinned pre-049 schema: ", paste(status, collapse = "\n"))
+  sql <- paste(status, collapse = "\n")
   for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
   schema
 }
@@ -274,41 +281,20 @@
   digests <- artefacts_fixture_digests(sources)
   jsonlite::write_json(unname(digests), file.path(sortie, "source-digests.json"),
     auto_unbox = TRUE)
-  typed <- new.env(parent = emptyenv())
-  typed$hits <- integer()
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
     scalar_version = scalar_version, lock = digests, projections = projections,
     aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir,
-    base_metadata = base_metadata, metadata_directory = metadata_directory, typed = typed)
+    base_metadata = base_metadata, metadata_directory = metadata_directory)
 }
 
 .adopt_db_publish_all <- function(con, fixture) {
-  typed <- fixture$typed
   local_mocked_bindings(
     project_retained_scalar_snapshot = function(...) fixture$snapshot,
     declared_profile_owners = function() c("structure_age", "distribution_dpe"),
     profile_scalar_binding = function(...) fixture$scalar_version,
-    publish_canonical_demographic_reading = function(...) {
-      typed$hits <- c(typed$hits, "demographic"); list()
-    },
-    publish_canonical_habitat_reading = function(...) {
-      typed$hits <- c(typed$hits, "habitat"); list()
-    },
-    read_typed_reading_publication_from = function(...) {
-      typed$hits <- c(typed$hits, "economy-read"); list()
-    },
-    publish_typed_reading_publication = function(...) {
-      typed$hits <- c(typed$hits, "economy-publish"); list()
-    },
-    publish_canonical_milieux_reading = function(...) {
-      typed$hits <- c(typed$hits, "milieux"); list(reading = list(), owned_series = list())
-    }, .package = "lusk")
+    .package = "lusk")
   publish_retained_backend_snapshot(con, sortie = fixture$sortie, atomic = TRUE,
     companion_profiles = TRUE)
-  expect_setequal(typed$hits, c("demographic", "habitat", "economy-read",
-    "economy-publish", "milieux"))
-  publish_owned_series_projection(fixture$projections$owned_series$artif_par_habitant,
-    owned_series_postgres_adapter(con))
   for (projection in fixture$projections$observed_collection)
     publish_observed_collection(projection, con)
   aedar <- fixture$projections$aedar$aedar

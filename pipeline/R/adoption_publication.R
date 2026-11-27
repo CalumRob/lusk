@@ -9,6 +9,22 @@ erreur_adoption <- function(refus, message, comparaisons = NULL) {
             class = c("erreur_adoption", "error", "condition"))
 }
 
+# Adoption is the one-time bootstrap BEFORE contract migration 049. It carries
+# over the legacy global comparison tokens, so a post-049 schema must refuse with
+# a typed reason before any live resource or dropped global marker is read.
+verifier_schema_adoption_globale <- function(con) {
+  etat <- DBI::dbGetQuery(con, paste0(
+    "SELECT to_regclass(current_schema() || '.scalar_comparison_publication') IS NOT NULL AS scalaire, ",
+    "to_regclass(current_schema() || '.profile_comparison_publication') IS NOT NULL AS profil"))
+  if (!is.data.frame(etat) || nrow(etat) != 1L ||
+      !isTRUE(etat$scalaire[[1L]]) || !isTRUE(etat$profil[[1L]]))
+    stop(erreur_adoption("adoption_globale_retiree", paste0(
+      "adopt : adoption_globale_retiree: l'adoption est l'étape unique antérieure ",
+      "à la migration 049 ; les marqueurs globaux de comparaison n'existent plus, ",
+      "aucun jeton ne peut être reporté — zéro écriture.")))
+  invisible(TRUE)
+}
+
 verifier_lecteurs_adoption <- function(artefacts) {
   manquants <- character()
   for (id in names(artefacts)) {
@@ -89,6 +105,7 @@ adopter_artefacts <- function(builds, artefacts, dry_run = FALSE, lock = NULL,
     con = con, code = function(con) {
     comparaisons <- list()
     with_publication_transaction(con, {
+      verifier_schema_adoption_globale(con)
       # EXACTEMENT le même setup de session qu'apply : isolation, verrou et
       # préflight de référence partagés, avant la première lecture live.
       reference <- preparer_session_service_publication(con, artefacts, ids,

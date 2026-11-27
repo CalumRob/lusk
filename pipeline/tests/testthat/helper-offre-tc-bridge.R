@@ -138,18 +138,16 @@ bridge_fixture_reference_rows <- function() {
 
 bridge_fixture_expected_tokens <- function() {
   c(scalar = "scalar-live", comparison = "comparison-live",
-    profile = "profile-live", habitat = "habitat-live",
+    profile = "profile-live",
     reference = "reference-live")
 }
 
 bridge_fixture_markers <- function(expected = bridge_fixture_expected_tokens()) {
   list(
     tables = data.frame(
-      table_name = c("territory_reference", "scalar_observation",
-                     "declared_profile", "selected_reading"),
-      content_version = unname(expected[c("reference", "scalar", "profile", "habitat")]),
+      table_name = c("territory_reference", "scalar_observation", "declared_profile"),
+      content_version = unname(expected[c("reference", "scalar", "profile")]),
       reference_content_version = c(NA_character_, unname(expected[["reference"]]),
-                                    unname(expected[["reference"]]),
                                     unname(expected[["reference"]])),
       stringsAsFactors = FALSE),
     comparison = data.frame(
@@ -163,15 +161,6 @@ bridge_fixture_markers <- function(expected = bridge_fixture_expected_tokens()) 
       content_version = "profile-comparison-live", profile_content_version = unname(expected[["profile"]]),
       reference_content_version = unname(expected[["reference"]]),
       group_row_count = 1L, territory_row_count = 1L, stringsAsFactors = FALSE),
-    selected_publication = data.frame(
-      theme_id = "habitat", content_version = unname(expected[["habitat"]]),
-      reference_content_version = unname(expected[["reference"]]), row_count = 2L,
-      stringsAsFactors = FALSE),
-    selected_descriptor = data.frame(
-      theme_id = "habitat", descriptor_version = unname(expected[["habitat"]]),
-      linked_content_version = paste("canonical", unname(expected[["profile"]]),
-                                     unname(expected[["scalar"]]), unname(expected[["reference"]]), sep = "-"),
-      stringsAsFactors = FALSE),
     profile_descriptor = data.frame(
       indicator_id = "distribution_dpe", descriptor_version = "dpe-live",
       required_scalar_version = unname(expected[["scalar"]]), stringsAsFactors = FALSE))
@@ -288,17 +277,6 @@ bridge_fake_comparison_adapter <- function(old_version, input_scalar = "scalar-n
     },
     state = state)
 }
-
-bridge_fake_marker_writer <- function(old_linked = NULL) {
-  state <- new.env(parent = emptyenv())
-  list(
-    set_habitat_linked = function(new_linked) {
-      state$linked_new <- new_linked
-      invisible(TRUE)
-    },
-    state = state)
-}
-
 
 # Live declared-profile projections for the lineage proof. Descriptor field
 # order intentionally matches project_dpe_profile()/project_structure_age_profile()

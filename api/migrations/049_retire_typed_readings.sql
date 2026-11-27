@@ -9,7 +9,7 @@ BEGIN;
 -- WITHOUT --single-transaction. Every DROP uses RESTRICT/default dependency
 -- behavior: an unexpected dependent object aborts the whole transaction.
 
-SET LOCAL search_path = pg_catalog, current_schema();
+SELECT set_config('search_path', 'pg_catalog,' || current_schema(), TRUE);
 SET LOCAL lock_timeout = '5s';
 
 LOCK TABLE table_publication IN ACCESS EXCLUSIVE MODE;

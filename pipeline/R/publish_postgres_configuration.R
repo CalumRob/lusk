@@ -20,48 +20,6 @@ configuration_service_postgres <- function() {
     passfile=passfile)
 }
 
-# #1148 — one source of truth for the producer CONSOENAF snapshot across every
-# full-publication entry point. `env` is injectable so the operator CLI path can
-# be exercised as a unit without a database or data/raw. Absent/empty resolves
-# to NULL (today's behaviour: no re-derived source absences).
-resolve_milieux_conso_source <- function(env_var="LUSK_MILIEUX_CONSO_SOURCE",
-                                          env=Sys.getenv) {
-  path <- env(env_var, unset="")
-  if (!nzchar(path)) return(NULL)
-  path
-}
-
-# #1148 — the live Milieux absence marker is the authority on whether the
-# publisher needs the source to re-derive coverage before REPLACING declared
-# absences. This is a read-only preflight; the caller invokes it before the
-# advisory lock and before with_publication_transaction() so a missing source
-# fails with a named, actionable message instead of deep inside the write
-# transaction. A marker without row_count (or no marker at all) is treated as
-# empty: the historical no-source behaviour is unchanged.
-milieux_absence_marker_nonempty <- function(con) {
-  marker <- DBI::dbGetQuery(con,
-    "SELECT row_count FROM table_publication WHERE table_name='milieux_reading_absence'")
-  if (!is.data.frame(marker) || !"row_count" %in% names(marker) || !nrow(marker))
-    return(FALSE)
-  count <- suppressWarnings(as.integer(marker$row_count[[1L]]))
-  !is.na(count) && count > 0L
-}
-
-assert_milieux_conso_source_for_publication <- function(con, conso_source_path,
-                                                         env_var="LUSK_MILIEUX_CONSO_SOURCE") {
-  if (!milieux_absence_marker_nonempty(con)) return(invisible(FALSE))
-  readable <- !is.null(conso_source_path) && length(conso_source_path)==1L &&
-    !is.na(conso_source_path) && nzchar(conso_source_path) &&
-    file.exists(conso_source_path) &&
-    !isTRUE(file.info(conso_source_path)$isdir)
-  if (!readable)
-    stop("Existing Milieux absence declarations require a readable CONSOENAF ",
-      "source snapshot; set ", env_var, " to the producer source file ",
-      "(conso-com.csv) before full publication. Refusing with zero writes.",
-      call.=FALSE)
-  invisible(TRUE)
-}
-
 publish_retained_backend_from_parquet <- function(sortie="../public/data",
                                                    conso_source_path=resolve_milieux_conso_source(),
                                                    baseline_sortie=Sys.getenv(
@@ -104,9 +62,10 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
   }
   scoped_result <- NULL
   tryCatch({
+    verifier_schema_publication_globale(con)
     # A scoped retained publication (the three #989 supply scalars) publishes
     # only the registered dependency closure: scalar snapshot/comparisons, the
-    # scalar-bound declared-profile companion, and the linked selected reading.
+    # scalar-bound declared-profile companion.
     # The scoped plan proves the delta against the explicitly supplied
     # current/baseline generation and guards the live markers of that closure;
     # unrelated owner markers are neither expectations nor writes. Without a
@@ -148,20 +107,11 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
       scoped_result <- publish_scoped_retained_backend(con, plan,
                                                        guard$absent_sources)
     } else {
-      # #1148 — read-only preflight BEFORE the advisory lock and the outer write
-      # transaction: a live absence marker cannot be replaced without the
-      # CONSOENAF source, so refuse here with the variable name, not 2 minutes
-      # inside publication_transaction() after other owners have written.
-      assert_milieux_conso_source_for_publication(con, conso_source_path)
       # Full retained publication (#1126). The scoped branch above proves the
       # required order: refresh the scalar-bound declared-profile companion
       # metadata-only for the candidate scalar version, then publish reference
-      # -> scalar -> declared profiles -> typed readings in ONE outer
-      # transaction. The old full path did none of that: each owner committed
-      # independently and the Habitat selected reading refused against the
-      # stale DPE binding once the scalar version moved, leaving reference,
-      # scalar, comparison and demographie committed and the rest stale (API
-      # fail-closed -> 503). Do exactly what the scoped path does. The lock is
+      # -> scalar -> declared profiles -> OCS-GE state series in ONE outer
+      # transaction. The lock is
       # session-wide and released by the finally below; the profile artifacts
       # are restored there on any failure, before the connection is closed.
       DBI::dbGetQuery(con, "SELECT pg_advisory_lock(594, 1)")
@@ -174,7 +124,6 @@ publish_retained_backend_from_parquet <- function(sortie="../public/data",
         declared_profile_owners(),
         scalar_content_version(target_snapshot$scalar))
       publish_retained_backend_snapshot(con, sortie,
-        conso_source_path=conso_source_path,
         atomic=TRUE, companion_profiles=TRUE)
     }
     success <- TRUE

@@ -272,16 +272,9 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
   verifier_snapshot_retention_scalaire(sortie)
 } else {
-  # Full/Recovery retained publication: use already-published retained artifacts,
-  # without rebuilding upstream. #1148 — when live Milieux absence declarations
-  # exist the publisher must re-derive source coverage from the producer
-  # CONSOENAF snapshot. Resolve the operator variable next to LUSK_SORTIE and
-  # pass it into the single write path (the publie_backend_retained target does
-  # the same through the same resolver).
-  conso_source_path <- resolve_milieux_conso_source()
+  # Full/Recovery retained publication from already-published artifacts.
   changed <- publish_retained_backend_from_parquet(
-    Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data")),
-    conso_source_path = conso_source_path)
+    Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data")))
   cat("Reconciled retained backend owners:", paste(names(changed), collapse=", "), "\n")
 }
 

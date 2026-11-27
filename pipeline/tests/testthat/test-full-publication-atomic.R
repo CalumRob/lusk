@@ -1,8 +1,8 @@
 # #1126 — the full (unscoped) retained publication must behave exactly like the
 # scoped path: metadata-only refresh of the DPE binding, an advisory lock, then
-# reference -> scalar -> declared profiles -> typed readings in ONE outer
+# reference -> scalar -> declared profiles -> OCS-GE state series in ONE outer
 # transaction, restoring the profile artifacts on failure. The guarded
-# PostgreSQL proof lives in scripts/smoke-retained-baseline-postgres.R; these
+# PostgreSQL proof lives in the guarded adoption suite; these
 # mocked tests lock the contract into the ordinary fixture suite.
 
 full_publication_sortie <- function() {
@@ -62,10 +62,9 @@ test_that("the full path refreshes the binding and publishes atomically", {
                  file.path(directory, "scalar-serving", "binding.json"))
       invisible(character())
     },
-    publish_retained_backend_snapshot = function(con, sortie, conso_source_path = NULL,
+    publish_retained_backend_snapshot = function(con, sortie,
                                                   atomic = FALSE, companion_profiles = FALSE) {
       recorded$publish <<- list(con = con, sortie = sortie,
-                                conso_source_path = conso_source_path,
                                 atomic = atomic, companion_profiles = companion_profiles)
       invisible(NULL)
     }
@@ -74,6 +73,8 @@ test_that("the full path refreshes the binding and publishes atomically", {
     dbConnect = function(...) con,
     dbGetQuery = function(con, sql, ...) {
       recorded$sql <<- c(recorded$sql, sql)
+      if (grepl("to_regclass", sql, fixed = TRUE))
+        return(data.frame(scalaire = TRUE, profil = TRUE))
       data.frame(v = 1L)
     },
     dbDisconnect = function(...) invisible(TRUE),
@@ -117,7 +118,11 @@ test_that("a failure mid-publication restores the pre-refresh profile artifact",
   )
   testthat::local_mocked_bindings(
     dbConnect = function(...) con,
-    dbGetQuery = function(...) data.frame(v = 1L),
+    dbGetQuery = function(con, sql, ...) {
+      if (grepl("to_regclass", sql, fixed = TRUE))
+        return(data.frame(scalaire = TRUE, profil = TRUE))
+      data.frame(v = 1L)
+    },
     dbDisconnect = function(...) invisible(TRUE),
     .package = "DBI"
   )

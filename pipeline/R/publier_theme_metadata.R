@@ -62,7 +62,6 @@ CHAMPS_HORS_NAVIGATEUR <- c(
   "story_keys",                # registre des stories : redondant avec les lectures des sous-groupes
   "observed_collection_contracts", # contrat de service API (publish_observed_collections, extdata)
   "indicator_directions",      # registre de directions : contrôle du validateur producteur uniquement
-  "selected_reading_contract", # aucun lecteur
   "comparison_scopes",         # projections legacy du modèle de lecture (extdata suffit)
   "building_comparison",       # idem
   "service_share_scalar",      # idem

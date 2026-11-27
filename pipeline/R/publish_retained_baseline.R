@@ -1,13 +1,11 @@
 # Pre-publication serving baseline guard for the retained backend (#989) --------
 # `publish_retained_backend_snapshot()` republishes several owners: the
-# territory reference, the whole scalar snapshot, four typed readings and the
-# Milieux owned series. The local artifacts are not proof by themselves: they
+# territory reference, the whole scalar/profile snapshots and the Milieux owned series. The local artifacts are not proof by themselves: they
 # may be an older (or newer) canonical generation than the one the serving
 # database currently holds. Before ANY serving write, this guard requires the
 # live publication markers to match:
 #
-#   - the candidate generation for the UNCHANGED owners (reference, typed
-#     readings, owned series);
+#   - the candidate generation for the UNCHANGED owners (reference, owned series);
 #   - the explicitly supplied PRIOR baseline generation for the scalar owner and
 #     its comparison, i.e. the generation the serving database was published
 #     from;
@@ -61,30 +59,6 @@ retained_baseline_scalar <- function(scalar, scope_ids) {
   prior
 }
 
-# retained_typed_versions / retained_series_expected ---------------------------
-# Marker versions are the versions the REGISTERED PUBLISHERS write, not a
-# generic artifact token. Demographic/Habitat/Economy publish the artifact's
-# content version; Milieux publishes its own composition of facts + source
-# bindings + absences. The owned series marker is keyed by the artifact's
-# declared dataset id.
-retained_typed_versions <- function(directory) {
-  owners <- c("demographie", "habitat", "economie")
-  versions <- stats::setNames(vapply(owners, function(owner)
-    read_typed_reading_publication_from(directory, owner)$content_version,
-    character(1)), owners)
-  publication <- read_typed_reading_publication_from(directory, "milieux")
-  facts <- publication$reading
-  absences <- attr(facts, "source_absences")
-  if (is.null(absences)) absences <- data.frame(
-    territory_id = character(), territory_type = character(),
-    reason = character(), source_id = character(), vintage_id = character(),
-    source_snapshot_sha256 = character(), stringsAsFactors = FALSE)
-  versions[["milieux"]] <- scalar_content_version(list(
-    facts = facts, source_bindings = attr(facts, "source_bindings"),
-    source_absences = absences))
-  versions
-}
-
 retained_series_expected <- function(directory) {
   projection <- read_owned_series_artifact(
     file.path(directory, "series-serving", "artif_par_habitant"),
@@ -124,17 +98,6 @@ retained_profile_publication <- function(directory, binding, reference_version,
        dpe_descriptor_version = as.character(
          profiles[["distribution_dpe"]]$descriptor$descriptor_version[[1L]]),
        profiles = profiles)
-}
-
-# retained_selected_linked_version ---------------------------------------------
-# The exact linked version the selected-reading publisher derives for Habitat:
-# canonical linked token (none today) + profile marker + scalar marker + reference.
-retained_selected_linked_version <- function(habitat_publication, profile_version,
-                                             scalar_version, reference_version) {
-  linked <- habitat_publication$linked_content_version
-  if (is.null(linked) || length(linked) == 0L) linked <- ""
-  paste(c(linked, profile_version, scalar_version, reference_version),
-        collapse = "-")
 }
 
 # retained_baseline_marker_expectations -----------------------------------------
@@ -193,22 +156,6 @@ retained_baseline_marker_expectations <- function(candidate_dir, baseline_dir,
          "indicators; retrieve the exact prior canonical generation.",
          call. = FALSE)
 
-  candidate_typed <- tryCatch(retained_typed_versions(candidate_dir),
-    error = function(e) stop(
-      "Candidate typed-reading artifacts are not valid under current producer ",
-      "contracts: ", conditionMessage(e),
-      ". This generation is not publication-ready; retrieve the latest ",
-      "canonical generation that matches serving (do not regenerate or force).",
-      call. = FALSE))
-  baseline_typed <- tryCatch(retained_typed_versions(baseline_dir),
-    error = function(e) stop(
-      "Baseline typed-reading artifacts are not valid under current producer ",
-      "contracts: ", conditionMessage(e),
-      ". Retrieve the latest canonical generation that matches serving ",
-      "(do not regenerate or force).", call. = FALSE))
-  if (!identical(candidate_typed, baseline_typed))
-    stop("Candidate and baseline typed-reading artifacts differ; a scoped ",
-         "publication must not replace unrelated owners.", call. = FALSE)
   candidate_series <- tryCatch(retained_series_expected(candidate_dir),
     error = function(e) stop(
       "Candidate owned-series artifact is not valid under current producer ",
@@ -250,24 +197,15 @@ retained_baseline_marker_expectations <- function(candidate_dir, baseline_dir,
     stop("Candidate and baseline declared-profile facts/descriptors differ ",
          "outside the scalar binding; a scoped publication must not replace ",
          "unrelated owner facts.", call. = FALSE)
-  habitat_publication <- read_typed_reading_publication_from(baseline_dir,
-                                                             "habitat")
-  selected_linked <- retained_selected_linked_version(
-    habitat_publication, baseline_profile$version, prior_version,
-    reference$content_version)
-
   list(reference = reference$content_version,
        scalar = prior_version,
        comparison = prior_comparison$content_version,
        comparison_scalar = prior_version,
-       typed = candidate_typed,
-       series = candidate_series,
+              series = candidate_series,
        profile_version = baseline_profile$version,
        profile_comparison_version = baseline_profile$comparison_version,
        profile_descriptor_version = baseline_profile$dpe_descriptor_version,
        profile_required_scalar = prior_version,
-       habitat_version = candidate_typed[["habitat"]],
-       selected_linked = selected_linked,
        scope_ids = scope_ids)
 }
 
@@ -275,11 +213,7 @@ retained_baseline_marker_expectations <- function(candidate_dir, baseline_dir,
 # Read-only marker inventory of the retained backend. Exactly the owners the
 # normal full-snapshot publication writes.
 retained_backend_markers <- function(con) {
-  names <- c("territory_reference", "scalar_observation",
-             "declared_profile", "demographic_typed_reading",
-             "selected_reading", "economy_typed_reading",
-             "economy_activity_evidence", "milieux_typed_reading",
-             "milieux_reading_absence")
+  names <- c("territory_reference", "scalar_observation", "declared_profile")
   placeholders <- in_params(names)
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT table_name, content_version, reference_content_version ",
@@ -295,19 +229,11 @@ retained_backend_markers <- function(con) {
     "SELECT content_version, profile_content_version, reference_content_version, ",
     "group_row_count, territory_row_count ",
     "FROM profile_comparison_publication WHERE singleton"))
-  selected_publication <- DBI::dbGetQuery(con, paste0(
-    "SELECT theme_id, content_version, reference_content_version, row_count ",
-    "FROM selected_reading_publication WHERE theme_id='habitat'"))
-  selected_descriptor <- DBI::dbGetQuery(con, paste0(
-    "SELECT theme_id, descriptor_version, linked_content_version ",
-    "FROM selected_reading_descriptor WHERE theme_id='habitat'"))
   profile_descriptor <- DBI::dbGetQuery(con, paste0(
     "SELECT indicator_id, descriptor_version, required_scalar_version ",
     "FROM profile_descriptor WHERE indicator_id='distribution_dpe'"))
   list(tables = tables, comparison = comparison, series = series,
        profile_comparison = profile_comparison,
-       selected_publication = selected_publication,
-       selected_descriptor = selected_descriptor,
        profile_descriptor = profile_descriptor)
 }
 
@@ -346,12 +272,6 @@ verifier_retained_backend_baseline <- function(markers, expected) {
   expect_table("territory_reference", expected$reference, reference = FALSE)
   expect_table("scalar_observation", expected$scalar)
   expect_table("declared_profile", expected$profile_version)
-  expect_table("demographic_typed_reading", expected$typed[["demographie"]])
-  expect_table("selected_reading", expected$typed[["habitat"]])
-  expect_table("economy_typed_reading", expected$typed[["economie"]])
-  expect_table("economy_activity_evidence", expected$typed[["economie"]])
-  expect_table("milieux_typed_reading", expected$typed[["milieux"]])
-  expect_table("milieux_reading_absence", expected$typed[["milieux"]])
 
   comparison <- markers$comparison
   if (nrow(comparison) != 1L) {
@@ -411,36 +331,6 @@ verifier_retained_backend_baseline <- function(markers, expected) {
       add("profile_comparison_publication", "reference_content_version",
           profile_comparison$reference_content_version[[1L]],
           expected$reference)
-  }
-  selected_publication <- markers$selected_publication
-  if (nrow(selected_publication) != 1L) {
-    add("selected_reading_publication[habitat]", "presence", NA_character_,
-        "exactly one row")
-  } else {
-    if (!identical(as.character(selected_publication$content_version[[1L]]),
-                   as.character(expected$habitat_version)))
-      add("selected_reading_publication[habitat]", "content_version",
-          selected_publication$content_version[[1L]], expected$habitat_version)
-    if (!identical(as.character(selected_publication$reference_content_version[[1L]]),
-                   as.character(expected$reference)))
-      add("selected_reading_publication[habitat]", "reference_content_version",
-          selected_publication$reference_content_version[[1L]],
-          expected$reference)
-  }
-  selected_descriptor <- markers$selected_descriptor
-  if (nrow(selected_descriptor) != 1L) {
-    add("selected_reading_descriptor[habitat]", "presence", NA_character_,
-        "exactly one row")
-  } else {
-    if (!identical(as.character(selected_descriptor$descriptor_version[[1L]]),
-                   as.character(expected$habitat_version)))
-      add("selected_reading_descriptor[habitat]", "descriptor_version",
-          selected_descriptor$descriptor_version[[1L]], expected$habitat_version)
-    if (!identical(as.character(selected_descriptor$linked_content_version[[1L]]),
-                   as.character(expected$selected_linked)))
-      add("selected_reading_descriptor[habitat]", "linked_content_version",
-          selected_descriptor$linked_content_version[[1L]],
-          expected$selected_linked)
   }
   profile_descriptor <- markers$profile_descriptor
   if (nrow(profile_descriptor) != 1L) {

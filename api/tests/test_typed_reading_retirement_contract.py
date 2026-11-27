@@ -101,6 +101,21 @@ def test_production_api_and_producer_grammar_have_no_typed_reading_registration(
         assert "selected_reading" not in source, path
 
 
+def test_pipeline_has_no_typed_reading_publisher_artifact_or_target():
+    forbidden = ("typed_reading", "selected_reading", "demographic_typed_reading",
+                 "habitat_typed_reading", "economy_typed_reading", "milieux_typed_reading",
+                 "milieux_reading_", "economy_activity_evidence")
+    for path in (ROOT / "pipeline/R").glob("*.R"):
+        source = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            assert token not in source, (path, token)
+    targets = (ROOT / "pipeline/_targets.R").read_text(encoding="utf-8")
+    assert "typed_reading_serving_artifacts" not in targets
+    assert "materialize_theme_typed_reading_artifacts" not in targets
+    series = (ROOT / "pipeline/R/publish_series.R").read_text(encoding="utf-8")
+    assert "publish_canonical_milieux_state_series" in series
+
+
 def test_table_publication_checks_are_narrowed_identically_in_schema_and_migration():
     schema = re.sub(r"\s+", " ", _schema())
     migration = re.sub(r"\s+", " ", _code(_migration()))

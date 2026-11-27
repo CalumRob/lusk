@@ -703,27 +703,6 @@ profile_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
     as.call(c(list(as.name("{")), expressions)))
 }
 
-# Typed-reading serving artifacts are built from the same in-memory theme
-# publication results, validated metadata and merged vintages as the scalar,
-# series and declared-profile grains. A reading is projected once, here: the
-# theme Parquet histories are never re-projected by a publication reader.
-typed_reading_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
-  expressions <- list(bquote(vintages_ <- fusion_vintages), bquote(result_ <- list()))
-  for (theme in themes) {
-    if (!"metadata" %in% names(theme)) next
-    name <- theme$theme
-    payload <- as.name(paste0("publie_", name))
-    metadata <- as.name(paste0("metadata_", name))
-    expressions <- c(expressions, list(bquote({
-      result_[[.(name)]] <- materialize_theme_typed_reading_artifacts(
-        .(payload), .(metadata), vintages_, .(name), .(sortie))
-    })))
-  }
-  expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
-  tar_target_raw("typed_reading_serving_artifacts",
-    as.call(c(list(as.name("{")), expressions)))
-}
-
 # rapport_theme -----------------------------------------------------------------
 # Le rapport de run d'UN thème : un target INDÉPENDANT des étapes aval
 # (aucune dépendance sur payload/publie/fusion), réestampillé à CHAQUE run
@@ -1481,14 +1460,9 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
     # Issue #1103 (revue) : le garde doit lire les empreintes de CE run —
     # dépendance explicite à la cible qui les publie (jamais un fichier périmé).
     list(as.name("digests_run"), as.name("fusion_vintages"),
-      as.name("scalar_serving_artifacts"),
-      as.name("typed_reading_serving_artifacts")))
-  # #1148 — the full-publication leaf resolves the producer CONSOENAF source
-  # from the operator variable through the SAME resolver as the --publish CLI.
+      as.name("scalar_serving_artifacts")))
   publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
-    list(as.call(c(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN),
-      list(conso_source_path =
-        as.call(list(as.name("resolve_milieux_conso_source")))))))))
+    list(as.call(c(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
   publication_retained_backend <- list(tar_target_raw(
     "publie_backend_retained", publication_command,
     cue = tar_cue(mode = "always")
@@ -1569,7 +1543,6 @@ list(
   fusion_themes(themes_fusion),
   scalar_artifacts_themes(),
   profile_artifacts_themes(),
-  typed_reading_artifacts_themes(),
   publication_retained_backend,
   publication_profile,
   rapports,

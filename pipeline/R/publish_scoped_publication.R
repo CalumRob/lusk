@@ -9,7 +9,7 @@
 # The territory reference must match the target generation but is never
 # rewritten by this path.
 #
-# Demographic, economy, Milieux and owned-series owners are OUTSIDE the plan:
+# Owned-series owners are OUTSIDE the plan:
 # their rows and publication markers are neither read as expectations nor
 # published, so a newer live version of an unrelated owner is not a baseline
 # mismatch for a scoped publication.
@@ -24,37 +24,6 @@
 # Recovery publishes the baseline snapshot through the same registered scalar
 # publisher with the normal explicit retirement policy, so the scoped
 # indicators are removed by omission, not by ad-hoc SQL.
-
-scoped_reading_publishers <- function() {
-  list(demographie = publish_demographic_reading,
-       habitat = publish_habitat_reading,
-       economie = publish_economy_reading_family,
-       milieux = publish_milieux_reading)
-}
-
-# scoped_affected_readings ------------------------------------------------------
-# The selected-reading owners whose declared resource reads a comparison scalar
-# facet produced by a scalar-bound profile. Derived from the producer metadata,
-# never from a hardcoded owner list.
-scoped_affected_readings <- function(metadata_list, bound_profiles) {
-  facets <- unique(unlist(lapply(bound_profiles, function(profile) {
-    descriptor <- profile$descriptor
-    if (is.null(descriptor$comparison_scalar)) return(NULL)
-    value <- as.character(descriptor$comparison_scalar)
-    value[nzchar(value)]
-  }), use.names = FALSE))
-  if (!length(facets)) return(character())
-  owners <- character()
-  for (metadata in metadata_list) {
-    for (resource in metadata$semantic_resources %||% list()) {
-      if (!identical(resource$kind, "typed_reading")) next
-      keys <- as.character(unlist(resource$source_keys, use.names = FALSE))
-      if (length(intersect(keys, facets)))
-        owners <- c(owners, metadata$theme)
-    }
-  }
-  unique(owners)
-}
 
 # scoped_snapshot_delta ---------------------------------------------------------
 # Pure proof of the scoped delta: the two full snapshots must be identical once
@@ -195,28 +164,6 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids) {
                                                current_profile$profiles)
   retire_sources <- scoped_source_difference(current_sources, target_sources)
 
-  metadata_list <- lapply(THEMES_METADATA, lire_theme_metadata)
-  reading_owners <- scoped_affected_readings(metadata_list, bound_profiles)
-  if (length(reading_owners) > 1L)
-    stop("Scoped plan supports one selected-reading owner; found: ",
-         paste(reading_owners, collapse = ", "), call. = FALSE)
-  read_owner <- function(directory, owner)
-    read_typed_reading_publication_from(directory, owner)
-  target_reading <- if (length(reading_owners))
-    read_owner(target_dir, reading_owners[[1L]]) else NULL
-  current_reading <- if (length(reading_owners))
-    read_owner(current_dir, reading_owners[[1L]]) else NULL
-  if (length(reading_owners) &&
-      !identical(target_reading$content_version, current_reading$content_version))
-    stop("The affected selected-reading artifact differs between target and ",
-         "current; a scoped publication must not replace it.", call. = FALSE)
-
-  linked_version <- function(publication, profile_version, scalar_version) {
-    if (is.null(publication)) return(character())
-    retained_selected_linked_version(publication, profile_version,
-                                     scalar_version,
-                                     reference$content_version)
-  }
   profile_descriptor_expectations <- function(profile, owners) {
     data.frame(
       indicator_id = owners,
@@ -254,21 +201,11 @@ scoped_publication_plan <- function(target_dir, current_dir, scope_ids) {
     current_profile_version = current_profile$version,
     target_profile_comparison_version = target_profile$comparison_version,
     current_profile_comparison_version = current_profile$comparison_version,
-    reading_owners = reading_owners,
-    target_reading_version = if (length(reading_owners))
-      target_reading$content_version else character(),
-    current_reading_version = if (length(reading_owners))
-      current_reading$content_version else character(),
-    target_linked_version = linked_version(target_reading,
-      target_profile$version, target_scalar_version),
-    current_linked_version = linked_version(current_reading,
-      current_profile$version, current_scalar_version)
   )
 }
 
 scoped_publication_markers <- function(con, plan) {
   names <- c("territory_reference", "scalar_observation", "declared_profile")
-  if (length(plan$reading_owners)) names <- c(names, "selected_reading")
   placeholders <- in_params(names)
   tables <- DBI::dbGetQuery(con, paste0(
     "SELECT table_name, content_version, reference_content_version ",
@@ -280,20 +217,6 @@ scoped_publication_markers <- function(con, plan) {
     "SELECT indicator_id, descriptor_version, required_scalar_version ",
     "FROM profile_descriptor WHERE indicator_id IN (", profile_placeholders,
     ")"), params = unname(as.list(owners)))
-  reading_owner <- if (length(plan$reading_owners))
-    plan$reading_owners[[1L]] else character()
-  selected_publication <- if (length(reading_owner)) DBI::dbGetQuery(con,
-    paste0("SELECT content_version, reference_content_version ",
-      "FROM selected_reading_publication WHERE theme_id=$1"),
-    params = list(reading_owner)) else data.frame(
-      content_version = character(), reference_content_version = character(),
-      stringsAsFactors = FALSE)
-  selected_descriptor <- if (length(reading_owner)) DBI::dbGetQuery(con,
-    paste0("SELECT descriptor_version, linked_content_version ",
-      "FROM selected_reading_descriptor WHERE theme_id=$1"),
-    params = list(reading_owner)) else data.frame(
-      descriptor_version = character(), linked_content_version = character(),
-      stringsAsFactors = FALSE)
   list(
     tables = tables,
     scalar_comparison = DBI::dbGetQuery(con, paste0(
@@ -302,10 +225,7 @@ scoped_publication_markers <- function(con, plan) {
     profile_comparison = DBI::dbGetQuery(con, paste0(
       "SELECT content_version, profile_content_version, reference_content_version ",
       "FROM profile_comparison_publication WHERE singleton")),
-    profile_descriptors = profile_descriptors,
-    selected_publication = selected_publication,
-    selected_descriptor = selected_descriptor
-  )
+    profile_descriptors = profile_descriptors)
 }
 
 # The live markers must be exactly the `current` generation; the plan's target
@@ -318,16 +238,10 @@ scoped_expected_markers <- function(plan) {
     scalar_comparison = plan$current_comparison_version,
     profile = plan$current_profile_version,
     profile_comparison = plan$current_profile_comparison_version,
-    profile_descriptors = plan$current_profile_descriptors,
-    reading_owner = if (length(plan$reading_owners))
-      plan$reading_owners[[1L]] else character(),
-    reading = plan$current_reading_version,
-    linked = plan$current_linked_version
-  )
+    profile_descriptors = plan$current_profile_descriptors)
 }
 
-verifier_scoped_publication <- function(markers, expected,
-                                        reading_owner = character()) {
+verifier_scoped_publication <- function(markers, expected) {
   mismatches <- list()
   add <- function(marker, field, live, want) {
     mismatches[[length(mismatches) + 1L]] <<- data.frame(
@@ -413,41 +327,6 @@ verifier_scoped_publication <- function(markers, expected,
       add(label, "required_scalar_version",
           live$required_scalar_version[[1L]],
           want$required_scalar_version[[1L]])
-  }
-  owner <- if (length(reading_owner)) as.character(reading_owner[[1L]]) else
-    as.character(expected$reading_owner)
-  if (length(owner) && nzchar(owner)) {
-    expect_table("selected_reading", expected$reading)
-    sp <- markers$selected_publication
-    if (nrow(sp) != 1L) {
-      add(paste0("selected_reading_publication[", owner, "]"), "presence",
-          NA_character_, "exactly one row")
-    } else {
-      if (!identical(as.character(sp$content_version[[1L]]),
-                     as.character(expected$reading)))
-        add(paste0("selected_reading_publication[", owner, "]"),
-            "content_version", sp$content_version[[1L]], expected$reading)
-      if (!identical(as.character(sp$reference_content_version[[1L]]),
-                     as.character(expected$reference)))
-        add(paste0("selected_reading_publication[", owner, "]"),
-            "reference_content_version", sp$reference_content_version[[1L]],
-            expected$reference)
-    }
-    sd <- markers$selected_descriptor
-    if (nrow(sd) != 1L) {
-      add(paste0("selected_reading_descriptor[", owner, "]"), "presence",
-          NA_character_, "exactly one row")
-    } else {
-      if (!identical(as.character(sd$descriptor_version[[1L]]),
-                     as.character(expected$reading)))
-        add(paste0("selected_reading_descriptor[", owner, "]"),
-            "descriptor_version", sd$descriptor_version[[1L]], expected$reading)
-      if (!identical(as.character(sd$linked_content_version[[1L]]),
-                     as.character(expected$linked)))
-        add(paste0("selected_reading_descriptor[", owner, "]"),
-            "linked_content_version", sd$linked_content_version[[1L]],
-            expected$linked)
-    }
   }
   if (!length(mismatches)) return(data.frame(
     marker = character(), field = character(), live = character(),
@@ -653,8 +532,7 @@ assert_scoped_publication_baseline <- function(con, plan) {
   state <- DBI::dbWithTransaction(con, list(
     markers = scoped_publication_markers(con, plan),
     sources = scoped_live_sources(con)))
-  mismatches <- verifier_scoped_publication(state$markers, expected,
-    plan$reading_owners)
+  mismatches <- verifier_scoped_publication(state$markers, expected)
   source_guard <- scoped_source_guard(plan, state$sources)
   mismatches <- rbind(mismatches, source_guard$mismatches)
   if (nrow(mismatches)) {
@@ -686,16 +564,6 @@ publish_scoped_retained_backend <- function(con, plan, absent_sources = NULL) {
     publish_retained_scalar_snapshot(con, snapshot, plan$target_dir)
     publier_declared_profiles_postgres(plan$target_dir,
                                        plan$profile_owners, con = con)
-    for (owner in plan$reading_owners) {
-      publisher <- scoped_reading_publishers()[[owner]]
-      if (!is.function(publisher))
-        stop("No registered scoped reading publisher for ", owner,
-             call. = FALSE)
-      publication <- read_typed_reading_publication_from(plan$target_dir, owner)
-      publish_typed_reading_publication(
-        register_typed_reading_artifact_publisher(list(), owner, publisher),
-        owner, publication, con)
-    }
     if (identical(plan$direction, "recovery")) {
       candidates <- scoped_source_retirement(plan, absent_sources)
     } else {
