@@ -251,6 +251,8 @@
     scalar_binding = scalar_version)
 
   serie <- .adopt_db_series_projection()
+  write_owned_series_artifact(serie,
+    file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
   period <- adaptateur_collection_projection()
   period$provenance <- .adopt_db_collection_lineage(period)
   membres <- .adopt_db_anchored_collection(reference)
