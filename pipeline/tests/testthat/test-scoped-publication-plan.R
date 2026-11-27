@@ -280,6 +280,7 @@ scoped_publish_captured_snapshot <- function(plan) {
       publication_date = as.Date(character()), stringsAsFactors = FALSE))
   local_mocked_bindings(
     .package = "lusk",
+    verifier_schema_publication_globale = function(...) TRUE,
     with_publication_transaction = function(con, expr) force(expr),
     publish_retained_scalar_snapshot = function(con, snapshot, sortie) {
       captured$snapshot <- snapshot

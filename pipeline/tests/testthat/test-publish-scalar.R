@@ -452,7 +452,8 @@ test_that("PostgreSQL schema splitter preserves literals, quoted identifiers, an
   publication_ddl <- statements[grepl("CREATE TABLE table_publication", statements, fixed=TRUE)]
   expect_length(publication_ddl, 1L)
   expect_true(grepl("'territory_reference'", publication_ddl, fixed=TRUE))
-  expect_true(grepl("'scalar_observation'", publication_ddl, fixed=TRUE))
+  expect_true(grepl("'ordered_series'", publication_ddl, fixed=TRUE))
+  expect_false(grepl("'scalar_observation'", publication_ddl, fixed=TRUE))
   source_assertion <- statements[grepl("CREATE FUNCTION assert_scalar_descriptor_sources", statements, fixed=TRUE)]
   expect_length(source_assertion, 1L)
   expect_true(grepl("RAISE EXCEPTION 'scalar descriptor must declare at least one source dataset';", source_assertion, fixed=TRUE))

@@ -1462,7 +1462,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
     list(as.name("digests_run"), as.name("fusion_vintages"),
       as.name("scalar_serving_artifacts")))
   publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
-    list(as.call(c(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
+    list(as.call(c(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN))))))
   publication_retained_backend <- list(tar_target_raw(
     "publie_backend_retained", publication_command,
     cue = tar_cue(mode = "always")
