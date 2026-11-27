@@ -127,14 +127,11 @@ def _seed(conn):
                 detail_key,sex_key,source_id,vintage_id)
                 VALUES ('offre_cyclable',%s,%s,'','osm_reseaux','2026-08')""",
                 (territory, detail))
-    conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-        reference_content_version) VALUES ('declared_profile','profiles-v1',49,'ref-v1')""")
+
 
     # Published fixed comparison for the descriptor's default bike detail only.
     density_members = [focal, *peers]
-    conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
-        profile_content_version,reference_content_version,group_row_count,territory_row_count)
-        VALUES (true,'comparison-v1','profiles-v1','ref-v1',1,5)""")
+
     conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
         indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
         lineage_source_count,profile_content_version,reference_content_version)

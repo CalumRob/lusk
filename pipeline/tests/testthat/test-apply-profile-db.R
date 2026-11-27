@@ -85,16 +85,9 @@
 .gp_dans <- function(ids) paste0("('", paste(ids, collapse = "','"), "')")
 
 .gp_global <- function(con) {
-  list(
-    publication = DBI::dbGetQuery(con, paste0(
-      "SELECT table_name,content_version,row_count,reference_content_version ",
-      "FROM table_publication ORDER BY table_name")),
-    singleton_profil = DBI::dbGetQuery(con, paste0(
-      "SELECT singleton,content_version,profile_content_version,reference_content_version,",
-      "group_row_count,territory_row_count FROM profile_comparison_publication ORDER BY singleton")),
-    singleton_scalaire = DBI::dbGetQuery(con, paste0(
-      "SELECT singleton,content_version,scalar_content_version,reference_content_version ",
-      "FROM scalar_comparison_publication ORDER BY singleton")))
+  list(publication = DBI::dbGetQuery(con, paste0(
+    "SELECT table_name,content_version,row_count,reference_content_version ",
+    "FROM table_publication ORDER BY table_name")))
 }
 
 .gp_profil <- function(con, ids) {
