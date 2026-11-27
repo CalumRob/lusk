@@ -1056,7 +1056,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
 
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
-                               *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
+                               *, indicator_id=None, profiles=None, profile_version=None,
                                result_fields=None, preflight_only=False, snapshot_state=None,
                                include_owned_series=True, include_fixed_context=False,
                                profile_coordinates=None, profile_member_ranks_allowed=True,
@@ -1127,7 +1127,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         unsupported=set(result_fields)-available_comparison_fields-_COMPARISON_MANDATORY_FIELDS
         if unsupported:
             raise HTTPException(422,"Field selection is not declared by any participating comparison resource")
-    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings:
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections:
         raise HTTPException(404, "No published facts for this theme")
     reference_version = live_territory_reference_version(conn)
     scalar_marker = None
@@ -1310,8 +1310,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             next(iter(owned_markers.values()))[1] if owned_markers else
             collection_results[0]["content_version"] if collection_results else
             None),
-        "reading_content_version": None,
-        "reading_cloud": None,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "scalar_content_version": scalar_marker[0] if scalar_marker else None,
         "owned_series_content_versions": {

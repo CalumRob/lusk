@@ -1,6 +1,7 @@
 """Fast, DB-free proofs of per-resource coexistence and reference rollover."""
 
 from contextlib import contextmanager
+import inspect
 import json
 from types import SimpleNamespace
 
@@ -390,6 +391,28 @@ def test_theme_read_serves_profiles_at_different_publication_versions(monkeypatc
     assert result["profile_content_version"] is None
     assert [row["indicator"] for row in result["profile_comparisons"]] == [
         "profile_a", "profile_b"]
+
+
+def test_theme_comparison_response_contract_excludes_retired_reading_fields(monkeypatch):
+    monkeypatch.setattr(snapshot_reads, "collection_descriptors", lambda *_a, **_kw: [])
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+                        lambda *_a, **_kw: ("commune", ("c1", "c2"),
+                                            {"kind": "density_class", "density_class_code": "D1"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+                        lambda *_a, **_kw: ("density_class", "D1", "commune"))
+
+    result = snapshot_reads._theme_comparison_snapshot(
+        TwoProfileConnection(), "commune", "c1", "fixture", None)
+
+    assert set(result) == {
+        "contract", "complete_theme", "theme_id", "content_version",
+        "collection_content_versions", "scalar_content_version",
+        "owned_series_content_versions", "service_publication_id",
+        "building_publication_id", "reference_content_version", "selection",
+        "scope", "results", "profile_content_version", "profile_comparisons",
+    }
+    assert "has_readings" not in inspect.signature(
+        snapshot_reads._theme_comparison_snapshot).parameters
 
 
 def test_theme_read_serves_scalars_at_different_publication_versions(monkeypatch):
