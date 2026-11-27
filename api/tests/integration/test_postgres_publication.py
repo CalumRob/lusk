@@ -2253,10 +2253,12 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         for schema in schemas.values():
             connection.execute(f'CREATE SCHEMA "{schema}"')
 
-    # Fresh contract of record.
+    # Fresh contract of record, including the documented post-039 lineage chain.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{schemas["fresh"]}"')
         connection.execute(baseline)
+        connection.execute((root / "migrations/033_comparison_source_lineage.sql").read_text(encoding="utf-8"))
+        connection.execute((root / "migrations/034_ordered_series_comparison_lineage.sql").read_text(encoding="utf-8"))
 
     # Existing serving schema: pinned pre-lineage shape, real legacy facts, no bases.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
