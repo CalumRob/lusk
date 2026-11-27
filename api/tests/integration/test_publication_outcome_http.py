@@ -176,9 +176,6 @@ def _seed(connection):
             (territory_id, value, support, denominator))
         connection.execute("""INSERT INTO scalar_observation_source
             VALUES ('densite',%s,'oc-source','oc-v1')""", (territory_id,))
-    connection.execute("""INSERT INTO table_publication(
-        table_name,content_version,row_count,reference_content_version)
-        VALUES ('scalar_observation','oc-scalar-v1',2,'oc-ref-v1')""")
     publish_indicator(connection, "densite", "scalar", "oc-scalar-v1",
                       reference_content_version="oc-ref-v1")
 

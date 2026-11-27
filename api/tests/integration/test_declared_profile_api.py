@@ -115,10 +115,6 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
         conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES
             ('part_passoires','29001','commune',0.3,'measured'),('part_passoires','29002','commune',0.1,'measured')""")
         conn.execute("INSERT INTO scalar_observation_source VALUES ('part_passoires','29001','dpe','v1'),('part_passoires','29002','dpe','v1')")
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-v1',2,'ref-v1')")
-        conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-            reference_content_version,group_row_count,territory_row_count,lineage_row_count)
-            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4,2)""")
         conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
             statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
             VALUES ('density_class','D1','commune','part_passoires','median',0.2,2,2,0,1),
@@ -143,7 +139,6 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
                 conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,sex_axis_name,value,status)
                     VALUES ('distribution_dpe',%s,'commune',%s,'',NULL,%s,'measured')""", (tid, detail, 0.1 if detail != 'G' else 0.4))
                 conn.execute("INSERT INTO profile_observation_source VALUES ('distribution_dpe',%s,%s,'','dpe','v1')", (tid, detail))
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profiles-v1',14,'ref-v1')")
         _publish_fixture_resource(conn, "part_passoires", "scalar", "scalar-v1",
             _discovery_metadata("part_passoires", theme_id="habitat", label="Passoires",
                 unit="%", direction="low", source_id="dpe", source_name="DPE fixture",
@@ -196,10 +191,8 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
                 with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                     with writer.transaction():
                         writer.execute("UPDATE scalar_observation SET value=0.7 WHERE indicator_id='part_passoires' AND territory_id='29001'")
-                        writer.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
                         writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v2' WHERE indicator_id='part_passoires'")
                         writer.execute("UPDATE profile_descriptor SET required_scalar_version='scalar-v2' WHERE indicator_id='distribution_dpe'")
-                        writer.execute("UPDATE table_publication SET content_version='profiles-v2' WHERE table_name='declared_profile'")
             return result
 
         monkeypatch.setattr(semantic_resource_reader, "focal_profiles", mutate_after_profile_read)
@@ -221,10 +214,8 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                 with writer.transaction():
                     writer.execute("UPDATE scalar_observation SET value=0.3 WHERE indicator_id='part_passoires' AND territory_id='29001'")
-                    writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
                     writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v1' WHERE indicator_id='part_passoires'")
                     writer.execute("UPDATE profile_descriptor SET required_scalar_version='scalar-v1' WHERE indicator_id='distribution_dpe'")
-                    writer.execute("UPDATE table_publication SET content_version='profiles-v1' WHERE table_name='declared_profile'")
             monkeypatch.setattr(semantic_resource_reader, "focal_profiles", original_focal_profiles)
             counts.update(connections=0, transactions=0)
             main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
@@ -243,11 +234,9 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
             assert all('comparison' not in row for row in profile) and '29002' not in response.text
             assert profile_metadata['required_scalar_version'] == 'scalar-v1'
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
-                writer.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
                 writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v2' WHERE indicator_id='part_passoires'")
             assert client.post('/api/resources/read', json=request).status_code == 503
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
-                writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
                 writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v1' WHERE indicator_id='part_passoires'")
                 writer.execute("DELETE FROM profile_observation_source WHERE territory_id='29001' AND detail_key='A'")
             assert client.post('/api/resources/read', json=request).status_code == 503
@@ -342,11 +331,7 @@ def test_declared_profile_postgres_api_contract(installation):
             for tid, value in ((territory, .2), (peer, .6), (territory + 'x', .9), (territory + 'n', .5)):
                 conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('habitat_fixture',%s,'commune',%s,'measured')", (tid,value))
                 conn.execute("INSERT INTO scalar_observation_source VALUES ('habitat_fixture',%s,'indicator_fixture','v1')", (tid,))
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',4,'ref-v1')")
             if installation == 'fresh':
-                conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-                    reference_content_version,group_row_count,territory_row_count,lineage_row_count)
-                    VALUES (true,'scalar-comparison-v1','scalar-fixture-v1','ref-v1',1,2,0)""")
                 conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
                     indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
                     VALUES ('density_class','D1','commune','habitat_fixture','median',.4,2,2,0,0)""")
@@ -372,7 +357,6 @@ def test_declared_profile_postgres_api_contract(installation):
                 for detail, sex, value in zip(('<15','<15','15-24','15-24'), ('F','M','F','M'), vals):
                     conn.execute("INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,value,status) VALUES ('structure_age',%s,'commune',%s,%s,%s,'measured')", (tid,detail,sex,value))
                     conn.execute("INSERT INTO profile_observation_source VALUES ('structure_age',%s,%s,%s,'age_detail','v1')", (tid,detail,sex))
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',8,'ref-v1')")
             if installation == 'upgrade':
                 # Rehearse expansion over a populated age profile and unchanged
                 # marker, not only a fresh empty schema.
@@ -439,8 +423,6 @@ def test_declared_profile_postgres_api_contract(installation):
                         (tid,detail,value,status))
                     conn.execute("""INSERT INTO profile_observation_source VALUES
                         ('mix_logements',%s,%s,'','housing_detail','v1')""", (tid,detail))
-            conn.execute("UPDATE table_publication SET row_count=row_count+12 WHERE table_name='declared_profile'")
-            conn.execute("UPDATE table_publication SET reference_content_version='ref-v1' WHERE table_name='declared_profile'")
             if installation == 'fresh':
                 conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
                     indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
@@ -463,9 +445,6 @@ def test_declared_profile_postgres_api_contract(installation):
                         ('epci','E1','commune','structure_age','<15','F',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1'),
                     ('epci','E1','commune','one_axis_fixture','length','',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1')""",
                     (territory, peer, territory, peer, territory, peer, territory, peer, territory + 'n', territory + 'n'))
-                conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
-                    profile_content_version,reference_content_version,group_row_count,territory_row_count)
-                    VALUES (true,'profile-comparison-v1','profile-v1','ref-v1',4,10)""")
                 for context, group_id in (("density_class", "D1"), ("epci", "E1")):
                     for detail in ("principales", "secondaires", "vacants"):
                         member_count = 2 if context == "density_class" else 3
@@ -488,8 +467,6 @@ def test_declared_profile_postgres_api_contract(installation):
                     territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
                     ('profile','density_class','D1','commune','mix_logements','housing_detail','v1','profile-comparison-v1'),
                     ('profile','epci','E1','commune','mix_logements','housing_detail','v1','profile-comparison-v1')""")
-                conn.execute("""UPDATE profile_comparison_publication SET group_row_count=group_row_count+6,
-                    territory_row_count=territory_row_count+15 WHERE singleton""")
 
             with conn.transaction():
                 _publish_fixture_resource(conn, "structure_age", "declared_profile", "profile-v1",
@@ -663,10 +640,10 @@ def test_declared_profile_postgres_api_contract(installation):
                 witness.execute(f'SET search_path TO "{schema}"')
                 marker_before = witness.execute("""SELECT p.content_version,p.profile_content_version,
                     p.reference_content_version,p.group_row_count,p.territory_row_count,
-                    d.content_version,t.content_version FROM profile_comparison_publication p
-                    JOIN table_publication d ON d.table_name='declared_profile'
+                    d.content_version,t.content_version FROM profile_resource_comparison_publication p
+                    JOIN resource_publication d ON d.resource_id='structure_age'
                     JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.singleton""").fetchone()
+                    WHERE p.indicator_id='structure_age' """).fetchone()
             selected_cell = client.post("/api/resources/read", json=selected_cell_item)
             assert selected_cell.status_code == 200, selected_cell.text
             assert selected_cell.json()["selection"] == [
@@ -708,10 +685,10 @@ def test_declared_profile_postgres_api_contract(installation):
                 witness.execute(f'SET search_path TO "{schema}"')
                 marker_after = witness.execute("""SELECT p.content_version,p.profile_content_version,
                     p.reference_content_version,p.group_row_count,p.territory_row_count,
-                    d.content_version,t.content_version FROM profile_comparison_publication p
-                    JOIN table_publication d ON d.table_name='declared_profile'
+                    d.content_version,t.content_version FROM profile_resource_comparison_publication p
+                    JOIN resource_publication d ON d.resource_id='structure_age'
                     JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.singleton""").fetchone()
+                    WHERE p.indicator_id='structure_age' """).fetchone()
             assert marker_after == marker_before
             with psycopg.connect(publisher_dsn) as writer:
                 writer.execute(f'SET search_path TO "{schema}"')
@@ -721,10 +698,10 @@ def test_declared_profile_postgres_api_contract(installation):
                 witness.execute(f'SET search_path TO "{schema}"')
                 tie_marker_before = witness.execute("""SELECT p.content_version,p.profile_content_version,
                     p.reference_content_version,p.group_row_count,p.territory_row_count,
-                    d.content_version,t.content_version FROM profile_comparison_publication p
-                    JOIN table_publication d ON d.table_name='declared_profile'
+                    d.content_version,t.content_version FROM profile_resource_comparison_publication p
+                    JOIN resource_publication d ON d.resource_id='structure_age'
                     JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.singleton""").fetchone()
+                    WHERE p.indicator_id='structure_age' """).fetchone()
             tied_selected_cell = client.post("/api/resources/read", json={
                 **selected_cell_item,
                 "intent": {"kind": "selected_comparison", "members": [
@@ -743,10 +720,10 @@ def test_declared_profile_postgres_api_contract(installation):
                 witness.execute(f'SET search_path TO "{schema}"')
                 tie_marker_after = witness.execute("""SELECT p.content_version,p.profile_content_version,
                     p.reference_content_version,p.group_row_count,p.territory_row_count,
-                    d.content_version,t.content_version FROM profile_comparison_publication p
-                    JOIN table_publication d ON d.table_name='declared_profile'
+                    d.content_version,t.content_version FROM profile_resource_comparison_publication p
+                    JOIN resource_publication d ON d.resource_id='structure_age'
                     JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.singleton""").fetchone()
+                    WHERE p.indicator_id='structure_age' """).fetchone()
             assert tie_marker_after == tie_marker_before
 
             housing_request = {
@@ -860,11 +837,6 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
         conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
             VALUES ('part_passoires','29001','dpe_22','dpe_22'),('part_passoires','29002','dpe_22','dpe_22'),
                    ('part_passoires','29003','dpe_22','dpe_22'),('part_passoires','29004','dpe_22','dpe_22')""")
-        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-            VALUES ('scalar_observation','scalar-v1',4,'ref-v1')""")
-        conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-            reference_content_version,group_row_count,territory_row_count,lineage_row_count)
-            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4,2)""")
         conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
             statistic,median,member_count,eligible_count,missing_count,lineage_source_count) VALUES
             ('density_class','D1','commune','part_passoires','median',.2,2,2,0,1),
@@ -890,8 +862,6 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
         conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
             territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
             ('scalar','density_class','D2','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1')""")
-        conn.execute("""UPDATE scalar_comparison_publication SET group_row_count=3,territory_row_count=5,
-            lineage_row_count=3 WHERE singleton""")
         conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
             descriptor_version,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics)
             VALUES ('distribution_dpe','habitat','Distribution DPE','%',ARRAY['commune'],'dense_complete',
@@ -909,8 +879,6 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
                 conn.execute("""INSERT INTO profile_observation_source(indicator_id,territory_id,detail_key,
                     sex_key,source_id,vintage_id) VALUES ('distribution_dpe',%s,%s,'','dpe_22','dpe_22')""",
                     (territory_id,detail))
-        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-            VALUES ('declared_profile','profiles-v1',28,'ref-v1')""")
         _publish_fixture_resource(conn, "part_passoires", "scalar", "scalar-v1",
             _discovery_metadata("part_passoires", theme_id="habitat",
                 label="Part de passoires thermiques", unit="%", direction="low", source_id="dpe_22",
@@ -1085,8 +1053,6 @@ def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(
         conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
             VALUES ('densite','29001','serie_historique','serie_historique'),
                    ('densite','29002','serie_historique','serie_historique')""")
-        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-            VALUES ('scalar_observation','densite-v1',2,'ref-v1')""")
         _publish_fixture_resource(conn, "densite", "scalar", "densite-v1",
             _discovery_metadata("densite", theme_id="demographie", label="Densité de population",
                 unit="hab/km²", direction="high", source_id="serie_historique",
@@ -1171,11 +1137,6 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
         conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
             VALUES ('densite',%s,'scalar_source','scalar_source-v1'),
                    ('densite',%s,'scalar_source','scalar_source-v1')""", (focal_id, peer_id))
-        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-            VALUES ('scalar_observation','scalar-v1',2,'ref-v1')""")
-        conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-            reference_content_version,group_row_count,territory_row_count,lineage_row_count)
-            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',1,2,1)""")
         median_value = (75 if eligible_count == 2 else 100 if focal_status == "measured" else
             50 if peer_status == "measured" else None)
         conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
@@ -1355,11 +1316,7 @@ def test_fixed_profile_singleton_group_serves_published_median_without_rank(cano
                     (tid, detail, value, 'measured' if value is not None else 'not_available'))
                 conn.execute("INSERT INTO profile_observation_source VALUES ('mix_logements',%s,%s,'','housing_src','v1')",
                     (tid, detail))
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profiles-v1',6,'ref-v1')")
         # Published fixed group: two members, exactly one comparable at the facet.
-        conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,
-            reference_content_version,group_row_count,territory_row_count)
-            VALUES (true,'profile-comparison-v1','profiles-v1','ref-v1',2,4)""")
         conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,indicator_id,
             detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,lineage_source_count,
             profile_content_version,reference_content_version) VALUES
