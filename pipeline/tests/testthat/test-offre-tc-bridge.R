@@ -158,7 +158,7 @@ test_that("the marker guard refuses any moved token with a named report", {
   }
 })
 
-test_that("the marker guard also checks chained input fields", {
+test_that("the marker guard also checks scalar/profile input fields", {
   expected <- bridge_fixture_expected_tokens()
   markers <- bridge_fixture_markers(expected)
   markers$comparison$scalar_content_version <- "stale"
@@ -167,10 +167,6 @@ test_that("the marker guard also checks chained input fields", {
   markers <- bridge_fixture_markers(expected)
   markers$profile_descriptor$required_scalar_version <- "stale"
   expect_error(assert_bridge_markers(markers, expected), "required_scalar_version")
-
-  markers <- bridge_fixture_markers(expected)
-  markers$selected_descriptor$descriptor_version <- "stale"
-  expect_error(assert_bridge_markers(markers, expected), "descriptor_version")
 })
 
 test_that("expected tokens and the dump acknowledgement come only from the environment", {
@@ -189,17 +185,7 @@ test_that("expected tokens and the dump acknowledgement come only from the envir
 
 # --- Slice 3: token chaining, one-transaction write and dry-run ---------------
 
-test_that("the Habitat linked token is re-chained from the live tokens", {
-  live <- c(profile = "profile-live", scalar = "scalar-live", reference = "reference-live")
-  new <- c(profile = "profile-live", scalar = "scalar-new", reference = "reference-live")
-  live_linked <- paste(c("canonical", unname(live)), collapse = "-")
-  expect_identical(bridge_rebind_linked_version(live_linked, live, new),
-                   paste(c("canonical", unname(new)), collapse = "-"))
-  expect_error(bridge_rebind_linked_version("not-chained", live, new),
-               "not chained")
-})
-
-test_that("new tokens chain scalar -> comparison -> Habitat link", {
+test_that("new tokens derive scalar and comparison from the built projection", {
   live <- bridge_live_fixture()
   built <- build_bridge_scalar_projection(
     live, bridge_fresh_offre_tc_rows(), bridge_fixture_metadata(),
@@ -217,8 +203,6 @@ test_that("new tokens chain scalar -> comparison -> Habitat link", {
   expect_identical(tokens$scalar, scalar_version)
   expect_identical(tokens$comparison, comparison$content_version)
   expect_identical(tokens$comparison_projection$content_version, comparison$content_version)
-  expect_match(tokens$linked, paste0("-", expected[["profile"]], "-", scalar_version,
-                                     "-", expected[["reference"]], "$"))
 })
 
 test_that("the write composes the registered publishers inside ONE transaction", {
@@ -235,20 +219,18 @@ test_that("the write composes the registered publishers inside ONE transaction",
 
   scalar_db <- bridge_fake_scalar_adapter("scalar-live")
   comparison_db <- bridge_fake_comparison_adapter("comparison-live", tokens$scalar)
-  writer <- bridge_fake_marker_writer(expected[["scalar"]])
   transactions <- 0L
   write <- publish_bridge_snapshot(
     NULL, plan, retained_scalar_retirement_ids(), expected,
     transaction = function(con, expr) { transactions <<- transactions + 1L; force(expr) },
     scalar_adapter = scalar_db, comparison_adapter = comparison_db,
-    writer = writer)
+    )
 
   expect_identical(transactions, 1L)
   expect_identical(write$scalar$content_version, tokens$scalar)
   expect_identical(write$comparison$content_version, tokens$comparison)
   expect_identical(scalar_db$state$retired, retained_scalar_retirement_ids())
   expect_identical(comparison_db$state$replaced, tokens$comparison)
-  expect_identical(writer$state$linked_new, tokens$linked)
 })
 
 test_that("the write rolls back as one unit when an adapter fails", {
@@ -270,10 +252,10 @@ test_that("the write rolls back as one unit when an adapter fails", {
     transaction = function(con, expr) force(expr),
     scalar_adapter = bridge_fake_scalar_adapter("scalar-live"),
     comparison_adapter = comparison_db,
-    writer = bridge_fake_marker_writer(expected[["scalar"]])), "injected comparison failure")
+    ), "injected comparison failure")
 })
 
-test_that("the dry-run prints tokens and the diff and never calls the writer", {
+test_that("the dry-run prints tokens and the diff without writing", {
   expected <- bridge_fixture_expected_tokens()
   facts_path <- tempfile("bridge-facts-", fileext = ".rds")
   on.exit(unlink(facts_path), add = TRUE)
@@ -295,7 +277,6 @@ test_that("the dry-run prints tokens and the diff and never calls the writer", {
   expect_match(paste(output, collapse = "\n"), "new comparison token", fixed = TRUE)
   expect_match(paste(output, collapse = "\n"), "new declared-profile token", fixed = TRUE)
   expect_match(paste(output, collapse = "\n"), "new profile comparison token", fixed = TRUE)
-  expect_match(paste(output, collapse = "\n"), "new Habitat linked token", fixed = TRUE)
   expect_match(paste(output, collapse = "\n"), "offre_tc")
   expect_identical(result$mode, "dry-run")
   expect_true("tot_loss_t" %in% result$diff$indicator_id)
@@ -361,15 +342,15 @@ test_that("the CLI registers both bridge commands without changing --publish", {
 
 test_that("absent or duplicated descriptor markers refuse with zero writes", {
   expected <- bridge_fixture_expected_tokens()
-  for (field in c("profile_descriptor", "selected_descriptor")) {
+  for (field in c("tables", "comparison", "profile_comparison", "profile_descriptor")) {
     missing <- bridge_fixture_markers(expected)
     missing[[field]] <- missing[[field]][0L, , drop = FALSE]
-    expect_error(assert_bridge_markers(missing, expected), "exactly one marker",
+    expect_error(assert_bridge_markers(missing, expected), "exactly one",
                  info = paste("missing", field))
 
     duplicated <- bridge_fixture_markers(expected)
     duplicated[[field]] <- rbind(duplicated[[field]], duplicated[[field]])
-    expect_error(assert_bridge_markers(duplicated, expected), "exactly one marker",
+    expect_error(assert_bridge_markers(duplicated, expected), "exactly one",
                  info = paste("duplicated", field))
   }
 })
@@ -489,7 +470,7 @@ test_that("the registered profile publisher writes the recomputed lineage in the
     transaction = function(con, expr) { calls <<- calls + 1L; force(expr) },
     scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
     comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
-    writer = bridge_fake_marker_writer(expected[["scalar"]]),
+    ,
     profile_adapter = profile_db)
   expect_identical(calls, 1L)
   expect_identical(profile_db$state$replaced, lineage$version)
@@ -499,20 +480,6 @@ test_that("the registered profile publisher writes the recomputed lineage in the
 
 
 # --- Review fix 2: fail-closed writes and race-safe marker re-check ----------
-
-test_that("the real marker writer refuses zero- or multi-row updates", {
-  for (affected in c(0L, 2L)) {
-    called <- FALSE
-    writer <- bridge_marker_writer(NULL, "old-linked",
-      execute = function(sql, params) { called <<- TRUE; affected })
-    expect_error(writer$set_habitat_linked("new-linked"), "expected exactly one",
-                 info = paste("affected", affected))
-    expect_true(called)
-  }
-  ok <- bridge_marker_writer(NULL, "old-linked",
-    execute = function(sql, params) 1L)
-  expect_true(ok$set_habitat_linked("new-linked"))
-})
 
 test_that("a marker that moves inside the write transaction aborts everything", {
   expected <- bridge_fixture_expected_tokens()
@@ -528,16 +495,14 @@ test_that("a marker that moves inside the write transaction aborts everything", 
                affected = built$affected, live = live)
   moved <- expected
   moved[["scalar"]] <- "someone-else"
-  writer <- bridge_fake_marker_writer(expected[["scalar"]])
   scalar_db <- bridge_fake_scalar_adapter(expected[["scalar"]])
   expect_error(publish_bridge_snapshot(
     NULL, plan, retained_scalar_retirement_ids(), expected,
     transaction = function(con, expr) force(expr),
     scalar_adapter = scalar_db,
     comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
-    writer = writer,
+    ,
     read_markers = function() bridge_fixture_markers(moved)), "marker mismatch")
-  expect_null(writer$state$linked_new)
   expect_null(scalar_db$state$replaced)
 })
 
@@ -561,7 +526,7 @@ test_that("the write path takes the scalar advisory lock before any SQL", {
     transaction = function(con, expr) force(expr),
     scalar_adapter = adapter,
     comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
-    writer = bridge_fake_marker_writer(expected[["scalar"]]))
+    )
   # Re-entrant in-session: the bridge and the normal scalar publisher both take
   # the same xact lock; at least one call must precede any write.
   expect_gte(lock_calls, 1L)
@@ -702,7 +667,7 @@ test_that("re-read profile rows that moved during the write abort the transactio
     scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
     comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]], tokens$scalar),
     profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], tokens$scalar),
-    writer = bridge_fake_marker_writer(expected[["scalar"]]),
+    ,
     read_profile_rows = function(con) list(
       facts = moved$profile_facts, axes = moved$profile_axes,
       provenance = moved$profile_provenance)), "profile round-trip")
@@ -934,7 +899,7 @@ test_that("a failed publication transaction rolls back before the caller continu
     transaction = fake_transaction,
     scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
     comparison_adapter = comparison_db,
-    writer = bridge_fake_marker_writer(expected[["scalar"]])), "injected failure")
+    ), "injected failure")
   expect_identical(rolled_back, 1L)
 })
 
@@ -990,7 +955,7 @@ test_that("the in-transaction re-guard exempts offre_tc and the retirements", {
         scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
         comparison_adapter = bridge_fake_comparison_adapter("comparison-live", plan$tokens$scalar),
         profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], plan$tokens$scalar),
-        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+        )
     })))
   expect_identical(written$scalar$content_version,
                    scalar_content_version(built$projection))
@@ -1027,7 +992,7 @@ test_that("the in-transaction re-guard still refuses a changed kept indicator", 
         scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
         comparison_adapter = bridge_fake_comparison_adapter("comparison-live", plan$tokens$scalar),
         profile_adapter = bridge_fake_profile_adapter(expected[["profile"]], plan$tokens$scalar),
-        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+        )
     })),
     "unrelated indicator\\(s\\) changed: kept_scalar")
 })
@@ -1119,7 +1084,7 @@ test_that("the in-transaction guard refuses missing or empty exemption sets", {
       scalar_adapter = bridge_fake_scalar_adapter(expected[["scalar"]]),
       comparison_adapter = bridge_fake_comparison_adapter(expected[["comparison"]],
                                                          plan$tokens$scalar),
-      writer = bridge_fake_marker_writer(expected[["scalar"]]),
+      ,
       read_live = function() live), "exemption set")
   }
 })
@@ -1201,7 +1166,7 @@ test_that("the live-shaped no-retirement scenario publishes cleanly", {
                                                            plan$tokens$scalar),
         profile_adapter = bridge_fake_profile_adapter(expected[["profile"]],
                                                      plan$tokens$scalar),
-        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+        )
     })
   expect_identical(written$scalar$content_version, result$tokens$scalar)
 })
@@ -1437,112 +1402,6 @@ test_that("SQL lint rejects bare quote() and hand-built identifiers", {
 
 # --- Review round 8: linked-token chain must match producer + #1068 guard ----
 
-test_that("bridge linked token equals the producer's own formula", {
-  expected <- bridge_fixture_expected_tokens()
-  live <- bridge_live_fixture()
-  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
-    bridge_fixture_metadata(), retained_scalar_retirement_ids())
-  scalar_version <- scalar_content_version(built$projection)
-  profiles <- bridge_read_live_profile_projections(NULL,
-    reader = bridge_fake_reader(bridge_db_rows_from_projection(live),
-      profile_rows = bridge_db_rows_from_profile_projections(
-        bridge_live_profile_fixture(expected[["scalar"]]))),
-    metadata = lire_theme_metadata("habitat"), new_scalar = scalar_version)
-  lineage <- bridge_profile_lineage_tokens(profiles, bridge_fixture_reference_rows(),
-                                           expected[["reference"]])
-  tokens <- bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
-    expected[["reference"]], bridge_fixture_markers(expected), expected,
-    profile_version = lineage$version)
-
-  producer <- retained_selected_linked_version(
-    list(linked_content_version = "canonical"), lineage$version, tokens$scalar,
-    expected[["reference"]])
-  expect_identical(tokens$linked, producer)
-  expect_identical(tokens$linked, paste("canonical", lineage$version,
-                                         tokens$scalar, expected[["reference"]], sep = "-"))
-})
-
-# Independently derive the scalar snapshot token from the SAME inputs using
-# producer projectors only — never the bridge's token computation.
-bridge_independent_scalar_version <- function(live, fresh_rows, metadata = bridge_fixture_metadata()) {
-  scoped <- project_scalar_canonical_rows(fresh_rows, metadata, bridge_offre_tc_id(),
-                                           live$eligible_territories)
-  affected <- union(retained_scalar_retirement_ids(), bridge_offre_tc_id())
-  keep <- function(frame) frame[!frame$indicator_id %in% affected, , drop=FALSE]
-  kept <- list(facts = keep(live$facts), descriptors = keep(live$descriptors),
-               provenance = keep(live$provenance), datasets = live$datasets,
-               vintages = live$vintages,
-               eligible_territories = live$eligible_territories)
-  scalar_content_version(combine_scalar_projections(kept, scoped))
-}
-
-test_that("the #1068 marker verifier accepts the state a bridge write produces", {
-  expected <- bridge_fixture_expected_tokens()
-  live <- bridge_live_fixture()
-  built <- build_bridge_scalar_projection(live, bridge_fresh_offre_tc_rows(),
-    bridge_fixture_metadata(), retained_scalar_retirement_ids())
-  scalar_version <- scalar_content_version(built$projection)
-  profiles <- bridge_read_live_profile_projections(NULL,
-    reader = bridge_fake_reader(bridge_db_rows_from_projection(live),
-      profile_rows = bridge_db_rows_from_profile_projections(
-        bridge_live_profile_fixture(expected[["scalar"]]))),
-    metadata = lire_theme_metadata("habitat"), new_scalar = scalar_version)
-  lineage <- bridge_profile_lineage_tokens(profiles, bridge_fixture_reference_rows(),
-                                           expected[["reference"]])
-  tokens <- bridge_compute_new_tokens(built$projection, bridge_fixture_reference_rows(),
-    expected[["reference"]], bridge_fixture_markers(expected), expected,
-    profile_version = lineage$version)
-
-  independent_scalar <- bridge_independent_scalar_version(live, bridge_fresh_offre_tc_rows())
-  expect_identical(tokens$scalar, independent_scalar)
-  independent_comparison <- project_scalar_comparisons(
-    built$projection, bridge_fixture_reference_rows(),
-    input_scalar_content_version = independent_scalar,
-    reference_content_version = expected[["reference"]])
-  expect_identical(tokens$comparison, independent_comparison$content_version)
-  markers <- bridge_fixture_markers(expected)
-  markers$tables$content_version[markers$tables$table_name == "scalar_observation"] <- tokens$scalar
-  markers$tables$content_version[markers$tables$table_name == "declared_profile"] <- lineage$version
-  markers$comparison$content_version <- tokens$comparison
-  markers$comparison$scalar_content_version <- tokens$scalar
-  markers$profile_descriptor$required_scalar_version <- tokens$scalar
-  markers$selected_descriptor$linked_content_version <- tokens$linked
-  markers$profile_comparison$profile_content_version <- lineage$version
-  markers$profile_comparison$content_version <- lineage$comparison_version
-
-  # Markers the bridge does not own; the verifier still requires them present.
-  owned_tables <- markers$tables$table_name
-  extra_names <- c("demographic_typed_reading", "economy_typed_reading",
-    "economy_activity_evidence", "milieux_typed_reading", "milieux_reading_absence")
-  extra_versions <- c("demo-v1", "eco-v1", "eco-v1", "milieux-v1", "milieux-v1")
-  markers$tables <- rbind(markers$tables, data.frame(
-    table_name = setdiff(extra_names, owned_tables), content_version = extra_versions,
-    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
-  markers$series <- rbind(markers$series, data.frame(
-    dataset_id = "ocsge_artif_etats", content_version = "series-v1",
-    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
-  expectations <- list(
-    reference = expected[["reference"]], scalar = independent_scalar,
-    comparison = independent_comparison$content_version, comparison_scalar = independent_scalar,
-    typed = c(demographie = "demo-v1", habitat = expected[["habitat"]],
-              economie = "eco-v1", milieux = "milieux-v1"),
-    series = list(dataset_id = "ocsge_artif_etats", content_version = "series-v1"),
-    profile_version = lineage$version,
-    profile_comparison_version = lineage$comparison_version,
-    profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
-    profile_required_scalar = independent_scalar,
-    habitat_version = expected[["habitat"]], selected_linked = tokens$linked)
-  expect_identical(nrow(verifier_retained_backend_baseline(markers, expectations)), 0L)
-  # A stale linked token in the written state must be caught.
-  stale <- markers
-  stale$selected_descriptor$linked_content_version <- paste0("-", expected[["profile"]],
-    "-", tokens$scalar, "-", expected[["reference"]])
-  expect_gt(nrow(verifier_retained_backend_baseline(stale, expectations)), 0L)
-})
-
-
-# --- Review round 5: write-schema and extended marker guards -----------------
-
 test_that("write-schema guard refuses when any write table is absent", {
   ok_replies <- c(list(data.frame(schema = "serving_it_ok", stringsAsFactors = FALSE)),
                   rep(list(data.frame(reg = "serving_it_ok", stringsAsFactors = FALSE)),
@@ -1557,7 +1416,7 @@ test_that("write-schema guard refuses when any write table is absent", {
   expect_error(bridge_assert_write_schema(no_schema), "could not resolve")
 })
 
-test_that("marker guard checks profile comparison and the Habitat chain", {
+test_that("marker guard checks profile comparison and its scalar binding", {
   expected <- bridge_fixture_expected_tokens()
   markers <- bridge_fixture_markers(expected)
   expect_invisible(assert_bridge_markers(markers, expected))
@@ -1574,10 +1433,6 @@ test_that("marker guard checks profile comparison and the Habitat chain", {
   stale_profile <- markers
   stale_profile$profile_comparison$profile_content_version <- "stale"
   expect_error(assert_bridge_markers(stale_profile, expected), "profile_content_version")
-
-  stale_link <- markers
-  stale_link$selected_descriptor$linked_content_version <- "canonical-stale-stale-stale"
-  expect_error(assert_bridge_markers(stale_link, expected), "linked_content_version")
 })
 
 
@@ -1661,7 +1516,7 @@ bridge_descriptor_run <- function(live, mode, env_extra = list(), policy = NULL)
                                                            plan$tokens$scalar),
         profile_adapter = bridge_fake_profile_adapter(expected[["profile"]],
                                                      plan$tokens$scalar),
-        writer = bridge_fake_marker_writer(expected[["scalar"]]))
+        )
       c(plan, result)
     }))
   plan
@@ -1710,49 +1565,6 @@ test_that("a confirmed descriptor replacement succeeds; identical descriptors ne
   expect_error(bridge_descriptor_run(live_old, "publish"),
                "preserve policy refuses")
 })
-
-test_that("the replaced descriptor keeps all chained tokens #1068-consistent", {
-  live_old <- bridge_live_fixture_old_descriptor()
-  token <- bridge_descriptor_run(live_old, "dry-run", policy = "replace")$descriptor_info$token
-  written <- bridge_descriptor_run(live_old, "publish",
-    list(setNames(token, BRIDGE_CONFIRM_DESCRIPTOR_ENV)), policy = "replace")
-  expected <- bridge_fixture_expected_tokens()
-  markers <- bridge_fixture_markers(expected)
-  markers$tables$content_version[markers$tables$table_name == "scalar_observation"] <- written$tokens$scalar
-  markers$tables$content_version[markers$tables$table_name == "declared_profile"] <- written$profile_lineage$version
-  markers$comparison$content_version <- written$tokens$comparison
-  markers$comparison$scalar_content_version <- written$tokens$scalar
-  markers$profile_descriptor$required_scalar_version <- written$tokens$scalar
-  markers$selected_descriptor$linked_content_version <- written$tokens$linked
-  markers$profile_comparison$profile_content_version <- written$profile_lineage$version
-  markers$profile_comparison$content_version <- written$profile_lineage$comparison_version
-  producer_linked <- retained_selected_linked_version(list(linked_content_version = "canonical"),
-    written$profile_lineage$version, written$tokens$scalar, expected[["reference"]])
-  expect_identical(written$tokens$linked, producer_linked)
-  expect_identical(scalar_content_version(written$projection), written$tokens$scalar)
-  markers$tables <- rbind(markers$tables, data.frame(
-    table_name = c("demographic_typed_reading", "economy_typed_reading",
-      "economy_activity_evidence", "milieux_typed_reading", "milieux_reading_absence"),
-    content_version = c("demo-v1", "eco-v1", "eco-v1", "milieux-v1", "milieux-v1"),
-    reference_content_version = expected[["reference"]], stringsAsFactors = FALSE))
-  markers$series <- rbind(markers$series, data.frame(dataset_id = "ocsge_artif_etats",
-    content_version = "series-v1", reference_content_version = expected[["reference"]],
-    stringsAsFactors = FALSE))
-  expect_identical(nrow(verifier_retained_backend_baseline(markers, list(
-    reference = expected[["reference"]], scalar = written$tokens$scalar,
-    comparison = written$tokens$comparison, comparison_scalar = written$tokens$scalar,
-    typed = c(demographie = "demo-v1", habitat = expected[["habitat"]],
-              economie = "eco-v1", milieux = "milieux-v1"),
-    series = list(dataset_id = "ocsge_artif_etats", content_version = "series-v1"),
-    profile_version = written$profile_lineage$version,
-    profile_comparison_version = written$profile_lineage$comparison_version,
-    profile_descriptor_version = markers$profile_descriptor$descriptor_version[[1L]],
-    profile_required_scalar = written$tokens$scalar,
-    habitat_version = expected[["habitat"]], selected_linked = written$tokens$linked))), 0L)
-})
-
-
-# --- Final review: semantic fields, dry-run refusal, comparison-shape change --
 
 test_that("confirmation token fields equal the shared semantic definition", {
   expect_identical(BRIDGE_DESCRIPTOR_FIELDS, SCALAR_DESCRIPTOR_SEMANTICS)

@@ -939,15 +939,6 @@ def project_resource_catalogue(metadata_by_theme: dict,
             theme_id = declaration.get("theme_id", "")
             theme_metadata = semantic_metadata.get(theme_id, {})
             groups = tuple(declaration.get("groups", ()))
-            if kind == "typed_reading":
-                axes = ("groupe",)
-                declared_groups = {group.get("key") for group in theme_metadata.get("subgroups", [])
-                                   if group.get("reading")}
-                if not groups:
-                    groups = tuple(group.get("key") for group in theme_metadata.get("subgroups", [])
-                                   if group.get("reading"))
-                if not groups or not set(groups) <= declared_groups:
-                    raise ValueError(f"Invalid typed-reading groups for producer resource: {resource_id}")
             identifiers = [declaration.get("storage_relation"), declaration.get("publication_table")]
             identifiers.extend(side.get(key) for side in declaration.get("side_relations", [])
                                for key in ("storage_relation", "publication_table"))
@@ -989,7 +980,7 @@ def project_resource_catalogue(metadata_by_theme: dict,
                 public_axis_values = ()
             else:
                 public_axes = axes
-                public_axis_values = (("groupe", groups),) if kind == "typed_reading" else ()
+                public_axis_values = ()
             resources.append(IndicatorResource(
                 resource_id=resource_id, theme_id=theme_id, indicator_id=resource_id,
                 label=declaration.get("label", theme_metadata.get("label", resource_id)),
@@ -998,8 +989,7 @@ def project_resource_catalogue(metadata_by_theme: dict,
                 sources=sources, shapes=(kind,),
                 axes=public_axes, axis_values=public_axis_values,
                 target_kinds=(("territory", "territory_cohort")
-                              if kind == "typed_reading" or kind in AEDAR_CELLULE_AXES
-                              else ("territory",)),
+                              if kind in AEDAR_CELLULE_AXES else ("territory",)),
                 target_ids=(),
                 dynamic_axes=tuple(declaration.get("dynamic_axes", ())), fields=tuple(dict.fromkeys([
                     *declaration["fields"],

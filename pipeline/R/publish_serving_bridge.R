@@ -9,7 +9,7 @@
 # Safety invariants (each has a test, and each refuses with zero writes):
 #   1. round-trip proof: every indicator except offre_tc and the explicit
 #      retirements is identical as data (facts, descriptors, provenance);
-#   2. the five live markers must equal the tokens supplied by the operator;
+#   2. the four live markers must equal the tokens supplied by the operator;
 #   3. --dry-run prints the new tokens + per-indicator diff and writes nothing;
 #   4. an explicit operator acknowledgement (LUSK_BRIDGE_DUMP_CONFIRMED) proves
 #      a verified dump before any write;
@@ -372,7 +372,6 @@ BRIDGE_EXPECTED_ENV <- c(
   scalar = "LUSK_BRIDGE_EXPECT_SCALAR",
   comparison = "LUSK_BRIDGE_EXPECT_COMPARISON",
   profile = "LUSK_BRIDGE_EXPECT_PROFILE",
-  habitat = "LUSK_BRIDGE_EXPECT_HABITAT",
   reference = "LUSK_BRIDGE_EXPECT_REFERENCE")
 BRIDGE_FACTS_ENV <- "LUSK_BRIDGE_OFFRE_TC_FACTS"
 BRIDGE_PUBLISH_OPT_IN_ENV <- "LUSK_PUBLISH_OFFRE_TC_BRIDGE"
@@ -405,7 +404,7 @@ assert_bridge_dump_confirmed <- function(env = Sys.getenv) {
   invisible(ack)
 }
 
-# Compare ONLY the five operator-supplied tokens (and the chained input fields
+# Compare ONLY the four operator-supplied tokens (and the chained input fields
 # that must agree with them). An unrelated owner's newer marker is deliberately
 # not an expectation here â€” the guard stays scoped to the affected closure, as
 # in #995, and never reads a lost baseline artifact.
@@ -413,7 +412,7 @@ assert_bridge_markers <- function(markers, expected) {
   needed <- names(BRIDGE_EXPECTED_ENV)
   if (!is.character(expected) || !all(needed %in% names(expected)) ||
       anyNA(expected[needed]) || any(!nzchar(trimws(expected[needed]))))
-    stop("Bridge marker check requires all five expected tokens", call. = FALSE)
+    stop("Bridge marker check requires all four expected tokens", call. = FALSE)
   mismatches <- list()
   add <- function(marker, live, want) {
     mismatches[[length(mismatches) + 1L]] <<- data.frame(
@@ -423,8 +422,7 @@ assert_bridge_markers <- function(markers, expected) {
   }
   token_for_table <- c(territory_reference = "reference",
                        scalar_observation = "scalar",
-                       declared_profile = "profile",
-                       selected_reading = "habitat")
+                       declared_profile = "profile")
   table_marker <- function(name, field = "content_version") {
     rows <- markers$tables[markers$tables$table_name == name, , drop = FALSE]
     want <- if (identical(field, "reference_content_version"))
@@ -436,7 +434,6 @@ assert_bridge_markers <- function(markers, expected) {
   table_marker("scalar_observation", "content_version")
   table_marker("scalar_observation", "reference_content_version")
   table_marker("declared_profile", "content_version")
-  table_marker("selected_reading", "content_version")
 
   comparison <- markers$comparison
   if (nrow(comparison) != 1L) {
@@ -449,43 +446,12 @@ assert_bridge_markers <- function(markers, expected) {
     add("scalar_comparison_publication.reference_content_version",
         comparison$reference_content_version[[1L]], expected[["reference"]])
   }
-  selected <- markers$selected_publication
-  if (nrow(selected) != 1L) {
-    add("selected_reading_publication[habitat]", NA_character_, "exactly one row")
-  } else {
-    add("selected_reading_publication[habitat].content_version",
-        selected$content_version[[1L]], expected[["habitat"]])
-    add("selected_reading_publication[habitat].reference_content_version",
-        selected$reference_content_version[[1L]], expected[["reference"]])
-  }
-  # Fail closed: an absent or duplicated descriptor row is NOT a neutral state.
-  descriptor <- markers$selected_descriptor
-  if (nrow(descriptor) != 1L) {
-    add("selected_reading_descriptor[habitat]", NA_character_, "exactly one marker")
-  } else {
-    add("selected_reading_descriptor[habitat].descriptor_version",
-        descriptor$descriptor_version[[1L]], expected[["habitat"]])
-  }
-  # The profile comparison marker chains to declared_profile; a missing or
-  # duplicate row is not a neutral state. Its own content_version is a hash of
-  # comparison rows and cannot be derived from the five tokens alone, so it is
-  # guarded by the profile publisher at write time instead.
   profile_comparison <- markers$profile_comparison
   if (nrow(profile_comparison) != 1L) {
     add("profile_comparison_publication", NA_character_, "exactly one row")
   } else {
     add("profile_comparison_publication.profile_content_version",
         profile_comparison$profile_content_version[[1L]], expected[["profile"]])
-  }
-  # The Habitat linked token must chain to the five operator tokens; check the
-  # trailing <profile>-<scalar>-<reference> segment, whatever the canonical prefix.
-  if (nrow(descriptor) == 1L) {
-    chain_suffix <- paste0("-", expected[["profile"]], "-", expected[["scalar"]],
-                           "-", expected[["reference"]])
-    actual <- as.character(descriptor$linked_content_version[[1L]])
-    if (length(actual) != 1L || is.na(actual) || !endsWith(actual, chain_suffix))
-      add("selected_reading_descriptor[habitat].linked_content_version",
-          actual, chain_suffix)
   }
   profile <- markers$profile_descriptor
   if (nrow(profile) != 1L) {
@@ -523,22 +489,6 @@ read_bridge_offre_tc_rows <- function(path, indicator_id = bridge_offre_tc_id())
   rows
 }
 
-# The Habitat descriptor's linked token is "<canonical>-<profile>-<scalar>-<ref>".
-# Rebuild it from the live tokens rather than hardcoding a composition: a live
-# string that is not chained to the verified tokens is a hard refusal.
-bridge_rebind_linked_version <- function(live_linked, live_tokens, new_tokens) {
-  fields <- c("profile", "scalar", "reference")
-  if (!is.character(live_linked) || length(live_linked) != 1L || is.na(live_linked) ||
-      !all(fields %in% names(live_tokens)) || !all(fields %in% names(new_tokens)))
-    stop("Bridge cannot re-chain an invalid Habitat linked token", call. = FALSE)
-  suffix <- paste0("-", paste(unname(live_tokens[fields]), collapse = "-"))
-  if (!endsWith(live_linked, suffix))
-    stop("The live Habitat linked token is not chained to the live publication ",
-         "tokens; refusing with zero writes", call. = FALSE)
-  prefix <- substr(live_linked, 1L, nchar(live_linked) - nchar(suffix))
-  paste0(prefix, "-", paste(unname(new_tokens[fields]), collapse = "-"))
-}
-
 bridge_compute_new_tokens <- function(projection, reference_rows, reference_version,
                                       markers, expected, profile_version = NULL) {
   scalar_version <- scalar_content_version(projection)
@@ -546,37 +496,10 @@ bridge_compute_new_tokens <- function(projection, reference_rows, reference_vers
     projection, reference_rows,
     input_scalar_content_version = scalar_version,
     reference_content_version = reference_version)
-  live_linked <- markers$selected_descriptor$linked_content_version[[1L]]
-  live_tokens <- expected[c("profile", "scalar", "reference")]
-  # The profile publisher advances declared_profile's content version. The
-  # linked token MUST chain to that NEW profile version (the producer's formula),
-  # otherwise the state we write fails the very chain check we use to read it.
-  new_tokens <- c(profile = if (is.null(profile_version)) expected[["profile"]]
-                  else as.character(profile_version),
-                  scalar = scalar_version, reference = reference_version)
+  # The profile publisher advances declared_profile's content version together
+  # with the scalar-bound descriptor and comparison rows.
   list(scalar = scalar_version, comparison = comparison$content_version,
-       reference = reference_version,
-       linked = bridge_rebind_linked_version(live_linked, live_tokens, new_tokens),
-       comparison_projection = comparison)
-}
-
-# Marker-only rebind of the Habitat linked token. The declared-profile binding
-# is written by the NORMAL registered profile publisher together with its
-# recomputed hash lineage. The WHERE clause uses the verified live linked token,
-# so a concurrent move breaks the UPDATE and the whole transaction rolls back.
-bridge_marker_writer <- function(con, old_linked, execute = NULL) {
-  exec <- if (is.null(execute)) function(sql, params) bridge_db_exec(con, sql, params = params) else execute
-  list(
-    set_habitat_linked = function(new_linked) {
-      changed <- exec(paste(
-        "UPDATE selected_reading_descriptor SET linked_content_version=$1",
-        "WHERE linked_content_version=$2"),
-        list(new_linked, old_linked))
-      if (!identical(as.integer(changed), 1L))
-        stop("Habitat linked-token rebind affected ", changed,
-             " rows; expected exactly one. REFUSED, rolling back.", call. = FALSE)
-      invisible(TRUE)
-    })
+       reference = reference_version, comparison_projection = comparison)
 }
 
 publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
@@ -584,7 +507,7 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
                                     scalar_adapter = NULL,
                                     comparison_adapter = NULL,
                                     profile_adapter = NULL,
-                                    writer = NULL, read_markers = NULL, read_live = NULL, read_profile_rows = NULL,
+                                    read_markers = NULL, read_live = NULL, read_profile_rows = NULL,
                                      lock_timeout_ms = Sys.getenv("LUSK_BRIDGE_LOCK_TIMEOUT_MS", unset = "5000"),
                                      statement_timeout_ms = Sys.getenv("LUSK_BRIDGE_STATEMENT_TIMEOUT_MS", unset = "120000"),
                                      apply_timeouts = NULL, fk_inventory = NULL) {
@@ -613,9 +536,6 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
              call. = FALSE)
       assert_bridge_round_trip(read_live(), plan$projection, plan$affected)
     }
-    if (is.null(writer))
-      writer <- bridge_marker_writer(
-        con, fresh_markers$selected_descriptor$linked_content_version[[1L]])
     # The normal scalar publisher owns the whole-table replace and the explicit
     # retirement policy (including the retired indicators' comparison lineage).
     scalar <- publish_registered_scalar(
@@ -655,9 +575,7 @@ publish_bridge_snapshot <- function(con, plan, retired_ids, expected,
       if (!is.null(read_profile_rows))
         assert_bridge_profile_round_trip(plan$profiles, read_profile_rows(con))
     }
-    writer$set_habitat_linked(plan$tokens$linked)
-    invisible(list(scalar = scalar, comparison = comparison, profile = profile,
-                   linked = plan$tokens$linked))
+    invisible(list(scalar = scalar, comparison = comparison, profile = profile))
   })
 }
 
@@ -667,7 +585,6 @@ bridge_print_report <- function(plan, mode) {
   cat("new comparison token:", plan$tokens$comparison, "\n")
   cat("new declared-profile token:", plan$profile_lineage$version, "\n")
   cat("new profile comparison token:", plan$profile_lineage$comparison_version, "\n")
-  cat("new Habitat linked token:", plan$tokens$linked, "\n")
   info <- plan$descriptor_info
   if (!is.null(info)) {
     show_descriptor <- function(row) paste(
@@ -725,6 +642,7 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
                    user = env("LUSK_PUBLISH_USER", unset = ""))
   }
   assert_bridge_connection_identity(bridge_connection_identity(con, identity_reader), config)
+  if (!inherits(con, "fake-con")) verifier_schema_publication_globale(con)
   # Hold the scalar advisory lock (same key as the registered scalar publisher)
   # from BEFORE the guard reads until after the write, so no token can move
   # between inspection and commit. Injected fake connections in pure tests do
@@ -785,8 +703,6 @@ run_offre_tc_bridge <- function(mode = c("dry-run", "publish"), env = Sys.getenv
   assert_bridge_profile_round_trip(profiles, live_profile_rows)
   lineage <- bridge_profile_lineage_tokens(
     profiles, live_reader$reference_rows(con), expected[["reference"]])
-  # Chain the Habitat linked token to the NEW declared_profile version the
-  # profile publisher is about to write, not to the pre-write marker.
   tokens <- bridge_compute_new_tokens(
     built$projection, live_reader$reference_rows(con), expected[["reference"]],
     markers, expected, profile_version = lineage$version)
@@ -1219,8 +1135,7 @@ BRIDGE_MANAGED_TABLES <- c(
   "profile_descriptor", "profile_descriptor_source", "profile_axis",
   "profile_observation", "profile_observation_source",
   "profile_comparison_group", "profile_comparison_territory",
-  "profile_comparison_publication", "table_publication",
-  "selected_reading_descriptor", "selected_reading_publication")
+  "profile_comparison_publication", "table_publication")
 
 # Fail closed when an outside owner has a populated FK into a table the bridge
 # deletes from: the whole-table replace would cascade or be rejected mid-flight.
@@ -1361,8 +1276,6 @@ BRIDGE_WRITE_TABLES <- c(
   "profile_observation", "profile_observation_source",
   "profile_comparison_group", "profile_comparison_territory",
   "profile_comparison_publication", "comparison_source_lineage",
-  "selected_reading_descriptor",
-  "selected_reading_publication", "source_dataset", "source_vintage",
   "table_publication", "territory_reference")
 
 bridge_assert_write_schema <- function(con, query = NULL, schema = NULL,

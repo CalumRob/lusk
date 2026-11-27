@@ -193,16 +193,8 @@ def _seed(connection):
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('source_a','Fixture source')")
         connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version)
             VALUES ('source_a','v1','2026')""")
-        # Old global markers deliberately remain present during the expand phase.
-        connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-            reference_content_version) VALUES ('scalar_observation','global-scalar-v1',4,'ref-v1'),
-            ('declared_profile','global-profile-v1',4,'ref-v1')""")
-        connection.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
-            scalar_content_version,reference_content_version,group_row_count,territory_row_count,
-            lineage_row_count) VALUES (true,'global-comparison-v1','global-scalar-v1','ref-v1',2,4,2)""")
-        connection.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
-            profile_content_version,reference_content_version,group_row_count,territory_row_count)
-            VALUES (true,'global-profile-comparison-v1','global-profile-v1','ref-v1',1,2)""")
+        # Per-resource registry rows and comparison markers are authoritative;
+        # the retired global clocks are intentionally absent from fresh schema.
         _seed_scalar(connection, "resource_a", "a-v1", 12.0, unit="%",
             comparison_token=ADOPTED_SCALAR_COMPARISON, facts_token=ADOPTED_SCALAR_FACTS)
         _seed_scalar(connection, "resource_b", "b-v1", 8.0,
@@ -332,7 +324,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 assert {row["indicator"] for row in theme["profile_comparisons"]} == {
                     "profile_a", "profile_b", "profile_dpe"}
 
-                # Publishing scalar B moves only B; A remains readable with old global markers present.
+                # Publishing scalar B moves only B; A remains readable.
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                     publisher.execute(f'SET search_path TO "{schema}"')
                     with publisher.transaction():
@@ -341,8 +333,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                         publish_resource(publisher, "resource_b", "scalar", "b-v2",
                                          reference_content_version="ref-v1",
                                          declarations={"resource_b": _metadata("resource_b")})
-                        publisher.execute("""UPDATE table_publication SET content_version='global-stale-v1'
-                            WHERE table_name='scalar_observation'""")
+
                 assert read("resource_a").status_code == 200
 
                 # Retirement disappears from discovery immediately and fails closed on read.

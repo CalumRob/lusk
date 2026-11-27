@@ -236,7 +236,7 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
     assert "territory_cohort" in resources["prix_m2"].target_kinds
     assert "territory_cohort" in resources["subventions_par_domaine"].target_kinds
     assert "territory_cohort" in resources["couverture_programmes"].target_kinds
-    assert "territory_cohort" in resources["economie_selected_reading"].target_kinds
+    assert "economie_selected_reading" not in resources
     # #1078: AEDAR Cellules read as bounded whole-level cohorts on their
     # declared coordinates, beside every other cohort family.
     assert "territory_cohort" in resources["aedar_territorial_aggregate"].target_kinds

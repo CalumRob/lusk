@@ -261,8 +261,6 @@ def test_explicit_mean_never_reads_the_published_fixed_projection(monkeypatch):
     monkeypatch.setattr(reads, "_profile_comparison_results", profile_results)
     monkeypatch.setattr(reads, "_owned_series_comparison_results",
                         lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(reads, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(reads, "_milieux_reading_marker", lambda _c: None)
 
     reads._theme_comparison_snapshot(Conn(), "commune", "c1", "mobilite", None,
                                      indicator_id="reseaux_par_habitant")

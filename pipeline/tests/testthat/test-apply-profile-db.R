@@ -38,25 +38,24 @@
 }
 
 .gp_schema <- function(con) {
-  schema <- paste0("it_apply_profil_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
-  DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
-  DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
-  sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
-                         warn = FALSE), collapse = "\n")
-  for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
-  # Reference marker: apply READS it under the producer lock, never publishes it.
-  base <- artefacts_fixture_reference()$rows
-  rows <- data.frame(territory_id = base$territory_id,
-    territory_type = base$territory_type, name = base$territory_id,
-    department_id = rep(NA_character_, nrow(base)), epci_id = base$epci_id,
-    density_class_code = base$density_class_code,
-    density_class_label = base$density_class_code,
-    littoral_code = rep(NA_character_, nrow(base)),
-    littoral_classement_source = rep(NA_character_, nrow(base)), stringsAsFactors = FALSE)
-  projection <- list(rows = rows, content_version = artefacts_fixture_reference()$content_version)
-  publish_territory_reference_projection(projection,
-    territory_reference_postgres_adapter(con))
-  schema
+  .guarded_schema_build(con, "it_apply_profil_", function(schema) {
+    sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
+                           warn = FALSE), collapse = "\n")
+    for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
+    # Reference marker: apply READS it under the producer lock, never publishes it.
+    base <- artefacts_fixture_reference()$rows
+    rows <- data.frame(territory_id = base$territory_id,
+      territory_type = base$territory_type, name = base$territory_id,
+      department_id = rep(NA_character_, nrow(base)), epci_id = base$epci_id,
+      density_class_code = base$density_class_code,
+      density_class_label = base$density_class_code,
+      littoral_code = rep(NA_character_, nrow(base)),
+      littoral_classement_source = rep(NA_character_, nrow(base)), stringsAsFactors = FALSE)
+    projection <- list(rows = rows, content_version = artefacts_fixture_reference()$content_version)
+    publish_territory_reference_projection(projection,
+      territory_reference_postgres_adapter(con))
+    schema
+  })$value
 }
 
 # Version des FAITS d'une ressource scalaire (#1135), telle que le profil la
@@ -86,16 +85,9 @@
 .gp_dans <- function(ids) paste0("('", paste(ids, collapse = "','"), "')")
 
 .gp_global <- function(con) {
-  list(
-    publication = DBI::dbGetQuery(con, paste0(
-      "SELECT table_name,content_version,row_count,reference_content_version ",
-      "FROM table_publication ORDER BY table_name")),
-    singleton_profil = DBI::dbGetQuery(con, paste0(
-      "SELECT singleton,content_version,profile_content_version,reference_content_version,",
-      "group_row_count,territory_row_count FROM profile_comparison_publication ORDER BY singleton")),
-    singleton_scalaire = DBI::dbGetQuery(con, paste0(
-      "SELECT singleton,content_version,scalar_content_version,reference_content_version ",
-      "FROM scalar_comparison_publication ORDER BY singleton")))
+  list(publication = DBI::dbGetQuery(con, paste0(
+    "SELECT table_name,content_version,row_count,reference_content_version ",
+    "FROM table_publication ORDER BY table_name")))
 }
 
 .gp_profil <- function(con, ids) {

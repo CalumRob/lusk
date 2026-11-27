@@ -221,8 +221,6 @@ def _seed(conn):
     profile(RESEAUX, "Reseaux a pied / velo / voiture", "km", "b_longueur", "high",
             ("t_longueur", "b_longueur", "c_longueur"),
             {"t_longueur": "km", "b_longueur": "km", "c_longueur": "km"}, reseaux_values)
-    conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-        reference_content_version) VALUES ('declared_profile','profiles-v1',120,'ref-v1')""")
     for resource_id in (OFFRE, RESEAUX_HABITANT, RESEAUX):
         publish_indicator(conn, resource_id, "declared_profile", "profiles-v1",
                           reference_content_version="ref-v1")

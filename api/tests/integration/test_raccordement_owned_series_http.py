@@ -44,7 +44,11 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route(tmp_p
                 os.environ["LUSK_TEST_DATABASE_NAME"],urlsplit(os.environ["LUSK_TEST_READ_DSN"]).username)
         pub.execute(f'CREATE SCHEMA "{schema}"'); created=True
         pub.execute(f'SET search_path TO "{schema}"')
-        pub.execute((root/"api/schema.sql").read_text(encoding="utf-8"))
+        # This proof includes the legacy whole-snapshot scalar comparison
+        # publisher; pin the reviewed post-046/pre-049 contract it consumes.
+        pub.execute(subprocess.check_output(
+            ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+            cwd=root, text=True, encoding="utf-8"))
         pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES
             ('35238','commune','Rennes','35','243500139','D1','Fixture density D1'),
             ('35001','commune','Peer one','35','243500139','D1','Fixture density D1'),

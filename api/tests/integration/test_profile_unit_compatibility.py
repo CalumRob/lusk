@@ -44,7 +44,6 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
         conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,
             density_class_code,density_class_label) VALUES (%s,'commune','Focal','D-UNIT','Unit fixture')""", (territory,))
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','units-ref',1)")
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','units-scalar',0,'units-ref')")
         conn.execute("INSERT INTO source_dataset VALUES ('unit-fixture','Unit fixture')")
         conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('unit-fixture','v1','v1')")
         conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
@@ -55,7 +54,6 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
         conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,sex_axis_name,value,status)
             VALUES ('legacy_uniform',%s,'commune','only','',NULL,7,'measured')""", (territory,))
         conn.execute("INSERT INTO profile_observation_source VALUES ('legacy_uniform',%s,'only','','unit-fixture','v1')", (territory,))
-        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','units-profile',1,'units-ref')")
         publish_resource(conn, "legacy_uniform", "declared_profile", "units-profile",
                          reference_content_version="units-ref",
                          declarations={"legacy_uniform": _declaration(

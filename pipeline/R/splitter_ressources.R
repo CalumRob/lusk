@@ -416,8 +416,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
     comparer_definition = comparer_definition_canonique(),
     champ_faits_drift = NULL, lier_dependance = lier_dependance_aucune,
     # Shape adapter (ADR-0049 seam, #1139): one resource per dataset. The OCS-GE
-    # state series (artif_par_habitant) publishes through this adapter, so no
-    # typed-reading code is needed to keep it live.
+    # state series (artif_par_habitant) publishes through this adapter.
     projeter = projeter_artefact_series,
     remplacer = remplacer_series,
     lire_live = lire_live_series,

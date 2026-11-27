@@ -100,10 +100,7 @@ if (!raccordementMeasureDate || !raccordementAxisNumericValues.includes(raccorde
   throw new Error('Current Mobility producer curve declaration is incomplete or inconsistent')
 }
 const raccordementFixtureNotice = NATIVE_API_FIXTURE_NOTICE
-const observedMilieuxCohortFixtureIds = new Set(['22001', '35238'])
 let raccordementFixtureProvenanceCache: Record<string, any> | null = null
-let milieuxAbsenceSnapshotHash: string | null = null
-const syntheticReadings = new Map<string, Record<string, any> | null>()
 const producerMetadata = new Map<string, Record<string, any>>()
 
 function metadataFor(theme: string): Record<string, any> {
@@ -130,7 +127,7 @@ function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Rec
   const metadata = metadataFor(resource.theme_id)
   const declaredSourceKeys = typeof fact?.source_id === 'string' && resource.sources.includes(fact.source_id)
     ? [fact.source_id]
-    : resource.shapes.includes('typed_reading') ? resource.sources.slice(0, 1) : resource.sources
+    : resource.sources
   const sourceKeys = declaredSourceKeys.filter((key) => metadata.source_records?.[key]).length
     ? declaredSourceKeys.filter((key) => metadata.source_records?.[key]) : declaredSourceKeys
   const declared = sourceKeys.flatMap((key) => {
@@ -190,12 +187,9 @@ function publicationFor(resource: Resource): string {
   const dataset = resource.resource_id === 'raccordement_courbe' || resource.resource_id === 'raccordement_reference'
     ? raccordementRoute.dataset_id : resource.resource_id
   const shapes = new Set(resource.shapes)
-  // The real producer publishes one global marker per scalar_observation and
-  // one per declared_profile table. Fixtures must expose the same family
-  // generation, otherwise unrelated resources would falsely mix generations.
-  if (shapes.has('declared_profile')) return 'declared_profile-fixture-publication-v1'
+  // Every semantic resource carries its own publication clock. Shape decides
+  // storage; it never turns unrelated indicators into one global generation.
   if (shapes.has('ordered_series')) return `${dataset}-fixture-publication-v1`
-  if (shapes.has('scalar')) return 'scalar_observation-fixture-publication-v1'
   return `${dataset}-fixture-publication-v1`
 }
 
@@ -498,70 +492,6 @@ function syntheticIndicators(resource: Resource, target: Record<string, any>): R
   return facts
 }
 
-function syntheticReading(resource: Resource, target: Record<string, any>): Record<string, any> | undefined {
-  const identity = observationTarget(target)
-  if (!identity) return undefined
-  const key = `${resource.resource_id}/${identity.type}/${identity.id}`
-  if (syntheticReadings.has(key)) return syntheticReadings.get(key) ?? undefined
-  const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
-  const metadata = metadataFor(resource.theme_id)
-  const subgroup = metadata.subgroups?.find((item: Record<string, any>) => item.key === group)
-  const storyKey = subgroup?.reading?.story_key ?? metadata.story_keys?.[0] ?? `synthetic-${resource.theme_id}-reading`
-  const sourceId = syntheticSourceId(resource, identity.territory)
-  const reading: Record<string, any> = {
-    territoire: identity.id, type: identity.type, theme: resource.theme_id,
-    // The observation values are synthetic; classification of the reading
-    // follows the producer-owned salience enum rather than inventing a code.
-    groupe: group, story_key: storyKey, salience_reason: 'defaut',
-    status: 'measured', source_id: sourceId,
-    synthetic_fixture: NATIVE_API_FIXTURE_NOTICE,
-  }
-  if (resource.resource_id === 'habitat_selected_reading') {
-    const classifications = Object.keys(metadata.classification_labels ?? {})
-    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
-    reading.part_passoires = syntheticScalarValue(nativeResources('habitat').find((candidate) => candidate.resource_id === 'part_passoires')!, target)
-    reading.part_abc = 0.58
-    reading.n_dpe = 17
-  }
-  if (resource.resource_id === 'milieux_selected_reading') {
-    const stateResource = nativeResources('milieux').find((candidate) => candidate.resource_id === 'artif_par_habitant')!
-    const states = syntheticIndicators(stateResource, target)
-    const m2 = states.find((fact) => fact.detail === 'M2')
-    const m3 = states.find((fact) => fact.detail === 'M3')
-    const m2Value = Number(m2?.value ?? 1)
-    const m3Value = Number(m3?.value ?? 1)
-    const classifications = Object.keys(metadata.classification_labels ?? {})
-    reading.periode_pop = 'synthetic population period'
-    reading.periode_artif = 'synthetic OCS-GE period'
-    reading.delta_population = syntheticScalarValue(resource, target, 'delta_population')
-    reading.taux_variation_population = syntheticScalarValue(resource, target, 'taux_variation_population')
-    reading.artif_m2_par_habitant = m2Value
-    reading.artif_m3_par_habitant = m3Value
-    reading.trajectoire_artif_par_habitant = m2Value === 0 ? null : m3Value / m2Value
-    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
-  }
-  if (resource.resource_id === 'demographie_selected_reading') {
-    reading.periode = 'synthetic population period'
-    reading.solde_naturel = syntheticScalarValue(resource, target, 'solde_naturel')
-    reading.solde_migratoire = syntheticScalarValue(resource, target, 'solde_migratoire')
-    reading.taux_solde_naturel = syntheticScalarValue(resource, target, 'taux_solde_naturel')
-    reading.taux_solde_migratoire = -syntheticScalarValue(resource, target, 'taux_solde_migratoire')
-    const classifications = Object.keys(metadata.classification_labels ?? {})
-    reading.classification = classifications[syntheticSeed(resource, target) % Math.max(1, classifications.length)]
-  }
-  if (resource.resource_id === 'economie_selected_reading') {
-    for (let rank = 1; rank <= 5; rank += 1) {
-      reading[`top${rank}_activity_code`] = `T${rank}`
-      reading[`top${rank}_activity_label`] = `Synthetic activity ${rank}`
-      reading[`top${rank}_lq`] = 1 + rank / 10
-      reading[`top${rank}_n`] = 2 + rank
-      reading[`top${rank}_part_parc`] = rank / 10
-    }
-  }
-  syntheticReadings.set(key, reading)
-  return reading
-}
-
 function scalarFixtureFact(resource: Resource, member: Record<string, any>, context: NativeFixtureContext):
   { fact: Record<string, any> | undefined; status: string; value: number | null } {
   const target = { kind: 'territory', type: member.type, id: member.territoire }
@@ -745,112 +675,6 @@ function profileFixtureCells(resource: Resource, member: Record<string, any>, de
       status, ...(status === 'measured' ? { value: fact?.value ?? syntheticValue } : { value: null }),
       sources: [source], synthetic_fixture: NATIVE_API_FIXTURE_NOTICE }
   }))
-}
-
-function readingFixture(resource: Resource, target: Record<string, any>): Record<string, any>[] {
-  const themeMetadata = metadataFor(resource.theme_id)
-  const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
-  const published = syntheticReading(resource, target)
-  const source = sourceFor(resource, published, target)
-  const storyKey = published?.story_key ?? themeMetadata.subgroups?.find((item: Record<string, any>) =>
-    item.key === group)?.reading?.story_key ?? themeMetadata.story_keys?.[0]
-  const common = { groupe: group, story_key: storyKey, salience_reason: published?.salience_reason ?? 'defaut',
-    status: 'measured', source_id: source.source_id, vintage_id: source.vintage_id, source }
-  if (resource.resource_id === 'habitat_selected_reading') return published ? [{ ...common,
-    classification: published.classification,
-    part_passoires: published.part_passoires,
-    part_abc: published.part_abc,
-    n_dpe: published.n_dpe }] : []
-  if (resource.resource_id === 'milieux_selected_reading') return published ? [{ ...common,
-    periode_pop: published.periode_pop, periode_artif: published.periode_artif,
-    delta_population: published.delta_population, taux_variation_population: published.taux_variation_population,
-    artif_m2_par_habitant: published.artif_m2_par_habitant,
-    artif_m3_par_habitant: published.artif_m3_par_habitant,
-    trajectoire_artif_par_habitant: published.trajectoire_artif_par_habitant,
-    classification: published.classification }] : []
-  if (resource.resource_id === 'economie_selected_reading') return published ? [{ ...common }] : []
-  if (resource.resource_id === 'demographie_selected_reading') return published ? [{ ...common,
-    periode: published.periode, solde_naturel: published.solde_naturel,
-    solde_migratoire: published.solde_migratoire,
-    taux_solde_naturel: published.taux_solde_naturel,
-    taux_solde_migratoire: published.taux_solde_migratoire,
-    classification: published.classification }] : []
-  return []
-}
-
-function syntheticMilieuxSourceAbsence(resource: Resource, territoryId: string): Record<string, any> {
-  const metadata = metadataFor(resource.theme_id)
-  const sourceKey = metadata.sources.conso_enaf_annuel
-  const absenceResource = { ...resource, sources: [sourceKey], shapes: [] } as Resource
-  const source = sourceFor(absenceResource)
-  if (!milieuxAbsenceSnapshotHash) {
-    milieuxAbsenceSnapshotHash = createHash('sha256').update(JSON.stringify({
-      fixture: raccordementFixtureNotice,
-      source: { source_id: source.source_id, vintage_id: source.vintage_id,
-        reference_date: source.reference_date, publication_date: source.publication_date },
-      // This is a synthetic source snapshot whose coverage rule says the two
-      // named communes are present and all other commune members are absent.
-      // Hash the compact declaration once; this is not a digest of production data.
-      source_present_communes: [...observedMilieuxCohortFixtureIds].sort(),
-      other_commune_members: 'source_record_absent',
-    })).digest('hex')
-  }
-  return { territory_id: territoryId, territory_type: 'commune', reason: 'source_record_absent',
-    source_id: source.source_id, vintage_id: source.vintage_id,
-    source_snapshot_sha256: milieuxAbsenceSnapshotHash,
-    source: { source_id: source.source_id, name: source.name, vintage_id: source.vintage_id,
-      version: source.version, reference_date: source.reference_date,
-      publication_date: source.publication_date } }
-}
-
-function syntheticMilieuxSourceBindings(target: Record<string, any>,
-  reading: Record<string, any>): Record<string, any>[] {
-  const population = reading.source as Record<string, any>
-  const populationRevision = createHash('sha256').update(JSON.stringify({
-    fixture: raccordementFixtureNotice, source: population, territory: target.id,
-    observation_period: reading.periode_pop,
-  })).digest('hex')
-  const bindings: Record<string, any>[] = [{
-    territory_id: target.id, territory_type: target.type, groupe: reading.groupe, field_key: 'population',
-    source_id: population.source_id, vintage_id: population.vintage_id,
-    source_name: population.name, source_version: population.version,
-    reference_date: population.reference_date, publication_date: population.publication_date,
-    observation_period: reading.periode_pop, dataset_id: null, dataset_content_version: null,
-    state_role: null, axis_value: null, provenance_revision_id: null,
-    population_revision_id: `synthetic-test-${populationRevision.slice(0, 16)}`,
-    source: population,
-  }]
-  const stateResource = nativeResources('milieux').find((candidate) => candidate.resource_id === 'artif_par_habitant')
-  if (!stateResource) return bindings
-  const stateRows = syntheticIndicators(stateResource, target).filter((fact) => fact.value !== null)
-    .sort((left, right) => Number(left.vintage_version) - Number(right.vintage_version))
-  const metadata = metadataFor('milieux')
-  const stateDataset = metadata.indicator_pages.artif_par_habitant.series_dataset_id
-  stateRows.slice(0, 2).forEach((fact, index) => {
-    // The owner publishes exactly two role bindings (M2 then M3). The static
-    // presentation rows carry the producer-owned source clock and observation.
-    const clockFact = { ...fact }
-    delete clockFact.vintage_source
-    const resolved = sourceFor(stateResource, clockFact, target)
-    const source = { ...resolved, name: fact.vintage_source ?? resolved.name }
-    const role = index === 0 ? 'M2' : 'M3'
-    const fieldKey = role === 'M2' ? 'artif_m2_par_habitant' : 'artif_m3_par_habitant'
-    const revisionHash = createHash('sha256').update(JSON.stringify({
-      fixture: raccordementFixtureNotice, source, territory: target.id,
-      state_role: role, axis_value: fact.detail, observation_period: fact.dimension ?? fact.detail,
-    })).digest('hex')
-    bindings.push({ territory_id: target.id, territory_type: target.type, groupe: reading.groupe,
-      field_key: fieldKey, source_id: source.source_id, vintage_id: source.vintage_id,
-      source_name: source.name, source_version: source.version,
-      reference_date: source.reference_date, publication_date: source.publication_date,
-      dataset_id: stateDataset, dataset_content_version: publicationFor(stateResource),
-      state_role: role, observation_period: fact.dimension ?? fact.detail,
-      axis_value: fact.detail, provenance_revision_id: `synthetic-test-${revisionHash.slice(0, 16)}`,
-      population_revision_id: null, source: { source_id: source.source_id, name: source.name,
-        vintage_id: source.vintage_id, version: source.version,
-        reference_date: source.reference_date, publication_date: source.publication_date } })
-  })
-  return bindings
 }
 
 /** Return one response-shaped payload using only fields declared by the producer catalogue. */
@@ -1086,69 +910,6 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
 
   if (resource.resource_id === 'raccordement_tc' && target.kind === 'territory') {
     return { ...shared, ...syntheticRaccordementScalar(item, resource, version, referenceVersion, descriptorVersion) }
-  }
-
-  if (shapes.includes('typed_reading')) {
-    const cohortMembers = target.kind === 'territory_cohort' ? territories.filter((territory) =>
-      territory.type === target.type && (!target.epci_id || territory.epci === target.epci_id) &&
-      (!target.department_id || territory.departement === target.department_id)) : []
-    const firstMember = cohortMembers[0]
-    const readingTarget = target.kind === 'territory_cohort' && firstMember
-      ? { kind: 'territory', type: firstMember.type, id: firstMember.territoire } : target
-    const published = syntheticReading(resource, readingTarget)
-    const readingSource = sourceFor(resource, published, readingTarget)
-    if (target.kind === 'territory_cohort') {
-      const rateLabel = metadataFor(resource.theme_id).param_labels?.taux_solde_naturel ?? ''
-      const rateUnit = rateLabel.match(/\(([^()]*)\)$/)?.[1]
-      return { ...shared, shape: 'typed_reading', cohort: { territory_type: target.type,
-        epci_id: target.epci_id ?? null, department_id: target.department_id ?? null,
-        member_count: cohortMembers.length, members: cohortMembers.map((member) => ({ id: member.territoire,
-          type: member.type, name: member.nom })), reference_content_version: referenceVersion },
-        content_version: version, reference_content_version: referenceVersion,
-        descriptor: { descriptor_version: version, source: readingSource,
-          ...(resource.resource_id === 'demographie_selected_reading' ? { rate_unit: rateUnit } : {}) },
-        territories: cohortMembers.map((member) => {
-          const memberTarget = { kind: 'territory', type: member.type, id: member.territoire }
-          const facts = readingFixture(resource, memberTarget)
-          if (resource.resource_id !== 'milieux_selected_reading') {
-            return { territory: { id: member.territoire, type: member.type, name: member.nom }, facts }
-          }
-          const sourceAbsences = facts.length ? [] : [syntheticMilieuxSourceAbsence(resource, member.territoire)]
-          const sourceBindings = facts.length
-            ? syntheticMilieuxSourceBindings(memberTarget, facts[0]!) : []
-          return { territory: { id: member.territoire, type: member.type, name: member.nom }, facts,
-            source_absences: sourceAbsences, source_bindings: sourceBindings }
-        }) }
-    }
-    const facts = readingFixture(resource, target)
-    const binding = { source_id: readingSource.source_id, source_name: readingSource.name,
-      source_version: readingSource.version, vintage_id: readingSource.vintage_id,
-      reference_date: readingSource.reference_date, publication_date: readingSource.publication_date }
-    const reading = facts[0]
-    if (resource.resource_id === 'economie_selected_reading' && reading) {
-      const published = syntheticReading(resource, target)
-      if (!published) throw new Error('Published economy reading evidence is missing')
-      const rankedActivities = [1, 2, 3, 4, 5].flatMap((rank) => {
-        const activityCode = published?.[`top${rank}_activity_code`]
-        const activityLabel = published?.[`top${rank}_activity_label`]
-        if (typeof activityCode !== 'string' || typeof activityLabel !== 'string') return []
-        return [{ groupe: reading.groupe, activity_code: activityCode, activity_label: activityLabel,
-          lq: published[`top${rank}_lq`] ?? null, establishment_count: published[`top${rank}_n`],
-          park_share: published[`top${rank}_part_parc`] ?? null }]
-      })
-      return { ...shared, content_version: version, reference_content_version: referenceVersion,
-        descriptor: { descriptor_version: version, source: readingSource },
-        facts: [{ ...reading, source: readingSource }], source_bindings: [{ ...binding, groupe: reading.groupe }],
-        ranked_activities: rankedActivities }
-    }
-    const rateLabel = metadataFor(resource.theme_id).param_labels?.taux_solde_naturel ?? ''
-    const rateUnit = rateLabel.match(/\(([^()]*)\)$/)?.[1]
-    return { ...shared, content_version: version, reference_content_version: referenceVersion,
-      descriptor: { descriptor_version: version, source: readingSource,
-        ...(resource.resource_id === 'demographie_selected_reading' ? { rate_unit: rateUnit } : {}) },
-      facts: reading ? [{ ...reading, source: readingSource }] : [],
-      source_bindings: reading ? [{ ...binding, groupe: reading.groupe }] : [],
-      ...(resource.resource_id === 'milieux_selected_reading' ? { source_absences: [] } : {}) }
   }
 
   if (shapes.includes('anchored_membership')) {

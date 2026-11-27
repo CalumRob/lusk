@@ -115,26 +115,8 @@ if (!bridge_db_proof_configured()) {
       additional_projections = seeded_profiles[setdiff(names(seeded_profiles), seed_base)])
     profile_version <- profile_seed$content_version
 
-    habitat_version <- "habitat-live"
-    bridge_db_exec(connection, paste(
-      "INSERT INTO table_publication(table_name,content_version,row_count,",
-      "reference_content_version,published_at) VALUES",
-      "('selected_reading',$1,1,$2,now())"),
-      params = list(habitat_version, reference_version))
-    bridge_db_exec(connection, paste(
-      "INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,",
-      "source_id,vintage_id,linked_content_version) VALUES",
-      "('habitat',$1,'fixture_source','fixture/2025',$2)"),
-      params = list(habitat_version,
-                    paste("canonical", profile_version, scalar_version,
-                          reference_version, sep = "-")))
-    bridge_db_exec(connection, paste(
-      "INSERT INTO selected_reading_publication(theme_id,content_version,",
-      "reference_content_version,row_count,published_at) VALUES",
-      "('habitat',$1,$2,1,now())"), params = list(habitat_version, reference_version))
-
     expected <- c(scalar = scalar_version, comparison = comparison$content_version,
-                  profile = profile_version, habitat = habitat_version,
+                  profile = profile_version,
                   reference = reference_version)
     facts_path <- tempfile("bridge-facts-", fileext = ".rds")
     on.exit(unlink(facts_path), add = TRUE)
@@ -173,13 +155,13 @@ if (!bridge_db_proof_configured()) {
     expect_true(is.data.frame(plan$fk_inventory))
 
     # (A) ROLLBACK against the OLD seeded state. The scalar/comparison/profile
-    # publishers have real work to do (old -> new); the failure is injected only
-    # at the final Habitat rebind. A vacuous no-op would produce a digest that
-    # already equals the new state, so the control below rules that out.
+    # publishers have real work to do; failure is injected in the comparison
+    # publisher after the scalar writer, proving the outer transaction rolls back.
     fail_before_rebind <- function(con, prepared, retired, tokens, ...) {
+      adapter <- scalar_comparison_postgres_adapter(con)
+      adapter$replace <- function(...) stop("injected comparison failure", call. = FALSE)
       publish_bridge_snapshot(con, prepared, retired, tokens, ...,
-        writer = list(set_habitat_linked = function(new_linked)
-          stop("injected failure before Habitat rebind", call. = FALSE)))
+        comparison_adapter = adapter)
     }
     # The real-write gates (opt-in, dump ack, scope, expected tokens, facts file)
     # are set for THIS call only via withr; nothing leaks to other tests.
@@ -187,7 +169,7 @@ if (!bridge_db_proof_configured()) {
       capture.output(expect_error(run_offre_tc_bridge(
         "publish", env = env, con = connection, config = config,
         live_reader = reader, read_markers = read_markers, retired_ids = retired_ids,
-        publish = fail_before_rebind), "injected failure before Habitat rebind"))
+        publish = fail_before_rebind), "injected comparison failure"))
     })
     expect_identical(schema_digest(), seeded_digest,
                      info = "failed publication must restore the exact seeded state")
@@ -229,29 +211,14 @@ if (!bridge_db_proof_configured()) {
     expect_identical(bridge_db_query(connection, paste(
       "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"))$content_version[[1L]],
       plan$tokens$scalar)
-    expect_identical(bridge_db_query(connection,
-      "SELECT linked_content_version FROM selected_reading_descriptor")$linked_content_version[[1L]],
-      plan$tokens$linked)
-    expect_identical(bridge_db_query(connection, paste(
-      "SELECT content_version FROM table_publication WHERE table_name='selected_reading'"))$content_version[[1L]],
-      habitat_version)
-
     # Independent #1068 verifier check on the state the bridge just wrote.
     written_markers <- retained_backend_markers(connection)
     marker_version_of <- function(name) DBI::dbGetQuery(connection,
       "SELECT content_version FROM table_publication WHERE table_name=$1",
       params = list(name))$content_version[[1L]]
-    typed_of <- function(name) {
-      rows <- written_markers$tables[written_markers$tables$table_name == name, , drop = FALSE]
-      if (nrow(rows)) rows$content_version[[1L]] else NA_character_
-    }
     verifier_expected <- list(
       reference = reference_version, scalar = plan$tokens$scalar,
       comparison = plan$tokens$comparison, comparison_scalar = plan$tokens$scalar,
-      typed = c(demographie = typed_of("demographic_typed_reading"),
-                habitat = habitat_version,
-                economie = typed_of("economy_typed_reading"),
-                milieux = typed_of("milieux_typed_reading")),
       series = list(dataset_id = if (nrow(written_markers$series)) written_markers$series$dataset_id[[1L]] else NA_character_,
                     content_version = if (nrow(written_markers$series)) written_markers$series$content_version[[1L]] else NA_character_),
       profile_version = plan$profile_lineage$version,
@@ -259,12 +226,11 @@ if (!bridge_db_proof_configured()) {
       profile_descriptor_version = DBI::dbGetQuery(connection, paste(
         "SELECT descriptor_version FROM profile_descriptor",
         "WHERE indicator_id='distribution_dpe'"))$descriptor_version[[1L]],
-      profile_required_scalar = plan$tokens$scalar,
-      habitat_version = habitat_version, selected_linked = plan$tokens$linked)
+      profile_required_scalar = plan$tokens$scalar)
     verifier_mismatches <- verifier_retained_backend_baseline(written_markers, verifier_expected)
     owned_prefixes <- c("scalar_observation", "scalar_comparison_publication",
       "declared_profile", "profile_comparison_publication",
-      "profile_descriptor[distribution_dpe]", "selected_reading_descriptor[habitat]")
+      "profile_descriptor[distribution_dpe]")
     owned_mask <- rep(FALSE, nrow(verifier_mismatches))
     for (prefix in owned_prefixes)
       owned_mask <- owned_mask | startsWith(verifier_mismatches$marker, prefix)
@@ -298,7 +264,7 @@ if (!bridge_db_proof_configured()) {
     # control run left behind (retired ids gone, offre_tc freshly published),
     # which matches the real serving DB. Its expected tokens are therefore NOT
     # the seed tokens: they are re-derived from the live markers below, including
-    # the NEW declared_profile version and the linked token chained to it.
+    # the NEW declared_profile version and its scalar binding.
     after_markers <- retained_backend_markers(connection)
     marker_value <- function(name) bridge_db_query(connection,
       "SELECT content_version FROM table_publication WHERE table_name=$1",
@@ -307,7 +273,6 @@ if (!bridge_db_proof_configured()) {
       scalar = marker_value("scalar_observation"),
       comparison = after_markers$comparison$content_version[[1L]],
       profile = marker_value("declared_profile"),
-      habitat = marker_value("selected_reading"),
       reference = marker_value("territory_reference"))
     live_facts_path <- tempfile("bridge-facts-live-", fileext = ".rds")
     on.exit(unlink(live_facts_path), add = TRUE)

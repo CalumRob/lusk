@@ -242,7 +242,7 @@ test_that("public/data/theme_mobilite.json est EXACTEMENT la projection navigate
   publie <- jsonlite::fromJSON(commis, simplifyVector = FALSE)
   producteur_seulement <- c(
     "semantic_resources", "story_keys", "observed_collection_contracts",
-    "indicator_directions", "selected_reading_contract", "comparison_scopes",
+    "indicator_directions", "comparison_scopes",
     "building_comparison", "service_share_scalar", "distribution_contracts",
     "scalar_contracts", "profile_contracts", "map_layers", "owned_series_routes"
   )

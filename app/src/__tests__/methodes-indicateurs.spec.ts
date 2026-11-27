@@ -68,11 +68,8 @@ describe('registre Méthodes — contrat éditorial app-owned', () => {
         }
 
         if (theme === 'milieux' && key === 'trajectoire_artif_par_habitant') {
-          // This derived ratio is published inside the typed reading, with no
-          // standalone page/resource (and therefore no producer unit field).
-          const reading = producer.semantic_resources.find((resource: any) =>
-            resource.resource_id === 'milieux_selected_reading')
-          expect(reading?.fields, `${theme}.${key} producer reading field`).toContain(key)
+          // This presentation-only derived ratio has no standalone producer
+          // page/resource (and therefore no producer unit field).
           expect(producer.indicator_keys).not.toContain(key)
           expect(pages).not.toHaveProperty(key)
           expect(apiResources.some((resource) => resource.resource_id === key)).toBe(false)

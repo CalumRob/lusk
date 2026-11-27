@@ -92,7 +92,7 @@ def test_publish_resource_without_declarations_removes_previous_descriptors():
     pytest.param({"resource_id": ""}, id="empty-resource-id"),
     pytest.param({"resource_id": "Bad"}, id="invalid-resource-id"),
     pytest.param({"resource_id": "a" * 97}, id="long-resource-id"),
-    pytest.param({"shape": "typed_reading"}, id="unregistered-shape"),
+    pytest.param({"shape": "unknown_shape"}, id="unregistered-shape"),
     pytest.param({"content_version": ""}, id="empty-version"),
     pytest.param({"content_version": None}, id="missing-version"),
     pytest.param({"reference_content_version": 7}, id="invalid-reference-version"),

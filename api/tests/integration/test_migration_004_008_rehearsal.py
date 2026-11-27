@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -199,7 +200,9 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
 
             # Fresh install declares the same allowable publication names and
             # keeps profile/series reference requirements after adding buildings.
-            fresh_sql = (api_root / "schema.sql").read_text(encoding="utf-8")
+            fresh_sql = subprocess.check_output(
+                ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+                cwd=api_root, text=True, encoding="utf-8")
             fresh_names = set(re.findall(r"'([a-z_]+)'", re.search(
                 r"CREATE TABLE table_publication.*?CHECK\s*\(table_name IN\s*\((.*?)\)\)",
                 fresh_sql, re.S).group(1)))

@@ -8,7 +8,7 @@ from api.scripts.generate_publication_guard_inventory import (
 
 
 REQUIRED_FAMILIES = {"scalar", "profile", "ordered_series", "named_reference",
-                     "typed_reading", "collection", "aedar"}
+                     "collection", "aedar"}
 
 # Generic helpers whose caller supplies the declared family at runtime. They
 # still emit the actual family in the v2 outcome; the inventory records the

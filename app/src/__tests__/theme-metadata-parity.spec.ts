@@ -27,7 +27,7 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     // map_layers du snapshot public — registres producer-only
     // que ni le navigateur ni les lecteurs du payload committé ne lisent.
     const horsNavigateur = ['semantic_resources', 'story_keys', 'observed_collection_contracts',
-      'indicator_directions', 'selected_reading_contract', 'comparison_scopes', 'building_comparison',
+      'indicator_directions', 'comparison_scopes', 'building_comparison',
       'service_share_scalar', 'distribution_contracts', 'owned_series_routes', 'scalar_contracts',
       'profile_contracts', 'map_layers']
     for (const theme of themes.filter((item) => item !== 'mobilite')) {

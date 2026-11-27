@@ -127,14 +127,11 @@ def _seed(conn):
                 detail_key,sex_key,source_id,vintage_id)
                 VALUES ('offre_cyclable',%s,%s,'','osm_reseaux','2026-08')""",
                 (territory, detail))
-    conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-        reference_content_version) VALUES ('declared_profile','profiles-v1',49,'ref-v1')""")
+
 
     # Published fixed comparison for the descriptor's default bike detail only.
     density_members = [focal, *peers]
-    conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
-        profile_content_version,reference_content_version,group_row_count,territory_row_count)
-        VALUES (true,'comparison-v1','profiles-v1','ref-v1',1,5)""")
+
     conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
         indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
         lineage_source_count,profile_content_version,reference_content_version)
@@ -185,8 +182,10 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
 
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         seed = _seed(conn)
-        versions = dict(conn.execute("""SELECT table_name,content_version FROM table_publication
-            WHERE table_name IN ('declared_profile','territory_reference')""").fetchall())
+        versions = dict(conn.execute("""SELECT resource_id,content_version FROM resource_publication
+            WHERE resource_id=%s""", (RESOURCE,)).fetchall())
+        versions["territory_reference"] = conn.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()[0]
     focal = seed["focal"]
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
@@ -229,7 +228,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                                              "territory_type": "commune",
                                              "member_count": 5}
             assert default_body["selection"] is None
-            assert default_body["profile_content_version"] == versions["declared_profile"]
+            assert default_body["profile_content_version"] == versions[RESOURCE]
             assert default_body["reference_content_version"] == versions["territory_reference"]
 
             matching_default = read(fixed("b_km_1000"))
@@ -247,7 +246,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                 results[detail] = result
                 assert body["scope"] == default_body["scope"]
                 assert body["selection"] is None
-                assert body["profile_content_version"] == versions["declared_profile"]
+                assert body["profile_content_version"] == versions[RESOURCE]
                 assert body["reference_content_version"] == versions["territory_reference"]
                 assert result["source_facet"] == {"detail": detail, "sex": None}
                 assert result["median"] == pytest.approx(median)
@@ -279,7 +278,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                     for member in density_members]
                 assert selected.json()["scope"] == {"kind": "explicit_selection",
                                                     "member_count": 5}
-                assert selected.json()["profile_content_version"] == versions["declared_profile"]
+                assert selected.json()["profile_content_version"] == versions[RESOURCE]
                 assert selected.json()["reference_content_version"] == versions["territory_reference"]
             selected_default = read({
                 "resource": RESOURCE,

@@ -24,11 +24,7 @@ def publication_resource_id(resource) -> str | None:
 
     Most semantic identities publish themselves. A grammar alias (for example
     an AEDAR summary) names the storage resource that owns its live row.
-    Typed readings remain on their legacy per-theme markers until #1141 and
-    therefore have no per-resource registry identity.
     """
-    if getattr(resource, "resource_kind", None) == "typed_reading":
-        return None
     return getattr(resource, "publication_resource_id", None) or resource.resource_id
 
 

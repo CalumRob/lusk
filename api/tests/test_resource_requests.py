@@ -286,7 +286,7 @@ def test_cohort_capabilities_follow_declared_native_shapes_not_a_scalar_allowlis
     catalogue = default_resource_catalogue()
     for resource_id in (
         "densite", "structure_age", "conso_enaf_annuel", "subventions_par_domaine",
-        "couverture_programmes", "demographie_selected_reading",
+        "couverture_programmes",
     ):
         resource = catalogue.resources_by_id[resource_id]
         assert "territory_cohort" in resource.target_kinds

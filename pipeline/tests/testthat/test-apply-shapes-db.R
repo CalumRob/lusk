@@ -54,14 +54,13 @@
 }
 
 .guarded_shapes_schema <- function(con) {
-  schema <- paste0("it_shapes_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
-  DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
-  DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
-  sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
-                         warn = FALSE), collapse = "\n")
-  for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
-  .guarded_shapes_publish_reference(con)
-  schema
+  .guarded_schema_build(con, "it_shapes_", function(schema) {
+    sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
+                           warn = FALSE), collapse = "\n")
+    for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
+    .guarded_shapes_publish_reference(con)
+    schema
+  })$value
 }
 
 # Scalar artefact for the cross-shape snapshot (the scalar apply itself is

@@ -790,6 +790,7 @@ publier_structure_age_profile_postgres <- function(payload, metadata, sortie) {
   config <- configuration_service_postgres()
   con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
   tryCatch({
+    verifier_schema_publication_globale(con)
     registry <- register_structure_age_profile_publisher(list(), metadata)
     publish_registered_profile(registry, "structure_age", payload, profile_postgres_adapter(con))
   }, finally = DBI::dbDisconnect(con))
@@ -817,6 +818,7 @@ publier_declared_profiles_postgres <- function(artifact_directory, owners, con =
     con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   }
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
+  verifier_schema_publication_globale(con)
   # The artifacts are already projected and validated; the identity publisher
   # exists only to reuse the shared marker and comparison publication
   # transaction.

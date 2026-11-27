@@ -67,8 +67,7 @@ def _seed(conn):
             (%s,%s,'osm_stationnement','2026-08'),(%s,%s,'ecolab_stationnement','2022-2025')""",
             (PUBLISHED_RESOURCE, FOCAL, PUBLISHED_RESOURCE, FOCAL,
              PUBLISHED_RESOURCE, PEER, PUBLISHED_RESOURCE, PEER))
-    conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
-        reference_content_version) VALUES ('scalar_observation','scalar-v1',2,'territory-v1')""")
+
     # The published default density-class comparison, ranking focal (12) above peer (4).
     conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
         indicator_id,statistic,median,member_count,eligible_count,missing_count,
@@ -86,9 +85,7 @@ def _seed(conn):
         ('scalar','density_class',%s,'commune',%s,'ecolab_stationnement','2022-2025',
          'comparison-v1')""",
         (DENSITY_CLASS, PUBLISHED_RESOURCE, DENSITY_CLASS, PUBLISHED_RESOURCE))
-    conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
-        scalar_content_version,reference_content_version,group_row_count,territory_row_count,
-        lineage_row_count) VALUES (true,'comparison-v1','scalar-v1','territory-v1',1,2,2)""")
+
     conn.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
         content_version,scalar_content_version,reference_content_version,group_row_count,
         territory_row_count,lineage_row_count) VALUES (%s,'comparison-v1','scalar-v1','territory-v1',1,2,2)""",

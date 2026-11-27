@@ -40,7 +40,7 @@ def test_fresh_and_additive_schema_define_independent_scalar_publication():
 
 def test_fresh_schema_defines_versioned_fixed_scalar_comparison_grains():
     fresh = (API / "schema.sql").read_text()
-    assert "CREATE TABLE scalar_comparison_publication" in fresh
+    assert "CREATE TABLE scalar_resource_comparison_publication" in fresh
     assert "scalar_content_version text NOT NULL" in fresh
     assert "reference_content_version text NOT NULL" in fresh
     assert "CREATE TABLE scalar_comparison_group" in fresh

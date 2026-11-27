@@ -98,7 +98,6 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                     continue  # exercise selected=3, eligible=2, missing=1 from native SQL evidence
                 conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('prix_m2',%s,%s,987,'measured')", (t['territoire'], t['type']))
                 conn.execute("INSERT INTO scalar_observation_source VALUES ('prix_m2',%s,%s,'pooled-vintage')", (t['territoire'], source))
-            conn.execute("INSERT INTO table_publication(table_name,content_version,reference_content_version,row_count) VALUES ('scalar_observation','native-pooled','native-ref',8)")
         # Current R publication grain: all annual/duration axes, fixed same-level
         # parent groups and commune presets. Values are the independent SQL seed.
         groups = [('same_level','53','epci',[4,5]), ('same_level','53','departement',[7,8]),

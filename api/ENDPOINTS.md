@@ -255,12 +255,6 @@ producer's nested pooled-scalar comparison; `axis_comparisons` applies to the
 owned series. Do not request `member_ranks` for an ordinary ordered-series
 comparison: that field is rejected there rather than projected from annual
 points or silently added to the response.
-The catalogue also includes four producer-declared `typed_reading` resources for
-selected Démographie, Économie/Emploi, Habitat, and Milieux evidence. These use the
-same `facts` grammar and a declared `groupe` coordinate. Ranked economy activities,
-Milieux source absences, and Milieux source bindings are exposed as separate named
-evidence fields, with publication/reference compatibility checked before reads.
-
 `territory_cohort` is a facts-only target for bounded producer-declared populations;
 it does not add comparison or arbitrary query semantics. The target `type` must be
 declared by the resource. Optional `department_id` and `epci_id` filters are accepted
@@ -268,8 +262,8 @@ only for `commune` cohorts and intersect against the published `territory_refere
 The response carries a shared `cohort` envelope (ordered member identities, count,
 filters, and reference version) plus the resource's native fact family: scalar
 `observations`, profile `profiles`, ordered-series `series`, sparse collection
-`territories`, typed-reading `territories` with selected evidence, or an AEDAR
-Cellule's `values` — one published number per present territory, from either the
+`territories`, or an AEDAR Cellule's `values` — one published number per present
+territory, from either the
 per-cell or the summary family on its own declared coordinates. Both AEDAR Cellule
 resources accept declared-coordinate cohort targets at every producer-declared level,
 region included; the deprecated `measure` alias is not a cohort address. Named

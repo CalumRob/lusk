@@ -108,6 +108,7 @@ fake_profile_connection <- function() structure(list(), class = "fake_profile_co
 with_declared_profile_postgres <- function(state, code) {
   adapter <- profile_postgres_fake_adapter(state)
   local_mocked_bindings(
+    verifier_schema_publication_globale = function(...) TRUE,
     profile_scalar_binding = function(sortie = "../public/data") {
       state$binding_requests <- c(state$binding_requests, sortie)
       state$binding

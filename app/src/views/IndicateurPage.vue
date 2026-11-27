@@ -746,7 +746,7 @@ async function chargerSerie(force = false) {
       serieChargement.value = false
 
       const cachedComparison = acquired.comparisons.get(selectionKey)
-      if (cachedComparison && !cachedComparison.cohort_error) {
+      if (cachedComparison) {
         const comparison = projectRaccordementSemanticComparison(acquired.focal, cachedComparison,
           focal, selectedIds)
         if (request === serieRequete) raccordementApiLecture.value = { ...projectedFocal, comparison }
@@ -756,7 +756,7 @@ async function chargerSerie(force = false) {
       const compared = await raccordementThemeCache.select(focal.type, focal.territoire, 'mobilite', selectedIds)
       if (request !== serieRequete) return
       const comparisonResponse = compared.comparisons.get(selectionKey)
-      if (!comparisonResponse || comparisonResponse.cohort_error) throw new Error('Comparaison native du raccordement absente')
+      if (!comparisonResponse) throw new Error('Comparaison native du raccordement absente')
       const comparison = projectRaccordementSemanticComparison(compared.focal, comparisonResponse,
         focal, selectedIds)
       raccordementApiLecture.value = { ...projectedFocal, comparison }

@@ -738,7 +738,6 @@ test_that("le catalogue Mobilité ne porte plus aucune référence au snapshot r
   }
   expect_false(any(INDICATEURS_MOBILITE_RETIRES %in% names(meta$indicator_pages)))
   expect_length(unlist(meta$story_keys, use.names = FALSE), 0L)
-  expect_null(meta$selected_reading_contract)
   expect_null(meta$distribution_contracts)
   expect_null(meta$source_records$mobilite_snapshot)
   expect_false(any(vapply(meta$subgroups, function(g) !is.null(g$reading), logical(1))))

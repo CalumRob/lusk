@@ -97,7 +97,6 @@ test_that("remplacer writes only this dataset and the registry row", {
   expect_true(any(grepl("INSERT INTO resource_publication", executes)))
   expect_true(all(c("series_dataset_observation", "series_observation_provenance") %in%
                     capture$writes))
-  expect_false(any(grepl("milieux_typed_reading|milieux_reading_", executes)))
   # RPostgres requires unnamed positional params; no hand-built literal here.
   expect_true(all(vapply(capture$params, function(p) is.null(p) || length(p) == 0L ||
     is.null(names(p)) || all(names(p) == ""), logical(1))))
@@ -140,7 +139,7 @@ test_that("remplacer --retire removes only this dataset and marks registry retir
   expect_true(any(grepl("retired=EXCLUDED.retired", executes)))
 })
 
-test_that("OCS-GE state series applies through the adapter without typed-reading code", {
+test_that("OCS-GE state series applies through the owned-series adapter", {
   root <- artefacts_fixture_root()
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
   artefact <- adaptateur_series_artefact(root, "artif_par_habitant")
@@ -149,10 +148,7 @@ test_that("OCS-GE state series applies through the adapter without typed-reading
     remplacer_series(con, "artif_par_habitant", rows, rows$version,
                      reference_content_version = rows$reference_content_version,
                      reference_rows = adaptateur_reference_rows()))
-  # The OCS-GE dataset's genuine serving tables are written; no typed-reading
-  # publisher/route is on this path.
+  # The OCS-GE dataset's genuine serving tables are written by this adapter.
   expect_true(any(grepl("INSERT INTO series_dataset_publication", capture$executes)))
   expect_true(any(grepl("series_dataset_observation", capture$writes)))
-  expect_false(any(grepl("publish_canonical_milieux_reading|milieux_typed_reading",
-                         capture$executes)))
 })

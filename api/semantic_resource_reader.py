@@ -7,8 +7,7 @@ FastAPI composition root.
 
 from fastapi import HTTPException
 
-from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
-                              validate_typed_reading_integrity)
+from api.cohort_reads import preflight_cohort, read_cohort, resolve_territory_cohort
 from api.profile_reads import focal_profiles
 from api.publication_outcomes import (PublicationUnavailable, family_for_resource,
                                       publication_unavailable)
@@ -167,10 +166,6 @@ class SemanticResourceReader:
         the legacy/owned series compatibility pairs.
         """
         kind = getattr(resource, "resource_kind", "")
-        if kind == "typed_reading":
-            groups = [tuple(relation for relation in (resource.storage_relation,) if relation)]
-            groups.extend((side["storage_relation"],) for side in resource.side_relations)
-            return [group for group in groups if group]
         if kind == "aedar_source_grain":
             return [("aedar_territorial_aggregate",)]
         if kind == "aedar_territory_summary":
@@ -418,7 +413,7 @@ class SemanticResourceReader:
             base_work = self.preflight(conn, base_item, catalogue, work_budget=work_budget)
             return base_work + preflight_axis_comparisons(conn, item, work_budget - base_work)
         profile_coordinates = self._profile_comparison_coordinates(conn, item, resource)
-        if resource.resource_kind in {"indicator", "typed_reading"}:
+        if resource.resource_kind == "indicator":
             self._coordinate_values(conn, item, resource)
         # Keep the established automatic pooled facet on dual-shape
         # comparisons; the selector only opts into nested scalar projection.
@@ -426,14 +421,6 @@ class SemanticResourceReader:
                               and item.target.kind == "territory")
         if dual_scalar_series:
             self._require_dual_series_route(conn, resource)
-        if resource.resource_kind == "typed_reading":
-            if item.target.kind == "territory_cohort":
-                cohort = self._cohort_for_request(conn, item.target, work_budget, snapshot_state)
-                estimate = preflight_cohort(conn, item, resource, cohort,
-                    self._legacy_fields(item, catalogue), work_budget, snapshot_state)
-                self._cohort_scopes[id(item)] = cohort
-                return estimate
-            return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
         if (resource.resource_kind == "aedar_territory_summary"
                 and item.target.kind != "territory_cohort"):
             from api.aedar_reads import _aedar_territory_summary_resource_snapshot
@@ -676,8 +663,6 @@ class SemanticResourceReader:
                 scalar_item = item.model_copy(update={"fields": ["value"]})
                 data["scalar_facet"] = read_scalar_cohort(conn, scalar_item, resource, cohort, ["value"])
             return data
-        if resource.resource_kind == "typed_reading":
-            return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind in {"aedar_territory_summary", "aedar_source_grain"}:
             from api.aedar_reads import (_aedar_territory_summary_resource_snapshot,
                                          _aedar_territorial_aggregate_snapshot)
@@ -775,235 +760,6 @@ class SemanticResourceReader:
                 scalar_facet=True, expected_theme_id=resource.theme_id)
         return {"resource": item.resource, "target": item.target.model_dump(),
                 **(data if isinstance(data, dict) else {"result": data})}
-
-    @staticmethod
-    def _typed_reading_preflight(conn, item, resource, *, work_budget=200_000):
-        from api.typed_reading_snapshots import typed_reading_descriptor
-
-        territory = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
-                                 (item.target.id,)).fetchone()
-        if not territory:
-            raise HTTPException(404, "Territory not found")
-        if territory[0] != item.target.type:
-            raise HTTPException(422, "Territory target type does not match")
-        marker = conn.execute("""SELECT content_version,row_count,reference_content_version
-            FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
-        if not marker or not marker[0]:
-            publication_unavailable("typed_reading",
-                "Typed-reading publication is unavailable or stale")
-        live_territory_reference_version(conn, expected_content_version=marker[2])
-        if resource.publication_table == "selected_reading":
-            owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
-                FROM selected_reading_publication WHERE theme_id=%s""",
-                (resource.theme_id,)).fetchone()
-            if not owner_marker or not owner_marker[0]:
-                publication_unavailable("typed_reading",
-                    "Selected-reading publication is inconsistent")
-            if (owner_marker[0] != marker[0] or
-                    owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
-                raise HTTPException(503, "Selected-reading publication is inconsistent")
-        if (resource.publication_table in {"demographic_typed_reading", "selected_reading"}
-                and work_budget < 1):
-            raise HTTPException(413, "Resource request exceeds the bounded work limit")
-        descriptor = typed_reading_descriptor(conn, resource, marker)
-        # Publication tokens alone do not prove that declared physical rows
-        # remain present. Validate the primary and evidence row counts with the
-        # shared budgeted scan before counting focal rows.
-        side_markers = []
-        coordinates = item.coordinates or {}
-        group = coordinates.get("groupe")
-        selected_fields = set(resource.fields) if item.fields is None else set(item.fields)
-        relation = resource.storage_relation
-        for side in resource.side_relations:
-            side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
-                FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
-            if not side_marker or not side_marker[0]:
-                publication_unavailable("typed_reading",
-                    "Typed-reading evidence publication is unavailable or stale")
-            if side_marker[1] != marker[2]:
-                raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
-            if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
-                raise HTTPException(503, "Typed-reading evidence publication is incompatible")
-            if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
-                raise HTTPException(503, "Typed-reading evidence publication is stale")
-            side_markers.append(side_marker)
-        work = validate_typed_reading_integrity(
-            conn, resource, marker, side_markers, work_budget)
-        if descriptor and descriptor.get("source"):
-            work += 1
-        clauses = ["territory_id=%s", "territory_type=%s"]
-        params = [item.target.id, item.target.type]
-        if group:
-            clauses.append("groupe=ANY(%s::text[])")
-            params.append(group)
-        work += int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
-        if work > work_budget:
-            raise HTTPException(413, "Resource request exceeds the bounded work limit")
-        for side in resource.side_relations:
-            side_clauses = ["territory_id=%s", "territory_type=%s"]
-            side_params = [item.target.id, item.target.type]
-            if "groupe" in side["fields"]:
-                if group:
-                    side_clauses.append("groupe=ANY(%s::text[])")
-                    side_params.append(group)
-            work += int(conn.execute(f"SELECT count(*) FROM {side['storage_relation']} WHERE " +
-                " AND ".join(side_clauses), side_params).fetchone()[0])
-            if work > work_budget:
-                raise HTTPException(413, "Resource request exceeds the bounded work limit")
-            if side["storage_relation"] == "milieux_reading_source" and "source_bindings" in selected_fields:
-                remaining = work_budget - work
-                revisions = conn.execute("""SELECT count(*) FROM (
-                    SELECT a.provenance_revision_id FROM milieux_reading_source b
-                    JOIN series_observation_provenance a ON a.dataset_id=b.dataset_id
-                      AND a.indicator_id='artif_par_habitant' AND a.territory_id=b.territory_id
-                      AND a.axis_value=b.axis_value
-                    WHERE b.territory_id=%s AND b.territory_type=%s
-                      AND b.field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant')
-                      AND (%s::text[] IS NULL OR b.groupe=ANY(%s::text[]))
-                    LIMIT %s) AS bounded_rows""",
-                    (item.target.id, item.target.type, group, group, remaining + 1)).fetchone()[0]
-                work += int(revisions)
-                if work > work_budget:
-                    raise HTTPException(413, "Typed-reading source lineage exceeds the bounded work limit")
-        return max(1, work)
-
-    @staticmethod
-    def _typed_reading_read(conn, item, resource):
-        from api.typed_reading_snapshots import typed_reading_descriptor, typed_reading_fact_fields
-
-        marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
-            FROM table_publication p LEFT JOIN table_publication t
-              ON t.table_name='territory_reference' WHERE p.table_name=%s""",
-            (resource.publication_table,)).fetchone()
-        if not marker or not marker[0]:
-            publication_unavailable("typed_reading",
-                "Typed-reading publication is unavailable or stale")
-        if not marker[1] or not marker[2] or marker[1] != marker[2]:
-            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
-        descriptor = typed_reading_descriptor(conn, resource, marker)
-        coordinates = item.coordinates or {}
-        selected_fields = set(resource.fields) if item.fields is None else set(item.fields)
-        fields = typed_reading_fact_fields(resource, item.fields)
-        clauses = ["territory_id=%s", "territory_type=%s"]
-        params = [item.target.id, item.target.type]
-        if coordinates.get("groupe"):
-            clauses.append("groupe=ANY(%s::text[])")
-            params.append(coordinates["groupe"])
-        rows = conn.execute(f"SELECT {','.join('r.' + field for field in fields)},sd.name AS registry_name,"
-            "sv.version AS registry_version,sv.reference_date AS registry_reference_date,"
-            f"sv.publication_date AS registry_publication_date FROM {resource.storage_relation} r "
-            "LEFT JOIN source_dataset sd ON sd.source_id=r.source_id "
-            "LEFT JOIN source_vintage sv ON sv.source_id=r.source_id AND sv.vintage_id=r.vintage_id WHERE " +
-            " AND ".join(clauses) + " ORDER BY groupe", params).fetchall() if fields else []
-        facts = []
-        for row in rows:
-            fact = dict(zip((*fields, "registry_name", "registry_version", "registry_reference_date",
-                             "registry_publication_date"), row))
-            source_id, vintage_id = fact.get("source_id"), fact.get("vintage_id")
-            if (not source_id or not vintage_id or not fact["registry_name"]
-                    or not fact["registry_version"]):
-                raise HTTPException(503, "Typed-reading source provenance is unavailable")
-            declared_source = descriptor.get("source") if descriptor else None
-            if declared_source and (source_id != declared_source["source_id"] or
-                                    vintage_id != declared_source["vintage_id"]):
-                raise HTTPException(503, "Typed-reading source differs from its published descriptor")
-            fact["source"] = {
-                "source_id": source_id, "name": fact.pop("registry_name"),
-                "vintage_id": vintage_id, "version": fact.pop("registry_version"),
-                "reference_date": fact.pop("registry_reference_date"),
-                "publication_date": fact.pop("registry_publication_date"),
-            }
-            facts.append(fact)
-        evidence = {}
-        for side in resource.side_relations:
-            if side["field"] not in selected_fields and side["field"] != "source_absences":
-                continue
-            side_fields = list(side["fields"])
-            side_clauses = ["r.territory_id=%s", "r.territory_type=%s"]
-            side_params = [item.target.id, item.target.type]
-            if "groupe" in side_fields and coordinates.get("groupe"):
-                side_clauses.append("r.groupe=ANY(%s::text[])")
-                side_params.append(coordinates["groupe"])
-            order = ("r.rank" if "rank" in side_fields else
-                     ",".join("r." + field for field in side_fields))
-            milieux_bindings = side["storage_relation"] == "milieux_reading_source"
-            revision_select = (",p.source_id AS population_source_id,p.vintage_id AS population_vintage_id,"
-                "p.source_name AS population_source_name,p.source_version AS population_source_version,"
-                "p.reference_date AS population_reference_date,p.publication_date AS population_publication_date,"
-                "s.source_id AS series_source_id,s.vintage_id AS series_vintage_id,"
-                "s.source_name AS series_source_name,s.source_version AS series_source_version,"
-                "s.reference_date AS series_reference_date,s.publication_date AS series_publication_date,"
-                "o.state_role AS observed_state_role,o.observation_period AS observed_period,"
-                "ARRAY(SELECT a.provenance_revision_id FROM series_observation_provenance a "
-                "WHERE a.dataset_id=r.dataset_id AND a.indicator_id='artif_par_habitant' "
-                "AND a.territory_id=r.territory_id AND a.axis_value=r.axis_value "
-                "ORDER BY a.provenance_revision_id) AS registered_revisions"
-                if milieux_bindings else "")
-            revision_joins = (" LEFT JOIN milieux_population_provenance_revision p "
-                "ON p.population_revision_id=r.population_revision_id "
-                "LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=r.provenance_revision_id "
-                "LEFT JOIN series_dataset_observation o ON o.dataset_id=r.dataset_id "
-                "AND o.indicator_id='artif_par_habitant' AND o.territory_id=r.territory_id "
-                "AND o.territory_type=r.territory_type AND o.axis_value=r.axis_value"
-                if milieux_bindings else "")
-            side_rows = conn.execute(f"SELECT {','.join('r.' + field for field in side_fields)},"
-                "sd.name AS registry_name,sv.version AS registry_version,"
-                "sv.reference_date AS registry_reference_date,sv.publication_date AS registry_publication_date" +
-                revision_select + " "
-                f"FROM {side['storage_relation']} r "
-                "LEFT JOIN source_dataset sd ON sd.source_id=r.source_id "
-                "LEFT JOIN source_vintage sv ON sv.source_id=r.source_id AND sv.vintage_id=r.vintage_id" +
-                revision_joins + " WHERE " +
-                " AND ".join(side_clauses) + f" ORDER BY {order}", side_params).fetchall()
-            side_rows_with_source = []
-            for row in side_rows:
-                extras = ["registry_name", "registry_version", "registry_reference_date",
-                          "registry_publication_date"]
-                if milieux_bindings:
-                    extras.extend([f"{prefix}_{field}" for prefix in ("population", "series")
-                                   for field in ("source_id", "vintage_id", "source_name", "source_version",
-                                                 "reference_date", "publication_date")])
-                    extras.extend(("observed_state_role", "observed_period", "registered_revisions"))
-                value = dict(zip((*side_fields, *extras), row))
-                source_id, vintage_id = value.get("source_id"), value.get("vintage_id")
-                own_name = value.get("source_name") or value.get("registry_name")
-                own_version = value.get("source_version") or value.get("registry_version")
-                if not source_id or not vintage_id or not own_name or not own_version:
-                    raise HTTPException(503, "Typed-reading evidence provenance is unavailable")
-                source = {"source_id": source_id, "name": own_name, "vintage_id": vintage_id,
-                    "version": own_version,
-                    "reference_date": (value.get("reference_date") if "reference_date" in value
-                                       else value.get("registry_reference_date")),
-                    "publication_date": (value.get("publication_date") if "publication_date" in value
-                                          else value.get("registry_publication_date"))}
-                for key in ("registry_name", "registry_version", "registry_reference_date",
-                            "registry_publication_date"):
-                    value.pop(key, None)
-                value["source"] = source
-                side_rows_with_source.append(value)
-            if milieux_bindings:
-                from api.typed_reading_snapshots import validate_milieux_source_bindings
-                validate_milieux_source_bindings(conn, side_rows_with_source, marker[1])
-                for value in side_rows_with_source:
-                    for prefix in ("population", "series"):
-                        for field in ("source_id", "vintage_id", "source_name", "source_version",
-                                      "reference_date", "publication_date"):
-                            value.pop(f"{prefix}_{field}", None)
-                    for key in ("observed_state_role", "observed_period", "registered_revisions"):
-                        value.pop(key, None)
-            evidence[side["field"]] = side_rows_with_source
-        if "source_absences" in evidence:
-            absences = evidence["source_absences"]
-            has_facts = bool(facts)
-            if not fields:
-                has_facts = conn.execute(f"SELECT 1 FROM {resource.storage_relation} WHERE " +
-                    " AND ".join(clauses) + " LIMIT 1", params).fetchone() is not None
-            if (not has_facts and len(absences) != 1) or (has_facts and absences):
-                raise HTTPException(503, "Milieux reading is missing or overlaps its source-absence evidence")
-        return {"resource": item.resource, "target": item.target.model_dump(),
-                "content_version": marker[0], "reference_content_version": marker[1],
-                **({"descriptor": descriptor} if descriptor is not None else {}), "facts": facts,
-                **{key: value for key, value in evidence.items() if key in selected_fields}}
 
     @staticmethod
     def _filter_coordinates(data, coordinates, resource):

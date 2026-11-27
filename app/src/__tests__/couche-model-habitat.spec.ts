@@ -85,33 +85,18 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
       resource('mix_logements', 'declared_profile', { axis_values: [['detail', ['principales', 'secondaires', 'vacants']]] }),
       resource('distribution_dpe', 'declared_profile', { axis_values: [['detail', ['A', 'B', 'C', 'D', 'E', 'F', 'G']]] }),
       resource('prix_m2', 'ordered_series', { map_eligible: false }),
-      resource('habitat_selected_reading', 'typed_reading', { map_eligible: null,
-        fields: ['classification', 'part_passoires', 'part_abc', 'n_dpe'], axes: ['groupe'],
-        axis_values: [['groupe', ['etat-energetique-du-parc']]] }),
     ],
   } as const
 
-  it('default = part_passoires, deduplicated with its native scalar declaration', () => {
+  it('keeps the native scalar layer without a retired reading default', () => {
     const couches = couchesDuTheme(payload, 'habitat', admission)
 
-    expect(couches.coucheParDefaut?.clef).toBe('part_passoires')
-    expect(couches.coucheParDefaut?.source).toBe('indicateur')
-    expect(couches.coucheParDefaut?.parDefaut).toBe(true)
+    expect(couches.coucheParDefaut).toBeNull()
     // une seule couche part_passoires dans la liste
     const clefs = couches.entrees.flatMap((e) =>
       e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
     )
     expect(clefs.filter((c) => c === 'part_passoires')).toHaveLength(1)
-  })
-
-  it('the remaining native numeric params become story layers under the app subgroup label', () => {
-    const couches = couchesDuTheme(payload, 'habitat', admission)
-
-    expect(couches.entrees[1]).toMatchObject({ type: 'groupe' })
-    const groupe = couches.entrees[1] as { type: 'groupe'; groupe: { libelle: string; couches: { source: string; clef: string }[] } }
-    expect(groupe.groupe.libelle).toBe('L’état énergétique du parc')
-    expect(groupe.groupe.couches.map((c) => c.clef)).toEqual(['part_abc', 'n_dpe'])
-    expect(groupe.groupe.couches.every((c) => c.source === 'histoire')).toBe(true)
   })
 
   it('excludes the prix_m2 series entirely — headline AND vintages', () => {
@@ -128,7 +113,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
     const couches = couchesDuTheme(payload, 'habitat', admission)
 
     // les groupes d'indicateurs multi-détails suivent le groupe de la Story
-    const groupes = couches.entrees.filter((e) => e.type === 'groupe').slice(1)
+    const groupes = couches.entrees.filter((e) => e.type === 'groupe')
     expect(detailsDu(groupes[0])).toEqual(['principales', 'secondaires', 'vacants'])
     expect(detailsDu(groupes[1])).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
   })
@@ -136,6 +121,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
   it('labels the default from the metadata\u2019s indicator_labels — the #200 gap is closed, never a raw key', () => {
     const couches = couchesDuTheme(payload, 'habitat', admission)
 
-    expect(couches.coucheParDefaut?.libelle).toBe('Part de passoires thermiques')
+    expect(couches.entrees.find((entry) => entry.type === 'couche' && 'clef' in entry.couche &&
+      entry.couche.clef === 'part_passoires')).toMatchObject({ type: 'couche', couche: { libelle: 'Part de passoires thermiques' } })
   })
 })

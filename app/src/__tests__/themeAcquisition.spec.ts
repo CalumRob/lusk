@@ -629,58 +629,7 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('reads typed-reading cohorts and producer-named references without inventing territory targets', async () => {
-    vi.resetModules()
-    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
-    const resources = [
-      { resource_id: 'demographie_selected_reading', theme_id: 'demographie', indicator_id: 'demographie_selected_reading',
-        label: 'Reading', unit: '', direction: 'none', allowed_levels: ['commune'], sources: ['serie_historique'],
-        shapes: ['typed_reading'], target_kinds: ['territory', 'territory_cohort'], fields: ['groupe', 'status'], intents: ['facts'] },
-      { resource_id: 'raccordement_reference', theme_id: 'mobilite', indicator_id: 'raccordement_reference',
-        label: 'Curve reference', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: ['gtfs'],
-        shapes: ['named_reference'], target_kinds: ['named_reference'], target_ids: ['bretagne_all_assessed_communes_mean'],
-        fields: ['value'], intents: ['facts'] },
-    ]
-    const requests: Array<{ items: Array<Record<string, any>> }> = []
-    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      if (String(url) === '/api/resources') return new Response(JSON.stringify({
-        contract: 'semantic-resource-catalogue-v1', resources,
-      }))
-      if (String(url) === '/api/resources/read-batch') {
-        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-        requests.push(request)
-        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2', results: request.items.map((item) => ({
-          id: item.id, resource: item.resource, status: 'available', data: { resource: item.resource, target: item.target,
-            content_version: 'v1', reference_content_version: 'reference-v1',
-            ...(item.target.kind === 'territory' ? { facts: [{ groupe: 'producer-group', status: 'measured' }] } : {}),
-            ...(item.target.kind === 'territory_cohort' ? { cohort: { territory_type: 'commune',
-              department_id: null, epci_id: null, member_count: 1, members: [{ id: '22001', type: 'commune', name: 'Focal' }],
-              reference_content_version: 'reference-v1' }, territories: [{ territory: { id: '22001', type: 'commune', name: 'Focal' },
-              facts: [{ groupe: 'producer-group', status: 'measured' }] }] } : {}),
-            ...(item.target.kind === 'named_reference' ? { reference: { id: item.target.id, label: 'Bretagne reference',
-              role: 'analytical_reference', statistic: 'mean' }, axis_values: ['t0010'], points: [
-              { axis: 't0010', status: 'measured', value: 2, provenance: [{ source_id: 'gtfs', vintage_id: 'v1',
-                source_name: 'GTFS', version: 'v1', reference_date: null, publication_date: null }] },
-            ] } : {}),
-          },
-        })) }))
-      }
-      throw new Error(`Unexpected request: ${String(url)}`)
-    }))
-    try {
-      const acquired = await acquireThemeFacts('commune', '22001', 'demographie')
-      expect(acquired.cohort_reads?.[0]?.data.target).toEqual({ kind: 'territory_cohort', type: 'commune' })
-      expect(requests.flatMap(({ items }) => items).map((item) => item.target.kind)).toEqual(['territory', 'territory_cohort'])
 
-      const mobility = await acquireThemeFacts('commune', '22001', 'mobilite')
-      const named = mobility.named_reference_reads?.[0]
-      expect(named?.data).toMatchObject({ resource: 'raccordement_reference',
-        target: { kind: 'named_reference', id: 'bretagne_all_assessed_communes_mean' },
-        reference: { id: 'bretagne_all_assessed_communes_mean', role: 'analytical_reference' } })
-      expect(requests.flatMap(({ items }) => items).some((item) => item.resource === 'raccordement_reference' &&
-        item.target.kind === 'territory')).toBe(false)
-    } finally { vi.unstubAllGlobals() }
-  })
 
   it('does not retry a hard batch failure by itself; a new acquisition reads the recovered publication', async () => {
     vi.resetModules()
@@ -893,49 +842,7 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
-  it('does not replay old cohort auxiliary data after a same-reference scalar generation change', async () => {
-    vi.resetModules()
-    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
-    const resource = {
-      resource_id: 'coherence_reading', theme_id: 'habitat', indicator_id: 'coherence_reading',
-      label: 'Lecture', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
-      shapes: ['typed_reading'], target_kinds: ['territory', 'territory_cohort'],
-      fields: ['groupe', 'status'], intents: ['facts'],
-    }
-    let version = 'reading-10cfd'
-    const batchRequests: Array<{ items: Array<Record<string, any>> }> = []
-    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      if (String(url) === '/api/resources') return new Response(JSON.stringify({
-        contract: 'semantic-resource-catalogue-v1', resources: [resource],
-      }))
-      if (String(url) !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${String(url)}`)
-      const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      batchRequests.push(request)
-      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
-        results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
-          data: { resource: item.resource, target: item.target, shape: 'typed_reading',
-            content_version: version, reference_content_version: 'reference-6fd',
-            ...(item.target.kind === 'territory_cohort'
-              ? { cohort: { territory_type: 'commune', department_id: null, epci_id: null,
-                  member_count: 1, members: [{ id: '22001', type: 'commune', name: 'Focal' }],
-                  reference_content_version: 'reference-6fd' }, territories: [] }
-              : { facts: [] }) } })) }))
-    })
-    vi.stubGlobal('fetch', fetcher)
-    try {
-      const first = await acquireThemeFacts('commune', '22001', 'habitat')
-      expect(first.cohort_reads?.[0]?.data.content_version).toBe('reading-10cfd')
-      expect(batchRequests).toHaveLength(2)
-      // The reference clock is unchanged; only the typed-reading owner
-      // generation moves. Its old auxiliary settlement must not replay.
-      version = 'reading-f4e'
-      const second = await acquireThemeFacts('commune', '22001', 'habitat')
-      expect(batchRequests).toHaveLength(4)
-      expect(second.cohort_reads?.[0]?.data.content_version).toBe('reading-f4e')
-      expect(second.cohort_reads?.[0]?.data.reference_content_version).toBe('reference-6fd')
-      expect(second.resource_reads?.[0]?.data.reference_content_version).toBe('reference-6fd')
-    } finally { vi.unstubAllGlobals() }
-  })
+
 
   it('accepts independent dataset owner versions for different declared families', async () => {
     vi.resetModules()
@@ -944,9 +851,9 @@ describe('theme acquisition cache', () => {
       { resource_id: 'coherence_scalar_owner', theme_id: 'habitat', indicator_id: 'coherence_scalar_owner',
         label: 'Scalaire', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
         shapes: ['scalar'], target_kinds: ['territory'], fields: ['value'], intents: ['facts'] },
-      { resource_id: 'coherence_reading_owner', theme_id: 'habitat', indicator_id: 'coherence_reading_owner',
-        label: 'Lecture', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
-        shapes: ['typed_reading'], target_kinds: ['territory'], fields: ['groupe'], intents: ['facts'] },
+      { resource_id: 'coherence_series_owner', theme_id: 'habitat', indicator_id: 'coherence_series_owner',
+        label: 'Série', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: [],
+        shapes: ['ordered_series'], target_kinds: ['territory'], fields: ['value'], intents: ['facts'] },
     ]
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url) === '/api/resources') return new Response(JSON.stringify({
@@ -957,7 +864,7 @@ describe('theme acquisition cache', () => {
       return new Response(JSON.stringify({ contract: 'semantic-read-batch-v2',
         results: request.items.map((item) => ({ id: item.id, resource: item.resource, status: 'available',
           data: { resource: item.resource, target: item.target,
-            content_version: item.resource === 'coherence_scalar_owner' ? 'scalar-v1' : 'reading-v1',
+            content_version: item.resource === 'coherence_scalar_owner' ? 'scalar-v1' : 'series-v1',
             reference_content_version: 'reference-6fd', value: 1, status: 'measured' } })) }))
     })
     vi.stubGlobal('fetch', fetcher)
@@ -965,7 +872,7 @@ describe('theme acquisition cache', () => {
       const acquired = await acquireThemeFacts('commune', '22001', 'habitat')
       expect(acquired.resource_reads?.map((read) => [read.resource, read.data.content_version])).toEqual([
         ['coherence_scalar_owner', 'scalar-v1'],
-        ['coherence_reading_owner', 'reading-v1'],
+        ['coherence_series_owner', 'series-v1'],
       ])
     } finally { vi.unstubAllGlobals() }
   })
@@ -1403,17 +1310,17 @@ describe('theme acquisition cache', () => {
   })
 
   it('retries a failed auxiliary comparison without reacquiring focal facts', async () => {
-    const facts = vi.fn(async () => ({ theme_id: 'milieux' as const, resource_reads: [], cohort_error: true,
-      default_comparison: { theme_id: 'milieux' as const, comparison_reads: [] } }))
-    const comparisons = vi.fn(async () => ({ theme_id: 'milieux' as const, comparison_reads: [], cohort_reads: [] }))
+    const facts = vi.fn(async () => ({ theme_id: 'milieux' as const, resource_reads: [], comparison_error: true,
+      default_comparison: { theme_id: 'milieux' as const, comparison_reads: [], comparison_error: true } }))
+    const comparisons = vi.fn(async () => ({ theme_id: 'milieux' as const, comparison_reads: [] }))
     const cache = new ThemeAcquisitionCache(facts, comparisons)
     const initial = await cache.get('commune', '22001', 'milieux')
-    expect(initial.comparisons.get('omitted')?.cohort_error).toBe(true)
-    const retried = await cache.select('commune', '22001', 'milieux', undefined)
+    expect(initial.comparisons.get('omitted')?.comparison_error).toBe(true)
+    const retried = await cache.retryComparison('commune', '22001', 'milieux', undefined, [])
     expect(comparisons).toHaveBeenCalledTimes(1)
     expect(facts).toHaveBeenCalledTimes(1)
     expect(retried.focal).toBe(initial.focal)
-    expect(retried.comparisons.get('omitted')?.cohort_error).not.toBe(true)
+    expect(retried.comparisons.get('omitted')?.comparison_error).not.toBe(true)
   })
 
   it('requires each native comparison to match its own focal publication and territory-reference token', () => {

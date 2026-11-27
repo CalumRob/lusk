@@ -16,10 +16,8 @@ import {
   chargerAvec,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
-  histoiresMilieuxFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
-  indicateursMilieuxFixture,
   membresProgrammesFixture,
   metadonneesThemesFixtures,
   subventionsProgrammesFixture,
@@ -31,7 +29,7 @@ import { invalidateSemanticReads } from '../payload/semanticResourceClient'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Fichier } from '../payload/loader'
 import { THEMES_CANONIQUES } from '../payload/types'
-import type { Histoire, HistoireDemographie, HistoireMilieux, Indicateur, MembreProgramme, Payload, SubventionProgramme, Theme } from '../payload/types'
+import type { Indicateur, MembreProgramme, Payload, SubventionProgramme, Theme } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 import { THEME_METADATA_CHARGER_KEY } from '../payload/themeCatalogue'
@@ -44,9 +42,9 @@ import { nativeResources } from './helpers/semanticApiFixtures'
 // These ids keep the browser proof bounded; every declaration fact comes from
 // the producer-derived API discovery fixture below.
 const resourceIds: Record<string, readonly string[]> = {
-  demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages', 'demographie_selected_reading'],
-  habitat: ['habitat_selected_reading'],
-  milieux: ['milieux_selected_reading'],
+  demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
+  habitat: ['part_passoires', 'distribution_dpe'],
+  milieux: [],
   programmes: ['couverture_programmes', 'subventions_annuelles', 'subventions_par_domaine'],
 }
 const mapMetadataPreload = new Map<string, Record<string, any>>()
@@ -189,8 +187,7 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
       for (const item of body.items) {
         const theme = String(item.resource).startsWith('demographie_') || item.resource === 'densite' ||
           item.resource === 'evolution_1968' || item.resource === 'taille_menages' || item.resource === 'structure_age'
-          ? 'demographie' : item.resource === 'habitat_selected_reading' ? 'habitat'
-            : item.resource === 'milieux_selected_reading' ? 'milieux' : 'programmes'
+          ? 'demographie' : 'programmes'
         const resource = (await declarations(theme)).find((entry) => entry.resource_id === item.resource)!
         const metadata = await loadProducerMetadata(theme)
         const type = item.target.type as string
@@ -266,15 +263,6 @@ async function fetchCarteApiFixture(p: Payload, usePublishedTerritoryReference =
               cells: rows.filter((row) => row.territoire === territory.territoire).map((row) => ({ detail: row.detail,
                 sex: row.sex ?? null, unit: row.unit, denominator_semantics: 'fixture', status: row.fact_status ?? 'measured',
                 value: row.value, sources: [source(row)] })) })) }
-        } else if (resource.shapes[0] === 'typed_reading') {
-          const readings = p.histoires.filter((row: any) => row.theme === theme && row.type === type)
-          const story = metadata.subgroups.find((group: any) => group.reading)?.reading
-          data = { ...identity, descriptor: resource.resource_id === 'demographie_selected_reading'
-            ? { rate_unit: '‰/an' } : undefined, territories: members.map((territory) => ({ territory: { id: territory.territoire,
-            type, name: territory.nom }, facts: readings.filter((row: any) => row.territoire === territory.territoire)
-              .map((row: any) => ({ groupe: row.groupe ?? story?.story_key, story_key: story?.story_key,
-                status: row.status ?? 'measured', ...Object.fromEntries((story?.params ?? []).filter((key: string) => typeof row[key] === 'number')
-                  .map((key: string) => [key, row[key]])), source: source(row) })) })) }
         } else if (resource.shapes[0] === 'anchored_membership') {
           // #893 — les adhésions servies par l'API sont les lignes
           // couverture_programmes du thème (plus aucun programmes.json)
@@ -611,7 +599,9 @@ describe('CarteView — la carte avec fond publié', () => {
     const layers = wrapper.findAll('.carte-sidebar-couche')
     expect(layers.length).toBeGreaterThan(0)
     expect(layers.map((layer) => layer.text())).toContain('Densité de population')
-    expect(layers.map((layer) => layer.text())).toContain('Fait disponible')
+    expect(layers.map((layer) => layer.text())).not.toContain('Fait disponible')
+    await layers.find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
     const map = maplibreMock.instancesCarteMaple.at(-1)
     const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
       { features: { properties: { territoire: string; valeur: number | null } }[] }
@@ -635,7 +625,6 @@ describe('CarteView — la carte avec fond publié', () => {
         rejectMetadataRetry = reject
       })
       const metadata = structuredClone(metadonneesThemesFixtures[theme])
-      if (theme === 'demographie') metadata.param_labels.taux_solde_naturel = 'Libellé récupéré du solde naturel'
       return Promise.resolve(metadata)
     })
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie', chargerMetadata, apiFetchImpl: apiFetch })
@@ -643,7 +632,7 @@ describe('CarteView — la carte avec fond publié', () => {
 
     expect(wrapper.find('[data-testid="map-metadata-error"]').text())
       .toContain('Les couches et leurs valeurs natives restent affichées.')
-    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text())).toContain('Fait disponible')
+    expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text())).toContain('Densité de population')
     const densite = wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))!
     await densite.trigger('click')
     const beforeRetryReads = requests.filter((url) => url === '/api/resources' || url === '/api/resources/read-batch')
@@ -693,7 +682,7 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(success.attributes('aria-live')).toBe('polite')
     expect(document.activeElement).toBe(success.element)
     expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
-      .toContain('Libellé récupéré du solde naturel')
+      .toContain('Densité de population')
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
     wrapper.unmount()
@@ -745,7 +734,7 @@ describe('CarteView — la carte avec fond publié', () => {
       resolveFormerTheme = resolve
     })
     const habitatMetadata = structuredClone(metadonneesThemesFixtures.habitat)
-    habitatMetadata.param_labels.part_passoires = 'Libellé actuel de la part de passoires'
+    habitatMetadata.indicator_labels.part_passoires = 'Ancien libellé de la part de passoires'
     const chargerMetadata = vi.fn((theme: Theme) =>
       theme === 'demographie' ? formerThemeMetadata : Promise.resolve(habitatMetadata))
     const apiPayload: Payload = { ...payload,
@@ -758,87 +747,21 @@ describe('CarteView — la carte avec fond publié', () => {
     await habitat.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
-      .toContain('Libellé actuel de la part de passoires')
+      .toContain('Part de passoires thermiques')
 
     resolveFormerTheme(metadonneesThemesFixtures.demographie)
     await flushPromises()
 
     expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
-      .toContain('Libellé actuel de la part de passoires')
+      .toContain('Part de passoires thermiques')
     expect(wrapper.findAll('.carte-sidebar-couche').map((layer) => layer.text()))
-      .not.toContain('Fait disponible')
+      .not.toContain('Ancien libellé de la part de passoires')
     wrapper.unmount()
   })
 
-  it('keeps typed-reading map layers when every native reading is unavailable', async () => {
-    const baseFetch = await fetchCarteApiFixture(payload)
-    const apiFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const response = await baseFetch(input, init)
-      if (String(input) !== '/api/resources/read-batch') return response
-      const body = await response.json() as { results: Array<{ resource: string; data: Record<string, any> }> }
-      for (const result of body.results) {
-        if (result.resource !== 'demographie_selected_reading') continue
-        for (const territory of result.data.territories as Array<{ facts: Array<Record<string, any>> }>) {
-          territory.facts = territory.facts.map((fact) => ({
-            groupe: fact.groupe,
-            story_key: 'identite-de-lecture-native',
-            status: 'unavailable',
-            source: fact.source,
-          }))
-        }
-      }
-      return new Response(JSON.stringify(body))
-    })
-    const { wrapper } = await monter({ chemin: '/carte?theme=demographie', apiFetchImpl: apiFetch })
 
-    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
-    const map = maplibreMock.instancesCarteMaple.at(-1)
-    const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
-      { features: { properties: { territoire: string; valeur: number | null } }[] }
-    expect(joined.features.find((feature) => feature.properties.territoire === '22001')?.properties.valeur).toBeNull()
-    expect(joined.features.every((feature) => feature.properties.valeur === null)).toBe(true)
-    wrapper.unmount()
-  })
 
-  it('renders the populated native Milieux trajectory reading as a selectable map layer', async () => {
-    const apiPayload: Payload = { ...payload,
-      indicateurs: [...indicateursDemographieFixture, ...indicateursMilieuxFixture],
-      histoires: [...histoiresDemographieFixture, ...histoiresMilieuxFixture],
-    }
-    const baseFetch = await fetchCarteApiFixture(apiPayload)
-    const readingBatches: Array<Array<{ resource: string; fields: string[] }>> = []
-    const apiFetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === '/api/resources/read-batch') {
-        const body = JSON.parse(String(init?.body)) as { items: Array<{ resource: string; fields: string[] }> }
-        readingBatches.push(body.items)
-      }
-      return baseFetch(input, init)
-    })
-    const { wrapper } = await monter({ chemin: '/carte?theme=milieux', apiPayload, apiFetchImpl })
 
-    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
-    const layer = wrapper.findAll('.carte-sidebar-couche')
-      .find((button) => button.text().trim() === 'Trajectoire par habitant')
-    expect(layer).toBeDefined()
-    expect(readingBatches.flat().find((item) => item.resource === 'milieux_selected_reading')?.fields)
-      .toContain('trajectoire_artif_par_habitant')
-
-    await layer!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Trajectoire par habitant')
-    const map = maplibreMock.instancesCarteMaple.at(-1)
-    const joined = map?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as
-      { features: { properties: { territoire: string; valeur: number | null } }[] }
-    const expected = histoiresMilieuxFixture.find((history): history is HistoireMilieux =>
-      history.theme === 'milieux' && history.territoire === '22001')!
-      .trajectoire_artif_par_habitant
-    expect(joined.features.find((feature) => feature.properties.territoire === '22001')?.properties.valeur)
-      .toBe(expected)
-    wrapper.unmount()
-  })
 
   it('does not let stale catalogue policy or labels override native layer admission', async () => {
     const stale = structuredClone(metadonneesThemesFixtures.demographie)
@@ -878,7 +801,7 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(wrapper.find('.carte-legendes-masques').text()).toContain('Communes')
   })
 
-  it('selecting a theme writes ?theme= and drives the legend with its default (story) layer', async () => {
+  it('selecting a theme writes ?theme= and admits its native layers', async () => {
     const { router, wrapper } = await monter()
 
     const demographie = wrapper.findAll('[role="tab"]').find((o) => o.text().includes('Démographie'))
@@ -886,25 +809,29 @@ describe('CarteView — la carte avec fond publié', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    // la couche par défaut du thème — le premier scalaire de Story (ADR-0019 α)
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
     expect(wrapper.find('.carte--theme-demographie').exists()).toBe(true)
   })
 
   it('an absent ?theme= in the URL selects the theme when it is in the payload', async () => {
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
 
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
   })
 
-  it('the sidebar lists the theme’s layers — the default story layer active', async () => {
+  it('the sidebar lists the theme’s native layers', async () => {
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
 
     const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
-    expect(couches[0]).toBe('Solde naturel (‰/an)')
-    expect(couches).toContain('Densité de population')
+    expect(couches[0]).toBe('Densité de population')
     expect(couches).toContain('Moins de 15 ans')
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
   })
 
   it('clicking a layer in the sidebar switches the map + legend (in-memory state)', async () => {
@@ -1128,14 +1055,16 @@ describe('CarteView — la légende suit l’échelle du niveau actif (ADR-0019,
       chargerGeometrie: async () => masquesNiveauxComplets,
     })
 
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
 
-    const estDemographie = (h: Histoire): h is HistoireDemographie => h.theme === 'demographie'
-    const valeursDuNiveau = (type: string) =>
-      histoiresDemographieFixture
-        .filter((h): h is HistoireDemographie => h.type === type && estDemographie(h))
-        .map((h) => h.taux_solde_naturel)
-    const toutesLignes = histoiresDemographieFixture.filter(estDemographie).map((h) => h.taux_solde_naturel)
+    const valeursDuNiveau = (type: string) => indicateursDemographieFixture
+      .filter((row) => row.type === type && row.key === 'densite')
+      .flatMap((row) => row.value === null ? [] : [row.value])
+    const toutesLignes = indicateursDemographieFixture
+      .filter((row) => row.key === 'densite')
+      .flatMap((row) => row.value === null ? [] : [row.value])
 
     expect(wrapper.findComponent({ name: 'MapLegend' }).props('seuils')).toEqual(
       echelleValeurs(valeursDuNiveau('commune')).seuils,
@@ -1300,13 +1229,15 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     })
 
     // Le thème canonique est admis immédiatement (la présence est produit,
-    // pas lignes de faits) : l'URL est conservée et la couche par défaut du
-    // thème (le premier scalaire de Story) est servie par l'API.
+    // pas lignes de faits) : l'URL est conservée et les couches natives
+    // du thème sont admises par l'API.
     expect(router.currentRoute.value.query.theme).toBe('demographie')
     expect(demandes).not.toContain('indicateurs_demographie')
     expect(demandes).not.toContain('histoires_demographie')
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
   })
 
   it('l’onglet programmes est piloté par l’acquisition API native — le magasin ne demande JAMAIS programmes.json (#893)', async () => {
@@ -1378,7 +1309,9 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Retry ne refetch que l'échoué → la carte remonte, le thème demandé rend.
     expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
   })
 
   it('un thème non canonique demandé est nettoyé de l’URL (la normalisation d’avant, toujours en vie)', async () => {
@@ -1478,7 +1411,9 @@ describe('CarteView — #901 : onglets + admission ?theme= depuis le REGISTRE TH
     await wrapper.find('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    await wrapper.findAll('.carte-sidebar-couche').find((layer) => layer.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
     expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).not.toBeNull()
     expect(fichiersNumeriques(demandes)).toEqual([])
   })

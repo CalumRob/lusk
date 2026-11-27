@@ -155,7 +155,11 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
         pub.execute(f'CREATE SCHEMA "{schema}"')
         try:
             pub.execute(f'SET search_path TO "{schema}"')
-            pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
+            # This proof replays historical 017/018/030 DDL, including the
+            # pre-049 profile comparison singleton. Pin its reviewed schema.
+            pub.execute(subprocess.check_output(
+                ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+                cwd=root, text=True, encoding="utf-8"))
             completed = subprocess.run(
                 ["Rscript", "scripts/smoke-programme-postgres.R", schema],
                 cwd=root / "pipeline", env=smoke_env, capture_output=True,

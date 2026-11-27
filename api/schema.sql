@@ -2,14 +2,14 @@
 -- explicit operator migration procedure in README-deploy.md instead.
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
-        'territory_reference', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary')),
+        'territory_reference', 'ordered_series', 'aedar_territorial_aggregate', 'aedar_territory_summary')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     aedar_source_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate','aedar_territory_summary') OR reference_content_version IS NOT NULL),
+      CHECK (table_name NOT IN ('ordered_series','aedar_territorial_aggregate','aedar_territory_summary') OR reference_content_version IS NOT NULL),
     CONSTRAINT aedar_summary_publication_requires_source CHECK (
       (table_name='aedar_territory_summary' AND aedar_source_content_version IS NOT NULL AND length(aedar_source_content_version)>0)
       OR (table_name<>'aedar_territory_summary' AND aedar_source_content_version IS NULL))
@@ -241,17 +241,8 @@ FOR EACH ROW EXECUTE FUNCTION assert_scalar_territory_update();
 
 -- Fixed-context scalar comparisons are computed by R from canonical scalar
 -- facts. Group statistics and territory-specific rank/tie results keep their
--- distinct grains and share one publication dependency marker.
-CREATE TABLE scalar_comparison_publication (
-    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-    content_version text NOT NULL,
-    scalar_content_version text NOT NULL,
-    reference_content_version text NOT NULL,
-    group_row_count integer NOT NULL CHECK (group_row_count >= 0),
-    territory_row_count integer NOT NULL CHECK (territory_row_count >= 0),
-    lineage_row_count integer NOT NULL CHECK (lineage_row_count >= 0),
-    published_at timestamptz NOT NULL DEFAULT now()
-);
+-- distinct grains and use the per-resource comparison marker.
+
 CREATE TABLE scalar_comparison_group (
     comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
@@ -304,22 +295,13 @@ CREATE TABLE comparison_source_lineage (
     PRIMARY KEY (comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id),
     FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
 );
-GRANT SELECT ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_publisher;
+GRANT SELECT ON scalar_comparison_group,scalar_comparison_territory TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON scalar_comparison_group,scalar_comparison_territory TO lusk_publisher;
 GRANT SELECT ON comparison_source_lineage TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON comparison_source_lineage TO lusk_publisher;
 
 -- Detail-backed declared profile facets only. Scalar-backed profiles (notably
 -- DPE) continue to reference scalar_comparison and are never copied here.
-CREATE TABLE profile_comparison_publication (
-    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-    content_version text NOT NULL,
-    profile_content_version text NOT NULL,
-    reference_content_version text NOT NULL,
-    group_row_count integer NOT NULL CHECK (group_row_count >= 0),
-    territory_row_count integer NOT NULL CHECK (territory_row_count >= 0),
-    published_at timestamptz NOT NULL DEFAULT now()
-);
 CREATE TABLE profile_comparison_group (
     comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level','littoral')),
     group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
@@ -357,8 +339,8 @@ CREATE TABLE profile_comparison_territory (
     CHECK ((status='measured' AND rank IS NOT NULL AND tie_count IS NOT NULL AND rank_size IS NOT NULL) OR (status<>'measured' AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)),
     CHECK (status<>'measured' OR (rank<=rank_size AND tie_count<=rank_size))
 );
-GRANT SELECT ON profile_comparison_publication,profile_comparison_group,profile_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON profile_comparison_publication,profile_comparison_group,profile_comparison_territory TO lusk_publisher;
+GRANT SELECT ON profile_comparison_group,profile_comparison_territory TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON profile_comparison_group,profile_comparison_territory TO lusk_publisher;
 
 -- ADR-0038 declared series grain. Missing years are represented by omission;
 -- a present row with status='missing' is an explicit unavailable point.
@@ -787,114 +769,6 @@ CREATE CONSTRAINT TRIGGER series_observation_provenance_required
   AFTER INSERT OR UPDATE ON series_named_reference DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION validate_series_named_reference_provenance();
 
--- Selected demographic reading facts have their own narrow typed grain.
-CREATE TABLE demographic_reading_descriptor (
-  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL,
-  source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL, rate_unit text NOT NULL,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
-);
-CREATE UNIQUE INDEX territory_reference_id_type_unique ON territory_reference(territory_id,territory_type);
-CREATE TABLE demographic_typed_reading (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL, periode text,
-  solde_naturel double precision, solde_migratoire double precision,
-  taux_solde_naturel double precision, taux_solde_migratoire double precision, classification text,
-  status text NOT NULL CHECK(status IN ('measured','unavailable')), source_id text NOT NULL, vintage_id text NOT NULL,
-  PRIMARY KEY(territory_id,territory_type,groupe),
-  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
-  CHECK ((status='measured') = (periode IS NOT NULL AND solde_naturel IS NOT NULL AND solde_migratoire IS NOT NULL AND
-    taux_solde_naturel IS NOT NULL AND taux_solde_migratoire IS NOT NULL AND classification IS NOT NULL)),
-  CHECK (solde_naturel IS NULL OR solde_naturel NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
-  CHECK (solde_migratoire IS NULL OR solde_migratoire NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
-  CHECK (taux_solde_naturel IS NULL OR taux_solde_naturel NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
-  CHECK (taux_solde_migratoire IS NULL OR taux_solde_migratoire NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
-);
-CREATE TABLE selected_reading_descriptor (
-  theme_id text PRIMARY KEY CHECK(theme_id IN ('habitat')),
-  descriptor_version text NOT NULL, source_id text NOT NULL REFERENCES source_dataset(source_id),
-  vintage_id text NOT NULL, linked_content_version text NOT NULL,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
-CREATE TABLE selected_reading_publication (
-  theme_id text PRIMARY KEY REFERENCES selected_reading_descriptor(theme_id) ON DELETE CASCADE,
-  content_version text NOT NULL, reference_content_version text NOT NULL,
-  row_count integer NOT NULL CHECK(row_count>0), published_at timestamptz NOT NULL DEFAULT now());
-CREATE TABLE habitat_typed_reading (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
-  classification text, part_passoires double precision, part_abc double precision, n_dpe bigint,
-  status text NOT NULL CHECK(status IN ('measured','suppressed','unavailable')),
-  source_id text NOT NULL, vintage_id text NOT NULL,
-  PRIMARY KEY(territory_id,territory_type,groupe),
-  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
-  CHECK ((status='measured') = (classification IS NOT NULL AND part_passoires IS NOT NULL AND part_abc IS NOT NULL AND n_dpe IS NOT NULL)),
-  CHECK (status <> 'suppressed' OR (part_passoires IS NULL AND part_abc IS NULL)),
-  CHECK (part_passoires IS NULL OR part_passoires BETWEEN 0 AND 1), CHECK(part_abc IS NULL OR part_abc BETWEEN 0 AND 1),
-  CHECK(n_dpe IS NULL OR n_dpe>=0));
-CREATE TABLE economy_typed_reading (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
-  status text NOT NULL CHECK(status IN ('measured','unavailable')), source_id text NOT NULL, vintage_id text NOT NULL,
-  PRIMARY KEY(territory_id,territory_type,groupe),
-  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
-CREATE TABLE economy_activity_evidence (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  groupe text NOT NULL, rank smallint NOT NULL CHECK(rank BETWEEN 1 AND 5), activity_code text NOT NULL,
-  activity_label text NOT NULL, lq double precision NOT NULL CHECK(lq>=0), establishment_count bigint NOT NULL CHECK(establishment_count>=0),
-  park_share double precision, source_id text NOT NULL, vintage_id text NOT NULL,
-  PRIMARY KEY(territory_id,territory_type,groupe,rank),
-  FOREIGN KEY(territory_id,territory_type,groupe) REFERENCES economy_typed_reading(territory_id,territory_type,groupe) ON DELETE CASCADE,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
-  CHECK(park_share IS NULL OR park_share BETWEEN 0 AND 1));
-CREATE TABLE milieux_typed_reading (
- territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
- groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
- periode_pop text, periode_artif text, delta_population double precision,
- taux_variation_population double precision, artif_m2_par_habitant double precision,
- artif_m3_par_habitant double precision, trajectoire_artif_par_habitant double precision,
- classification text, status text NOT NULL CHECK(status IN ('measured','unavailable')),
- source_id text NOT NULL, vintage_id text NOT NULL,
- PRIMARY KEY(territory_id,territory_type,groupe),
- FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
- CHECK ((status='measured') = (periode_pop IS NOT NULL AND periode_artif IS NOT NULL AND classification IS NOT NULL)));
-CREATE TABLE milieux_population_provenance_revision (
- population_revision_id text PRIMARY KEY,
- source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL,
- dataset_name text NOT NULL, source_version text NOT NULL,
- reference_date date, publication_date date, revision_hash text NOT NULL,
- UNIQUE(source_id,vintage_id,revision_hash));
-CREATE FUNCTION reject_milieux_population_provenance_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN RAISE EXCEPTION 'Milieux population provenance revisions are immutable'; END $$;
-CREATE TRIGGER milieux_population_provenance_immutable BEFORE UPDATE OR DELETE ON milieux_population_provenance_revision
- FOR EACH ROW EXECUTE FUNCTION reject_milieux_population_provenance_mutation();
-CREATE TABLE milieux_reading_source (
- territory_id text NOT NULL, territory_type text NOT NULL, groupe text NOT NULL,
- field_key text NOT NULL CHECK(field_key IN ('population','artif_m2_par_habitant','artif_m3_par_habitant')),
- source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL, source_version text NOT NULL,
- reference_date date, publication_date date, observation_period text,
- dataset_id text, dataset_content_version text, state_role text, axis_value text,
- provenance_revision_id text REFERENCES series_provenance_revision(provenance_revision_id),
- population_revision_id text REFERENCES milieux_population_provenance_revision(population_revision_id),
- PRIMARY KEY(territory_id,territory_type,groupe,field_key,source_id,vintage_id),
- FOREIGN KEY(territory_id,territory_type,groupe) REFERENCES milieux_typed_reading(territory_id,territory_type,groupe) ON DELETE CASCADE,
- FOREIGN KEY(dataset_id) REFERENCES series_dataset_publication(dataset_id),
- CHECK ((field_key='population' AND dataset_id IS NULL AND dataset_content_version IS NULL AND state_role IS NULL AND provenance_revision_id IS NULL AND population_revision_id IS NOT NULL)
-      OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
-CREATE TABLE milieux_reading_absence (
- territory_id text NOT NULL, territory_type text NOT NULL CHECK (territory_type='commune'),
- reason text NOT NULL CHECK (reason='source_record_absent'), source_id text NOT NULL, vintage_id text NOT NULL,
- source_snapshot_sha256 text NOT NULL CHECK (source_snapshot_sha256 ~ '^[0-9a-f]{64}$'),
- PRIMARY KEY (territory_id,territory_type),
- FOREIGN KEY (territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
- FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
-GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
-GRANT SELECT ON milieux_reading_absence TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_reading_absence TO lusk_publisher;
-GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;
-GRANT SELECT,INSERT ON milieux_population_provenance_revision TO lusk_publisher;
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.
 CREATE TABLE observed_collection_publication (
   indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
@@ -1412,9 +1286,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON resource_publication,
 GRANT SELECT, INSERT ON resource_publication_event TO lusk_publisher;
 REVOKE UPDATE, DELETE, TRUNCATE ON resource_publication_event FROM lusk_publisher;
 
--- Per-resource declared-profile comparison marker (migration 047, #1138).
--- Expand phase: coexists with the global profile_comparison_publication
--- singleton until the step-4 reader cutover.
+-- Per-resource declared-profile comparison marker (migration 047, #1138),
+-- retained as the authoritative profile comparison clock after migration 049.
 CREATE TABLE profile_resource_comparison_publication (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
     content_version text NOT NULL,

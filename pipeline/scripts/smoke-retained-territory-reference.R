@@ -27,42 +27,12 @@ adapter <- territory_reference_postgres_adapter(con)
 first <- publish_territory_reference_projection(projection, adapter)
 second <- publish_territory_reference_projection(projection, adapter)
 stopifnot(isTRUE(first$changed), !isTRUE(second$changed), !isTRUE(second$rebound))
-artifact_dir <- tempfile("retained-scalar-artifacts-"); dir.create(artifact_dir)
-for (owner in retained_scalar_artifact_owners()) {
-  source <- file.path(canonical_dir,"scalar-serving",owner)
-  if (!file.exists(file.path(source,"scalar-current.json")))
-    stop("Current retained scalar serving artifact is missing for owner ",owner,call.=FALSE)
-  destination <- file.path(artifact_dir,"scalar-serving")
-  if (!dir.exists(destination)) dir.create(destination)
-  if (!file.copy(source,destination,recursive=TRUE))
-    stop("Could not stage retained scalar serving artifact for owner ",owner,call.=FALSE)
-}
-snapshot <- project_retained_scalar_snapshot(canonical_dir, projection, artifact_dir)
-published <- publish_retained_scalar_snapshot(con, snapshot, artifact_dir)
-retried <- publish_retained_scalar_snapshot(con, snapshot, artifact_dir)
-stopifnot(isTRUE(published$scalar$changed), isTRUE(published$comparison$changed),
-  !isTRUE(retried$scalar$changed), !isTRUE(retried$comparison$changed))
 marker <- DBI::dbGetQuery(con, "SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='territory_reference'")
 actual <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,name FROM territory_reference ORDER BY territory_type,territory_id")
-scalar_marker <- DBI::dbGetQuery(con, "SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='scalar_observation'")
-scalar_descriptors <- DBI::dbGetQuery(con, "SELECT indicator_id FROM scalar_descriptor ORDER BY indicator_id")$indicator_id
-comparison_marker <- DBI::dbGetQuery(con, "SELECT content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count FROM scalar_comparison_publication WHERE singleton")
 stopifnot(nrow(marker)==1L, marker$row_count[[1L]]==nrow(territories),
   marker$content_version[[1L]]==projection$content_version,
   marker$reference_content_version[[1L]]==projection$content_version,
-  nrow(scalar_marker)==1L, scalar_marker$row_count[[1L]]==nrow(snapshot$scalar$facts),
-  scalar_marker$content_version[[1L]]==scalar_content_version(snapshot$scalar),
-  scalar_marker$reference_content_version[[1L]]==projection$content_version,
-  setequal(scalar_descriptors, snapshot$scalar$descriptors$indicator_id),
-  !any(grepl("^(share_|iso_|nb_buildings|tot_loss|avg_div|avg_tot)", scalar_descriptors)),
-  nrow(comparison_marker)==1L,
-  comparison_marker$content_version[[1L]]==snapshot$comparison$content_version,
-  comparison_marker$reference_content_version[[1L]]==projection$content_version,
-  comparison_marker$scalar_content_version[[1L]]==scalar_content_version(snapshot$scalar),
-  comparison_marker$group_row_count[[1L]]==nrow(snapshot$comparison$groups),
-  comparison_marker$territory_row_count[[1L]]==nrow(snapshot$comparison$territories),
   nrow(actual)==nrow(territories),
   all(is.na(DBI::dbGetQuery(con, "SELECT to_regclass('service_registry') AS x")$x)))
-unlink(artifact_dir, recursive=TRUE)
 DBI::dbDisconnect(con)
-cat("retained territory reference, exact scalar facts and comparison published/no-op retried against fresh schema\n")
+cat("retained territory reference published/no-op retried against fresh schema\n")

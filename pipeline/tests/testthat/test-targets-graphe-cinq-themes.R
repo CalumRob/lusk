@@ -173,7 +173,7 @@ test_that("la sélection partielle du cron ne câble aucune cible de modèle de 
     )
   }
   expect_true(all(c("fusion_vintages", "scalar_serving_artifacts",
-                    "profile_serving_artifacts", "typed_reading_serving_artifacts",
+                    "profile_serving_artifacts",
                     "geometrie") %in% noms))
   # la publication Programmes reste réservée au run complet (sélection vide)
   expect_false("projection_programmes" %in% noms)

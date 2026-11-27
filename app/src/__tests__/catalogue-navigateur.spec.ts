@@ -29,7 +29,6 @@ const CHAMPS_HORS_NAVIGATEUR = [
   'story_keys',
   'observed_collection_contracts',
   'indicator_directions',
-  'selected_reading_contract',
   'comparison_scopes',
   'building_comparison',
   'service_share_scalar',
@@ -72,10 +71,9 @@ describe('catalogue navigateur servi (#868) — projection réduite, canon compl
     expect(Array.isArray(canon.story_keys)).toBe(true)
     expect('source_records' in canon).toBe(true)
     expect('subgroups' in canon).toBe(true)
-    // semantic_resources / observed_collection_contracts restent côté producteur quand déclarés
-    if (theme !== 'mobilite' && theme !== 'programmes') {
-      expect('semantic_resources' in canon).toBe(true)
-    }
+    // Typed-reading retirement removed the former selected-reading declarations;
+    // the producer canon must not silently recreate an empty or populated block.
+    expect(canon.semantic_resources ?? []).toEqual([])
     if (theme === 'programmes') {
       expect('observed_collection_contracts' in canon).toBe(true)
     }

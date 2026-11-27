@@ -11,6 +11,9 @@ from api.scripts.generate_endpoint_inventory import (
 
 ENDPOINTS = Path(__file__).parents[1] / "ENDPOINTS.md"
 BATCH_CONTRACT = Path(__file__).parents[1] / "batch-read-contract.md"
+FIELD_SELECTION = Path(__file__).parents[1] / "field-selection-contract.md"
+INTEGRATION_README = Path(__file__).parents[1] / "tests/integration/README.md"
+SCHEMA = Path(__file__).parents[1] / "schema.sql"
 
 
 def test_public_docs_and_openapi_are_database_free_and_api_prefixed():
@@ -82,6 +85,20 @@ def test_endpoint_reference_pins_public_per_resource_versions():
     assert "A batch may return different versions for different resources" in endpoints
     assert "`profile_content_versions`" not in endpoints
     assert "`scalar_content_versions`" not in endpoints
+
+
+def test_retired_typed_readings_are_not_advertised_as_active_contracts():
+    for document in (ENDPOINTS, BATCH_CONTRACT, FIELD_SELECTION):
+        text = document.read_text(encoding="utf-8")
+        assert "`typed_reading`" not in text, document
+        assert "typed-reading" not in text, document
+        assert "selected-reading" not in text, document
+    integration = INTEGRATION_README.read_text(encoding="utf-8")
+    assert "LUSK_MILIEUX_CONSO_SOURCE" not in integration
+    assert "LUSK_MILIEUX_PROCESSED_WINDOW" not in integration
+    schema = SCHEMA.read_text(encoding="utf-8")
+    assert "coexists with the global profile_comparison_publication" not in schema
+    assert "authoritative profile comparison clock after migration 049" in schema
 
 
 def test_endpoint_request_inventory_is_deterministic():

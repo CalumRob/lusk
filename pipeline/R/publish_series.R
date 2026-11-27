@@ -1075,6 +1075,14 @@ publish_owned_series_projection <- function(projection, db) {
     content_version=result$content_version, dataset_id=dataset))
 }
 
+# The OCS-GE state series remains a retained owned-series resource. Its canonical
+# publication is owned solely by the retained series adapter.
+publish_canonical_milieux_state_series <- function(con, sortie="../public/data") {
+  projection <- read_owned_series_artifact(
+    file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
+  publish_owned_series_projection(projection, owned_series_postgres_adapter(con))
+}
+
 # Fingerprint all authoritative inputs on both sides of one read window. This
 # detects persistent concurrent replacements; it is not an atomic build lock.
 read_stable_series_artifacts <- function(paths, reader) {

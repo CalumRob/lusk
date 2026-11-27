@@ -4,7 +4,7 @@ import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
 import { THEMES_METHODES } from '../methodes/indicateurs'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+import { lignesAvecComparaisonApi, semanticComparisonForTheme,
   themeFactsEnvelopeFromSemantic, themeFactsRowsFromApi, themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import { projectRaccordementSemanticReads } from '../payload/raccordementSemanticProjection'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
@@ -27,10 +27,6 @@ function faitsHabitat(champs: Record<string, unknown> = {}) {
     indicators: [], readings: [],
     ...champs,
   }
-}
-
-function faitsMilieux(champs: Record<string, unknown> = {}) {
-  return { ...faitsHabitat(), theme_id: 'milieux', ...champs }
 }
 
 const sources = () => [{
@@ -320,246 +316,19 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(defaultComparison?.scope).toMatchObject({ kind: 'density_class' })
   })
 
-  it('retains valid Milieux cloud points alongside explicit source-absence evidence', () => {
-    const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Absent peer' }]
-    const declaration = nativeResources('milieux').find((resource) => resource.resource_id === 'artif_par_habitant')!
-    const fact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
-      periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
-      artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
-    const absence = { territory_id: '2', territory_type: 'commune', reason: 'source_record_absent',
-      source_id: 'conso', vintage_id: '2025', source_snapshot_sha256: 'a'.repeat(64) }
-    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
-      declaration, shapes: declaration.shapes, data: {
-      contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
-      content_version: 'milieux-series-v1', reference_content_version: 'reference-v1',
-      target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
-        ({ territory_id: id, territory_type: type })),
-      result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
-        reason: 'fewer_than_two_comparable_values', direction: declaration.direction,
-        selected_member_count: 2, eligible_count: 1, missing_count: 1, rank: null, rank_size: null },
-      scope: { kind: 'explicit_selection', member_count: 2 },
-    } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
-      content_version: 'reading-v1', reference_content_version: 'reference-v1',
-      cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
-      territories: [{ territory: members[0], facts: [fact] }, { territory: members[1], facts: [], source_absences: [absence] }],
-    } }] }
-    const focalReads = [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
-      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [fact],
-    } }]
-    const comparison = semanticComparisonForTheme(response, { target: { territoire: '1', type: 'commune' } }, focalReads)
-    expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
-      points: [{ territory: { territory_id: '1' }, artif_m2_par_habitant: 10 }],
-      source_absences: [absence] })
-    const unexplainedMissing = structuredClone(response)
-    delete (unexplainedMissing.cohort_reads[0]!.data.territories[1] as Record<string, unknown>).source_absences
-    const unexplained = semanticComparisonForTheme(unexplainedMissing,
-      { target: { territoire: '1', type: 'commune' } }, focalReads)
-    expect(unexplained?.reading_cloud).toBeUndefined()
-    expect(unexplained?.reading_cloud_error).toBe(true)
-  })
 
-  it('distingue un nuage éligible vide d’un contrat de nuage demandé manquant', () => {
-    const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Peer' }]
-    const declaration = nativeResources('milieux').find((resource) => resource.resource_id === 'artif_par_habitant')!
-    const baseFact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
-      periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
-      artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
-    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
-      declaration, shapes: declaration.shapes, data: {
-        contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
-        content_version: 'milieux-series-v1', reference_content_version: 'reference-v1',
-        target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
-          ({ territory_id: id, territory_type: type })),
-        result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
-          reason: 'fewer_than_two_comparable_values', direction: declaration.direction,
-          selected_member_count: 2, eligible_count: 0, missing_count: 2, rank: null, rank_size: null },
-        scope: { kind: 'explicit_selection', member_count: 2 },
-      } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
-        // Le contrat du nuage est présent ; aucune coordonnée n’est plottable.
-        territories: [
-          { territory: members[0], facts: [{ ...baseFact, taux_variation_population: null }] },
-          { territory: members[1], facts: [{ ...baseFact, artif_m3_par_habitant: null }] },
-        ],
-      } }] }
-    const focalReads = [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
-      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [baseFact],
-    } }]
-    const comparison = semanticComparisonForTheme(response, { target: { territoire: '1', type: 'commune' } }, focalReads)
-    expect(comparison?.reading_cloud).toMatchObject({ status: 'unavailable', points: [] })
-    expect(comparison?.reading_cloud_error).toBe(false)
-    expect(histoiresMilieuxDuNuage(comparison)).toEqual([])
-  })
 
-  it('builds a typed cloud from bounded producer facts only inside the API-resolved density scope', () => {
-    const focalReads = [
-      { resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
-        resource: 'demographie_selected_reading', target: { kind: 'territory', type: 'commune', id: '1' },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured' }],
-      } },
-      { resource: 'densite', shapes: ['scalar'], data: {
-        resource: 'densite', target: { kind: 'territory', type: 'commune', id: '1' }, value: 42,
-      } },
-    ]
-    const response = { theme_id: 'demographie', selection: undefined,
-      comparison_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
-        resource: 'densite', target: { kind: 'territory', type: 'commune', id: '1' },
-        contract: 'indicator-comparison-v1', indicator_id: 'densite', shape: 'scalar',
-        content_version: 'scalar-v1', reference_content_version: 'reference-v1', selection: null,
-        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
-        result: { indicator_id: 'densite', source_facet: 'densite', status: 'available', direction: 'high', rank: 1, rank_size: 2 },
-      } }],
-      cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
-        resource: 'demographie_selected_reading',
-        target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        cohort: { territory_type: 'commune', department_id: null, epci_id: null,
-          member_count: 3, reference_content_version: 'reference-v1', members: [
-            { id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Peer' },
-            { id: '3', type: 'commune', name: 'Other density' },
-          ] },
-        territories: [
-          { territory: { id: '1', type: 'commune', name: 'Focal' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 1, taux_solde_migratoire: -1 }] },
-          { territory: { id: '2', type: 'commune', name: 'Peer' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 2, taux_solde_migratoire: -2 }] },
-          { territory: { id: '3', type: 'commune', name: 'Other density' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 99, taux_solde_migratoire: 99 }] },
-        ],
-      } }],
-    }
-    const comparison = semanticComparisonForTheme(response, { target: {
-      territoire: '1', type: 'commune', classe_densite_code: 'D1',
-    }, territories: [
-      { territoire: '1', type: 'commune', classe_densite_code: 'D1' },
-      { territoire: '2', type: 'commune', classe_densite_code: 'D1' },
-      { territoire: '3', type: 'commune', classe_densite_code: 'D2' },
-    ] }, focalReads)
-    expect(comparison?.scope).toMatchObject({ kind: 'density_class', density_class_code: 'D1', member_count: 2 })
-    expect(histoiresDemographieNuage(comparison).map(({ territoire, taux_solde_naturel }) => [territoire, taux_solde_naturel]))
-      .toEqual([['1', 1], ['2', 2]])
 
-    const withoutSourceIdentity: any = structuredClone(response)
-    delete withoutSourceIdentity.cohort_reads[0]!.data.territories[1]!.facts[0]!.source_id
-    const incomplete = semanticComparisonForTheme(withoutSourceIdentity, { target: {
-      territoire: '1', type: 'commune', classe_densite_code: 'D1',
-    }, territories: [
-      { territoire: '1', type: 'commune', classe_densite_code: 'D1' },
-      { territoire: '2', type: 'commune', classe_densite_code: 'D1' },
-      { territoire: '3', type: 'commune', classe_densite_code: 'D2' },
-    ] }, focalReads)
-    expect(incomplete?.reading_cloud).toBeUndefined()
-  })
 
-  it('uses API-resolved commune members for named EPCI and Bretagne reading clouds', () => {
-    const members = [
-      { id: 'commune-1', type: 'commune', name: 'Focal' },
-      { id: 'commune-2', type: 'commune', name: 'Peer' },
-    ]
-    const territories: Array<{ territoire: string; type: string; classe_densite_code: string | null; epci: string | null }> =
-      members.map((member) => ({ territoire: member.id, type: member.type,
-        classe_densite_code: 'D1', epci: 'epci-1' }))
-    territories.push({ territoire: 'epci-1', type: 'epci', classe_densite_code: null, epci: null })
-    territories.push({ territoire: 'region-1', type: 'region', classe_densite_code: null, epci: null })
-    const reference = { target: { territoire: 'commune-1', type: 'commune' as const,
-      classe_densite_code: 'D1' }, territories }
-    const focalFact = { groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured',
-      periode: '2020', taux_solde_naturel: 1, taux_solde_migratoire: -1 }
-    const focalReads = [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
-      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [focalFact],
-    } }]
 
-    for (const selected of [
-      { territory_type: 'epci', territory_id: 'epci-1', epci_id: 'epci-1' },
-      { territory_type: 'region', territory_id: 'region-1', epci_id: null },
-    ]) {
-      const selection = [{ territory_type: selected.territory_type, territory_id: selected.territory_id }]
-      const response = { comparison_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
-        resource: 'densite', indicator_id: 'densite', shape: 'scalar',
-        target: { kind: 'territory', type: 'commune', id: 'commune-1' },
-        selection, scope: { kind: 'explicit_selection', member_count: members.length },
-        result: { indicator_id: 'densite', status: 'available', direction: 'high', source_facet: 'densite',
-          selected_member_count: members.length, eligible_count: members.length, missing_count: 0,
-          rank: 1, rank_size: members.length },
-      } }], cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
-        resource: 'demographie_selected_reading',
-        target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: selected.epci_id },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        cohort: { territory_type: 'commune', department_id: null, epci_id: selected.epci_id,
-          member_count: members.length, reference_content_version: 'reference-v1', members },
-        territories: members.map((member, index) => ({ territory: member, facts: [{ ...focalFact,
-          taux_solde_naturel: index + 1, taux_solde_migratoire: -(index + 1) }] })),
-      } }] }
 
-      const comparison = semanticComparisonForTheme(response, reference, focalReads)
-      expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
-        points: members.map((member, index) => ({ territory: { territory_id: member.id },
-          taux_solde_naturel: index + 1 })) })
-      expect(histoiresDemographieNuage(comparison).map(({ territoire }) => territoire))
-        .toEqual(members.map(({ id }) => id))
 
-      const wrongCohortTarget = structuredClone(response)
-      wrongCohortTarget.cohort_reads[0]!.data.target.epci_id = 'epci-other'
-      const rejected = semanticComparisonForTheme(wrongCohortTarget, reference, focalReads)
-      expect(rejected?.reading_cloud).toBeUndefined()
-      expect(rejected?.reading_cloud_error).toBe(true)
-    }
-  })
 
-  it('consumes a native typed fact source and its published descriptor rate unit', () => {
-    const source = { source_id: 'insee', vintage_id: '2023', name: 'Published reading source', version: '2023',
-      reference_date: null, publication_date: '2026-01-02' }
-    const response = { theme_id: 'demographie', resource_reads: [{ resource: 'demographie_selected_reading',
-      shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
-        target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        descriptor: { descriptor_version: 'reading-v1', rate_unit: '‰/an', source },
-        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique',
-          salience_reason: 'defaut', status: 'measured', periode: '2020', solde_naturel: 1,
-          solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
-          classification: 'balanced', source_id: 'insee', vintage_id: '2023', source }] } }] }
-    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
-    expect(adapted.unavailableReadings).toEqual([])
-    expect(adapted.histoires).toEqual([expect.objectContaining({
-      taux_solde_naturel: 0.3, vintage_source: 'Published reading source', vintage_version: '2023',
-      vintage_date_reference: null, vintage_date_publication: '2026-01-02',
-    })])
-    const inconsistentSource = structuredClone(response)
-    inconsistentSource.resource_reads[0]!.data.facts[0]!.source.source_id = 'unrelated-source'
-    expect(themeFactsRowsFromSemantic('demographie', inconsistentSource, cible).unavailableReadings)
-      .toEqual(['demographie_selected_reading'])
-  })
 
-  it('does not borrow a typed-reading source label from an unrelated resource', () => {
-    const response = { theme_id: 'demographie', resource_reads: [
-      { resource: 'densite', shapes: ['scalar'], data: { resource: 'densite',
-        target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        value: 20, status: 'measured', unit: 'hab/km²', sources: [{ source_id: 'insee', vintage_id: '2023',
-          name: 'Unrelated density provenance', version: '2023', reference_date: null, publication_date: null }] } },
-      { resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
-        target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique',
-          salience_reason: 'defaut', status: 'measured', periode: '2020', solde_naturel: 1,
-          solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
-          classification: 'balanced', rate_unit: '‰/an', source_id: 'insee', vintage_id: '2023' }] } },
-    ] }
-    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
-    expect(adapted.histoires).toEqual([])
-    expect(adapted.unavailableReadings).toEqual(['demographie_selected_reading'])
-  })
 
-  it('marks a typed reading unavailable when its own resource has no source identity or evidence', () => {
-    const response = { theme_id: 'demographie', resource_reads: [{ resource: 'demographie_selected_reading',
-      shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
-        target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        content_version: 'reading-v1', reference_content_version: 'reference-v1',
-        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique', salience_reason: 'defaut',
-          status: 'measured', periode: '2020', solde_naturel: 1, solde_migratoire: 2,
-          taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2, classification: 'balanced', rate_unit: '‰/an' }] } }] }
-    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
-    expect(adapted.histoires).toEqual([])
-    expect(adapted.unavailableReadings).toEqual(['demographie_selected_reading'])
-  })
+
+
+
 
   it('projects native scalar, declared-profile cells, and ordered-series points with their own axes and evidence', () => {
     const source = [{ source_id: 'dpe', vintage_id: '2025', source_name: 'DPE source', version: '2025',
@@ -984,26 +753,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     }
   })
 
-  it('mappe la lecture démographique avec provenance et rejette story/salience/taux incohérents', () => {
-    const response = { ...faitsHabitat({ theme_id: 'demographie' }), readings: [{
-      groupe: 'trajectoire-demographique', story_key: 'trajectoire-demographique', salience_reason: 'defaut',
-      periode: '2020', solde_naturel: 1, solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
-      classification: 'balanced', status: 'measured', rate_unit: '‰', provenance: {
-        source_id: 's', source_name: 'Insee', source_version: '2026', source_reference_date: null, source_publication_date: null,
-      },
-    }] }
-    const histoire = themeFactsRowsFromApi('demographie', response, cible).histoires[0] as any
-    expect([histoire.periode, histoire.taux_solde_naturel, histoire.vintage_source]).toEqual(['2020', 0.3, 'Insee'])
-    for (const patch of [{ story_key: 'bad' }, { salience_reason: 'bad' }, { taux_solde_naturel: null }]) {
-      expect(() => themeFactsRowsFromApi('demographie', { ...response, readings: [{ ...response.readings[0], ...patch }] }, cible)).toThrow()
-    }
-  })
-  it('ne fabrique aucun point si la comparaison ne déclare pas de cloud', () => {
-    expect(histoiresDemographieNuage({ reading_cloud: null })).toEqual([])
-    expect(histoiresDemographieNuage({ reading_cloud: { status: 'available', story_key: 'trajectoire-demographique',
-      groupe: 'g', points: [{ territory: { territory_id: '1', territory_type: 'commune', name: 'T' },
-        periode: null, taux_solde_naturel: null, taux_solde_migratoire: 2 }] } })).toEqual([])
-  })
+
+
   it('refuse une réponse dont le contrat, le thème ou le territoire ne correspondent pas', () => {
     expect(() => themeFactsRowsFromApi('habitat', { contract: 'autre' }, cible)).toThrow(/contrat|Réponse/i)
     expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({ theme_id: 'milieux' }), cible)).toThrow()
@@ -1406,89 +1157,18 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     }), cible)).toThrow(/Provenance/)
   })
 
-  it('mappe la lecture Habitat typée avec sa provenance, sans jamais inventer les nulls', () => {
-    const rows = themeFactsRowsFromApi('habitat', faitsHabitat({
-      readings: [{
-        groupe: 'etat-energetique-du-parc', story_key: 'etat-energetique-du-parc', salience_reason: 'defaut',
-        classification: null, part_passoires: null, part_abc: null, n_dpe: 12,
-        status: 'suppressed', source_id: 'habitat_api', vintage_id: 'api-v1',
-        provenance: { source_id: 'habitat_api', source_name: 'Source API habitat', vintage_id: 'api-v1',
-          source_version: 'api-v1', source_reference_date: null, source_publication_date: null },
-      }],
-    }), cible)
-    const lecture = rows.histoires[0] as unknown as Record<string, unknown>
-    expect(lecture.classification).toBeNull()
-    expect(lecture.part_passoires).toBeNull()
-    expect(lecture.n_dpe).toBe(12)
-    expect(lecture.vintage_source).toBe('Source API habitat')
-    expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({
-      readings: [{
-        groupe: 'etat-energetique-du-parc', story_key: 'autre-lecture', salience_reason: 'defaut',
-        classification: null, part_passoires: null, part_abc: null, n_dpe: 12,
-        status: 'measured', source_id: 'habitat_api', vintage_id: 'api-v1', provenance: {},
-      }],
-    }), cible)).toThrow(/déclarée/)
-    expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({
-      readings: [{
-        groupe: 'etat-energetique-du-parc', story_key: 'etat-energetique-du-parc', salience_reason: 'defaut',
-        classification: null, part_passoires: null, part_abc: null,
-        status: 'measured', source_id: 'habitat_api', vintage_id: 'api-v1', provenance: {},
-      }],
-    }), cible)).toThrow(/Valeurs de lecture/)
-  })
 
-  it('refuse les lectures d’un thème non migré plutôt que de les perdre en silence', () => {
-    // Mobilité est le seul thème hors du registre migré : sa surface de fiche
-    // reste la variante E, intégration côté utilisateur.
-    expect(() => themeFactsRowsFromApi('mobilite', {
-      contract: 'theme-facts-v1', theme_id: 'mobilite',
-      territory: { territory_id: '35238', name: 'Saint-Jacques', territory_type: 'commune' },
-      content_version: 'v', reference_content_version: 'r',
-      indicator_metadata: [], named_reference_evidence: [], indicators: [],
-      readings: [{ groupe: 'g', story_key: 's', salience_reason: 'defaut', status: 'measured' }],
-    }, cible)).toThrow(/non migré/)
-  })
+
+
 
   // #627 - the Mobilité reading rows (vingt-minutes bins) retired with the
   // legacy surface: themeFactsRowsFromApi fails closed on any mobilite
   // reading instead of mapping retired story rows (the previous test).
 
 
-  it('mappe la lecture Milieux et sa provenance sans convertir les absences en zéros', () => {
-    const reading = {
-      groupe: 'land', story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut', status: 'measured',
-      periode_pop: '2017-2023', periode_artif: '2020-2023', delta_population: 10, taux_variation_population: 1.4,
-      artif_m2_par_habitant: 8, artif_m3_par_habitant: 9, trajectoire_artif_par_habitant: 1.125,
-      classification: 'up', provenance: { source_id: 'rp', source_name: 'RP fixture', source_version: '2023',
-        source_reference_date: null, source_publication_date: null },
-    }
-    const result = themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [reading] }), cible)
-    const row = result.histoires[0] as unknown as Record<string, unknown>
-    expect(row.taux_variation_population).toBe(1.4)
-    expect(row.classification).toBe('up')
-    expect(row.vintage_source).toBe('RP fixture')
-    expect(themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, status: 'unavailable',
-      periode_pop: null, periode_artif: null, taux_variation_population: null, artif_m2_par_habitant: null,
-      artif_m3_par_habitant: null, trajectoire_artif_par_habitant: null, classification: null }] }), cible)
-      .histoires[0]).toMatchObject({ periode_artif: null, taux_variation_population: null,
-        artif_m2_par_habitant: null, artif_m3_par_habitant: null, classification: null })
-    expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, story_key: 'wrong' }] }), cible)).toThrow(/non déclarée/)
-    expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, salience_reason: 'invented' }] }), cible)).toThrow(/non déclarée/)
-  })
 
-  it('projette uniquement les points du reading cloud dont toutes les coordonnées sont valides', () => {
-    const points = histoiresMilieuxDuNuage({ reading_cloud: { status: 'available', groupe: 'land', points: [
-      { territory: { territory_id: '35001', territory_type: 'commune' }, periode_pop: '2017-2023',
-        periode_artif: '2020-2023', taux_variation_population: 0.8,
-        artif_m2_par_habitant: 7, artif_m3_par_habitant: 8 },
-      { territory: { territory_id: '35002', territory_type: 'commune' }, periode_pop: null,
-        periode_artif: null, taux_variation_population: null,
-        artif_m2_par_habitant: 6, artif_m3_par_habitant: 7 },
-    ] } })
-    expect(points).toHaveLength(1)
-    expect(points[0]).toMatchObject({ territoire: '35001', taux_variation_population: 0.8,
-      artif_m2_par_habitant: 7, artif_m3_par_habitant: 8 })
-  })
+
+
 
   it('valide l’écho de sélection d’une réponse de comparaison dans l’ordre du demandeur', () => {
     const attendue: ThemeSelectionMember[] = [

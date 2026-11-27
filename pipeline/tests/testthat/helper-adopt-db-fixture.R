@@ -33,14 +33,25 @@
   con
 }
 
-.adopt_db_schema <- function(con) {
-  schema <- paste0("it_adopt_", paste(sample(c(letters, 0:9), 12, TRUE), collapse = ""))
-  DBI::dbExecute(con, paste0('CREATE SCHEMA "', schema, '"'))
-  DBI::dbExecute(con, paste0('SET search_path TO "', schema, '"'))
-  sql <- paste(readLines(testthat::test_path("..", "..", "..", "api", "schema.sql"),
-                         warn = FALSE), collapse = "\n")
+.adopt_db_initialize_schema <- function(con, schema) {
+  # Adoption is proved on the populated POST-046/PRE-049 expand schema. Pin the
+  # reviewed base object rather than the current fresh schema, which intentionally
+  # no longer carries the global markers this one-time operation consumes.
+  root <- normalizePath(testthat::test_path("..", "..", ".."), winslash = "/", mustWork = TRUE)
+  status <- system2("git", c("-C", root, "show", "a0807c71:api/schema.sql"),
+                    stdout = TRUE, stderr = TRUE)
+  if (!is.null(attr(status, "status")) && attr(status, "status") != 0L)
+    stop("Could not read pinned pre-049 schema: ", paste(status, collapse = "\n"))
+  sql <- paste(status, collapse = "\n")
   for (statement in split_postgres_sql(sql)) DBI::dbExecute(con, statement)
-  schema
+  invisible(schema)
+}
+
+.adopt_db_schema <- function(con) {
+  .guarded_schema_build(con, "it_adopt_", function(schema) {
+    .adopt_db_initialize_schema(con, schema)
+    schema
+  })$value
 }
 
 .adopt_db_scalar_indicator <- function(id, source, values) {
@@ -129,14 +140,32 @@
              stringsAsFactors = FALSE)
 }
 
-.adopt_db_series_projection <- function() {
-  p <- adaptateur_series_projection()
-  p$descriptor$direction <- "high"
-  p$descriptor$comparison_point <- "M3"
-  p$descriptor$comparison_statistic <- "median"
-  p$descriptor$comparison_levels <- "commune"
-  p$descriptor$comparison_axis_values <- c("M2", "M3")
-  p
+.adopt_db_series_projection <- function(metadata, reference) {
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  # The production OCS-GE fixture carries real commune codes while the shared
+  # adopt reference is deliberately tiny/synthetic. Keep the same projector and
+  # canonical source rows, but bind the bounded subset to that reference by level.
+  for (territory_type in unique(reference$territory_type)) {
+    target <- reference$territory_id[reference$territory_type == territory_type]
+    source <- unique(payload$indicateurs$territoire[
+      payload$indicateurs$type == territory_type])
+    keep <- source[seq_len(min(length(source), length(target)))]
+    mapping <- stats::setNames(target[seq_along(keep)], keep)
+    payload$indicateurs <- payload$indicateurs[
+      payload$indicateurs$type != territory_type |
+      payload$indicateurs$territoire %in% keep, , drop = FALSE]
+    indicator_rows <- payload$indicateurs$type == territory_type
+    payload$indicateurs$territoire[indicator_rows] <-
+      unname(mapping[payload$indicateurs$territoire[indicator_rows]])
+    payload$histoires <- payload$histoires[
+      payload$histoires$type != territory_type |
+      payload$histoires$territoire %in% keep, , drop = FALSE]
+    history_rows <- payload$histoires$type == territory_type
+    payload$histoires$territoire[history_rows] <-
+      unname(mapping[payload$histoires$territoire[history_rows]])
+  }
+  project_artif_m2m3_projection(payload$indicateurs, payload$histoires,
+    vintages_milieux(), metadata)
 }
 
 .adopt_db_aedar_manifest <- function(projection, reference) {
@@ -191,6 +220,14 @@
             base_metadata)
   file.copy(list.files(system.file("extdata", "theme-metadata", package = "lusk"),
     pattern = "^theme_.*\\.json$", full.names = TRUE), metadata_directory)
+  # The bounded adopt fixture uses one semantic/storage identity for its OCS-GE
+  # dataset. Production's projector remains the only builder; only the copied
+  # fixture metadata aligns the dataset id with the fixture resource id.
+  milieux_metadata_path <- file.path(metadata_directory, "theme_milieux.json")
+  milieux_metadata <- jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE)
+  milieux_metadata$indicator_pages$artif_par_habitant$series_dataset_id <- "artif_par_habitant"
+  jsonlite::write_json(milieux_metadata, milieux_metadata_path, auto_unbox = TRUE,
+    null = "null", pretty = TRUE)
   jsonlite::write_json(list(theme = "programmes", indicator_keys = list("membres", "acv"),
     sources = list(membres = "programme_source", acv = "programme_source"),
     source_records = list(programme_source = list(name = "Programmes")),
@@ -243,7 +280,10 @@
   write_profile_serving_artifact(dpe, file.path(sortie, "profile-serving", "distribution_dpe"),
     scalar_binding = scalar_version)
 
-  serie <- .adopt_db_series_projection()
+  serie <- .adopt_db_series_projection(
+    jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE), reference$rows)
+  write_owned_series_artifact(serie,
+    file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
   period <- adaptateur_collection_projection()
   period$provenance <- .adopt_db_collection_lineage(period)
   membres <- .adopt_db_anchored_collection(reference)
@@ -274,41 +314,20 @@
   digests <- artefacts_fixture_digests(sources)
   jsonlite::write_json(unname(digests), file.path(sortie, "source-digests.json"),
     auto_unbox = TRUE)
-  typed <- new.env(parent = emptyenv())
-  typed$hits <- integer()
   list(sortie = sortie, root = root, reference = reference, snapshot = snapshot,
     scalar_version = scalar_version, lock = digests, projections = projections,
     aedar_manifest = aedar_manifest$manifest, aedar_dir = aedar_dir,
-    base_metadata = base_metadata, metadata_directory = metadata_directory, typed = typed)
+    base_metadata = base_metadata, metadata_directory = metadata_directory)
 }
 
 .adopt_db_publish_all <- function(con, fixture) {
-  typed <- fixture$typed
   local_mocked_bindings(
     project_retained_scalar_snapshot = function(...) fixture$snapshot,
     declared_profile_owners = function() c("structure_age", "distribution_dpe"),
     profile_scalar_binding = function(...) fixture$scalar_version,
-    publish_canonical_demographic_reading = function(...) {
-      typed$hits <- c(typed$hits, "demographic"); list()
-    },
-    publish_canonical_habitat_reading = function(...) {
-      typed$hits <- c(typed$hits, "habitat"); list()
-    },
-    read_typed_reading_publication_from = function(...) {
-      typed$hits <- c(typed$hits, "economy-read"); list()
-    },
-    publish_typed_reading_publication = function(...) {
-      typed$hits <- c(typed$hits, "economy-publish"); list()
-    },
-    publish_canonical_milieux_reading = function(...) {
-      typed$hits <- c(typed$hits, "milieux"); list(reading = list(), owned_series = list())
-    }, .package = "lusk")
+    .package = "lusk")
   publish_retained_backend_snapshot(con, sortie = fixture$sortie, atomic = TRUE,
     companion_profiles = TRUE)
-  expect_setequal(typed$hits, c("demographic", "habitat", "economy-read",
-    "economy-publish", "milieux"))
-  publish_owned_series_projection(fixture$projections$owned_series$artif_par_habitant,
-    owned_series_postgres_adapter(con))
   for (projection in fixture$projections$observed_collection)
     publish_observed_collection(projection, con)
   aedar <- fixture$projections$aedar$aedar
@@ -447,7 +466,7 @@
 #   * profile_reads.py `len(versions) != 1` ("Profile publication versions are not
 #     uniform"): uniformity of registry content_version across the profiles a REQUEST
 #     selects; it depends on the theme/indicator filter and equally constrains `apply`.
-#   * the typed-reading and HTTP layers (the end-to-end sweep is #1143's rehearsal).
+#   * the retired reading and HTTP layers (the end-to-end sweep is #1143's rehearsal).
 .adopt_db_predicats_api <- function(con, scalaires, profils, profils_scalaires = character(),
                                     dependances = c(distribution_dpe = "part_passoires")) {
   dans <- function(ids) in_params(ids)

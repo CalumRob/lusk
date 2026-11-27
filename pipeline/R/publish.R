@@ -52,7 +52,7 @@ ecrire_parquet_si_modifie <- function(table, fichier) {
 
 # Les thèmes dont les grains de service sont désormais servis par les artefacts
 # dédiés (scalaire `scalar-serving/`, séries `series-serving/`, profils
-# `profile-serving/`, lecture typée `typed-reading-serving/`) : leurs fichiers
+# `profile-serving/`) : leurs fichiers
 # de faits `indicateurs_<theme>.parquet` / `histoires_<theme>.parquet` ne sont
 # PLUS écrits par publish (#757). La Mobilité est l'EXCEPTION : elle conserve
 # ses parquets de thème (#619). La liste se DÉRIVE du registre canonique des

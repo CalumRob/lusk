@@ -45,7 +45,11 @@ def test_national_candidate_publisher_http_focal_reference_and_selected_mean_cur
         upgrade.execute(f'CREATE SCHEMA "{schema}"')
         created = True
         upgrade.execute(f'SET search_path TO "{schema}"')
-        upgrade.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
+        # The ordinary scalar publisher in this proof is the legacy whole-snapshot
+        # path; pin the reviewed post-046/pre-049 contract it consumes.
+        upgrade.execute(subprocess.check_output(
+            ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+            cwd=root, text=True, encoding="utf-8"))
 
         prepared = tmp_path / "national-inputs.json"
         prepare = tmp_path / "prepare-national.R"

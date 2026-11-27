@@ -1693,7 +1693,6 @@
       }
     }
   ],
-  "reading_content_version": "fixture-reading-v1",
   "reading_descriptor_version": "1",
   "reading_availability": "available",
   "bpe_profile_evidence": null,
@@ -8313,8 +8312,6 @@
     "scalar_content_version": "f930f4177f9f3a60a3b2c16e764acfb5",
     "profile_content_version": null,
     "profile_comparisons": [],
-    "reading_content_version": null,
-    "reading_cloud": null,
     "owned_series_content_versions": {
       "raccordement_courbe": {
         "content_version": "f93b59437500f0d37eb912507923c2ef",

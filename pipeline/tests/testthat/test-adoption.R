@@ -67,7 +67,11 @@ fixture_adoption_run <- function(values_a = 1, values_b = 2, live_a = values_a,
   local_mocked_bindings(
     dbWithTransaction = function(con, expr) force(expr),
     dbExecute = function(...) 1L,
-    dbGetQuery = function(...) data.frame(), .package = "DBI")
+    dbGetQuery = function(con, sql, ...) {
+      if (grepl("to_regclass", sql, fixed = TRUE))
+        return(data.frame(scalaire = TRUE, profil = TRUE))
+      data.frame()
+    }, .package = "DBI")
   resultat <- tryCatch(adopter_artefacts(builds, artefacts, dry_run = dry_run,
     con = structure(list(), class = "mock")), error = identity)
   list(resultat = resultat, ecritures = ecritures, descripteurs = descripteurs,

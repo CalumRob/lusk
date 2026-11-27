@@ -91,6 +91,74 @@ schemas, mutex, exact test database/role checks, cleanup opt-in; skips without
 the guarded DSNs). Applying this DDL alone publishes no descriptor. No worker
 applies it to a serving database.
 
+## Migration 049 (#1141) — retire typed readings and global markers (contract)
+
+`049_retire_typed_readings.sql` is the destructive contract step for ADR-0049.
+It drops the Démographie, Habitat, Économie and Milieux typed-reading tables and
+source associations, the global `scalar_comparison_publication` and
+`profile_comparison_publication` singletons, and the retired typed-reading rows
+from `table_publication`. Scalar/profile **fact** tables, every retained resource
+row, the per-resource registry/descriptors/comparison markers, owned series,
+collections and AEDAR survive. The retained `table_publication` allow-list is
+exactly `territory_reference`, `ordered_series`, `aedar_territorial_aggregate`
+and `aedar_territory_summary`.
+
+The migration owns one `BEGIN`/`COMMIT`, sets a five-second lock timeout and
+uses `current_schema() || ',pg_catalog'` as its search path. It never uses
+`CASCADE`: any unexpected view, rule, foreign key or other dependency aborts the
+whole transaction for review. There is no down migration; recovery is the
+verified backup plus the matching release.
+
+**Operator gate (#1143).** Apply 049 only after 046–048, successful `adopt`, the
+new per-resource API deployment and a green HTTP sweep. Before the window:
+
+1. Take and restore-test a fresh `pg_dump -Fc`; record the exact database,
+   schema, roles/grants, timestamp and backup location.
+2. On the restored copy, run the guarded populated rehearsal
+   `api/tests/integration/test_typed_reading_retirement_migration.py`. It proves
+   every registry/resource row survives, retained reads succeed, replay is a
+   no-op, and an unexpected dependent view aborts with zero changes.
+3. Inspect dependencies read-only. This query must return **zero rows** before
+   approval (run with the target schema first in `search_path`):
+
+   ```sql
+   SELECT pg_describe_object(d.classid,d.objid,d.objsubid) AS dependent_object,
+          d.deptype
+   FROM pg_depend d
+   JOIN pg_class v ON d.refclassid='pg_class'::regclass AND v.oid=d.refobjid
+   JOIN pg_namespace n ON n.oid=v.relnamespace
+   WHERE n.nspname=current_schema()
+     AND v.relname IN (
+       'demographic_reading_descriptor','demographic_typed_reading',
+       'selected_reading_publication','selected_reading_descriptor',
+       'habitat_typed_reading','economy_activity_evidence','economy_typed_reading',
+       'milieux_reading_source','milieux_reading_absence','milieux_typed_reading',
+       'milieux_population_provenance_revision',
+       'scalar_comparison_publication','profile_comparison_publication')
+     AND d.deptype IN ('n','i','a')
+   ORDER BY 1;
+   ```
+
+4. Save the retained registry inventory for comparison:
+
+   ```sql
+   SELECT resource_id,shape,content_version,reference_content_version,retired
+   FROM resource_publication ORDER BY resource_id;
+   ```
+
+Apply once with the owner-approved DSN:
+
+```powershell
+psql -X --set ON_ERROR_STOP=on --file api/migrations/049_retire_typed_readings.sql "$APPROVED_DSN"
+```
+
+Do **not** add `--single-transaction`: 049 owns its transaction. On any error,
+stop and investigate; disconnect rolls back the open transaction. After commit,
+verify that the dropped relations are absent, the registry inventory is
+unchanged, only the four retained `table_publication` markers remain, and the
+HTTP sweep still succeeds. Do not run `adopt` after 049: it refuses with the
+typed reason `adoption_globale_retiree` before reading any dropped marker.
+
 ## Migration 045 (#1043) — AEDAR littoral sibling summaries (additive)
 
 `045_aedar_littoral_summary.sql` extends the AEDAR reference-only publication
@@ -175,12 +243,13 @@ LUSK_AEDAR_RAW_DIR=<raw cache>
 | 6 | `scripts/publish-aedar-aggregates.R --publish` | `LUSK_PUBLISH_AEDAR=1` | 13m23 |
 
 Steps 2 and 3 are **both** required and own different things: `--publish` covers
-the reference, scalar snapshot, comparisons, declared profiles and typed
-readings; `--owned-series-publish` writes the owned datasets
+the reference, scalar snapshot, comparisons, declared profiles and the retained
+OCS-GE state series; `--owned-series-publish` writes the owned datasets
 (`series_dataset_publication`); `--series-publish` writes the ordered-series
 family and is the only writer of the `ordered_series` table marker. Skipping it
 leaves that marker bound to the previous reference and the API refuses the
-family.
+family. Typed readings were part of the pre-049 measured sequence only; migration
+049 retires them and the legacy whole-snapshot entry points refuse post-049.
 
 After the window, verify: the four `offre_tc` anchors (Rennes 0.9967512,
 Brest 0.9260954, Finistère 0.6486402, Bretagne 0.5663383), the "adresses"
@@ -192,8 +261,9 @@ C/NC counts against the DREAL positive list.
 (`publish-serving-tables.R --publish` / the `publie_backend_retained` target,
 i.e. `publish_retained_backend_from_parquet`) now refreshes the declared-profile
 scalar binding metadata-only, then publishes the territory reference, scalar
-snapshot and comparison, declared profiles and their comparison, and the four
-typed readings in ONE outer transaction. Any failure rolls the whole publication
+snapshot and comparison, declared profiles and their comparison, and the retained
+OCS-GE state series in ONE outer transaction. The four typed readings were part
+of the pre-049 sequence only. Any failure rolls the whole publication
 back and restores the profile artifacts, so a release that moves both the
 reference and scalar versions can no longer leave a partial database (Habitat
 used to refuse against the stale DPE binding after earlier owners had committed).
@@ -203,7 +273,9 @@ release: profiles are published by the full path itself. The separate
 standalone republish lever; in the normal sequence it is a harmless no-op
 because the artifacts and binding already match the published generation.
 
-**Milieux CONSOENAF source for the full publication (#1148).** In the same
+**Milieux CONSOENAF source for the pre-049 full publication (#1148, historical).**
+The `milieux_reading_absence` marker named below is dropped by migration 049; this
+source requirement belongs to the measured pre-049 sequence only. In that
 coordinated operator window, publish the full backend with the producer source
 snapshot at hand; a database that already holds Milieux absence declarations
 (production) cannot replace them without re-deriving source coverage. Set
@@ -1022,7 +1094,9 @@ verify -> deploy the new API -> HTTP sweep -> contract migration (#1141) -> **sw
    ```
    (the guarded proof `test-adopt-db.R` asserts `nrow(descriptors) == sum(declarations)` the same way).
 4. Deploy the new API, then run the HTTP sweep over every resource in `/api/resources`.
-5. Apply the contract migration (#1141), then **sweep again**.
+5. Apply the contract migration (#1141) using the pre-checks, guarded rehearsal,
+   backup and verification queries above, then **sweep again**. Adoption after
+   049 is refused (`adoption_globale_retiree`); never reorder 049 before `adopt`.
 6. `Rscript scripts/publication.R listing > live.json` -- prints the live registry as
    JSON, read-only, through the shared serving-session seam.
 7. `$env:LUSK_LIVE_LISTING = "live.json"; Rscript scripts/publication.R plan <sortie>`

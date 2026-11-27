@@ -156,6 +156,7 @@ test_that("a divergent existing marker refuses the whole adoption before any wri
   ecritures <- 0L
   local_mocked_bindings(
     REGISTRE_FORMES_RESSOURCE = list(scalar = handler),
+    verifier_schema_adoption_globale = function(...) TRUE,
     verifier_gel_lignage_ressource = function(...) TRUE,
     lire_reference_live_apply = function(con) list(version = "r", rows = data.frame()),
     verifier_reference_live_apply = function(...) TRUE,
@@ -224,6 +225,7 @@ test_that("the adoption receipt records which comparison token was adopted", {
            identique = TRUE, ecrire = function(con) stop("must not write")))
   local_mocked_bindings(
     REGISTRE_FORMES_RESSOURCE = list(scalar = handler),
+    verifier_schema_adoption_globale = function(...) TRUE,
     verifier_gel_lignage_ressource = function(...) TRUE,
     lire_reference_live_apply = function(con) list(version = "r", rows = data.frame()),
     verifier_reference_live_apply = function(...) TRUE,

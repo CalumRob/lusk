@@ -7,8 +7,8 @@
  *
  * ADR-0019: the theme tab drives the map's LAYER SET (couchesDuTheme — the
  * layer model derives from the payload, never a carte-side spec). ?theme=
- * selects the theme's DEFAULT layer (coucheParDefaut — its first story
- * scalar); the sidebar's layer clicks switch the active couche (in-memory
+ * selects the theme's admitted layer set; the sidebar's layer clicks
+ * switch the active couche (in-memory
  * state). The first tab is the « Programmes et subventions » layer group
  * (#282): ?onglet=programmes (+ &programme=<sigle>) drives the membership
  * categorical highlights (level-native — ACV/PVD/ORT à la commune, CRTE/
@@ -67,7 +67,6 @@ import type { Fichier } from '@/payload/loader'
 import { chargerRangScalaire } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank } from '@/payload/scalarCohort'
 import { acquireMapThemeFacts } from '@/payload/mapSemanticAcquisition'
-import type { MapReadingBinding } from '@/payload/mapSemanticAcquisition'
 import { chargerMetadonneesTheme, THEME_METADATA_CHARGER_KEY } from '@/payload/themeCatalogue'
 import type { Indicateur } from '@/payload/types'
 
@@ -264,7 +263,6 @@ const geometrieAbsente = computed(
 // and stable layer ordering; producer discovery and native cohort facts admit
 // the layers/values at the active level. No scalar flag or static fallback.
 const mapFacts = ref<Indicateur[]>([])
-const mapStories = ref<Array<Record<string, unknown>>>([])
 const mapMemberships = ref<NonNullable<Payload['programmes']>['mapMemberships']>([])
 const mapGrantFacts = ref<Indicateur[]>([])
 const mapAxes = ref<Record<string, string[]>>({})
@@ -372,7 +370,6 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   // it before resetting the visible rank state so a late response cannot revive it.
   territoryRankSequence++
   mapFacts.value = []
-  mapStories.value = []
   mapMemberships.value = []
   mapGrantFacts.value = []
   mapAxes.value = {}
@@ -388,14 +385,11 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   mapStatus.value = 'loading'
   try {
     const grammar = groupesCouchesCarte(theme)
-    const readingBindings: MapReadingBinding[] = grammar.filter((group) => group.storyFields.length > 0)
-      .map((group) => ({ subgroup: group.key, fields: group.storyFields }))
     const acquired = await acquireMapThemeFacts(theme, level, currentPayload.territoires,
-      grammar.flatMap((group) => group.resourceKeys), readingBindings,
+      grammar.flatMap((group) => group.resourceKeys),
       (declarations) => { if (sequence === mapSequence) mapDeclarations.value = declarations })
     if (sequence === mapSequence) {
       mapFacts.value = acquired.facts
-      mapStories.value = acquired.stories
       mapMemberships.value = acquired.memberships as NonNullable<Payload['programmes']>['mapMemberships']
       mapGrantFacts.value = acquired.grants
       mapAxes.value = acquired.axes
@@ -410,8 +404,8 @@ watch([themeAcquisCarte, niveauApi, payload, chargementPayload, erreurPayload, r
   }
   }, { immediate: true })
 
-// The selected catalogue only fills factual field labels that the typed-reading
-// API does not yet expose. Its failure never gates map facts or native admission.
+// The selected catalogue enriches presentation labels only. Its failure
+// never gates map facts or native admission.
 watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup) => {
   const request = ++mapMetadataSequence
   let cancelled = false
@@ -443,7 +437,7 @@ watch([selection, retryMapMetadata], async ([theme], [previousTheme], onCleanup)
       }
     }
   } catch {
-    // Native API labels/axes remain usable; only absent typed-field wording is withheld.
+    // Native API labels/axes remain usable; only optional wording is withheld.
     if (!cancelled && request === mapMetadataSequence && theme === selection.value) {
       mapMetadataStatus.value = 'error'
       mapMetadataRetryPending.value = false
@@ -480,8 +474,7 @@ const payloadCarte = computed(() => {
       territoryRank.value.indicator === row.key && territoryRank.value.level === row.type
       ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
           taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } } : row) : []
-  return { ...current, indicateurs: [...indicateurs, ...acquired],
-    histoires: [...histoires, ...mapStories.value] as typeof current.histoires }
+  return { ...current, indicateurs: [...indicateurs, ...acquired], histoires }
 })
 
 /** The legend data — the same pure logic that paints the map. Déclaré APRÈS

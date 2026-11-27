@@ -381,7 +381,11 @@ def retained_canonical_db_env(tmp_path_factory):
     schema = "it_" + uuid.uuid4().hex[:20]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
-    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    # This proof exercises the legacy whole-snapshot R publisher. Pin the
+    # reviewed post-046/pre-049 contract instead of removing its global clocks.
+    legacy_schema = subprocess.check_output(
+        ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+        cwd=Path(__file__).resolve().parents[2], text=True, encoding="utf-8")
     created = False
     for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
         with psycopg.connect(dsn, autocommit=True) as connection:
@@ -413,7 +417,7 @@ def retained_canonical_db_env(tmp_path_factory):
             connection.execute(f'CREATE SCHEMA "{schema}"')
             created = True
             connection.execute(f'SET search_path TO "{schema}"')
-            connection.execute(schema_path.read_text(encoding="utf-8"))
+            connection.execute(legacy_schema)
             reader_role = urlsplit(read_dsn).username
             if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
                 pytest.fail("Read DSN must identify a simple database role name")
@@ -819,13 +823,11 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
         connection.execute("DELETE FROM scalar_descriptor WHERE indicator_id='cascade_fixture'")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',4)")
-        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',3,'territory-v1')")
         # The fixed default context must have a coherent comparison owner;
         # fixtures do not fall back to read-time aggregates or raw provenance.
         connection.execute("INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count) VALUES ('density_class','D1','commune','fixture_scalar','median',1,2,2,0,2)")
         connection.execute("INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,territory_id,value,status,rank,tie_count,rank_size) VALUES ('density_class','D1','commune','fixture_scalar','29001',0,'measured',2,1,2),('density_class','D1','commune','fixture_scalar','29002',2,'measured',1,1,2)")
         connection.execute("INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES ('scalar','density_class','D1','commune','fixture_scalar','fixture','v2026','comparison-v1'),('scalar','density_class','D1','commune','fixture_scalar','fixture_secondary','v2025','comparison-v1')")
-        connection.execute("INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) VALUES (true,'comparison-v1','fixture-v1','territory-v1',1,2,2)")
         connection.execute("INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) VALUES ('fixture_scalar','comparison-v1','fixture-v1','territory-v1',1,2,2)")
         publish_resource(connection, "fixture_scalar", "scalar", "fixture-v1",
                          reference_content_version="territory-v1")
@@ -841,10 +843,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         with pytest.raises(psycopg.errors.CheckViolation):
             with connection.transaction():
                 connection.execute("UPDATE scalar_observation SET value=0.5 WHERE indicator_id='fixture_scalar'")
-                connection.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='scalar_observation'")
+                connection.execute("UPDATE resource_publication SET content_version='partial' WHERE resource_id='fixture_scalar'")
                 connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','29001','commune',NULL,'measured')")
         assert connection.execute("SELECT value FROM scalar_observation WHERE indicator_id='fixture_scalar'").fetchone()[0] == 0
-        assert connection.execute("SELECT content_version FROM table_publication WHERE table_name='scalar_observation'").fetchone()[0] == "fixture-v1"
+        assert connection.execute("SELECT content_version FROM resource_publication WHERE resource_id='fixture_scalar'").fetchone()[0] == "fixture-v1"
         with pytest.raises(psycopg.errors.RaiseException, match="lacks a source-vintage association"):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_observation_source WHERE indicator_id='fixture_scalar'")
@@ -930,7 +932,6 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         stale = client.post("/api/resources/read", json=facts)
         assert stale.status_code == 503
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
-            publisher.execute("UPDATE table_publication SET reference_content_version='territory-v2' WHERE table_name='scalar_observation'")
             publisher.execute("UPDATE resource_publication SET reference_content_version='territory-v2' WHERE resource_id='fixture_scalar'")
         rebound = client.post("/api/resources/read", json=facts)
         assert rebound.status_code == 200, rebound.text
@@ -941,7 +942,6 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE resource_publication SET reference_content_version='territory-v2' WHERE resource_id='fixture_scalar'")
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v2' WHERE table_name='territory_reference'")
-            publisher.execute("UPDATE scalar_comparison_publication SET reference_content_version='territory-v2' WHERE singleton")
             publisher.execute("UPDATE scalar_resource_comparison_publication SET reference_content_version='territory-v2' WHERE indicator_id='fixture_scalar'")
             publisher.execute("DROP TABLE scalar_comparison_territory CASCADE")
         missing_storage = client.post("/api/resources/read", json=comparison)
@@ -2208,6 +2208,9 @@ def test_migration_039_inventory_marks_malformed_family_as_shape_only():
 
     publish_dsn, _ = _configuration()
     root = Path(__file__).resolve().parents[2]
+    current_schema = subprocess.check_output(
+        ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
     schema = f"it_m039_inventory_advisory_{uuid.uuid4().hex[:12]}"
     inventory = (root / "migrations/039_operator_state_inventory.sql").read_text(encoding="utf-8")
     query = inventory.split("WITH families(family, base_relations", 1)[1]
@@ -2218,7 +2221,7 @@ def test_migration_039_inventory_marks_malformed_family_as_shape_only():
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'CREATE SCHEMA "{schema}"')
         connection.execute(f'SET search_path TO "{schema}"')
-        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        connection.execute(current_schema)
         fk = _m039_constraint_name(connection, "scalar_comparison_group", "f", "%scalar_descriptor%")
         connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{fk}"')
         rows = connection.execute(query).fetchall()
@@ -2237,6 +2240,9 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
     baseline = subprocess.check_output(
         ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
         cwd=root, text=True, encoding="utf-8")
+    current_schema = subprocess.check_output(
+        ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
     migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
     schemas = {
         state: f"it_m039_{state}_" + uuid.uuid4().hex[:12]
@@ -2247,10 +2253,11 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         for schema in schemas.values():
             connection.execute(f'CREATE SCHEMA "{schema}"')
 
-    # Fresh contract of record.
+    # Fresh contract of record for this historical proof. Pin the reviewed
+    # pre-049 schema so its documented fresh-vs-034 FK divergence stays visible.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{schemas["fresh"]}"')
-        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        connection.execute(current_schema)
 
     # Existing serving schema: pinned pre-lineage shape, real legacy facts, no bases.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
@@ -2298,10 +2305,12 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         connection.execute(migration)
         assert _table_snapshot(connection, untouched_tables) == before
 
-    # Current -> 039 leaves existing facts and markers untouched.
+    # Current -> 039 leaves existing facts and markers untouched. This state
+    # includes the later lineage columns, so use the reviewed post-046/pre-049
+    # contract rather than the pre-lineage upgrade baseline above.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{schemas["current"]}"')
-        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        connection.execute(current_schema)
         with connection.transaction():
             connection.execute("""INSERT INTO territory_reference(territory_id,territory_type,name)
                 VALUES ('80603','commune','Current focal')""")
@@ -2449,7 +2458,6 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
     schema = "it_" + uuid.uuid4().hex[:20]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
-    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'CREATE SCHEMA "{schema}"')
     try:
@@ -2458,7 +2466,9 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             pytest.fail("Read DSN must identify a simple PostgreSQL role name")
         quoted_role = '"' + reader_role.replace('"', '""') + '"'
         with psycopg.connect(scoped_publish, autocommit=True) as publisher:
-            publisher.execute(schema_path.read_text(encoding="utf-8"))
+            publisher.execute(subprocess.check_output(
+                    ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+                    cwd=Path(__file__).resolve().parents[2], text=True, encoding="utf-8"))
             publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
             publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
             publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES ('59701','commune','Series focal','22','e1','D1','Dense'),('59702','commune','Series peer','22','e1','D1','Dense'),('59703','commune','Series tie','22','e2','D1','Dense'),('53','region','Series region',NULL,NULL,NULL,NULL)")
@@ -2910,7 +2920,9 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
         connection.execute(f'CREATE SCHEMA "{fresh_schema}"')
     try:
         with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
-            fresh.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
+            fresh.execute(subprocess.check_output(
+                    ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+                    cwd=api_root, text=True, encoding="utf-8"))
 
         with psycopg.connect(chain_dsn, autocommit=True) as chain:
             # Model the pre-594 publication/reference catalog directly. Do not
