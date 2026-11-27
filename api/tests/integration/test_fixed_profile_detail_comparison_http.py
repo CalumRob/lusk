@@ -228,7 +228,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                                              "territory_type": "commune",
                                              "member_count": 5}
             assert default_body["selection"] is None
-            assert default_body["profile_content_version"] == versions["declared_profile"]
+            assert default_body["profile_content_version"] == versions[RESOURCE]
             assert default_body["reference_content_version"] == versions["territory_reference"]
 
             matching_default = read(fixed("b_km_1000"))
@@ -246,7 +246,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                 results[detail] = result
                 assert body["scope"] == default_body["scope"]
                 assert body["selection"] is None
-                assert body["profile_content_version"] == versions["declared_profile"]
+                assert body["profile_content_version"] == versions[RESOURCE]
                 assert body["reference_content_version"] == versions["territory_reference"]
                 assert result["source_facet"] == {"detail": detail, "sex": None}
                 assert result["median"] == pytest.approx(median)
@@ -278,7 +278,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                     for member in density_members]
                 assert selected.json()["scope"] == {"kind": "explicit_selection",
                                                     "member_count": 5}
-                assert selected.json()["profile_content_version"] == versions["declared_profile"]
+                assert selected.json()["profile_content_version"] == versions[RESOURCE]
                 assert selected.json()["reference_content_version"] == versions["territory_reference"]
             selected_default = read({
                 "resource": RESOURCE,
