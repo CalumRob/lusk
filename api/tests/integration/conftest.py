@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
 
 from api.tests.integration.guarded_database import (
     _current_mutex, acquire_mutex, guarded_configuration_present, release_mutex,
+    retain_schema,
 )
 
 
@@ -47,3 +49,29 @@ def integration_db_mutex():
     finally:
         _current_mutex.reset(token)
         release_mutex(handle)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def guarded_module_schema_lifetime(integration_db_mutex, request):
+    """Fail in the owning module if any guarded schema crosses its boundary."""
+    if not guarded_configuration_present() or retain_schema():
+        yield
+        return
+    import psycopg
+
+    publish_dsn = os.environ["LUSK_TEST_PUBLISH_DSN"]
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        before = {row[0] for row in connection.execute(
+            "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'it\\_%'"
+        ).fetchall()}
+    try:
+        yield
+    finally:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            after = {row[0] for row in connection.execute(
+                "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'it\\_%'"
+            ).fetchall()}
+        leaked = sorted(after - before)
+        if leaked:
+            pytest.fail(
+                f"{request.node.module.__name__} left guarded schemas: {leaked}")

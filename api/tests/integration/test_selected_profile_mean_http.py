@@ -5,8 +5,9 @@ dedicated ``lusk_it_contract_pub`` / ``lusk_it_contract_read`` roles, a private
 ``PGPASSFILE`` and one random disposable schema. The named process mutex
 ``Local\\LuskIntegrationContractDb`` is acquired before the first connection and
 held through cleanup/verification, so this proof serializes with the concurrent
-pipeline worker. Every schema this module creates is dropped and the database is
-verified to hold zero user schemas and zero ``public`` relations before unlock.
+pipeline worker. Every schema this module creates is dropped before unlock. The
+proof verifies its own random schema's isolation and zero ``public`` relations;
+unrelated guarded schemas are neither required nor removed.
 
 The fixture is the real Mobilité network split: three equal-weight partitions
 whose eligible communes are identical, a measured zero, missing cells, and two
@@ -101,8 +102,7 @@ def mean_db(integration_db_mutex):
     with _guarded_identity(publish_dsn, read_dsn) as (publisher, _reader):
         state_before = (_user_schemas(publisher), _public_relations(publisher),
                         _database_bytes(publisher))
-        if state_before[0]:
-            pytest.fail(f"guarded target is not empty before the run: {state_before[0]}")
+        assert schema not in state_before[0]
     try:
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.execute(f'CREATE SCHEMA "{schema}"')
@@ -128,8 +128,6 @@ def mean_db(integration_db_mutex):
                     pytest.fail("own guarded schema could not be removed before unlock")
                 if state_after[1] != 0:
                     pytest.fail("public relations exist after guarded cleanup")
-                if state_after[0]:
-                    pytest.fail(f"guarded target must be empty after the run: {state_after[0]}")
                 print(f"guarded database bytes: before={state_before[2]} "
                       f"after={state_after[2]} schemas_before={state_before[0]} "
                       f"schemas_after={state_after[0]}", flush=True)

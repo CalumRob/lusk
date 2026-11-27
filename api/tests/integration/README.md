@@ -40,7 +40,8 @@ variables after verification.
 Every Python integration module holds `Local\LuskIntegrationContractDb` from
 setup through its last test and cleanup. A session guard rejects any
 `psycopg.connect` attempted outside that mutex, so a second module/process cannot
-interleave database work with a live guarded fixture.
+interleave database work with a live guarded fixture. A module-lifetime guard
+also fails in the owning module if a new `it_*` schema survives its teardown.
 
 The current PostgreSQL integration tests exercise database-backed serving,
 publication contracts, and guarded migration rehearsals against an explicitly
@@ -193,12 +194,11 @@ The focused mean proof is a non-retained guarded suite. It acquires the same
 with it, and holds the lock through cleanup and verification. Without the
 guarded `LUSK_TEST_*` DSNs the whole module skips, so ordinary collection never
 waits on the operator database. With the DSNs present it refuses before its
-first connection/DDL unless `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`, requires the
-database to be empty before the run, creates one random `it_mean_*` schema,
-seeds only its own declared profiles, and always drops that schema in `finally`.
-It fails before the unlock unless zero user schemas and zero `public` relations
-remain, and prints the database byte size/schema state before and after. Proofs
-are never retained.
+first connection/DDL unless `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`, creates one random
+`it_mean_*` schema, seeds only its own declared profiles, and always drops that
+schema in `finally`. It verifies its own schema isolation and zero `public`
+relations; unrelated guarded schemas are left untouched. Proofs are never
+retained.
 
 ```powershell
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
