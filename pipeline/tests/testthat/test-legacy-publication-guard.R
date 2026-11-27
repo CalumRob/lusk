@@ -17,3 +17,13 @@ test_that("legacy whole-snapshot publication refuses post-049 before marker acce
   expect_error(verifier_schema_publication_globale(NULL),
     "retired after migration 049", fixed = TRUE)
 })
+
+test_that("scoped whole-snapshot publication refuses post-049 before opening its transaction", {
+  testthat::local_mocked_bindings(
+    verifier_schema_publication_globale = function(con)
+      stop("retired after migration 049", call. = FALSE),
+    with_publication_transaction = function(...)
+      stop("transaction must not open", call. = FALSE), .package = "lusk")
+  expect_error(publish_scoped_retained_backend(NULL, list()),
+    "retired after migration 049", fixed = TRUE)
+})

@@ -554,6 +554,7 @@ assert_scoped_publication_baseline <- function(con, plan) {
 # the scalar publisher's explicit retirement policy for the scoped indicators
 # (the three are omitted from the restored generation, not deleted by SQL).
 publish_scoped_retained_backend <- function(con, plan, absent_sources = NULL) {
+  verifier_schema_publication_globale(con)
   receipt <- new.env(parent = emptyenv())
   receipt$retirement <- NULL
   with_publication_transaction(con, {
