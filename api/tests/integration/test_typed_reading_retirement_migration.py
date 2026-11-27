@@ -9,6 +9,7 @@ schema proves an unexpected view dependency aborts the whole transaction.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -180,19 +181,58 @@ def _seed_remaining_shapes(connection):
         SELECT resource_id,shape,'adopt',content_version FROM resource_publication""")
 
 
-def _columns_and_constraints(connection, schema: str, tables):
+def _normalize_catalog_row(row, schema: str, definition_columns):
+    normalized = []
+    for position, value in enumerate(row):
+        if position in definition_columns and isinstance(value, str):
+            value = value.replace(f'"{schema}".', "").replace(f"{schema}.", "")
+            value = re.sub(r"\s+", " ", value).strip()
+        normalized.append(value)
+    return tuple(normalized)
+
+
+def _schema_contract(connection, schema: str, tables):
+    """Schema-local parity: tables, every index/trigger, and every function."""
+    names = list(tables)
     columns = connection.execute("""
         SELECT table_name,column_name,data_type,is_nullable,column_default
         FROM information_schema.columns WHERE table_schema=%s AND table_name=ANY(%s)
         ORDER BY table_name,ordinal_position
-    """, (schema, list(tables))).fetchall()
+    """, (schema, names)).fetchall()
     constraints = connection.execute("""
-        SELECT r.relname,c.conname,pg_get_constraintdef(c.oid,true)
+        SELECT r.relname,c.conname,c.contype,pg_get_constraintdef(c.oid,true),
+               c.convalidated,c.condeferrable,c.condeferred
         FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
         JOIN pg_namespace n ON n.oid=r.relnamespace
         WHERE n.nspname=%s AND r.relname=ANY(%s) ORDER BY r.relname,c.conname
-    """, (schema, list(tables))).fetchall()
-    return columns, sorted(constraints)
+    """, (schema, names)).fetchall()
+    indexes = connection.execute("""
+        SELECT r.relname,i.relname,pg_get_indexdef(i.oid),
+               x.indisvalid,x.indisready,x.indislive,x.indisunique,x.indisprimary
+        FROM pg_index x JOIN pg_class r ON r.oid=x.indrelid
+        JOIN pg_class i ON i.oid=x.indexrelid
+        JOIN pg_namespace n ON n.oid=r.relnamespace
+        WHERE n.nspname=%s AND r.relname=ANY(%s) ORDER BY r.relname,i.relname
+    """, (schema, names)).fetchall()
+    triggers = connection.execute("""
+        SELECT r.relname,t.tgname,pg_get_triggerdef(t.oid,true),t.tgenabled
+        FROM pg_trigger t JOIN pg_class r ON r.oid=t.tgrelid
+        JOIN pg_namespace n ON n.oid=r.relnamespace
+        WHERE n.nspname=%s AND r.relname=ANY(%s) AND NOT t.tgisinternal
+        ORDER BY r.relname,t.tgname
+    """, (schema, names)).fetchall()
+    functions = connection.execute("""
+        SELECT p.oid::regprocedure::text,pg_get_functiondef(p.oid)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname=%s ORDER BY p.oid::regprocedure::text
+    """, (schema,)).fetchall()
+    return (
+        columns,
+        [_normalize_catalog_row(row, schema, {3}) for row in constraints],
+        [_normalize_catalog_row(row, schema, {2}) for row in indexes],
+        [_normalize_catalog_row(row, schema, {2}) for row in triggers],
+        [_normalize_catalog_row(row, schema, {0, 1}) for row in functions],
+    )
 
 
 def test_migration_049_preserves_adopted_resources_and_http_reads():
@@ -241,13 +281,11 @@ def test_migration_049_preserves_adopted_resources_and_http_reads():
 
             connection.execute(f'SET search_path TO "{fresh}"')
             connection.execute(SCHEMA.read_text(encoding="utf-8"))
-            upgraded_columns, upgraded_constraints = _columns_and_constraints(
+            upgraded_contract = _schema_contract(
                 connection, upgraded, retained_tables | {"table_publication"})
-            fresh_columns, fresh_constraints = _columns_and_constraints(
+            fresh_contract = _schema_contract(
                 connection, fresh, retained_tables | {"table_publication"})
-            assert upgraded_columns == fresh_columns
-            assert [row for row in upgraded_constraints if row[0] == "table_publication"] == \
-                [row for row in fresh_constraints if row[0] == "table_publication"]
+            assert upgraded_contract == fresh_contract
 
         role = "lusk_it_contract_read"
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
