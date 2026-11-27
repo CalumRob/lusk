@@ -140,8 +140,30 @@
              stringsAsFactors = FALSE)
 }
 
-.adopt_db_series_projection <- function(metadata) {
+.adopt_db_series_projection <- function(metadata, reference) {
   payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  # The production OCS-GE fixture carries real commune codes while the shared
+  # adopt reference is deliberately tiny/synthetic. Keep the same projector and
+  # canonical source rows, but bind the bounded subset to that reference by level.
+  for (territory_type in unique(reference$territory_type)) {
+    target <- reference$territory_id[reference$territory_type == territory_type]
+    source <- unique(payload$indicateurs$territoire[
+      payload$indicateurs$type == territory_type])
+    keep <- source[seq_len(min(length(source), length(target)))]
+    mapping <- stats::setNames(target[seq_along(keep)], keep)
+    payload$indicateurs <- payload$indicateurs[
+      payload$indicateurs$type != territory_type |
+      payload$indicateurs$territoire %in% keep, , drop = FALSE]
+    indicator_rows <- payload$indicateurs$type == territory_type
+    payload$indicateurs$territoire[indicator_rows] <-
+      unname(mapping[payload$indicateurs$territoire[indicator_rows]])
+    payload$histoires <- payload$histoires[
+      payload$histoires$type != territory_type |
+      payload$histoires$territoire %in% keep, , drop = FALSE]
+    history_rows <- payload$histoires$type == territory_type
+    payload$histoires$territoire[history_rows] <-
+      unname(mapping[payload$histoires$territoire[history_rows]])
+  }
   project_artif_m2m3_projection(payload$indicateurs, payload$histoires,
     vintages_milieux(), metadata)
 }
@@ -259,7 +281,7 @@
     scalar_binding = scalar_version)
 
   serie <- .adopt_db_series_projection(
-    jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE))
+    jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE), reference$rows)
   write_owned_series_artifact(serie,
     file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
   period <- adaptateur_collection_projection()
