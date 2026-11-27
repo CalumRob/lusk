@@ -87,6 +87,15 @@ def _catalog(connection, schema: str):
 
 
 def _seed_remaining_shapes(connection):
+    connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+        reference_content_version) VALUES ('scalar_observation','global-scalar-v1',4,'ref-v1'),
+        ('declared_profile','global-profile-v1',4,'ref-v1')""")
+    connection.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
+        scalar_content_version,reference_content_version,group_row_count,territory_row_count,
+        lineage_row_count) VALUES (true,'global-comparison-v1','global-scalar-v1','ref-v1',2,4,2)""")
+    connection.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
+        profile_content_version,reference_content_version,group_row_count,territory_row_count)
+        VALUES (true,'global-profile-comparison-v1','global-profile-v1','ref-v1',1,2)""")
     connection.execute("""UPDATE source_vintage SET reference_date='2026-01-01',
         publication_date='2026-01-02' WHERE source_id='source_a' AND vintage_id='v1'""")
     connection.execute("""INSERT INTO series_dataset_publication

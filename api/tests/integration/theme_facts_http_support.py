@@ -79,8 +79,7 @@ def fixture(theme, inserts):
 
 
 def common(client, checked, theme):
-    resource={"demographie":"demographie_selected_reading",
-              "programmes":"programme_membership"}[theme]
+    resource={"programmes":"programme_membership"}[theme]
     target={"kind":"territory","type":"commune","id":"35238"}
     mismatch=client.post("/api/resources/read",json={"resource":"no_such_resource",
         "target":target,"intent":{"kind":"facts"}})

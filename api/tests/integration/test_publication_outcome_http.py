@@ -26,7 +26,7 @@ from api.tests.integration.resource_publication_fixtures import publish_indicato
 pytestmark = pytest.mark.integration
 
 REQUIRED_FAMILIES = {"scalar", "profile", "ordered_series", "named_reference",
-                     "typed_reading", "collection", "aedar"}
+                     "collection", "aedar"}
 REFUELLING_KEYS = ("bornes_recharge", "bornes_recharge_1000",
                    "bornes_ev_par_station_service")
 
@@ -252,7 +252,6 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
               target={"kind": "named_reference", "id": "bretagne_all_assessed_communes_mean"}),
         _item("aedar-summary", "aedar_territory_summary"),
         _item("aedar-source", "aedar_territorial_aggregate"),
-        _item("typed-reading", "demographie_selected_reading"),
         _item("collection", "subventions_par_domaine"),
     ]
     try:
@@ -293,7 +292,7 @@ def test_v2_mixed_batch_across_all_publication_families(outcome_db, monkeypatch)
 
     expected = {"profile": "profile", "series": "ordered_series",
                 "named-reference": "named_reference", "aedar-summary": "aedar",
-                "aedar-source": "aedar", "typed-reading": "typed_reading",
+                "aedar-source": "aedar",
                 "collection": "collection", "profile-cohort": "profile"}
     for item_id, family in expected.items():
         outcome = results[item_id]
@@ -320,7 +319,6 @@ def test_v2_all_unavailable_is_a_valid_envelope_and_v1_stays_atomic(outcome_db, 
               intent={"kind": "fixed_comparison", "context": "default"}),
         *refuelling,
         _item("aedar", "aedar_territory_summary"),
-        _item("typed-reading", "demographie_selected_reading"),
         _item("collection", "subventions_par_domaine"),
     ]
     try:
@@ -332,7 +330,7 @@ def test_v2_all_unavailable_is_a_valid_envelope_and_v1_stays_atomic(outcome_db, 
     assert all(result["status"] == "publication_unavailable"
                for result in v2.json()["results"])
     assert {result["family"] for result in v2.json()["results"]} == {
-        "profile", "ordered_series", "scalar", "aedar", "typed_reading", "collection"}
+        "profile", "ordered_series", "scalar", "aedar", "collection"}
     assert v1.status_code == 503
     assert "results" not in v1.json()
 

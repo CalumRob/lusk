@@ -20,16 +20,9 @@ def _md5(path: Path) -> str:
 
 
 # These are transport inventories, not domain facts. They mirror the existing
-# owner contracts in pipeline/R/publish_typed_reading_artifact.R and
-# publish_series.R; the unit test below checks that those producer contracts
+# owner contracts in pipeline/R/publish_series.R; the unit test below checks that those producer contracts
 # have not drifted. Keep file names fixed rather than trusting manifest paths.
 _TYPED_ARTIFACT_CONTRACTS = {
-    ("typed-reading-serving", "typed-reading"): {
-        "economie": (("facts", "source"), ()),
-        "demographie": (("facts",), ("descriptor",)),
-        "habitat": (("facts", "vintage"), ()),
-        "milieux": (("facts", "source_bindings", "population_revisions"), ()),
-    },
     ("series-serving", "owned-series"): {
         "conso_enaf_annuel": (("points", "provenance", "point_provenance"),
                               ("dataset_id", "descriptor")),
@@ -243,11 +236,6 @@ def read_typed_artifact(root: Path, directory_family: str, artifact_family: str,
         for field in json_fields
     })
     return projection
-
-
-def read_typed_reading_artifact(root: Path, owner: str) -> dict:
-    """Read the current owner-scoped selected-reading producer artifact."""
-    return read_typed_artifact(root, "typed-reading-serving", "typed-reading", owner)
 
 
 def read_owned_series_artifact(root: Path, owner: str) -> dict:
