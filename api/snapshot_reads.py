@@ -19,10 +19,6 @@ from api.publication_outcomes import publication_unavailable
 from api.resource_publication import (live_resource_publication,
                                        live_resource_publications,
                                        live_territory_reference_version)
-from api.typed_reading_snapshots import (
-    _demographic_reading_cloud, _demographic_reading_marker,
-    _milieux_reading_cloud, _milieux_reading_marker,
-)
 
 _COMPARISON_RESULT_FIELDS = {
     "focal_value", "median", "rank", "rank_size", "rank_ties",
@@ -1131,9 +1127,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         unsupported=set(result_fields)-available_comparison_fields-_COMPARISON_MANDATORY_FIELDS
         if unsupported:
             raise HTTPException(422,"Field selection is not declared by any participating comparison resource")
-    reading_marker = _demographic_reading_marker(conn) if theme_id == "demographie" else None
-    milieux_marker = _milieux_reading_marker(conn) if theme_id == "milieux" else None
-    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not milieux_marker:
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings:
         raise HTTPException(404, "No published facts for this theme")
     reference_version = live_territory_reference_version(conn)
     scalar_marker = None
@@ -1310,21 +1304,14 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         collection_results.append(collection_comparison(*collection_args) if collection_fields is None else
             collection_comparison(*collection_args,fields=collection_fields))
     results.extend(collection_results)
-    reading_cloud = (_demographic_reading_cloud(conn, reading_marker, territory_type, territory_id,
-        cohort_type, members, scope) if reading_marker else None)
-    if milieux_marker:
-        reading_cloud = _milieux_reading_cloud(conn, milieux_marker, territory_type, territory_id,
-            cohort_type, members, scope)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
         "content_version": (
             scalar_marker[0] if scalar_marker else
             next(iter(owned_markers.values()))[1] if owned_markers else
             collection_results[0]["content_version"] if collection_results else
-            reading_marker[0] if reading_marker else
-            milieux_marker[0] if milieux_marker else
             None),
-        "reading_content_version": reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else None,
-        "reading_cloud": reading_cloud,
+        "reading_content_version": None,
+        "reading_cloud": None,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "scalar_content_version": scalar_marker[0] if scalar_marker else None,
         "owned_series_content_versions": {

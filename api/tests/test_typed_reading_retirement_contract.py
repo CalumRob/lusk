@@ -90,6 +90,17 @@ def test_schema_sql_has_no_typed_tables_or_global_comparison_singletons():
     assert "CREATE TABLE profile_observation (" in schema
 
 
+def test_production_api_and_producer_grammar_have_no_typed_reading_registration():
+    for path in (ROOT / "api").glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "typed_reading" not in source, path
+        assert "selected_reading" not in source, path
+    for path in (ROOT / "pipeline/inst/extdata/theme-metadata").glob("theme_*.json"):
+        source = path.read_text(encoding="utf-8")
+        assert "typed_reading" not in source, path
+        assert "selected_reading" not in source, path
+
+
 def test_table_publication_checks_are_narrowed_identically_in_schema_and_migration():
     schema = re.sub(r"\s+", " ", _schema())
     migration = re.sub(r"\s+", " ", _code(_migration()))

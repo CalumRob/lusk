@@ -312,7 +312,6 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
 
     monkeypatch.setattr(main, "focal_profiles", lambda *args, **kwargs: ([], None))
     monkeypatch.setattr(main, "collection_descriptors", lambda *args, **kwargs: [])
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _conn: None)
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c1", "c2"), {"kind": "density_class"}))
     monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
@@ -370,7 +369,6 @@ def test_selected_scalar_member_projection_preserves_a_single_eligible_rank(monk
 
     monkeypatch.setattr(main, "focal_profiles", lambda *args, **kwargs: ([], None))
     monkeypatch.setattr(main, "collection_descriptors", lambda *args, **kwargs: [])
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _conn: None)
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c1", "c2"), {"kind": "explicit_selection"}))
     monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: None)

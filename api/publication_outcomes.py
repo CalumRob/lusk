@@ -28,7 +28,6 @@ UNAVAILABLE_FAMILIES = frozenset({
     "profile",
     "ordered_series",
     "named_reference",
-    "typed_reading",
     "collection",
     "aedar",
 })
@@ -43,8 +42,6 @@ def family_for_resource(resource) -> str:
     """
     kind = getattr(resource, "resource_kind", "")
     shapes = set(getattr(resource, "shapes", ()))
-    if kind == "typed_reading":
-        return "typed_reading"
     if kind in {"aedar_source_grain", "aedar_territory_summary"}:
         return "aedar"
     if "declared_profile" in shapes:

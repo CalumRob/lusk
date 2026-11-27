@@ -329,8 +329,6 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
     monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: calls.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(main, "_milieux_reading_marker", lambda _c: None)
     main._theme_comparison_snapshot(Conn(), "commune", "c1", "habitat", None, indicator_id="housing_profile")
     assert calls == [("density_class", "A", "commune")]
 
@@ -396,8 +394,6 @@ def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic
         ("density_class", "A", "commune") if selection == ["c1", "c2"] else None)
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: observed.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(main, "_milieux_reading_marker", lambda _c: None)
     main._theme_comparison_snapshot(Conn(), "commune", "c1", "habitat", ["c1", "c2"])
     main._theme_comparison_snapshot(Conn(), "commune", "c1", "habitat", ["c1", "c3"])
     assert observed == [("density_class", "A", "commune"), None]

@@ -284,7 +284,6 @@ def test_family_is_derived_from_the_producer_declaration_not_the_lookup():
         "structure_age": "profile",
         "prix_m2": "ordered_series",
         "raccordement_reference": "named_reference",
-        "demographie_selected_reading": "typed_reading",
         "subventions_par_domaine": "collection",
         "aedar_territorial_aggregate": "aedar",
         "aedar_territory_summary": "aedar",
