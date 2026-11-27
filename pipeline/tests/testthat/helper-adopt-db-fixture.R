@@ -136,14 +136,10 @@
              stringsAsFactors = FALSE)
 }
 
-.adopt_db_series_projection <- function() {
-  p <- adaptateur_series_projection()
-  p$descriptor$direction <- "high"
-  p$descriptor$comparison_point <- "M3"
-  p$descriptor$comparison_statistic <- "median"
-  p$descriptor$comparison_levels <- "commune"
-  p$descriptor$comparison_axis_values <- c("M2", "M3")
-  p
+.adopt_db_series_projection <- function(metadata) {
+  payload <- compute_payload_test(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  project_artif_m2m3_projection(payload$indicateurs, payload$histoires,
+    vintages_milieux(), metadata)
 }
 
 .adopt_db_aedar_manifest <- function(projection, reference) {
@@ -198,6 +194,14 @@
             base_metadata)
   file.copy(list.files(system.file("extdata", "theme-metadata", package = "lusk"),
     pattern = "^theme_.*\\.json$", full.names = TRUE), metadata_directory)
+  # The bounded adopt fixture uses one semantic/storage identity for its OCS-GE
+  # dataset. Production's projector remains the only builder; only the copied
+  # fixture metadata aligns the dataset id with the fixture resource id.
+  milieux_metadata_path <- file.path(metadata_directory, "theme_milieux.json")
+  milieux_metadata <- jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE)
+  milieux_metadata$indicator_pages$artif_par_habitant$series_dataset_id <- "artif_par_habitant"
+  jsonlite::write_json(milieux_metadata, milieux_metadata_path, auto_unbox = TRUE,
+    null = "null", pretty = TRUE)
   jsonlite::write_json(list(theme = "programmes", indicator_keys = list("membres", "acv"),
     sources = list(membres = "programme_source", acv = "programme_source"),
     source_records = list(programme_source = list(name = "Programmes")),
@@ -250,7 +254,8 @@
   write_profile_serving_artifact(dpe, file.path(sortie, "profile-serving", "distribution_dpe"),
     scalar_binding = scalar_version)
 
-  serie <- .adopt_db_series_projection()
+  serie <- .adopt_db_series_projection(
+    jsonlite::read_json(milieux_metadata_path, simplifyVector = FALSE))
   write_owned_series_artifact(serie,
     file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
   period <- adaptateur_collection_projection()
