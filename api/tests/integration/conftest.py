@@ -52,6 +52,20 @@ def integration_db_mutex():
 
 
 @pytest.fixture(scope="module", autouse=True)
+def isolated_app_dependencies():
+    """No FastAPI dependency override may cross a guarded module boundary."""
+    from api import main
+
+    previous = dict(main.app.dependency_overrides)
+    main.app.dependency_overrides.clear()
+    try:
+        yield
+    finally:
+        main.app.dependency_overrides.clear()
+        main.app.dependency_overrides.update(previous)
+
+
+@pytest.fixture(scope="module", autouse=True)
 def guarded_module_schema_lifetime(integration_db_mutex, request):
     """Fail in the owning module if any guarded schema crosses its boundary."""
     if not guarded_configuration_present() or retain_schema():
