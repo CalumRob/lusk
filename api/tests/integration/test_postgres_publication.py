@@ -1187,6 +1187,26 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
 
     def post_semantic_batch(client, items):
         return client.post("/api/resources/read-batch", json={"items": items})
+
+    def comparable_payload(body):
+        """Ignore only the deliberately mutable source label on full republish.
+
+        Source/vintage identities, versions, dates, values, ranks and all
+        publication clocks remain exact. Production refreshes source labels;
+        this test proves numerical and lineage parity, not label immutability.
+        """
+        results = [body.get("result"), *(body.get("named_references") or [])]
+        for result in results:
+            for source in (result or {}).get("comparison_sources", []):
+                source["name"] = "<mutable-source-label>"
+        return body
+
+    def comparable_response(response):
+        return comparable_payload(response.json())
+
+    def comparable_sources(sources):
+        return [{key: value for key, value in source.items() if key != "name"}
+                for source in sources]
     try:
         series_fixture = manifest["ordered_series"]
         collection_fixture = manifest["numeric_collection"]
@@ -1309,11 +1329,11 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
                 assert all(response.status_code == 200 for response in actual_responses), [
                     response.text for response in actual_responses]
 
-                assert [response.json() for response in actual_responses] == [
-                    response.json() for response in expected_responses]
+                assert [comparable_response(response) for response in actual_responses] == [
+                    comparable_response(response) for response in expected_responses]
                 assert actual_batch.status_code == 200, actual_batch.text
-                assert [row["data"] for row in actual_batch.json()["results"]] == [
-                    response.json() for response in expected_responses]
+                assert [comparable_payload(row["data"]) for row in actual_batch.json()["results"]] == [
+                    comparable_response(response) for response in expected_responses]
                 with psycopg.connect(publish_dsn) as publisher:
                     marker_tables = (old_rows if old_rows else {
                         "scalar_comparison_publication": None,
@@ -1477,7 +1497,8 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
         profile_result = profile_only.json()["result"]
         assert profile_result["median"] == profile["median"]
         assert profile_result["status"] == profile["status"]
-        assert profile_result["comparison_sources"] == profile["comparison_sources"]
+        assert comparable_sources(profile_result["comparison_sources"]) == comparable_sources(
+            profile["comparison_sources"])
         assert not {"focal_value","rank","rank_size","rank_ties","eligible_count"} & set(profile_result)
 
         series = manifest["ordered_series"]
@@ -1562,7 +1583,8 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
         rank_result=series_rank_only.json()["result"]
         assert rank_result["rank"] == series_result["rank"]
         assert rank_result["status"] == series_result["status"]
-        assert rank_result["comparison_sources"] == series_result["comparison_sources"]
+        assert comparable_sources(rank_result["comparison_sources"]) == comparable_sources(
+            series_result["comparison_sources"])
         assert not {"focal_value","median","rank_size","rank_ties","eligible_count"} & set(rank_result)
 
         collection = manifest["numeric_collection"]
@@ -1609,7 +1631,8 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
         selected_collection=collection_median.json()["result"]
         assert selected_collection["median"] == collection_result["median"]
         assert selected_collection["status"] == collection_result["status"]
-        assert selected_collection["comparison_sources"] == collection_result["comparison_sources"]
+        assert comparable_sources(selected_collection["comparison_sources"]) == comparable_sources(
+            collection_result["comparison_sources"])
         assert not {"rank","rank_size","eligible_count","missing_count"} & set(selected_collection)
         with TestClient(main.app) as client:
             empty_collection_response = post_semantic(client, semantic_item(

@@ -1179,7 +1179,7 @@ scalar_postgres_adapter <- function(con) {
           "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
       .ecrire_sources_serveur(con, projection$datasets, projection$vintages,
-                                conflict = "nothing")
+                                conflict = "update")
       # The scalar table is one table-owned snapshot; the only permitted live
       # omissions were explicitly checked above and retire their comparison
       # dependencies before descriptor deletion (their FK is not cascading).
