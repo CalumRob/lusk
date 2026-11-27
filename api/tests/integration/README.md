@@ -154,7 +154,7 @@ sibling's pre-existing schema is reported but never dropped by this fixture. It
 is not a retained benchmark fixture.
 
 The suite proves mixed and all-unavailable envelopes across scalar, profile,
-owned series, named reference, typed reading, collection, comparison and AEDAR;
+owned series, named reference, collection, comparison and AEDAR;
 three actual refuelling scalar keys exercise facts/fixed/selected absence;
 unchanged values/ranks/units/clocks/provenance; item correlation and one
 repeatable-read snapshot; v2 identity admission (unknown target/member with an
@@ -231,23 +231,20 @@ database. Do not point them at `lusk`; each script verifies the database and
 role, creates a random schema, runs fresh `api/schema.sql`, grants only that
 schema to the read role, and cleans up only its own schema when
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. `public` and other schemas are never
-changed. Do not reuse serving credentials. The Habitat, Economy and Milieux
-proofs read current producer-owned scalar/profile/series/typed-reading
-generations from `LUSK_TEST_CANONICAL_DATA_DIR`, including the required current
-pointers, manifests, provenance and dependency companions. Stage complete
-validated generations in the private test fixture; the retired numerical
-`indicateurs_*.json` / `histoires_*.json` browser exports are not inputs. Milieux
-source-absence evidence remains a separate source-owned input. Programme proofs
-use their canonical membership/grant Parquets and existing R projectors for
-temporary test expectations. These paths do not copy `data/raw`, reconstruct
-from browser JSON, or run a pipeline build.
+changed. Do not reuse serving credentials. The guarded R proofs cover retained
+scalar, profile, owned-series, collection, AEDAR, adoption and baseline contracts
+with bounded synthetic or producer-owned fixtures; no typed-reading owner or
+artifact participates. Programme proofs use their canonical membership/grant
+Parquets and existing R projectors for temporary test expectations. These paths
+do not copy `data/raw`, reconstruct from browser JSON, or run a pipeline build.
 
-Run from `pipeline/` on the trusted workstation after the database and role are
-ready. Store credentials in a private libpq passfile (not the repository or
-shell history) and set `PGPASSFILE` to its path; use a separate test role from
-the serving publisher. The role name is the only credential passed in process
-environment. Run each focused command from `pipeline/`; the last three calls
-exercise registered selected-reading publishers through semantic HTTP:
+Run focused files from `pipeline/` on the trusted workstation during iteration.
+Store credentials in a private libpq passfile (not the repository or shell
+history) and set `PGPASSFILE` to its path; use a separate test role from the
+serving publisher. The role name is the only credential passed in process
+environment. At handoff, run the full touched-layer suite through
+`pipeline/scripts/run-guarded-r.ps1` so cleanup, identity and serialization are
+guarded and a receipt is written:
 
 ```powershell
 $env:LUSK_SCALAR_TEST_HOST = "192.168.1.120"
@@ -281,42 +278,6 @@ $env:PGCONNECT_TIMEOUT = '5'
 $env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
 python -m pytest api/tests/integration/test_aedar_publisher_http.py -q -s
 ```
-
-For the retained Habitat, Economy, and Milieux publisher-to-HTTP proofs, set
-the shared test-only connection variables from the guarded configuration above
-plus `LUSK_PROFILE_TEST_HOST`, `LUSK_PROFILE_TEST_PORT`,
-`LUSK_PROFILE_TEST_DATABASE`, `LUSK_PROFILE_TEST_USER`, and
-`LUSK_TEST_READ_USER`. Set `LUSK_TEST_CANONICAL_DATA_DIR` to the read-only
-canonical artifact directory. Milieux additionally requires
-`LUSK_MILIEUX_CONSO_SOURCE` and `LUSK_MILIEUX_PROCESSED_WINDOW` pointing to the
-existing source snapshot and processed OCS window; those paths are inputs only.
-Use `PGPASSFILE` for the private passfile and process-scoped libpq timeouts.
-The scripts create isolated writable fixture directories and random guarded
-schemas; do not pass a canonical source directory as a publisher output.
-
-```powershell
-$env:LUSK_PROFILE_TEST_HOST = '192.168.1.120'
-$env:LUSK_PROFILE_TEST_PORT = '5432'
-$env:LUSK_PROFILE_TEST_DATABASE = 'lusk_it_contract'
-$env:LUSK_PROFILE_TEST_USER = 'lusk_it_contract_pub'
-$env:LUSK_TEST_READ_USER = 'lusk_it_contract_read'
-$env:LUSK_TEST_CANONICAL_DATA_DIR = 'E:\Lusk\public\data'
-$env:LUSK_MILIEUX_CONSO_SOURCE = 'E:\Lusk\pipeline\data\raw\conso-com.csv'
-$env:LUSK_MILIEUX_PROCESSED_WINDOW = 'E:\Lusk\pipeline\data\processed\milieux\ocsge_communes.rds'
-$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
-$env:PGCONNECT_TIMEOUT = '5'
-$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
-$env:TESTTHAT_PARALLEL = 'FALSE'
-$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
-Rscript scripts/smoke-habitat-reading-postgres.R
-Rscript scripts/smoke-housing-economy-postgres.R
-Rscript scripts/smoke-milieux-reading-postgres.R
-```
-
-These proofs compare semantic HTTP payloads to canonical producer records,
-assert owner/source bindings and sparse Milieux absence evidence, and exercise
-no-op, rollback, and fail-closed publication behavior. They do not call retired
-theme/comparison routes or seed expected typed-reading rows directly in SQL.
 
 The scalar smoke retains its random schema by default. It drops only its own
 schema when `LUSK_SCALAR_TEST_CLEANUP=1`; inspect ownership before manual cleanup.
@@ -622,10 +583,8 @@ companion_profiles=TRUE)` entry point for territory reference, scalar and declar
 profiles (including a DPE-like `comparison_scalar` binding). Owned series use
 `publish_owned_series_projection`, period-detail and anchored collections use
 `publish_observed_collection`, and AEDAR uses `publish_aedar_aggregates` plus
-`publish_aedar_comparisons`. At fixture scale the four typed-reading families are
-namespace-bound no-op stubs because adoption explicitly ignores them and complete
-canonical typed-reading fixtures are unavailable; the proof asserts every stub was
-hit. No expected serving rows are SQL-seeded. The proof adopts all eight resources,
+`publish_aedar_comparisons`. No typed-reading owner or expected serving row
+participates. The proof adopts all eight retained resources,
 requires the whole-schema data digest to stay byte-identical apart from
 registry/receipt/descriptor rows, asserts one version-bound discovery descriptor per
 resource, refuses one altered live row in each shape with zero writes and the
@@ -671,7 +630,7 @@ python -m pytest api/tests -q
 
 # From pipeline/; focused default files while iterating, then ONE budget run at handoff.
 $env:TESTTHAT_PARALLEL = 'FALSE'
-Rscript -e "testthat::test_local(filter='publish-series|publish-typed-reading-artifact', stop_on_failure=TRUE)"
+Rscript -e "testthat::test_local(filter='publish-series|scoped-publication-plan', stop_on_failure=TRUE)"
 Rscript scripts/verify-r-suite-budget.R --csv-prefix=<path-outside-repo>/r-serial
 ```
 
@@ -685,12 +644,11 @@ captured response when retried directly. This is synthetic guarded fixture
 replay, not a production-browser benchmark. The Vitest child receives only the
 artifact path, not PostgreSQL environment or credentials.
 
-The current retained publisher proofs are the Habitat, Economy, and Milieux
-scripts above, each using a private copied writable fixture and a guarded random schema.
-The ordinary suite and focused R test counts do not substitute for those
-publisher-to-database-to-HTTP proofs. Do not run the full AEDAR proof while
-iterating on unrelated harnesses; cite its pinned run and duration when reporting
-acceptance.
+The current retained publisher proofs are the guarded R files described above,
+each using a bounded fixture and a guarded random schema. The ordinary suite and
+focused R test counts do not substitute for those publisher-to-database proofs.
+Do not run the full AEDAR proof while iterating on unrelated harnesses; cite its
+pinned run and duration when reporting acceptance.
 
 The separate AEDAR summary-storage/read-path benchmark is strictly read-only;
 it requires an explicitly selected current-compatible retained schema and the

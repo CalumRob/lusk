@@ -1286,9 +1286,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON resource_publication,
 GRANT SELECT, INSERT ON resource_publication_event TO lusk_publisher;
 REVOKE UPDATE, DELETE, TRUNCATE ON resource_publication_event FROM lusk_publisher;
 
--- Per-resource declared-profile comparison marker (migration 047, #1138).
--- Expand phase: coexists with the global profile_comparison_publication
--- singleton until the step-4 reader cutover.
+-- Per-resource declared-profile comparison marker (migration 047, #1138),
+-- retained as the authoritative profile comparison clock after migration 049.
 CREATE TABLE profile_resource_comparison_publication (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
     content_version text NOT NULL,

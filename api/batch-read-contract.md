@@ -33,7 +33,7 @@ order, and replaces a *classified publication absence* with a typed outcome:
   zero is invented for any other item.
 - `status: "publication_unavailable"` carries a closed `reason` and the declared
   `family` (`scalar`, `profile`, `ordered_series`, `named_reference`,
-  `typed_reading`, `collection`, `aedar`). The family always comes from the
+  `collection`, `aedar`). The family always comes from the
   producer resource declaration, never from which lookup failed, so a
   comparison intent keeps its resource family. A cohort target names the
   underlying resource family. No `data` is present; the client must not
@@ -85,7 +85,6 @@ The guard-by-guard classification is generated in
 | --- | --- | --- |
 | `scalar`, `declared_profile`, `ordered_series`, `period_detail`, `anchored_membership` | A declared territory or `territory_cohort` target; producer-declared coordinates and optional output fields | `facts` |
 | `distribution` | A declared territory target; producer-declared coordinates and optional output fields | `facts` |
-| `typed_reading` | A territory or `territory_cohort` target and producer-declared reading group (`groupe`) | `facts` |
 | `named_reference` | Producer-declared named-reference target and coordinates | `facts` |
 | Comparable retained shapes | A declared territory target and a producer-declared comparison context or explicit bounded member selection | `fixed_comparison` or `selected_comparison` |
 
@@ -107,22 +106,14 @@ Région's own direct published aggregate (« Moyenne de Bretagne »); the retire
 same-level median summaries are no longer served. AEDAR publishes no peer or
 rank rows: every request-time statistic — including the aggregate-reading ranks
 below — is computed per request from published facts in one committed snapshot.
-The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
-and Milieux expose the already-published reading facts. Producer-declared ranked
-activity evidence, Milieux source absences, and Milieux source bindings are separate
-named evidence fields; they do not copy or recompute scalar/series measurements.
 Publication markers and territory-reference versions are checked during batch
-preflight, and typed rows/evidence are read on the shared repeatable-read snapshot.
-Focal scalar, profile, and typed-reading responses expose their publication's
+preflight, and retained facts/evidence are read on the shared repeatable-read
+snapshot. Focal scalar and profile responses expose their publication's
 `reference_content_version`; scalar facts also expose the existing
-`scalar_descriptor.descriptor_version`. Typed-reading responses include that
-publication token, and each returned fact and selected evidence row carries its own
-`source` object (`source_id`, name, `vintage_id`, version, reference date, publication date).
-Clocks are resolved from that exact source/vintage pair or the row's published
-Milieux provenance binding; nullable dates remain `null`. Démographie also returns
-its published descriptor version, rate unit, and declared source clock. Habitat
-returns its existing selected-reading descriptor and linked publication version.
-Missing or incompatible required lineage fails closed with `503`.
+`scalar_descriptor.descriptor_version`. Each returned fact and evidence row carries
+its own `source` object (`source_id`, name, `vintage_id`, version, reference date,
+publication date). Clocks are resolved from that exact source/vintage pair; nullable
+dates remain `null`. Missing or incompatible required lineage fails closed with `503`.
 
 For a focal territory, when the producer catalogue declares the same indicator
 as both `scalar` and `ordered_series`, `facts` and comparison intents retain the
@@ -162,8 +153,7 @@ facts retain their native family payloads and source/status semantics. Scalar
 observations and profile cells keep their actual support, denominator, suppression,
 and provenance. Ordered series preserve declared axes and producer missing-record
 semantics. Period/detail collections and anchored memberships remain sparse; no
-synthetic zero, membership, or rank is added. Typed-reading side evidence is fetched
-set-wise for the same cohort. Both AEDAR Cellule resources — per-cell on
+synthetic zero, membership, or rank is added. Both AEDAR Cellule resources — per-cell on
 `{typequ, horizon, mode, statistic}` and summary on `{horizon, mode, kind}` — accept
 declared-coordinate cohort targets at every producer-declared level, region included,
 and return their native `values` payload; the deprecated `measure` alias is not a
