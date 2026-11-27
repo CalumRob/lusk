@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from api.tests.integration.resource_publication_fixtures import (
-    indicator_declaration, publish_indicator,
+    indicator_declaration, publish_aedar, publish_indicator,
 )
 
 
@@ -63,6 +63,17 @@ def test_named_reference_alias_shares_its_owner_publication_descriptor():
     assert {"raccordement_courbe", "raccordement_reference"} <= set(descriptor_ids)
     assert all(call[1][1] == registry_ids[0] for call in connection.calls
                if "INSERT INTO resource_publication_descriptor(" in call[0])
+
+
+def test_aedar_publication_carries_both_grammar_identities():
+    connection = RecordingConnection()
+
+    publish_aedar(connection, "aedar-v1", reference_content_version="ref-v1")
+
+    assert connection.calls[0][1][:3] == ("aedar", "aedar", "aedar-v1")
+    descriptor_ids = {call[1][0] for call in connection.calls
+                      if "INSERT INTO resource_publication_descriptor(" in call[0]}
+    assert descriptor_ids == {"aedar_territorial_aggregate", "aedar_territory_summary"}
 
 
 @pytest.mark.parametrize("resource_id", ["not_a_resource", "Bad", "a" * 97])

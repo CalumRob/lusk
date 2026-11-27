@@ -19,7 +19,8 @@ con <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
 DBI::dbExecute(con, paste0("SET search_path TO ",
   as.character(DBI::dbQuoteIdentifier(con, config$SCHEMA))))
-canonical_dir <- file.path("..", "public", "data")
+canonical_dir <- Sys.getenv("LUSK_REFERENCE_TEST_CANONICAL_DIR", unset="")
+if (!nzchar(canonical_dir)) canonical_dir <- file.path("..", "public", "data")
 territories <- nanoparquet::read_parquet(file.path(canonical_dir, "territoires.parquet"))
 projection <- project_territory_reference(territories)
 adapter <- territory_reference_postgres_adapter(con)

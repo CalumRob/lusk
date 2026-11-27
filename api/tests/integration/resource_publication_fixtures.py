@@ -66,6 +66,22 @@ def indicator_declaration(resource_id, metadata_directory=DEFAULT_METADATA):
     raise ValueError(f"No producer declaration for {resource_id}")
 
 
+def publish_aedar(connection, version, *, reference_content_version):
+    """Publish the producer grammar's two AEDAR identities against ``aedar``."""
+    from api.resource_catalogue import default_resource_grammar
+
+    grammar = default_resource_grammar().semantic_by_id
+    declarations = {
+        resource_id: {"kind": declaration["kind"], "declaration": declaration}
+        for resource_id, declaration in grammar.items()
+    }
+    publish_resource(
+        connection, "aedar", "aedar", version,
+        reference_content_version=reference_content_version,
+        declarations=declarations,
+    )
+
+
 def publish_indicator(connection, resource_id, shape, version, *,
                       reference_content_version, metadata_directory=DEFAULT_METADATA,
                       publication_id=None, scalar_version=None):

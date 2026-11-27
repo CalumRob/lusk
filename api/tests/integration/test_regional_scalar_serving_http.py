@@ -11,7 +11,7 @@ import pytest
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_publication_outcome_http import (
-    outcome_db, integration_db_mutex, _client, _close, _item, _v2,
+    outcome_db, _client, _close, _item, _v2,
 )
 
 pytestmark = pytest.mark.integration

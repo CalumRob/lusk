@@ -12,10 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from api.tests.integration.resource_publication_helper import publish_resource
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _assert_aedar_server_identity)
-from api.tests.integration.test_selected_profile_mean_http import (
-    _acquire_mutex, _release_mutex)
 
 pytestmark = pytest.mark.integration
 
@@ -59,7 +58,6 @@ def test_migration_048_preserves_registry_and_global_markers_and_matches_fresh_s
     if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") != "1":
         pytest.fail("migration 048 proof is non-retained; set LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1")
     psycopg = pytest.importorskip("psycopg")
-    mutex = _acquire_mutex()
     upgraded = "it_m048_up_" + uuid.uuid4().hex[:12]
     fresh = "it_m048_fresh_" + uuid.uuid4().hex[:12]
     try:
@@ -84,9 +82,9 @@ def test_migration_048_preserves_registry_and_global_markers_and_matches_fresh_s
                 "SELECT * FROM resource_publication").fetchall() == before_registry
             assert connection.execute(
                 "SELECT * FROM table_publication").fetchall() == before_global
-            connection.execute("""INSERT INTO resource_publication_descriptor(
-                resource_id,publication_resource_id,content_version,descriptor)
-                VALUES ('resource_a','resource_a','a-v1','{"kind":"indicator"}'::jsonb)""")
+            publish_resource(connection, "resource_a", "scalar", "a-v1",
+                             reference_content_version="ref-v1",
+                             declarations={"resource_a": {"kind": "indicator"}})
             assert connection.execute("""SELECT jsonb_typeof(descriptor)
                 FROM resource_publication_descriptor""").fetchone()[0] == "object"
             with pytest.raises(Exception):
@@ -116,4 +114,3 @@ def test_migration_048_preserves_registry_and_global_markers_and_matches_fresh_s
         with psycopg.connect(publish_dsn, autocommit=True) as cleanup:
             for schema in (upgraded, fresh):
                 cleanup.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        _release_mutex(mutex)

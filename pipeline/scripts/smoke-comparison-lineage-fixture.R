@@ -98,11 +98,14 @@ if (nzchar(republish_bundle)) {
     reference, scalar_version, reference_version), scalar_comparison_postgres_adapter(con))
   publish_registered_profile(register_structure_age_profile_publisher(list(), inputs$metadata),
     "structure_age", inputs$payload, profile_postgres_adapter(con))
+  # Publish the collection before the owned series: the series fixture owns the
+  # final mutable source label, so an unchanged repair leaves every HTTP source
+  # label identical to the pre-upgrade snapshot.
+  publish_observed_collection(inputs$collection, con)
   series_registry <- list(lineage_series=list(owned=TRUE,
     project=function(canonical) inputs$series))
   publish_registered_series(series_registry, "lineage_series", inputs$series,
     owned_series_postgres_adapter(con))
-  publish_observed_collection(inputs$collection, con)
   DBI::dbDisconnect(con)
   cat("synthetic comparison inputs republished through all four real adapters\n")
   quit(save="no", status=0L)
@@ -129,7 +132,10 @@ recompute_scalar_comparison <- function(projection) {
 fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
   col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),
   show_col_types=FALSE)
-payload <- compute_payload(fixture)
+theme <- theme_demographie()
+territoires <- theme$construire_territoires(fixture)
+payload <- compute_payload(fixture, theme=theme,
+  reference=reference_territoires(territoires))
 metadata <- jsonlite::fromJSON("inst/extdata/theme-metadata/theme_demographie.json",
   simplifyVector=FALSE)
 scalar_projection <- project_fixture_scalar(payload, metadata, "dense_complete")

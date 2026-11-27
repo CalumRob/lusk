@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from api.tests.integration.resource_publication_helper import publish_resource
+from api.tests.integration.guarded_database import retain_schema
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
@@ -821,7 +822,7 @@ def test_declared_profile_postgres_api_contract(installation):
             pool.close()
         # The test schema is uniquely random and dropped only under the harness's
         # explicit cleanup opt-in; CASCADE cannot reach shared/public objects.
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
 

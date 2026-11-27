@@ -10,7 +10,6 @@ the lock is released; no proof here is a retained fixture.
 
 from __future__ import annotations
 
-import ctypes
 import os
 import uuid
 from contextlib import contextmanager
@@ -26,32 +25,10 @@ from api.tests.integration.resource_publication_fixtures import publish_indicato
 
 pytestmark = pytest.mark.integration
 
-MUTEX_NAME = r"Local\LuskIntegrationContractDb"
-MUTEX_TIMEOUT_MS = 180_000
 REQUIRED_FAMILIES = {"scalar", "profile", "ordered_series", "named_reference",
                      "typed_reading", "collection", "aedar"}
 REFUELLING_KEYS = ("bornes_recharge", "bornes_recharge_1000",
                    "bornes_ev_par_station_service")
-
-
-def _acquire_mutex():
-    if os.name != "nt":
-        pytest.skip("the guarded integration mutex is a Windows named mutex")
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    if not handle:
-        pytest.fail("could not create the integration database mutex")
-    result = kernel32.WaitForSingleObject(handle, MUTEX_TIMEOUT_MS)
-    if result not in (0, 0x80):  # WAIT_OBJECT_0 / WAIT_ABANDONED
-        kernel32.CloseHandle(handle)
-        pytest.fail("timed out waiting for Local\\LuskIntegrationContractDb")
-    return handle
-
-
-def _release_mutex(handle):
-    kernel32 = ctypes.windll.kernel32
-    kernel32.ReleaseMutex(handle)
-    kernel32.CloseHandle(handle)
 
 
 def _user_schemas(connection):
@@ -85,15 +62,6 @@ def _guarded_identity(publish_dsn, read_dsn):
             assert reader.execute("SELECT current_database(),current_user").fetchone() == (
                 "lusk_it_contract", expected_read)
         yield publisher, reader
-
-
-@pytest.fixture(scope="module", autouse=True)
-def integration_db_mutex():
-    handle = _acquire_mutex()
-    try:
-        yield
-    finally:
-        _release_mutex(handle)
 
 
 def _guarded_configuration_or_skip():

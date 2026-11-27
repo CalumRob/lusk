@@ -14,7 +14,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
+def test_registered_r_curve_publication_is_read_by_semantic_resource_route(tmp_path):
     required = ["LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX"]
     if not all(os.getenv(key) for key in required):
         pytest.skip("requires explicitly guarded private PostgreSQL test configuration")
@@ -24,6 +24,8 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
     from fastapi.testclient import TestClient
     from api.main import ReadRepository, app, get_repository, get_resource_catalogue, pool
     from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+    from api.tests.integration.resource_publication_fixtures import publish_indicator
+    from api.tests.integration.guarded_database import retain_schema
 
     root = Path(__file__).resolve().parents[3]
     schema = "it_" + uuid.uuid4().hex[:20]
@@ -70,6 +72,13 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
                     def __exit__(self,*args): self.conn.close()
                 return Context()
         app.dependency_overrides[get_repository]=lambda: ReadRepository(Connections())
+        from dataclasses import replace
+        base_catalogue=default_resource_catalogue()
+        named_resource=replace(base_catalogue.resources_by_id["raccordement_reference"],
+            publication_resource_id="raccordement_courbe")
+        app.dependency_overrides[get_resource_catalogue]=lambda: replace(base_catalogue,
+            resources=tuple(named_resource if resource.resource_id=="raccordement_reference" else resource
+                            for resource in base_catalogue.resources))
         pool.cache_clear()
         with TestClient(app) as client:
             before_publication=client.post("/api/resources/read",json={"resource":"raccordement_courbe",
@@ -97,7 +106,7 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
         canonical={"mobilite":{"indicateurs":pd.DataFrame(fixture)},"vintages":pd.DataFrame([
             {"id":"matrice_temps_mairies","source":"fixture matrix","version":"2026-09-18",
              "date_reference":"2026-08-25","date_publication":"2026-08-26"}])}
-        metadata={"theme":"mobilite","owned_series_routes":{"raccordement_courbe":{"dataset_id":"raccordement_curve",
+        metadata={"theme":"mobilite","owned_series_routes":{"raccordement_courbe":{"dataset_id":"raccordement_courbe",
             "indicator_id":"raccordement_courbe","theme_id":"mobilite","active_read_route":True,
                 "reference_read_route":True,"axis_kind":"duration_minute","axis_values":[0,15,30,45,60,90,120,180,240,300,360],
                 "observation_period_contract":{"kind":"snapshot_date","source":"raccordement_recipe_date_mesure","expected_date":"2026-09-16"},
@@ -121,12 +130,12 @@ def test_registered_r_curve_publication_is_read_by_semantic_resource_route():
             payload_path.write_text(json.dumps({"indicators":fixture,"vintages":canonical["vintages"].to_dict("records")}),encoding="utf-8")
             metadata_path.write_text(json.dumps(metadata,ensure_ascii=False),encoding="utf-8")
             script=Path(directory)/"publish.R"
-            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/artefact_raccordement_national.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); adapter<-owned_series_postgres_adapter(con);
+            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\npkgload::load_all(file.path(root,"pipeline"),quiet=TRUE);\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); adapter<-owned_series_postgres_adapter(con);
  bad_identity<-metadata; bad_identity$indicator_pages$raccordement_courbe$indicator<-NULL;
  stopifnot(inherits(try(project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,bad_identity,RECETTE_MATRICE_TEMPS_MAIRIES),silent=TRUE),"try-error"));
  bad_period<-canonical; bad_period$mobilite$indicateurs$observation_period[[1]]<-"2026-08-25";
  stopifnot(inherits(try(project_raccordement_owned_series(bad_period$mobilite$indicateurs,bad_period$vintages,metadata,RECETTE_MATRICE_TEMPS_MAIRIES),silent=TRUE),"try-error"));
-     stopifnot(nrow(adapter$dataset_marker("raccordement_curve"))==0);
+     stopifnot(nrow(adapter$dataset_marker("raccordement_courbe"))==0);
  result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(result$changed); retry<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(!retry$changed);
 facts<-data.frame(indicator_id=rep("fixture_scalar",5),territory_id=c("35238","35001","35002","22001","53"),territory_type=c(rep("commune",4),"region"),value=c(.6,.5,.4,.99,.75),status=rep("measured",5),support_count=rep(NA_real_,5),denominator_count=rep(NA_real_,5));
 descriptors<-data.frame(indicator_id="fixture_scalar",theme_id="mobilite",label="Fixture scalar",unit="%",direction="high",comparison_facet="fixture_scalar",denominator_semantics="fixture denominator",completeness="dense_complete",descriptor_version="1",stringsAsFactors=FALSE); descriptors$allowed_sources<-I(list("fixture_scalar_source")); descriptors$allowed_levels<-I(list(c("commune","region")));
@@ -138,7 +147,13 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
             env["R_LIBS_USER"]=library
             completed=subprocess.run(["Rscript",str(script),str(root),str(payload_path),str(metadata_path),schema],cwd=root/"pipeline",env=env,capture_output=True,text=True)
             assert completed.returncode==0,completed.stdout+completed.stderr
-        counts=pub.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_curve'").fetchone()
+        series_version = pub.execute(
+            "SELECT content_version FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'"
+        ).fetchone()[0]
+        publish_indicator(pub, "raccordement_courbe", "owned_series", series_version,
+                          reference_content_version="fixture-ref-v1",
+                          publication_id="raccordement_courbe")
+        counts=pub.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone()
         assert counts==(66,)
         assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone()==(55,)
         assert pub.execute("SELECT count(*) FROM series_named_reference WHERE reference_id='bretagne_all_assessed_communes_mean'").fetchone()==(11,)
@@ -197,8 +212,8 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
         assert reference_comparison.status_code==422
         with pytest.raises(psycopg.errors.UniqueViolation):
             with pub.transaction():
-                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
-                pub.execute("INSERT INTO series_named_reference_descriptor(dataset_id,indicator_id,reference_id,reference_label,reference_role,reference_statistic,required,reference_indicator_id,active_read_route) VALUES('raccordement_curve','raccordement_courbe','conflicting_reference','Other reference','analytical_reference','other_statistic',false,'raccordement_reference',true)")
+                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_courbe'")
+                pub.execute("INSERT INTO series_named_reference_descriptor(dataset_id,indicator_id,reference_id,reference_label,reference_role,reference_statistic,required,reference_indicator_id,active_read_route) VALUES('raccordement_courbe','raccordement_courbe','conflicting_reference','Other reference','analytical_reference','other_statistic',false,'raccordement_reference',true)")
         assert pub.execute("SELECT count(*) FROM series_named_reference_descriptor WHERE reference_indicator_id='raccordement_reference' AND active_read_route").fetchone()==(1,)
         pub.execute("UPDATE scalar_descriptor SET theme_id='other_theme' WHERE indicator_id='fixture_scalar'")
         with TestClient(app) as client:
@@ -270,43 +285,54 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
         assert wrong_type.status_code==422
         with pytest.raises(psycopg.errors.RaiseException):
             with pub.transaction():
-                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
-                pub.execute("INSERT INTO series_named_reference(dataset_id,indicator_id,reference_id,axis_value,observation_period,value,status) VALUES('raccordement_curve','raccordement_courbe','bretagne_all_assessed_communes_mean','t9999','2026-09-16',0.1,'measured')")
+                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_courbe'")
+                pub.execute("INSERT INTO series_named_reference(dataset_id,indicator_id,reference_id,axis_value,observation_period,value,status) VALUES('raccordement_courbe','raccordement_courbe','bretagne_all_assessed_communes_mean','t9999','2026-09-16',0.1,'measured')")
         with pytest.raises(psycopg.errors.RaiseException):
             with pub.transaction():
-                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
-                pub.execute("DELETE FROM series_named_reference WHERE dataset_id='raccordement_curve' AND axis_value='t0000'")
+                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_courbe'")
+                pub.execute("DELETE FROM series_named_reference WHERE dataset_id='raccordement_courbe' AND axis_value='t0000'")
         with pytest.raises(psycopg.errors.RaiseException):
             with pub.transaction():
-                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
-                pub.execute("UPDATE series_dataset_descriptor SET axis_numeric_values=ARRAY[0,15,30,45,60,90,120,180,300,240,360] WHERE dataset_id='raccordement_curve'")
-        before_rollback=(pub.execute("SELECT content_version,reference_content_version,row_count FROM series_dataset_publication WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_dataset_observation WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_named_reference WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_named_reference_provenance WHERE dataset_id='raccordement_curve'").fetchone())
+                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_courbe'")
+                pub.execute("UPDATE series_dataset_descriptor SET axis_numeric_values=ARRAY[0,15,30,45,60,90,120,180,300,240,360] WHERE dataset_id='raccordement_courbe'")
+        before_rollback=(pub.execute("SELECT content_version,reference_content_version,row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_dataset_observation WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_named_reference WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_named_reference_provenance WHERE dataset_id='raccordement_courbe'").fetchone())
         with pytest.raises(psycopg.errors.RaiseException):
             with pub.transaction():
-                pub.execute("DELETE FROM series_dataset_publication WHERE dataset_id='raccordement_curve'")
-                pub.execute("INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count) VALUES('raccordement_curve','partial','fixture-ref-v1',55)")
-        after_rollback=(pub.execute("SELECT content_version,reference_content_version,row_count FROM series_dataset_publication WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_dataset_observation WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_named_reference WHERE dataset_id='raccordement_curve'").fetchone(),
-            pub.execute("SELECT count(*) FROM series_named_reference_provenance WHERE dataset_id='raccordement_curve'").fetchone())
+                pub.execute("DELETE FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'")
+                pub.execute("INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count) VALUES('raccordement_courbe','partial','fixture-ref-v1',55)")
+        after_rollback=(pub.execute("SELECT content_version,reference_content_version,row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_dataset_observation WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_named_reference WHERE dataset_id='raccordement_courbe'").fetchone(),
+            pub.execute("SELECT count(*) FROM series_named_reference_provenance WHERE dataset_id='raccordement_courbe'").fetchone())
         assert after_rollback==before_rollback
-        # Independent canonical-data audit plus a second publication using the
-        # real Parquet, vintage and producer metadata artifacts.
-        canonical_dir=Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR",r"E:\Lusk\public\data"))
-        # The incumbent Parquets must be audited/published only with their own
-        # pinned historical metadata bundle, never the current 73-axis owner.
+        # Independent canonical-data audit plus a second publication from a
+        # self-contained Parquet/vintage/metadata bundle. No owner checkout or
+        # current 73-axis publication is a test input.
+        canonical_dir=tmp_path/"canonical"
+        canonical_dir.mkdir()
         metadata_file=canonical_dir/"theme_mobilite.json"
+        metadata_file.write_text(json.dumps(metadata,ensure_ascii=False),encoding="utf-8")
         canonical_files={name:canonical_dir/f"{name}.parquet" for name in
             ("indicateurs_mobilite","territoires","vintages")}
-        assert all(path.is_file() for path in canonical_files.values()),f"Missing canonical artifacts under {canonical_dir}"
-        import pandas as pd
+        pd.DataFrame(fixture).to_parquet(canonical_files["indicateurs_mobilite"],index=False)
+        territory_fixture=[]
+        for territory,kind,department,epci,density in (
+            ("35238","commune","35","243500139","D1"),
+            ("35001","commune","35","243500139","D1"),
+            ("35002","commune","35","243500139","D1"),
+            ("22001","commune","22","243500140","D2"),
+            ("53","region",None,None,None),
+        ):
+            territory_fixture.append({"territoire":territory,"type":kind,"nom":f"Fixture {territory}",
+                "departement":department,"epci":epci,"classe_densite_code":density})
+        pd.DataFrame(territory_fixture).to_parquet(canonical_files["territoires"],index=False)
+        canonical["vintages"].to_parquet(canonical_files["vintages"],index=False)
         metadata=json.loads(metadata_file.read_text(encoding="utf-8"))
         route=metadata["owned_series_routes"]["raccordement_courbe"]
         canonical_dataset_id=route["dataset_id"]
-        assert metadata_file.is_file(), f"Missing historical metadata bundle under {canonical_dir}"
         page=metadata["indicator_pages"]["raccordement_courbe"]
         axes=[f"t{int(value):04d}" for value in route["axis_values"]]
         canonical_indicators=pd.read_parquet(canonical_files["indicateurs_mobilite"])
@@ -334,7 +360,7 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
         assert expected_counts.eq(len(axes)).all()
         # Replace only this private rehearsal dataset, then bind all canonical
         # territory IDs to a private reference marker matching that universe.
-        pub.execute("DELETE FROM series_dataset_publication WHERE dataset_id='raccordement_curve'")
+        pub.execute("DELETE FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'")
         territory_records=[]
         for row in canonical_territories.to_dict("records"):
             territory_records.append((str(row["territoire"]),str(row["type"]),str(row["nom"]),
@@ -352,7 +378,7 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
                     (len(territory_records),))
         with tempfile.TemporaryDirectory() as directory:
             canonical_script=Path(directory)/"publish_canonical.R"
-            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/artefact_raccordement_national.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
+            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\npkgload::load_all(file.path(root,"pipeline"),quiet=TRUE);\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
             library=subprocess.run(["Rscript","-e","cat(.libPaths()[1])"],cwd=root/"pipeline",
                 env=env,capture_output=True,text=True,check=True).stdout
@@ -360,6 +386,13 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
             completed=subprocess.run(["Rscript",str(canonical_script),str(root),str(canonical_dir),str(metadata_file),schema],
                 cwd=root/"pipeline",env=env,capture_output=True,text=True)
             assert completed.returncode==0,completed.stdout+completed.stderr
+        series_version = pub.execute(
+            "SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+            (canonical_dataset_id,),
+        ).fetchone()[0]
+        publish_indicator(pub, "raccordement_courbe", "owned_series", series_version,
+                          reference_content_version="canonical-reference-v1",
+                          publication_id="raccordement_courbe")
         assert pub.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id=%s",(canonical_dataset_id,)).fetchone()==(len(expected_curve)+len(raw_reference),)
         territories=expected_curve.territoire.astype(str).unique().tolist()
         observations=pub.execute("""SELECT territory_id,territory_type,axis_value,observation_period,value,status,missing_reason
@@ -432,7 +465,8 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
         current_catalogue=default_resource_catalogue.__wrapped__()
         historical_reference=route["reference_id"]
         historical_catalogue=replace(current_catalogue,resources=tuple(
-            replace(resource,target_ids=(historical_reference,))
+            replace(resource,target_ids=(historical_reference,),
+                   publication_resource_id=route["dataset_id"])
             if resource.resource_id==route["reference_indicator"] else resource
             for resource in current_catalogue.resources))
         app.dependency_overrides[get_resource_catalogue]=lambda: historical_catalogue
@@ -547,7 +581,7 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
         upgrade.close()
     finally:
         app.dependency_overrides.pop(get_repository,None); pool.cache_clear(); pub.close()
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP")=="1":
+        if created and not retain_schema():
             # The rehearsal schema is private and random; dependency-ordered RESTRICT is intentional.
             cleanup=psycopg.connect(os.environ["LUSK_TEST_PUBLISH_DSN"],autocommit=True)
             tables=[r[0] for r in cleanup.execute("select tablename from pg_tables where schemaname=%s",(schema,)).fetchall()]
@@ -563,7 +597,7 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
             for (function,) in functions:
                 cleanup.execute(f'DROP FUNCTION "{schema}"."{function.split("(",1)[0].split(".")[-1]}" RESTRICT')
             cleanup.execute(f'DROP SCHEMA "{schema}" RESTRICT'); cleanup.close()
-        if upgrade_created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP")=="1":
+        if upgrade_created and not retain_schema():
             cleanup=psycopg.connect(os.environ["LUSK_TEST_PUBLISH_DSN"],autocommit=True)
             tables=[r[0] for r in cleanup.execute("select tablename from pg_tables where schemaname=%s",(upgrade_schema,)).fetchall()]
             pending=tables[:]

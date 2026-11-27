@@ -18,8 +18,6 @@ import pytest
 
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _assert_aedar_server_identity)
-from api.tests.integration.test_selected_profile_mean_http import (
-    _acquire_mutex, _release_mutex)
 
 pytestmark = pytest.mark.integration
 
@@ -33,7 +31,6 @@ def test_littoral_reference_publisher_roundtrip():
     if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") != "1":
         pytest.fail("the littoral publisher proof is non-retained; set LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1")
     psycopg = pytest.importorskip("psycopg")
-    mutex = _acquire_mutex()
     verified = False
     schema = "it_littoral_pub_" + uuid.uuid4().hex[:12]
     try:
@@ -81,9 +78,6 @@ def test_littoral_reference_publisher_roundtrip():
                 WHERE table_name='territory_reference'""").fetchone()
             assert marker == (5,)
     finally:
-        try:
-            if verified:
-                with psycopg.connect(publish_dsn, autocommit=True) as connection:
-                    connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        finally:
-            _release_mutex(mutex)
+        if verified:
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

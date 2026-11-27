@@ -187,7 +187,7 @@ def test_declared_but_unpublished_keeps_hard_territory_errors(client):
     assert missing_focal.status_code == 404
     assert missing_focal.json()["detail"] == "Focal territory not found"
     assert missing_member.status_code == 404, missing_member.text
-    assert missing_member.json()["detail"] == "Selected comparison territory not found"
+    assert missing_member.json()["detail"] == "Selected comparison territory not found: commune/missing"
     assert wrong_member_type.status_code == 422
 
 

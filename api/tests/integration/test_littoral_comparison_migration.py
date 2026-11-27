@@ -16,8 +16,6 @@ import pytest
 
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _assert_aedar_server_identity)
-from api.tests.integration.test_selected_profile_mean_http import (
-    _acquire_mutex, _release_mutex)
 
 pytestmark = pytest.mark.integration
 
@@ -50,7 +48,6 @@ def test_migration_044_widens_in_place_and_preserves_old_generations():
     if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") != "1":
         pytest.fail("the littoral comparison migration proof is non-retained; set LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1")
     psycopg = pytest.importorskip("psycopg")
-    mutex = _acquire_mutex()
     verified = False
     upgraded = "it_littoral_cmp_" + uuid.uuid4().hex[:12]
     fresh = "it_littoral_cmp_fresh_" + uuid.uuid4().hex[:12]
@@ -105,10 +102,7 @@ def test_migration_044_widens_in_place_and_preserves_old_generations():
                 """, (fresh, table)).fetchone()
                 assert definition is not None and "littoral" in definition[0]
     finally:
-        try:
-            if verified:
-                with psycopg.connect(publish_dsn, autocommit=True) as connection:
-                    for schema in (upgraded, fresh):
-                        connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        finally:
-            _release_mutex(mutex)
+        if verified:
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                for schema in (upgraded, fresh):
+                    connection.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

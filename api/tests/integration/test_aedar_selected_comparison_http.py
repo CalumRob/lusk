@@ -13,6 +13,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_aedar
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
@@ -417,6 +418,10 @@ def _aedar_http_client(canonical_db_env, *, complete_rank_fixture=False, query_s
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
         with publisher.transaction():
             _seed_aedar(publisher, complete_rank_fixture=complete_rank_fixture)
+            version, reference = publisher.execute(
+                "SELECT aedar_content_version,reference_content_version FROM aedar_comparison_publication"
+            ).fetchone()
+            publish_aedar(publisher, version, reference_content_version=reference)
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})

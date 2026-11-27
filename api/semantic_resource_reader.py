@@ -96,12 +96,12 @@ class SemanticResourceReader:
                                      _aedar_selected_comparison_snapshot)
         from api.aedar_models import AEDAR_SUMMARY_FAMILY
         aggregate = family == AEDAR_SUMMARY_FAMILY
-        kwargs = {"preflight_only": True} if preflight else {"snapshot_state": snapshot_state}
+        kwargs = {"preflight_only": True} if preflight else {}
         if item.intent.kind == "fixed_comparison":
             result = _aedar_comparison_snapshot(
                 conn, item.target.type, item.target.id, item.intent.context,
                 typequ[0] if typequ else None, measures[0], item.fields,
-                resource.measure_facets, **kwargs)
+                resource.measure_facets, snapshot_state=snapshot_state, **kwargs)
             if not preflight:
                 return result
             if aggregate and snapshot_state is not None:
@@ -126,7 +126,8 @@ class SemanticResourceReader:
         result = _aedar_selected_comparison_snapshot(
             conn, item.target.type, item.target.id,
             [(member.type, member.id) for member in item.intent.members],
-            typequ, measures, item.fields, resource.measure_facets, **kwargs)
+            typequ, measures, item.fields, resource.measure_facets,
+            snapshot_state=snapshot_state, **kwargs)
         if not preflight:
             return result
         if aggregate:
@@ -204,7 +205,7 @@ class SemanticResourceReader:
         return identities, cohort_targets
 
     @staticmethod
-    def _validate_territory_identities(conn, identities, cohort_targets):
+    def _validate_territory_identities(conn, identities, cohort_targets, *, name_member=False):
         if identities:
             ids = sorted({identity for identity, _type, _role in identities})
             rows = conn.execute(
@@ -213,11 +214,17 @@ class SemanticResourceReader:
             by_id = {row[0]: row[1] for row in rows}
             for identity, expected_type, role in identities:
                 if identity not in by_id:
-                    raise HTTPException(404, "Selected comparison territory not found"
-                                        if role == "member" else "Focal territory not found")
+                    detail = ("Selected comparison territory not found"
+                              if role == "member" else "Focal territory not found")
+                    if role == "member" and name_member:
+                        detail += f": {expected_type}/{identity}"
+                    raise HTTPException(404, detail)
                 if by_id[identity] != expected_type:
-                    raise HTTPException(422, "Selected comparison territory type does not match"
-                                        if role == "member" else "Focal territory type does not match route")
+                    detail = ("Selected comparison territory type does not match"
+                              if role == "member" else "Focal territory type does not match route")
+                    if role == "member" and name_member:
+                        detail += f": {expected_type}/{identity}"
+                    raise HTTPException(422, detail)
         for target in cohort_targets.values():
             if target.department_id is not None:
                 parent = conn.execute("""SELECT 1 FROM territory_reference
@@ -394,14 +401,14 @@ class SemanticResourceReader:
         resource = catalogue.resources_by_id[item.resource]
         item, aedar_family = self._aedar_resolve(item, resource)
         identities, cohort_targets = self._territory_identities([item])
-        self._validate_territory_identities(conn, identities, {})
+        self._validate_territory_identities(conn, identities, {}, name_member=True)
         try:
             self._require_live_publication(conn, resource)
         except PublicationUnavailable:
             # A missing publication must not mask an invalid cohort filter. For a
             # live publication the normal cohort resolver performs these checks,
             # so avoid issuing the same parent lookups twice.
-            self._validate_territory_identities(conn, identities, cohort_targets)
+            self._validate_territory_identities(conn, identities, cohort_targets, name_member=True)
             raise
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
@@ -537,7 +544,7 @@ class SemanticResourceReader:
                 if route:
                     from api.snapshot_reads import _execute_comparison_publication_read
                     if fixed_lookup:
-                        rows = conn.execute("""SELECT count(*) FROM ordered_series_comparison_territory
+                        rows = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM ordered_series_comparison_territory
                             WHERE dataset_id=%s AND indicator_id=%s AND territory_id=%s
                               AND comparison_context=%s AND group_id=%s AND territory_type=%s""",
                             (route[0], route[3], item.target.id, fixed_context[0],
@@ -564,10 +571,10 @@ class SemanticResourceReader:
                     (item.resource, members)).fetchone()[0]
                 work = max(work, int(facts) + int(lineage))
             elif fixed_lookup and resource.shapes and "scalar" in resource.shapes:
-                rows = conn.execute("""SELECT count(*) FROM scalar_comparison_territory
+                from api.snapshot_reads import _execute_comparison_publication_read
+                rows = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM scalar_comparison_territory
                     WHERE indicator_id=%s AND territory_id=%s""",
                     (item.resource, item.target.id)).fetchone()[0]
-                from api.snapshot_reads import _execute_comparison_publication_read
                 lineage = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM comparison_source_lineage
                     WHERE comparison_family='scalar' AND facet_id=%s
                       AND comparison_context=%s AND group_id=%s AND territory_type=%s""",

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from api.tests.integration.guarded_database import retain_schema
+
 from api.tests.integration.test_postgres_publication import _configuration, _dsn_with_schema
 
 
@@ -438,7 +440,9 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
                 WHERE n.nspname=current_schema() AND t.relname='table_publication'
                   AND c.conname='table_publication_table_name_check'""").fetchone()[0]
-            assert set(re.findall(r"'([a-z_]+)'", check_036)) == fresh_names
+            # Migration 041 adds the sibling AEDAR summary marker after this
+            # rehearsal's supported 036 stopping point; every earlier name converges.
+            assert set(re.findall(r"'([a-z_]+)'", check_036)) == fresh_names - {'aedar_territory_summary'}
             reference_check = connection.execute("""
                 SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
                 JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
@@ -448,12 +452,12 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             fresh_reference_names = set(re.findall(r"'([a-z_]+)'", re.search(
                 r"shared_fact_publication_requires_reference.*?CHECK\s*\(.*?IN\s*\((.*?)\)",
                 fresh_sql, re.S).group(1)))
-            assert set(re.findall(r"'([a-z_]+)'", reference_check)) == fresh_reference_names
+            assert set(re.findall(r"'([a-z_]+)'", reference_check)) == fresh_reference_names - {'aedar_territory_summary'}
             # The retired marker can never be re-published on the walked chain.
             with pytest.raises(psycopg.errors.CheckViolation):
                 with connection.transaction():
                     connection.execute("INSERT INTO table_publication VALUES ('bpe_profile_evidence','x',1,now(),'ref')")
     finally:
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')

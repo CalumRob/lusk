@@ -30,10 +30,17 @@ on its tables to the configured read role. The read-role test verifies an
 python -m pytest api/tests/integration -m integration
 ```
 
-By default the uniquely named schema is retained for inspection. To explicitly
-allow cleanup of only that run's schema, set
-`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. Cleanup never targets `public`, tables, or
-another schema. Unset all `LUSK_TEST_*` variables after verification.
+Python guarded schemas are dropped by default. Retention is an explicit
+inspection opt-in, `LUSK_TEST_RETAIN_SCHEMA=1`; never set it for normal suite runs.
+The older `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` flag remains accepted/required by a
+few non-retained proofs, but no Python suite retains its schema by default.
+Cleanup never targets `public`, tables, or another schema. Unset all `LUSK_TEST_*`
+variables after verification.
+
+Every Python integration module holds `Local\LuskIntegrationContractDb` from
+setup through its last test and cleanup. A session guard rejects any
+`psycopg.connect` attempted outside that mutex, so a second module/process cannot
+interleave database work with a live guarded fixture.
 
 The current PostgreSQL integration tests exercise database-backed serving,
 publication contracts, and guarded migration rehearsals against an explicitly
@@ -126,17 +133,16 @@ python -m pytest api/tests/integration/test_postgres_publication.py -k shared_sc
 
 Before running, verify both connections report `current_database() =
 lusk_it_contract` and the expected test roles. Afterward, unset the
-`LUSK_TEST_*` variables; do not export them globally. Without the opt-in, most
-Python fixtures retain their schemas for inspection. With
-`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`, supported fixtures drop only schemas created
-by that invocation; proofs explicitly designated retained refuse the flag.
-Review the selected test and exact cleanup path before enabling it.
+`LUSK_TEST_*` variables; do not export them globally. Python fixtures drop only
+schemas created by that invocation unless `LUSK_TEST_RETAIN_SCHEMA=1` explicitly
+requests inspection. Review the selected test and exact cleanup path before
+opting into retention.
 
 ### Shared v2 publication-outcome proof (#984)
 
 The v2 outcome proof is a focused, non-retained guarded suite. It acquires the
 Windows named mutex `Local\LuskIntegrationContractDb` before its first
-connection, keeps it for the whole test process including cleanup/verification,
+connection, keeps it for the whole module including cleanup/verification,
 and releases it last. Do not point another worker at `lusk_it_contract` while it
 holds the lock. The proof creates one random `it_outcome_*` schema, seeds only
 its own families, and always drops that schema in `finally`; it fails before the
@@ -176,8 +182,8 @@ Before the run, verify both connections report `current_database() =
 lusk_it_contract` and the expected roles; the suite does this itself before any
 DDL. If the process dies before cleanup, remove only its own `it_outcome_*`
 schemas under the same mutex, then verify zero user schemas and zero `public`
-relations. Do not run retained #814/lineage smokes as part of this cleanup
-regime.
+relations. The shared module mutex serializes this proof with every other
+Python guarded module.
 
 ### Selected-profile equal-weight mean proof (#996, owner #979)
 
@@ -334,27 +340,23 @@ $env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
 $env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
 $env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
 $env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
-# Set this to an existing, populated R library provisioned for this machine.
-# No renv restore/install is performed by the guarded proof.
-$env:R_LIBS_USER = $env:LUSK_TEST_R_LIBS_USER
-if (-not $env:R_LIBS_USER -or -not (Test-Path $env:R_LIBS_USER -PathType Container)) {
-  throw 'Set LUSK_TEST_R_LIBS_USER to an existing populated R library before running the proof.'
-}
-Remove-Item Env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP -ErrorAction SilentlyContinue
+# Optional: set an existing, populated R library. The Python preflight derives
+# the worktree library when R_LIBS_USER is unset; no renv restore/install runs.
+Remove-Item Env:LUSK_TEST_RETAIN_SCHEMA -ErrorAction SilentlyContinue
 $env:PYTHONPATH = '.'
 python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic_r_comparison_lineage_publish_to_api_reader -q
 ```
 
-The test creates a random `it_*` schema and always retains that schema and its
-evidence; `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` is rejected before connection or
-DDL. It does not modify the retained benchmark schema or publish to the serving
-database. Evidence is written under `LUSK_TEST_EVIDENCE_DIR` when configured;
-otherwise it uses a pytest temporary directory.
+The test creates a random `it_*` schema and drops it after the module. Set
+`LUSK_TEST_RETAIN_SCHEMA=1` only for deliberate inspection; evidence is then
+retained alongside the schema. It does not modify any benchmark schema or
+publish to the serving database. Evidence is written under
+`LUSK_TEST_EVIDENCE_DIR` when configured; otherwise it uses a pytest temporary
+directory.
 
-This retention rule is scoped to the #814 proof's `retained_canonical_db_env`.
-Unrelated tests using the generic `canonical_db_env` keep the documented
-cleanup opt-in: their schemas are retained by default and dropped only when
-`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` is explicitly set.
+The historical fixture name `retained_canonical_db_env` does not imply default
+retention. It and the generic `canonical_db_env` both honor the same explicit
+`LUSK_TEST_RETAIN_SCHEMA=1` opt-in.
 
 The focused vintage-clock rollback regression can be run without replaying the
 full publisher proof by setting `LUSK_LINEAGE_TEST_SCHEMA` to an existing,

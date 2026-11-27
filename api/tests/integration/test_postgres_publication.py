@@ -22,6 +22,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 import pytest
 
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+from api.tests.integration.guarded_database import retain_schema
+from api.tests.integration.resource_publication_helper import publish_resource
 
 
 pytestmark = pytest.mark.integration
@@ -88,13 +90,22 @@ def _assert_aedar_server_identity(connection, expected_role):
 
 def _lineage_r_library_preflight():
     """Validate retained-proof settings before any schema or database work."""
-    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
-        pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
     if not os.environ.get("LUSK_TEST_PUBLISH_DSN"):
         pytest.skip("guarded R publisher proof requires explicit LUSK_TEST_* DSNs")
     r_libs_user = os.environ.get("R_LIBS_USER", "")
     if not r_libs_user or not Path(r_libs_user).is_dir():
-        pytest.fail("Guarded R publisher proof requires R_LIBS_USER to name an existing populated R library (Rscript uses --vanilla)")
+        pipeline = Path(__file__).resolve().parents[3] / "pipeline"
+        completed = subprocess.run(
+            ["Rscript", "-e", "writeLines(.libPaths()[1])"], cwd=pipeline,
+            capture_output=True, text=True, timeout=30,
+        )
+        output_lines = completed.stdout.strip().splitlines()
+        r_libs_user = output_lines[-1].strip() if output_lines else ""
+        if completed.returncode or not r_libs_user or not Path(r_libs_user).is_dir():
+            pytest.fail("Guarded R publisher proof requires a populated R library for --vanilla")
+        # The lineage smoke deliberately uses --vanilla, so pass the worktree's
+        # already-populated library explicitly rather than reading the renv cache.
+        os.environ["R_LIBS_USER"] = r_libs_user
     return r_libs_user
 
 
@@ -103,13 +114,11 @@ def lineage_r_library_preflight():
     return _lineage_r_library_preflight()
 
 
-def test_issue_814_retained_fixture_refuses_cleanup_before_database_work(monkeypatch):
-    monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "1")
-    monkeypatch.delenv("R_LIBS_USER", raising=False)
-    monkeypatch.setattr(sys.modules[__name__], "_configuration",
-        lambda: pytest.fail("Database configuration must not be reached when cleanup is enabled"))
-    with pytest.raises(pytest.fail.Exception, match="always retains its schema"):
-        next(retained_canonical_db_env.__wrapped__(None))
+def test_issue_814_fixture_uses_explicit_retention_policy(monkeypatch):
+    monkeypatch.delenv("LUSK_TEST_RETAIN_SCHEMA", raising=False)
+    assert retain_schema() is False
+    monkeypatch.setenv("LUSK_TEST_RETAIN_SCHEMA", "1")
+    assert retain_schema() is True
 
 
 def test_generic_canonical_fixture_keeps_cleanup_opt_in_separate(monkeypatch):
@@ -176,7 +185,9 @@ def test_migration_040_aedar_reference_contract_matches_fresh_schema():
             for table,name,definition in triggers]
         function=[re.sub(r"\s+"," ",row[0].replace(f'"{schema}".',"").replace(f'{schema}.',""))
             for row in function]
-        return columns,constraints,triggers,grants,function
+        # Additive migrations append columns; physical ordinal order is not
+        # part of this structural parity contract.
+        return sorted(columns),constraints,triggers,grants,function
 
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         parts = urlsplit(publish_dsn)
@@ -190,6 +201,14 @@ def test_migration_040_aedar_reference_contract_matches_fresh_schema():
             (SELECT count(*) FROM aedar_comparison_group),
             (SELECT count(*) FROM aedar_comparison_territory)""").fetchone()
         connection.execute(migration)
+        for later in (
+            "041_aedar_territory_summaries.sql",
+            "042_aedar_density_class_summaries.sql",
+            "043_littoral_territory_reference.sql",
+            "044_littoral_comparison_contexts.sql",
+            "045_aedar_littoral_summary.sql",
+        ):
+            connection.execute((root / "migrations" / later).read_text(encoding="utf-8"))
         upgraded = contract(connection, schemas["upgrade"])
         after = connection.execute("""SELECT
             (SELECT count(*) FROM aedar_comparison_publication),
@@ -224,6 +243,34 @@ def test_migration_040_aedar_reference_contract_matches_fresh_schema():
              f'{schemas["fresh"]}.aedar_comparison_territory')).fetchone() == (True, False)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def owned_schema_cleanup():
+    """Drop only schemas introduced by this module unless retention is explicit."""
+    if not all(os.environ.get(name) for name in (
+            "LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN",
+            "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")):
+        yield
+        return
+    if retain_schema():
+        yield
+        return
+    psycopg = pytest.importorskip("psycopg")
+    publish_dsn = os.environ["LUSK_TEST_PUBLISH_DSN"]
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        before = {row[0] for row in connection.execute(
+            "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'it\\_%'"
+        ).fetchall()}
+    try:
+        yield
+    finally:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            after = {row[0] for row in connection.execute(
+                "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'it\\_%'"
+            ).fetchall()}
+            for schema in sorted(after - before):
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
 @pytest.fixture(scope="module")
 def db_env(tmp_path_factory):
     publish_dsn, read_dsn = _configuration()
@@ -252,7 +299,7 @@ def db_env(tmp_path_factory):
             "artifacts": _write_artifacts(tmp_path_factory.mktemp("canonical")),
         }
     finally:
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -303,14 +350,14 @@ def canonical_db_env():
             connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
         yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
     finally:
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 @pytest.fixture
 def retained_canonical_db_env(tmp_path_factory):
-    """Issue #814's guarded publisher schema and evidence are always retained."""
+    """Issue #814's guarded publisher schema is dropped unless retention is explicit."""
     import json
     _lineage_r_library_preflight()
     publish_dsn, read_dsn = _configuration()
@@ -335,6 +382,7 @@ def retained_canonical_db_env(tmp_path_factory):
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
     schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    created = False
     for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
         with psycopg.connect(dsn, autocommit=True) as connection:
             identity = connection.execute("""SELECT current_database(),current_user,
@@ -357,20 +405,26 @@ def retained_canonical_db_env(tmp_path_factory):
         "publisher_role": expected_publisher,
         "reader_role": expected_reader,
         "purpose": "issue #814 guarded mutable source-label publication proof",
-        "cleanup": "disabled; retain schema and evidence",
+        "cleanup": "retained by explicit opt-in" if retain_schema() else "drop after module",
     }, indent=2), encoding="utf-8")
     print(f"issue #814 retained schema intent: {schema}; evidence: {evidence_dir}", flush=True)
-    with psycopg.connect(publish_dsn, autocommit=True) as connection:
-        connection.execute(f'CREATE SCHEMA "{schema}"')
-        connection.execute(f'SET search_path TO "{schema}"')
-        connection.execute(schema_path.read_text(encoding="utf-8"))
-        reader_role = urlsplit(read_dsn).username
-        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
-            pytest.fail("Read DSN must identify a simple database role name")
-        quoted_role = '"' + reader_role.replace('"', '""') + '"'
-        connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
-        connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
-    yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
+    try:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute(schema_path.read_text(encoding="utf-8"))
+            reader_role = urlsplit(read_dsn).username
+            if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+                pytest.fail("Read DSN must identify a simple database role name")
+            quoted_role = '"' + reader_role.replace('"', '""') + '"'
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+        yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
+    finally:
+        if created and not retain_schema():
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 @pytest.fixture
@@ -382,8 +436,6 @@ def canonical_r_publisher_db_env(lineage_r_library_preflight, retained_canonical
 @pytest.fixture
 def retained_lineage_schema_env():
     """Use only an explicitly named, already-populated retained test schema."""
-    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
-        pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
     schema = os.environ.get("LUSK_LINEAGE_TEST_SCHEMA", "")
     if not schema:
         pytest.skip("set LUSK_LINEAGE_TEST_SCHEMA to an existing retained lusk_it_contract it_* schema")
@@ -508,20 +560,31 @@ def test_fresh_schema_contains_retained_model_and_excludes_legacy_access_objects
         f"excluded legacy validation functions remain: {sorted(excluded_functions & functions)}")
 
 
-def test_r_retained_reference_publisher_uses_fresh_schema_and_noops(canonical_db_env):
-    """Exercise the production DBI adapter where legacy relations do not exist."""
+def test_r_retained_reference_publisher_uses_fresh_schema_and_noops(canonical_db_env, tmp_path):
+    """Exercise the production DBI adapter with self-contained canonical inputs."""
     publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+    pipeline = Path(__file__).resolve().parents[3] / "pipeline"
+    canonical_dir = tmp_path / "canonical"
+    fixture = Path(__file__).resolve().parent / "fixtures/retained_reference_fixture.R"
+    r_libs_user = _lineage_r_library_preflight()
     env = os.environ.copy()
+    env["R_LIBS_USER"] = r_libs_user
+    generated = subprocess.run(
+        ["Rscript", "--vanilla", str(fixture), str(canonical_dir)], cwd=pipeline,
+        env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert generated.returncode == 0, generated.stdout + "\n" + generated.stderr
     env.update({
         "LUSK_REFERENCE_TEST_HOST": publish.hostname or "",
         "LUSK_REFERENCE_TEST_PORT": str(publish.port or ""),
         "LUSK_REFERENCE_TEST_DATABASE": os.environ["LUSK_TEST_DATABASE_NAME"],
         "LUSK_REFERENCE_TEST_USER": publish.username or "",
         "LUSK_REFERENCE_TEST_SCHEMA": canonical_db_env["schema"],
+        "LUSK_REFERENCE_TEST_CANONICAL_DIR": str(canonical_dir),
+        "R_LIBS_USER": _lineage_r_library_preflight(),
     })
-    pipeline = Path(__file__).resolve().parents[3] / "pipeline"
     completed = subprocess.run(
-        ["Rscript", "scripts/smoke-retained-territory-reference.R"],
+        ["Rscript", "--vanilla", "scripts/smoke-retained-territory-reference.R"],
         cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
     )
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
@@ -703,7 +766,7 @@ def test_migration_036_drops_legacy_access_objects_and_preserves_published_scala
                 WHERE n.nspname=current_schema() AND NOT tgisinternal""")}
             assert {"scalar_observation_levels", "scalar_observation_source_required"} <= triggers
     finally:
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -763,6 +826,9 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         connection.execute("INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,territory_id,value,status,rank,tie_count,rank_size) VALUES ('density_class','D1','commune','fixture_scalar','29001',0,'measured',2,1,2),('density_class','D1','commune','fixture_scalar','29002',2,'measured',1,1,2)")
         connection.execute("INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES ('scalar','density_class','D1','commune','fixture_scalar','fixture','v2026','comparison-v1'),('scalar','density_class','D1','commune','fixture_scalar','fixture_secondary','v2025','comparison-v1')")
         connection.execute("INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) VALUES (true,'comparison-v1','fixture-v1','territory-v1',1,2,2)")
+        connection.execute("INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) VALUES ('fixture_scalar','comparison-v1','fixture-v1','territory-v1',1,2,2)")
+        publish_resource(connection, "fixture_scalar", "scalar", "fixture-v1",
+                         reference_content_version="territory-v1")
         # Zero is measured; null is legal only with typed unavailability.
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','29001','commune',NULL,'measured')")
@@ -865,10 +931,11 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert stale.status_code == 503
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v2' WHERE table_name='scalar_observation'")
+            publisher.execute("UPDATE resource_publication SET reference_content_version='territory-v2' WHERE resource_id='fixture_scalar'")
         rebound = client.post("/api/resources/read", json=facts)
         assert rebound.status_code == 200, rebound.text
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
-            publisher.execute("UPDATE table_publication SET reference_content_version='obsolete' WHERE table_name='scalar_observation'")
+            publisher.execute("UPDATE resource_publication SET reference_content_version='obsolete' WHERE resource_id='fixture_scalar'")
         stale = client.post("/api/resources/read", json=facts)
         assert stale.status_code == 503
     finally:
@@ -995,20 +1062,85 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == canonical_db_env["schema"]
+    # The table-owned R adapters intentionally publish shared markers rather
+    # than per-resource registry rows. This guarded API fixture supplies the
+    # same registry contract through the one shared Python writer.
+    with psycopg.connect(publish_dsn) as registry_connection:
+        reference_version = registry_connection.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+        ).fetchone()[0]
+        scalar_version = registry_connection.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'"
+        ).fetchone()[0]
+        profile_version = registry_connection.execute(
+            "SELECT content_version FROM table_publication WHERE table_name='declared_profile'"
+        ).fetchone()[0]
+        series_version = registry_connection.execute(
+            "SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+            (manifest["ordered_series"]["indicator_id"],),
+        ).fetchone()[0]
+        collection_version = registry_connection.execute(
+            "SELECT content_version FROM observed_collection_publication WHERE indicator_id=%s",
+            (manifest["numeric_collection"]["indicator_id"],),
+        ).fetchone()[0]
+        for resource_id, shape, version in (
+            ("densite", "scalar", scalar_version),
+            ("lineage_sparse", "scalar", scalar_version),
+            ("structure_age", "declared_profile", profile_version),
+            (manifest["ordered_series"]["indicator_id"], "owned_series", series_version),
+            (manifest["numeric_collection"]["indicator_id"], "observed_collection", collection_version),
+        ):
+            publish_resource(registry_connection, resource_id, shape, version,
+                             reference_content_version=reference_version)
+        scalar_comparison = registry_connection.execute(
+            "SELECT content_version,scalar_content_version,reference_content_version "
+            "FROM scalar_comparison_publication WHERE singleton"
+        ).fetchone()
+        for resource_id in ("densite", "lineage_sparse"):
+            counts = registry_connection.execute(
+                "SELECT (SELECT count(*) FROM scalar_comparison_group WHERE indicator_id=%s),"
+                "(SELECT count(*) FROM scalar_comparison_territory WHERE indicator_id=%s),"
+                "(SELECT count(*) FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=%s)",
+                (resource_id, resource_id, resource_id),
+            ).fetchone()
+            registry_connection.execute(
+                "INSERT INTO scalar_resource_comparison_publication(indicator_id,content_version,"
+                "scalar_content_version,reference_content_version,group_row_count,territory_row_count,"
+                "lineage_row_count) VALUES(%s,%s,%s,%s,%s,%s,%s)",
+                (resource_id, *scalar_comparison, *counts),
+            )
+        profile_comparison = registry_connection.execute(
+            "SELECT content_version,profile_content_version,reference_content_version "
+            "FROM profile_comparison_publication WHERE singleton"
+        ).fetchone()
+        profile_counts = registry_connection.execute(
+            "SELECT (SELECT count(*) FROM profile_comparison_group WHERE indicator_id='structure_age'),"
+            "(SELECT count(*) FROM profile_comparison_territory WHERE indicator_id='structure_age'),"
+            "(SELECT count(*) FROM comparison_source_lineage WHERE comparison_family='profile' AND facet_id='structure_age')"
+        ).fetchone()
+        registry_connection.execute(
+            "INSERT INTO profile_resource_comparison_publication(indicator_id,content_version,"
+            "profile_content_version,reference_content_version,group_row_count,territory_row_count,"
+            "lineage_row_count) VALUES('structure_age',%s,%s,%s,%s,%s,%s)",
+            (*profile_comparison, *profile_counts),
+        )
 
     catalogue = default_resource_catalogue()
     resources = list(catalogue.resources)
 
-    def fixture_resource(resource_id, shape):
-        template = next(resource for resource in catalogue.resources if shape in resource.shapes)
-        resources.append(replace(template, resource_id=resource_id, indicator_id=resource_id))
+    def fixture_resource(resource_id, shape, *, theme_id=None):
+        template = next(resource for resource in catalogue.resources if resource.shapes == (shape,))
+        resources.append(replace(template, resource_id=resource_id, indicator_id=resource_id,
+                                 theme_id=theme_id or template.theme_id,
+                                 publication_resource_id=None))
 
     # These fixture-only identities mirror real producer shapes while keeping
     # discovery's production catalogue unchanged. The guarded test opts into
     # them explicitly so the actual typed readers can verify R's publications.
     fixture_resource("lineage_sparse", "scalar")
-    fixture_resource(manifest["ordered_series"]["indicator_id"], "ordered_series")
-    fixture_resource(manifest["numeric_collection"]["indicator_id"], "period_detail")
+    fixture_resource(manifest["ordered_series"]["indicator_id"], "ordered_series", theme_id="demographie")
+    fixture_resource(manifest["numeric_collection"]["indicator_id"], "period_detail",
+                     theme_id=manifest["numeric_collection"]["theme_id"])
     test_catalogue = replace(catalogue, resources=tuple(resources))
 
     pool = ConnectionPool(conninfo=read_dsn, min_size=0, max_size=2, open=True,
@@ -1079,8 +1211,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
                 return singles, batch
 
         expected_responses, expected_batch = read_comparisons()
+
         assert all(response.status_code == 200 for response in expected_responses), [
-            response.text for response in expected_responses]
+            (item["resource"], response.status_code, response.text)
+            for item, response in zip(comparison_items, expected_responses)]
         assert expected_batch.status_code == 200, expected_batch.text
         assert [row["data"] for row in expected_batch.json()["results"]] == [
             response.json() for response in expected_responses]
@@ -1174,6 +1308,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
                 actual_responses, actual_batch = read_comparisons()
                 assert all(response.status_code == 200 for response in actual_responses), [
                     response.text for response in actual_responses]
+
                 assert [response.json() for response in actual_responses] == [
                     response.json() for response in expected_responses]
                 assert actual_batch.status_code == 200, actual_batch.text
@@ -1266,8 +1401,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
         # position without reading facts or materialized comparison results.
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             scalar_marker = publisher.execute("""SELECT content_version,scalar_content_version,
-                reference_content_version FROM scalar_comparison_publication WHERE singleton""").fetchone()
-            publisher.execute("UPDATE scalar_comparison_publication SET scalar_content_version='stale-scalar-fixture'")
+                reference_content_version FROM scalar_resource_comparison_publication
+                WHERE indicator_id='densite'""").fetchone()
+            publisher.execute("""UPDATE scalar_resource_comparison_publication
+                SET reference_content_version='stale-scalar-reference' WHERE indicator_id='densite'""")
         stale_comparison_batches = []
         stale_comparison_item = {"id": "comparison", **semantic_item("densite", "commune", "22001")}
         try:
@@ -1279,8 +1416,8 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publis
                     stale_comparison_batches.append((failed.status_code, failed.json(), list(query_trace)))
         finally:
             with psycopg.connect(publish_dsn, autocommit=True) as publisher:
-                publisher.execute("""UPDATE scalar_comparison_publication SET content_version=%s,
-                    scalar_content_version=%s,reference_content_version=%s WHERE singleton""", scalar_marker)
+                publisher.execute("""UPDATE scalar_resource_comparison_publication SET content_version=%s,
+                    scalar_content_version=%s,reference_content_version=%s WHERE indicator_id='densite'""", scalar_marker)
         assert all(status == 503 and "results" not in body and "data" not in body
                    for status, body, _ in stale_comparison_batches)
         forbidden_comparison_reads = ("FROM scalar_observation ", "FROM scalar_observation_source",
@@ -2266,7 +2403,7 @@ def test_migration_035_adds_collection_lineage_to_pre_migration_shape():
                 (schema,)).fetchone()[0]
             assert complete_default in ("false", "false::boolean")
     finally:
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -2373,6 +2510,18 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                     publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
             assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
             assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v2'
+            for resource_id, shape, version in (
+                ("fixture_annual", "owned_series", "series-v2"),
+                ("fixture_unranked", "owned_series", "series-v2"),
+                ("fixture_sparse", "owned_series", "series-v2"),
+                ("fixture_period", "observed_collection", "collection-v1"),
+                ("fixture_profile", "declared_profile", "profile-fixture-v1"),
+                ("owned_fixture", "owned_series", "owned-v1"),
+                ("fixture_owned", "owned_series", "owned-v1"),
+                ("fixture_named_reference", "owned_series", "owned-v1"),
+            ):
+                publish_resource(publisher, resource_id, shape, version,
+                                 reference_content_version="territory-series-v1")
 
         from dataclasses import replace
         from api.tests.resource_catalogue_fixtures import default_resource_catalogue
@@ -2385,8 +2534,8 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             template = catalogue.resources_by_id[template_id]
             resources.append(replace(template, resource_id=resource_id,
                 indicator_id=resource_id, theme_id="test", **changes))
-        add_fixture_resource("fixture_annual", "prix_m2")
-        add_fixture_resource("fixture_sparse", "prix_m2")
+        add_fixture_resource("fixture_annual", "subventions_annuelles")
+        add_fixture_resource("fixture_sparse", "subventions_annuelles")
         add_fixture_resource("fixture_owned", "artif_par_habitant")
         add_fixture_resource("fixture_named_reference", "raccordement_reference",
             target_kinds=("named_reference",), target_ids=("reference-a",))
@@ -2469,7 +2618,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
             pool.close()
     finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -2518,12 +2667,14 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
                 VALUES ('territory_reference','territory-snapshot-v1',2)
                 ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
             publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-snapshot-v1',3,'territory-snapshot-v1')")
+            publish_resource(publisher, "snapshot_annual", "owned_series", "series-snapshot-v1",
+                             reference_content_version="territory-snapshot-v1")
 
         pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
                               kwargs={"autocommit": True})
 
         catalogue = default_resource_catalogue()
-        snapshot_resource = replace(catalogue.resources_by_id["prix_m2"],
+        snapshot_resource = replace(catalogue.resources_by_id["subventions_annuelles"],
             resource_id="snapshot_annual", indicator_id="snapshot_annual")
         test_catalogue = replace(catalogue, resources=(*catalogue.resources, snapshot_resource))
 
@@ -2533,7 +2684,8 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
 
             def execute(self, query, *args, **kwargs):
                 result = self.connection.execute(query, *args, **kwargs)
-                if isinstance(query, str) and "FROM table_publication s LEFT JOIN" in query:
+                if (isinstance(query, str) and "FROM table_publication s" in query
+                        and "ordered_series" in query):
                     marker_read.set()
                     if not continue_read.wait(timeout=15):
                         raise TimeoutError("publication snapshot test barrier was not released")
@@ -2566,6 +2718,7 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
                             publisher.execute("UPDATE source_vintage SET version='2026-02' WHERE source_id='snapshot_fixture' AND vintage_id='v1'")
                             publisher.execute("UPDATE ordered_series SET value=9 WHERE indicator_id='snapshot_annual' AND territory_id='59791' AND axis_value='2024'")
                             publisher.execute("UPDATE table_publication SET content_version='series-snapshot-v2',row_count=3 WHERE table_name='ordered_series'")
+                            publisher.execute("UPDATE resource_publication SET content_version='series-snapshot-v2' WHERE resource_id='snapshot_annual'")
                     continue_read.set()
                     response = pending.result(timeout=20)
                 assert response.status_code == 200, response.text
@@ -2596,7 +2749,7 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
                 main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
             pool.close()
     finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -2636,6 +2789,12 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
             """)
             connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
             connection.execute((api_root / "migrations/012_scalar_theme_identity.sql").read_text(encoding="utf-8"))
+            for migration in (
+                "046_resource_publication.sql",
+                "047_profile_resource_comparison.sql",
+                "048_resource_publication_descriptor.sql",
+            ):
+                connection.execute((api_root / "migrations" / migration).read_text(encoding="utf-8"))
             names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
             assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
             assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
@@ -2650,6 +2809,8 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
                 connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
             connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','migrated-reference-v1',1)")
             connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','migrated-scalar-v1',1,'migrated-reference-v1')")
+            publish_resource(connection, "fixture_scalar", "scalar", "migrated-scalar-v1",
+                             reference_content_version="migrated-reference-v1")
             role = urlsplit(db_env["read_dsn"]).username
             assert role and re.fullmatch(r"[A-Za-z0-9_$-]+", role)
             quoted_role = '"' + role.replace('"', '""') + '"'
@@ -2696,7 +2857,7 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
                 main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
             pool.close()
     finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if not retain_schema():
             with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -2788,7 +2949,7 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
                 with chain.transaction():
                     chain.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('unregistered_marker','x',1)")
     finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if not retain_schema():
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
                 connection.execute(f'DROP SCHEMA "{fresh_schema}" CASCADE')
