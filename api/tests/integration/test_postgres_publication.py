@@ -361,7 +361,7 @@ def retained_canonical_db_env(tmp_path_factory):
     import json
     _lineage_r_library_preflight()
     publish_dsn, read_dsn = _configuration()
-    psycopg = pytest.importorskip("psycopg")
+    import psycopg
     passfile = os.environ.get("PGPASSFILE")
     if not passfile or not Path(passfile).is_file():
         pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
