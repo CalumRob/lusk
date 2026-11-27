@@ -2208,6 +2208,9 @@ def test_migration_039_inventory_marks_malformed_family_as_shape_only():
 
     publish_dsn, _ = _configuration()
     root = Path(__file__).resolve().parents[2]
+    current_schema = subprocess.check_output(
+        ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
     schema = f"it_m039_inventory_advisory_{uuid.uuid4().hex[:12]}"
     inventory = (root / "migrations/039_operator_state_inventory.sql").read_text(encoding="utf-8")
     query = inventory.split("WITH families(family, base_relations", 1)[1]
@@ -2218,7 +2221,7 @@ def test_migration_039_inventory_marks_malformed_family_as_shape_only():
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'CREATE SCHEMA "{schema}"')
         connection.execute(f'SET search_path TO "{schema}"')
-        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        connection.execute(current_schema)
         fk = _m039_constraint_name(connection, "scalar_comparison_group", "f", "%scalar_descriptor%")
         connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{fk}"')
         rows = connection.execute(query).fetchall()
@@ -2236,6 +2239,9 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
     root = Path(__file__).resolve().parents[2]
     baseline = subprocess.check_output(
         ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
+    current_schema = subprocess.check_output(
+        ["git", "show", "a0807c710569b65c64b1154f7ab0683b671551a5:api/schema.sql"],
         cwd=root, text=True, encoding="utf-8")
     migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
     schemas = {
@@ -2298,10 +2304,12 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         connection.execute(migration)
         assert _table_snapshot(connection, untouched_tables) == before
 
-    # Current -> 039 leaves existing facts and markers untouched.
+    # Current -> 039 leaves existing facts and markers untouched. This state
+    # includes the later lineage columns, so use the reviewed post-046/pre-049
+    # contract rather than the pre-lineage upgrade baseline above.
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{schemas["current"]}"')
-        connection.execute(baseline)
+        connection.execute(current_schema)
         with connection.transaction():
             connection.execute("""INSERT INTO territory_reference(territory_id,territory_type,name)
                 VALUES ('80603','commune','Current focal')""")
