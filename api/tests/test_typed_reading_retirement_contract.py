@@ -57,6 +57,7 @@ def test_migration_049_owns_one_atomic_restrict_transaction():
     assert code.rstrip().endswith("COMMIT;")
     assert "ON_ERROR_STOP" in _migration()
     assert "WITHOUT --single-transaction" in _migration()
+    assert "current_schema() || ',pg_catalog'" in code
     assert not re.search(r"\bCASCADE\b", code)
 
 
