@@ -70,7 +70,7 @@ import { chapitreDemande, chapitreDemandeDepuisAncre } from '@/fiche/content/dem
 import { useCahierLoading } from '@/fiche/useCahierLoading'
 import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+import { lignesAvecComparaisonApi, semanticComparisonForTheme,
   themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -430,11 +430,8 @@ function planifierRechauffementThemes(type: string, code: string, themeActif: Th
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
 const preuvesThemeIndisponibles = ref(false)
-const histoiresNuageDemographie = ref<Histoire[]>([])
-const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle')
-const statutNuageComparaison = ref<'idle' | 'error'>('idle')
 const retryAcquisition = ref(0)
 const retryThemeComparaison = ref(0)
 let sequenceAcquisition = 0
@@ -449,16 +446,10 @@ const payloadPourRendu = computed<Payload | null>(() => {
   // #868 — chemin natif unique : les numériques du thème actif viennent de la
   // seule réponse de faits API. Pendant le chargement ou l'échec, AUCUNE ligne
   // numérique statique ne rend (pas de repli statique — le runtime statique est
-  // retiré). La référence complète tient déjà les identités des pairs de
-  // comparaison (nuage Milieux, jointures), aucune fusion de cohorte n'est
-  // nécessaire.
+  // retiré). La référence complète tient déjà les identités nécessaires aux
+  // comparaisons, aucune fusion de cohorte n'est nécessaire.
   const indicateurs = faitsThemeRows.value ?? []
-  const histoires = [
-    ...(histoiresThemeRows.value ?? []),
-    ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
-    ...(theme === 'milieux' ? histoiresNuageMilieux.value : []),
-  ]
-  return { ...payload, indicateurs, histoires }
+  return { ...payload, indicateurs, histoires: histoiresThemeRows.value ?? [] }
 })
 const erreurFiche = referenceTerritoire.erreur
 const chargementFiche = referenceTerritoire.chargement
@@ -724,12 +715,9 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       faitsThemeRows.value = null
       histoiresThemeRows.value = null
       preuvesThemeIndisponibles.value = false
-      histoiresNuageDemographie.value = []
-      histoiresNuageMilieux.value = []
-      statutAcquisition.value = 'loading'
+          statutAcquisition.value = 'loading'
       statutComparaison.value = 'idle'
-      statutNuageComparaison.value = 'idle'
-      cleFaitsPrets = null
+        cleFaitsPrets = null
       demandeScheduler.reset()
       return
     }
@@ -753,11 +741,8 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     faitsThemeRows.value = null
     histoiresThemeRows.value = null
     preuvesThemeIndisponibles.value = false
-    histoiresNuageDemographie.value = []
-    histoiresNuageMilieux.value = []
     statutAcquisition.value = 'loading'
     statutComparaison.value = 'idle'
-    statutNuageComparaison.value = 'idle'
     try {
       const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif,
         demandeThemeActif())
@@ -769,28 +754,19 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       }, payloadReference.value?.themeMetadata?.[themeActif])
        // #986 — the comparison shown is the one the header resolved: the same
        // intent the focal facts were read with, never a discarded default.
-       const membresActifs = membresAcquisition.value
-       const comparison = membresActifs === null
-         ? null
-         : semanticComparisonForTheme(acquired.comparisons.get(cleSelectionComparaison(membresActifs)), {
-           target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-           territories: [...reference],
-         }, acquired.focal.resource_reads)
-        const comparisonScopeLabel = comparison ? libellePorteeSemantic(comparison, target) : null
-        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
-          comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
+      const membresActifs = membresAcquisition.value
+      const comparison = membresActifs === null
+        ? null
+        : semanticComparisonForTheme(acquired.comparisons.get(cleSelectionComparaison(membresActifs)),
+          undefined, acquired.focal.resource_reads, { type: target.type, id: code })
+      const comparisonScopeLabel = comparison ? libellePorteeSemantic(comparison, target) : null
+      faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
+        comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
       histoiresThemeRows.value = rows.histoires
       preuvesThemeIndisponibles.value = Boolean(rows.unavailableReadings?.length || acquired.focal.named_reference_error)
-       histoiresNuageDemographie.value = themeActif === 'demographie'
-         ? histoiresDemographieNuage(comparison) : []
-        histoiresNuageMilieux.value = themeActif === 'milieux'
-          ? histoiresMilieuxDuNuage(comparison) : []
-        statutNuageComparaison.value = comparison?.reading_cloud_error === true ? 'error' : 'idle'
-       statutAcquisition.value = 'ready'
-        // Only this focal comparison-read failure owns the page's ordinary
-        // comparison state. A cohort/cloud failure is independently owned by
-        // its reader and must not invalidate successful rank/value cells.
-        statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
+      statutAcquisition.value = 'ready'
+      // Only this focal comparison-read failure owns the page's comparison state.
+      statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
       if (!cancelled && request === sequenceAcquisition) {
@@ -818,8 +794,7 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
   async ([reference, theme, code, selectionMembres], _old, onCleanup) => {
     if (theme === 'mobilite' || statutAcquisition.value !== 'ready' || !reference || !typeValide.value || !theme) {
       statutComparaison.value = 'idle'
-      statutNuageComparaison.value = 'idle'
-      return
+        return
     }
     const target = reference.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'unavailable'; return }
@@ -831,11 +806,6 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
     membreComparaisonIndisponible.value = null
     faitsThemeRows.value = faitsThemeRows.value
       ? lignesAvecComparaisonApi(faitsThemeRows.value, null, null) : null
-    // Pendant le chargement de la nouvelle sélection, le nuage de l'ancienne
-    // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
-    if (themeActif === 'milieux') histoiresNuageMilieux.value = []
-    if (themeActif === 'demographie') histoiresNuageDemographie.value = []
-    statutNuageComparaison.value = 'idle'
     if (selectionMembres === null) {
       // Une sélection nommée sans identité résoluble est indisponible,
       // jamais une sélection vide ni le contexte fixe par défaut.
@@ -848,22 +818,11 @@ watch([() => referenceTerritoire.reference.value, selection, () => idRoute.value
       const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres ?? undefined))
       validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres ?? undefined,
         { type: target.type, id: target.territoire }, meanComparisonResources(themeActif))
-      const comparison = semanticComparisonForTheme(nativeComparison, {
-        target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-        territories: [...reference],
-      }, acquired.focal.resource_reads)
-      statutNuageComparaison.value = comparison?.reading_cloud_error === true ? 'error' : 'idle'
-      if (themeActif === 'demographie') {
-        histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
-      }
-        if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
+      const comparison = semanticComparisonForTheme(nativeComparison,
+        undefined, acquired.focal.resource_reads, { type: target.type, id: code })
         const comparisonScopeLabel = libellePorteeSemantic(comparison, target, contexteSelectionTapee.value)
         faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
           comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
-        // Un select() abouti ne renvoie que la réponse de comparaison : les
-        // échecs d'acquisition/publication lèvent vers le catch ci-dessous.
-        // Un nuage manquant reste la propriété indépendante de
-        // statutNuageComparaison et n'invalide pas les scalaires réussis.
         statutComparaison.value = 'ready'
     } catch (error) {
       if (!cancelled && request === sequenceComparaison) {
@@ -916,7 +875,6 @@ function retryThemeComparison(): void {
     return
   }
   // Relance la SEULE acquisition de comparaison propriétaire : une réponse
-  // réussie peut avoir omis le nuage demandé, donc l'entrée en cache doit
   // tomber sans invalider les faits focaux ni les sélections voisines.
   if (theme !== null && membresAcquisition.value !== null) {
     cacheAcquisition.invalidateComparison(typeRoute.value, idRoute.value, theme as Theme,
@@ -1374,7 +1332,6 @@ watch(
               :metadata-status="statutMetadataPourAffichage"
               :retry-metadata="retryExplicationTheme"
               :comparison-status="statutComparaison"
-              :cloud-comparison-status="statutNuageComparaison"
               :comparison-error="membreComparaisonIndisponible ? `Données indisponibles pour ${membreComparaisonIndisponible}` : 'La lecture de la comparaison a échoué.'"
               :retry-comparison="retryThemeComparison"
             />

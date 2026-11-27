@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { acquireMapThemeFacts, factsCarteDepuisLectureCohorte } from '../payload/mapSemanticAcquisition'
-import { valeurHistoireParTerritoire } from '../carte/fusion'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import type { IndicatorPageMetadata, Territoire } from '../payload/types'
 
@@ -8,7 +7,7 @@ const declaration = (shape: string): SemanticResourceDeclaration => ({
   resource_id: 'densite', indicator_id: 'densite', theme_id: 'demographie', label: 'Densité', unit: 'hab/km²',
   direction: 'high', allowed_levels: ['commune'], target_kinds: ['territory_cohort'], intents: ['facts'],
   shapes: [shape], sources: ['source-a'], fields: ['value'],
-  map_eligible: shape === 'typed_reading' ? null : true, counts_available: false,
+  map_eligible: true, counts_available: false,
 })
 const territories = [
   { territoire: '22001', type: 'commune' as const, nom: 'A', departement: null, epci: null },
@@ -34,7 +33,7 @@ describe('map cohort adapter', () => {
     })))
     vi.stubGlobal('fetch', fetcher)
     const discovered = vi.fn()
-    const result = await acquireMapThemeFacts('demographie', 'commune', territories, ['not-declared'], [], discovered)
+    const result = await acquireMapThemeFacts('demographie', 'commune', territories, ['not-declared'], discovered)
     expect(discovered).toHaveBeenCalledWith([])
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(result.facts).toEqual([])
@@ -93,7 +92,7 @@ describe('map cohort adapter', () => {
     vi.stubGlobal('fetch', fetcher)
     const pages = Object.fromEntries(declarations.map((item) => [item.indicator_id, scalarPage]))
     const result = await acquireMapThemeFacts('demographie', 'commune', territories,
-      declarations.map((item) => item.indicator_id), [], undefined, pages)
+      declarations.map((item) => item.indicator_id), undefined, pages)
     expect(fetcher).toHaveBeenCalledTimes(3)
     expect(sent).toHaveLength(13)
     expect(result.declarations.map((item) => item.resource_id)).toEqual(declarations.map((item) => item.resource_id))
@@ -126,47 +125,9 @@ describe('map cohort adapter', () => {
     expect(() => factsCarteDepuisLectureCohorte(resource, data, territories)).toThrow()
   })
 
-  it('adapts producer-declared numeric typed-reading parameters and provenance to story rows', () => {
-    const resource = { ...declaration('typed_reading'), resource_id: 'demographie_selected_reading',
-      indicator_id: 'demographie_selected_reading', axes: ['groupe'],
-      axis_values: [['groupe', ['growth']]] as Array<[string, string[]]>,
-      fields: ['groupe', 'story_key', 'taux_solde_naturel'] }
-    const base = cohort(resource, [])
-    const data = { ...base, shape: 'typed_reading', descriptor: { rate_unit: '‰/year-native' }, territories: [{
-      territory: { id: '22001', type: 'commune', name: 'A' }, facts: [{ groupe: 'growth', story_key: 'growth', status: 'measured', taux_solde_naturel: 1.25,
-        source: { source_id: 'source-a', name: 'Source', vintage_id: 'v1', version: '2025',
-          reference_date: null, publication_date: null } }],
-    }, { territory: { id: '22002', type: 'commune', name: 'B' }, facts: [{ groupe: 'growth', story_key: 'growth',
-      status: 'unavailable', taux_solde_naturel: 99,
-      source: { source_id: 'source-a', name: 'Source', vintage_id: 'v1', version: '2025',
-        reference_date: null, publication_date: null } }] }] }
-    const result = factsCarteDepuisLectureCohorte(resource, data, territories,
-      [{ subgroup: 'growth', fields: ['taux_solde_naturel'] }])
-    expect(result.stories).toHaveLength(2)
-    expect(result.stories[0]).toMatchObject({ territoire: '22001', taux_solde_naturel: 1.25,
-      status: 'measured', nativeUnits: { taux_solde_naturel: '‰/year-native' }, vintage_id: 'v1', vintage_version: '2025' })
-    expect(result.stories[1]).not.toHaveProperty('taux_solde_naturel')
-    const payload = { histoires: result.stories } as never
-    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22001'))
-      .toMatchObject({ value: 1.25, unit: '‰/year-native' })
-    expect(valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel').get('22002'))
-      .toMatchObject({ value: null, unit: '‰/year-native' })
-  })
 
-  it('binds typed-reading groups by native axis identity and does not synthesize a group from story_key', () => {
-    const resource = { ...declaration('typed_reading'), resource_id: 'demographie_selected_reading',
-      indicator_id: 'demographie_selected_reading', axes: ['groupe'],
-      axis_values: [['groupe', ['trajectory-demographic']]] as Array<[string, string[]]>,
-      fields: ['groupe', 'story_key', 'taux_solde_naturel'] }
-    const raw = { ...cohort(resource, []), shape: 'typed_reading', descriptor: { rate_unit: '‰/an' }, territories: [{
-      territory: { id: '22001', type: 'commune', name: 'A' },
-      facts: [{ story_key: 'trajectory-demographic', status: 'measured', taux_solde_naturel: 3,
-        source: { source_id: 'source-a', name: 'Source', vintage_id: 'v1', version: '2025',
-          reference_date: null, publication_date: null } }],
-    }] }
-    expect(() => factsCarteDepuisLectureCohorte(resource, raw, territories,
-      [{ subgroup: 'trajectory-demographic', fields: ['taux_solde_naturel'] }])).toThrow(/Groupe de lecture typée/)
-  })
+
+
 
   it('projects only the native annual grant comparison point, independent of point order', () => {
     const resource = { ...declaration('ordered_series'), resource_id: 'subventions_annuelles',

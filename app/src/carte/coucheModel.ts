@@ -47,37 +47,11 @@ export interface AdmissionCouchesTheme {
   metadata?: ThemeMetadata
 }
 
-type ReadingBinding = { declaration: SemanticResourceDeclaration; subgroup: string }
-
-function isText(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
-function declaredGroups(declaration: SemanticResourceDeclaration): readonly string[] {
-  return declaration.axis_values?.find(([name]) => name === 'groupe')?.[1] ?? []
-}
-
-function readingBindings(declarations: readonly SemanticResourceDeclaration[]): ReadingBinding[] {
-  const bindings: ReadingBinding[] = []
-  for (const declaration of declarations) {
-    if (declaration.shapes.includes('typed_reading')) {
-      for (const subgroup of declaredGroups(declaration)) bindings.push({ declaration, subgroup })
-    }
-  }
-  return bindings
-}
-
 function nativeResource(declarations: readonly SemanticResourceDeclaration[], theme: Theme, key: string,
   shapes?: readonly string[]): SemanticResourceDeclaration | undefined {
   return declarations.find((declaration) => declaration.theme_id === theme &&
     declaration.resource_id === key && declaration.indicator_id === key &&
     declaration.map_eligible === true && (!shapes || shapes.some((shape) => declaration.shapes.includes(shape))))
-}
-
-function labelParam(metadata: ThemeMetadata | undefined, field: string): string {
-  // The typed-reading API currently declares parameter identity/fields but not
-  // per-field wording; retain its verified producer label until that API seam exists.
-  return metadata?.param_labels[field] ?? 'Fait disponible'
 }
 
 function labelIndicator(theme: Theme, metadata: ThemeMetadata | undefined,
@@ -102,37 +76,11 @@ function detailsDe(declaration: SemanticResourceDeclaration,
   return [...(declaration.axis_values?.find(([name]) => name === 'detail')?.[1] ?? [])]
 }
 
-function storyFields(payload: Payload, theme: Theme, groupKey: string, fields: readonly string[],
-  bindings: readonly ReadingBinding[]): Array<{ field: string; storyKey: string | null }> {
-  const binding = bindings.find((candidate) => candidate.subgroup === groupKey)
-  if (!binding) return []
-  const admittedFields = new Set(binding.declaration.fields)
-  const rows = payload.histoires.filter((row) => row.theme === theme &&
-    (row as unknown as Record<string, unknown>).groupe === groupKey)
-  // Observation presence is not eligibility. A sparse/unavailable cohort still
-  // exposes every bound field; only an actual producer row can supply story_key.
-  const storyKey = rows.map((row) => (row as unknown as Record<string, unknown>).story_key).find(isText) ?? null
-  const output: Array<{ field: string; storyKey: string | null }> = []
-  const seen = new Set<string>()
-  for (const field of fields) {
-    if (!admittedFields.has(field) || seen.has(field)) continue
-    seen.add(field)
-    output.push({ field, storyKey })
-  }
-  return output
-}
-
 /** Build layers from fiche candidates intersected with native map declarations. */
-export function couchesDuTheme(payload: Payload, theme: Theme, admitted: AdmissionCouchesTheme): CouchesTheme {
+export function couchesDuTheme(_payload: Payload, theme: Theme, admitted: AdmissionCouchesTheme): CouchesTheme {
   const metadata = admitted.metadata?.theme === theme ? admitted.metadata : undefined
   const groups = groupesCouchesCarte(theme)
   const declarations = admitted.declarations.filter((declaration) => declaration.theme_id === theme)
-  const bindings = readingBindings(declarations)
-  const declaredStories = groups.flatMap((group) => storyFields(payload, theme, group.key, group.storyFields, bindings)
-    .map(({ field, storyKey }) => ({ group, field, storyKey })))
-
-  // The map's default is the first numeric reading field in app grammar order.
-  const firstStory = declaredStories[0]
   const nativeIndicators = new Map<string, SemanticResourceDeclaration>()
   for (const group of groups) {
     for (const key of group.resourceKeys) {
@@ -141,45 +89,13 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted: Admissi
     }
   }
 
-  const defaultStoryLayer: Couche | null = firstStory ? {
-    source: nativeIndicators.has(firstStory.field) ? 'indicateur' : 'histoire',
-    clef: firstStory.field,
-    detail: null,
-    libelle: nativeIndicators.has(firstStory.field)
-      ? labelIndicator(theme, metadata, nativeIndicators.get(firstStory.field)!, admitted.nativeContracts?.[firstStory.field])
-      : labelParam(metadata, firstStory.field),
-    parDefaut: true,
-    sousGroupe: firstStory.group.key,
-    storyKey: firstStory.storyKey,
-  } : null
-
-  const entrees: EntreeCouches[] = defaultStoryLayer
-    ? [{ type: 'couche', couche: defaultStoryLayer }]
-    : []
-
-  for (const group of groups) {
-    const fields = storyFields(payload, theme, group.key, group.storyFields, bindings)
-      .filter(({ field }) => field !== firstStory?.field)
-    if (fields.length) {
-      entrees.push({ type: 'groupe', groupe: { libelle: group.label, couches: fields.map(({ field, storyKey }) => {
-        const indicator = nativeIndicators.get(field)
-        return { source: indicator ? 'indicateur' : 'histoire', clef: field, detail: null,
-          libelle: indicator ? labelIndicator(theme, metadata, indicator, admitted.nativeContracts?.[field])
-            : labelParam(metadata, field), parDefaut: false,
-          sousGroupe: group.key,
-          storyKey }
-      }) } })
-    }
-  }
-
+  const entrees: EntreeCouches[] = []
   for (const group of groups) {
     for (const key of group.resourceKeys) {
       const declaration = nativeIndicators.get(key)
       if (!declaration) continue
-      if (declaredStories.some((story) => story.field === key)) continue
       const contract = admitted.nativeContracts?.[key]
-      const scalar = declaration.shapes.includes('scalar')
-      if (scalar) {
+      if (declaration.shapes.includes('scalar')) {
         entrees.push({ type: 'couche', couche: { source: 'indicateur', clef: key, detail: null,
           libelle: labelIndicator(theme, metadata, declaration, contract), parDefaut: false,
           sousGroupe: group.key, storyKey: null } })
@@ -194,5 +110,5 @@ export function couchesDuTheme(payload: Payload, theme: Theme, admitted: Admissi
     }
   }
 
-  return { theme, entrees, coucheParDefaut: defaultStoryLayer }
+  return { theme, entrees, coucheParDefaut: null }
 }

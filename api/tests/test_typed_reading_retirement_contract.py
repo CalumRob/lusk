@@ -102,6 +102,18 @@ def test_production_api_and_producer_grammar_have_no_typed_reading_registration(
         assert "selected_reading" not in source, path
 
 
+def test_app_has_no_typed_reading_route_field_or_fixture_reference():
+    forbidden = ("typed_" + "reading", "selected" + "_reading",
+                 "demographic_" + "typed_reading", "habitat_" + "typed_reading",
+                 "economy_" + "typed_reading", "milieux_" + "typed_reading")
+    for path in (ROOT / "app/src").rglob("*"):
+        if path.suffix not in {".ts", ".vue", ".json", ".js", ".mjs"}:
+            continue
+        source = path.read_text(encoding="utf-8")
+        for token in forbidden:
+            assert token not in source, (path, token)
+
+
 def test_pipeline_has_no_typed_reading_publisher_artifact_or_target():
     forbidden = ("typed_reading", "selected_reading", "demographic_typed_reading",
                  "habitat_typed_reading", "economy_typed_reading", "milieux_typed_reading",

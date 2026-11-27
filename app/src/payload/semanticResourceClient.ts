@@ -95,7 +95,7 @@ export const SEMANTIC_READ_DEADLINE_MS = TRANSPORT_DEADLINE_MS
  * declaration; a client never derives it from the failed lookup.
  */
 export const SEMANTIC_PUBLICATION_FAMILIES = [
-  'scalar', 'profile', 'ordered_series', 'named_reference', 'typed_reading', 'collection', 'aedar',
+  'scalar', 'profile', 'ordered_series', 'named_reference', 'collection', 'aedar',
 ] as const
 export type SemanticPublicationFamily = typeof SEMANTIC_PUBLICATION_FAMILIES[number]
 
@@ -112,7 +112,6 @@ export function publicationFamilyForResource(
 ): SemanticPublicationFamily {
   const kind = typeof declaration.resource_kind === 'string' ? declaration.resource_kind : ''
   const shapes = new Set(declaration.shapes)
-  if (kind === 'typed_reading' || shapes.has('typed_reading')) return 'typed_reading'
   if (kind.startsWith('aedar_') || shapes.has('aedar_source_grain') || shapes.has('aedar_territory_summary')) {
     return 'aedar'
   }

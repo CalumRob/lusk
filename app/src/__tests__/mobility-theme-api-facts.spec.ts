@@ -235,23 +235,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     // seam carries no losses field to revive.
     expect('losses' in facts.mobility).toBe(false)
   })
-  it('keeps the retired Mobility reading unavailable on the actual native resource catalogue', () => {
-    const resources = nativeResources('mobilite')
-    expect(resources.map((resource) => resource.resource_id)).not.toContain('mobilite_selected_reading')
 
-    const facts = mobilityFactsFromThemeApi(payload, '22001', {
-      theme_id: 'mobilite', resource_reads: [],
-    })
-    // #627 - no reading is fabricated from the retired subgroup declaration:
-    // the losses seam itself is gone, and stale rows in the response never
-    // revive it through the semantic path.
-    expect('losses' in facts.mobility).toBe(false)
-    const withStaleRows = mobilityFactsFromThemeApi(payload, '22001', {
-      theme_id: 'mobilite', resource_reads: [],
-      readings: [{ story_key: 'ancienne-lecture-retiree', groupe: 'acces-aux-services', value: 3 }],
-    })
-    expect('losses' in withStaleRows.mobility).toBe(false)
-  })
 
   it('combines regional motorisation with a synthetic producer-derived curve without rendering its named reference', () => {
     const regionPayload: Payload = { ...payload, territoires: [

@@ -7,9 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
-import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
-import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
-import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { contextesDepuisReference } from '../fiche/comparisonContext'
 import { chapitreDemande } from '../fiche/content/demandInventory'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
@@ -66,23 +63,6 @@ function syntheticResourceRead(theme: string, resourceId: string, territoryId = 
   if (!resource) throw new Error(`Missing producer resource ${theme}/${resourceId}`)
   return nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: territoryId },
     intent: { kind: 'facts' } }, resource)
-}
-
-function syntheticReadingRead(theme: string, territoryId = '22001'): Record<string, any> {
-  const resource = nativeResources(theme).find((candidate) =>
-    candidate.shapes.includes('typed_reading') && candidate.target_kinds.includes('territory'))
-  if (!resource) throw new Error(`Missing producer reading resource for ${theme}`)
-  const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: territoryId },
-    intent: { kind: 'facts' } }, resource)
-  return response.facts?.[0] ?? {}
-}
-
-function syntheticTopActivityLabel(): string {
-  const resource = nativeResources('economie').find((candidate) =>
-    candidate.resource_id === 'economie_selected_reading')!
-  const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
-    intent: { kind: 'facts' } }, resource)
-  return response.ranked_activities?.[0]?.activity_label ?? ''
 }
 
 function nativeFicheReadFixture(item: Record<string, any>, resource: Parameters<typeof nativeReadFixture>[1]) {
@@ -496,10 +476,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   }, 20000)
 
-  it('keeps typed facts visible while the active catalogue 404s, and retries only that catalogue', async () => {
+  it('keeps native facts visible while the active catalogue 404s, and retries only that catalogue', async () => {
     const requests: Array<Array<Record<string, any>>> = []
-    const readingResource = nativeResources('economie').find((resource) =>
-      resource.resource_id === 'economie_selected_reading')!
+    const focalResource = 'chomage'
+    const focalValue = 42.25
     let metadataCalls = 0
     const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -515,9 +495,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         requests.push(items)
         return nativeBatchResponse(items, (item, resource) => {
           const data = nativeReadFixture(item, resource)
-          if (item.intent.kind !== 'facts' || resource.resource_id !== readingResource.resource_id) return data
-          return { ...data, ranked_activities: data.ranked_activities.map((activity: Record<string, any>, index: number) =>
-            index === 0 ? { ...activity, activity_label: 'Sentinelle API — activité' } : activity) }
+          return item.intent.kind === 'facts' && resource.resource_id === focalResource
+            ? { ...data, value: focalValue } : data
         })
       }
       throw new Error(`Unexpected request: ${url}`)
@@ -528,19 +507,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       chargerReferenceReelle, chargerMetadonneesTheme)
     try {
       await flushPromises()
-      expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
-      const focalReadingReads = () => requests.flat().filter((item) =>
-        item.resource === readingResource.resource_id && item.intent.kind === 'facts').length
-      const readsBeforeMetadataRetry = focalReadingReads()
-      expect(requests.flat().some((item) => item.resource === readingResource.resource_id &&
-        item.intent.kind === 'facts')).toBe(true)
+      const expected = formaterValeur({ value: focalValue, unit: '%' })
+      expect(wrapper.get(`[data-clef="${focalResource}"] .valeur-numerique`).text()).toBe(expected)
+      const focalReads = () => requests.flat().filter((item) =>
+        item.resource === focalResource && item.intent.kind === 'facts').length
+      const readsBeforeMetadataRetry = focalReads()
+      expect(readsBeforeMetadataRetry).toBeGreaterThan(0)
       expect(fetchAll.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/data/theme_')))
         .toEqual(['/data/theme_economie.json'])
       await wrapper.get('[role="tabpanel"] button').trigger('click')
       await flushPromises()
       expect(metadataCalls).toBe(2)
-      expect(focalReadingReads()).toBe(readsBeforeMetadataRetry)
-      expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
+      expect(focalReads()).toBe(readsBeforeMetadataRetry)
+      expect(wrapper.get(`[data-clef="${focalResource}"] .valeur-numerique`).text()).toBe(expected)
     } finally {
       wrapper.unmount()
       vi.unstubAllGlobals()
@@ -962,7 +941,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const requests: Array<Array<Record<string, any>>> = []
     const fetchApi = nativeSemanticFetch(requests)
     vi.stubGlobal('fetch', nativeSemanticFetch())
-    const activityLabel = syntheticTopActivityLabel()
     const acquired = await acquireThemeFacts('commune', '22001', 'programmes')
     expect(() => themeFactsRowsFromSemantic('programmes', acquired, {
       territoire: '22001', type: 'commune' })).not.toThrow()
@@ -1005,7 +983,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         `${theme}; alert=${wrapper.find('[role="alert"]').exists() ? wrapper.find('[role="alert"]').text() : 'none'}; calls=${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`)
         .toContain(heading)
       if (theme === 'demographie') {
-        // The native typed-reading descriptor publishes rate_unit and cohort facts.
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
         const syntheticDensity = syntheticResourceRead('demographie', 'densite')
         expect(syntheticDensity.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
@@ -1016,16 +993,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const passoires = nativeResources(theme).find((resource) => resource.resource_id === 'part_passoires')!
         expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
       } else if (theme === 'milieux') {
-        const syntheticReading = syntheticReadingRead('milieux')
-        const period = syntheticReading.periode_pop as string
         const visibleResource = nativeResources(theme).find((resource) =>
           resource.shapes.includes('ordered_series') && resource.target_kinds.includes('territory'))!
-        expect(wrapper.get('[role="tabpanel"]').text()).toContain(period)
         const syntheticSeries = syntheticResourceRead('milieux', visibleResource.resource_id)
         const sourceName = (syntheticSeries.points as Array<Record<string, any>>)[0]?.provenance?.[0]?.source_name
         expect(wrapper.get('[role="tabpanel"]').text()).toContain(sourceName)
       } else if (theme === 'economie') {
-        expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+        const chomage = syntheticResourceRead('economie', 'chomage')
+        expect(wrapper.get('[data-clef="chomage"] .valeur-numerique').text()).toBe(
+          formaterValeur({ value: chomage.value, unit: chomage.unit }))
       } else if (theme === 'mobilite') {
         // A separate AEDAR comparison request may fail without making the
         // independently valid native trajectory look unavailable.
@@ -1123,7 +1099,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await router.replace({ query: { theme: 'economie' } })
     await flushPromises()
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Chômage')
-    expect(requests.flat().some((item) => item.resource === 'economie_selected_reading')).toBe(true)
+    expect(requests.flat().some((item) => nativeResources('economie').some((resource) =>
+      resource.resource_id === item.resource) && item.intent.kind === 'facts')).toBe(true)
 
     resolveHabitat!()
     await flushPromises()
@@ -1234,14 +1211,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchApi)
-    const activityLabel = syntheticTopActivityLabel()
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie&comparaison=epci',
       chargerReferenceReelle)
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    expect(wrapper.find('[data-clef="chomage"] .valeur-numerique').exists()).toBe(true)
     await wrapper.get('.comparison-section-retry').trigger('click')
     await flushPromises()
 
@@ -1249,7 +1225,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(selectedReads).toHaveLength(2)
     expect(selectedReads[1]!.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    expect(wrapper.find('[data-clef="chomage"] .valeur-numerique').exists()).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
   })
@@ -1274,7 +1250,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchApi)
-    const activityLabel = syntheticTopActivityLabel()
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=economie&comparaison=epci',
       chargerReferenceReelle,
@@ -1289,13 +1264,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       .map((territory) => ({ type: 'commune' as const, id: territory.territoire }))
       .sort((a, b) => a.id.localeCompare(b.id))
     expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual(bretagneTyped)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    expect(wrapper.find('[data-clef="chomage"] .valeur-numerique').exists()).toBe(true)
 
     resolveOldComparison!()
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    expect(wrapper.find('[data-clef="chomage"] .valeur-numerique').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1320,121 +1295,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
   }, 20_000)
-
-  it.each(['demographie', 'milieux'] as const)(
-    'renders API-resolved named-scope reading clouds for %s from the full compact reference',
-    async (theme) => {
-      const cible = cibleReference('22001')
-      const parent = referenceReelle.find((territory) => territory.type === 'epci' &&
-        territory.territoire === cible.epci)!
-      const region = referenceReelle.find((territory) => territory.type === 'region')!
-      const apiReference = referenceReelle as any[]
-      const epciMembers = apiReference.filter((territory) => territory.type === 'commune' && territory.epci === parent.territoire)
-      const bretagneMembers = apiReference.filter((territory) => territory.type === 'commune')
-      const resources = nativeResources(theme)
-      const readingResource = resources.find((resource) => resource.shapes.includes('typed_reading') &&
-        resource.target_kinds.includes('territory_cohort'))!
-      const rankResource = resources.find((resource) => resource.shapes.includes('scalar') &&
-        resource.intents.includes('selected_comparison')) ?? resources.find((resource) =>
-        resource.shapes.includes('ordered_series') && resource.intents.includes('selected_comparison'))!
-      const selectedRanks: Array<{ scopeCount: number; rankSize: number | null }> = []
-      const focalReads = new Map<string, Record<string, any>>()
-      const requests: Array<Array<Record<string, any>>> = []
-      const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input)
-        if (url === '/api/resources') {
-          return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1',
-            resources: [rankResource, readingResource] }))
-        }
-        if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
-        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-        requests.push(items)
-        return nativeBatchResponse(items, (item, resource) => {
-          let data = nativeReadFixture(item, resource)
-          if (item.intent.kind === 'facts' && item.target.kind === 'territory' &&
-              resource.resource_id === rankResource.resource_id && resource.shapes.includes('ordered_series')) {
-            const comparisonPoint = lireMetadataSnapshot(theme).indicator_pages?.[resource.indicator_id]?.comparison?.detail
-            if (!comparisonPoint) throw new Error(`No producer comparison facet for ${resource.resource_id}`)
-            data = { ...data, comparison_point: comparisonPoint }
-          }
-          if (item.intent.kind === 'facts' && item.target.kind === 'territory') {
-            focalReads.set(resource.resource_id, data)
-          }
-          if (item.intent.kind !== 'selected_comparison') return data
-          // #860 — les membres partent en cohorte communale développée (triée) ;
-          // reconnaître la portée EPCI à l'ensemble des ids demandés.
-          const selectedIds = item.intent.members.map((member: { type: string; id: string }) => member.id)
-          const isEpciScope = selectedIds.length === epciMembers.length &&
-            epciMembers.every((member) => selectedIds.includes(member.territoire))
-          const selectedMembers = isEpciScope ? epciMembers
-            : selectedIds.length === bretagneMembers.length &&
-              bretagneMembers.every((member) => selectedIds.includes(member.territoire))
-              ? bretagneMembers
-              : item.intent.members
-          const scopeCount = selectedMembers.length
-          const focal = focalReads.get(resource.resource_id)
-          const comparisonFacet = resource.shapes.includes('ordered_series')
-            ? focal?.comparison_point : resource.indicator_id
-          const result = { ...data.result, status: 'available', direction: resource.direction,
-            source_facet: comparisonFacet, selected_member_count: scopeCount, eligible_count: scopeCount,
-            missing_count: 0, rank: 1, rank_size: scopeCount }
-          selectedRanks.push({ scopeCount, rankSize: result.rank_size })
-          return { ...data, selection: item.intent.members.map((member: { type: string; id: string }) =>
-            ({ territory_type: member.type, territory_id: member.id })),
-          scope: { kind: 'explicit_selection', member_count: scopeCount }, result }
-        })
-      })
-      vi.stubGlobal('fetch', fetchApi)
-      const { router, wrapper } = await monter(
-        `/territoire/commune/22001?theme=${theme}&comparaison=epci`, chargerReferenceReelle)
-
-      const graph = () => theme === 'demographie'
-        ? wrapper.findComponent(GraphiqueSoldes) : wrapper.findComponent(GraphiqueQuadrantMilieux)
-      const cloudPoints = () => theme === 'demographie'
-        ? wrapper.findComponent(GraphiqueSoldes).props().nuage
-        : wrapper.findComponent(GraphiqueQuadrantMilieux).props().nuage
-      const themePayload = () => wrapper.findComponent(OngletTheme).props('payload') as Payload
-      const verifyCloudAndRank = (count: number, label: string, memberIds: string[]) => {
-        expect(graph().exists()).toBe(true)
-        const cloud = cloudPoints()
-        expect(cloud.length).toBeGreaterThan(0)
-        expect(cloud.every((point) => memberIds.includes(point.territoire))).toBe(true)
-        const rows = themePayload().indicateurs.filter((row) => row.theme === theme &&
-          row.key === rankResource.indicator_id)
-        expect(rows.some((row) => row.comparaisonApi?.taille === count && row.comparaisonApi.portee === label)).toBe(true)
-        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-      }
-
-      await flushPromises()
-      const epciLabel = contextesReference('22001').epci!.scope.label
-      verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
-      // #860 — la sélection EPCI part en membres communaux développés : la
-      // lecture de cohorte n'a plus de filtre epci_id (cohorte Bretagne entière,
-      // le nuage valide la sélection contre la cohorte lue).
-      expect(requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
-        !item.target.epci_id && item.resource === readingResource.resource_id)).toBe(true)
-      expect(selectedRanks.at(-1)).toEqual({ scopeCount: epciMembers.length, rankSize: epciMembers.length })
-
-      const requestCountBeforeRegion = requests.length
-      await router.replace({ query: { theme, comparaison: 'bretagne' } })
-      await flushPromises()
-      const bretagneLabel = contextesReference('22001').bretagne!.scope.label
-      verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
-      // The unfiltered Bretagne cohort is one publication read for this
-      // acquisition identity: it is reused across preset changes, never
-      // duplicated, and the switched cloud/rank above prove it is the right
-      // group rather than an arbitrary cached cohort.
-      const unfilteredCohort = (batches: Array<Array<Record<string, any>>>) =>
-        batches.flat().filter((item) => item.target.kind === 'territory_cohort' &&
-          item.resource === readingResource.resource_id && item.target.type === 'commune' &&
-          !item.target.epci_id && !item.target.department_id)
-      expect(unfilteredCohort(requests)).toHaveLength(1)
-      expect(unfilteredCohort(requests.slice(requestCountBeforeRegion))).toHaveLength(0)
-      expect(selectedRanks.at(-1)).toEqual({ scopeCount: bretagneMembers.length, rankSize: bretagneMembers.length })
-      expect(region.type).toBe('region')
-      wrapper.unmount()
-    },
-  )
 
   it('renders the pooled DVF scalar/rank beside annual points without borrowing the annual rank', async () => {
     const requests: Array<Array<Record<string, any>>> = []
@@ -2314,85 +2174,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('garde les comparaisons scalaires prêtes quand seul le nuage demandé manque, puis le rétablit depuis le réessai de la section', async () => {
-    const requests: Array<Array<Record<string, any>>> = []
-    let cloudBroken = false
-    const fixtureFetch = nativeSemanticFetch(requests)
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) !== '/api/resources/read-batch') return fixtureFetch(input, init)
-      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      const cloudItem = items.find((item) => item.resource === 'demographie_selected_reading' &&
-        item.target?.kind === 'territory_cohort')
-      // La seule lecture de nuage est mutilée une fois ; les autres lectures
-      // restent saines et indépendantes.
-      if (!cloudItem || cloudBroken) return fixtureFetch(input, init)
-      const response = await fixtureFetch(input, init)
-      cloudBroken = true
-      // La lecture de cohorte répond, mais sans le contrat de nuage demandé :
-      // les comparaisons scalaires restent servies et valides.
-      const body = await response.json() as { results: Array<Record<string, any>> }
-      for (const result of body.results) delete (result.data as Record<string, unknown>).cohort
-      return new Response(JSON.stringify(body), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci',
-      chargerReferenceReelle)
-    await flushPromises()
 
-    const selectedBatches = () => requests.filter((items) =>
-      items.some((item) => item.resource === 'densite' && item.intent.kind === 'selected_comparison'))
-    const densiteFacts = () => requests.flat().filter((item) =>
-      item.resource === 'densite' && item.intent.kind === 'facts' && item.target?.kind === 'territory')
-    const onglet = () => wrapper.findComponent(OngletTheme)
-    const cloudStories = () =>
-      ((onglet().props('payload') as Payload).histoires as Array<{ nuageDemographieApi?: boolean }>)
-        .filter((histoire) => histoire.nuageDemographieApi === true)
-
-    // Les valeurs et rangs comparés sont servis par leur propre lecture.
-    const densiteBatch = selectedBatches()[0]
-    expect(densiteBatch).toBeDefined()
-    const served = await nativeBatchResponse(densiteBatch!, nativeFicheReadFixture).json() as {
-      results: Array<{ resource: string; data: Record<string, any> }> }
-    const densiteResult = served.results.find((result) => result.resource === 'densite')!.data.result
-    const densiteComparison = wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison')
-    expect(densiteComparison.text()).toContain(
-      `${formaterValeur({ value: densiteResult.median, unit: densiteResult.unit })} ${densiteResult.unit}`)
-    expect(densiteComparison.find('.puce-rang').exists()).toBe(true)
-    expect(wrapper.find('.comparison-unavailable-note').exists()).toBe(false)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(cloudStories()).toHaveLength(0)
-
-    // Le nuage demandé manque : avertissement local, un seul réessai de section.
-    const cloudCue = wrapper.get('.cloud-read-warning .comparison-unavailable-cue__trigger')
-    expect(cloudCue.attributes('aria-label')).toContain('Nuage du groupe comparé indisponible')
-    await cloudCue.trigger('focus')
-    expect(wrapper.get('[role="tooltip"]').text()).toContain('Nuage du groupe comparé indisponible')
-    expect(wrapper.find('.comparison-section-retry').exists()).toBe(true)
-    expect(selectedBatches()).toHaveLength(1)
-    const densiteFactsBefore = densiteFacts().length
-
-    const requestsBeforeRetry = requests.length
-    await wrapper.get('.comparison-section-retry').trigger('click')
-    await flushPromises()
-
-    // Le réessai ré-acquiert la SEULE comparaison propriétaire : un lot de
-    // comparaisons (pas un POST par figure) + sa lecture auxiliaire, sans focal.
-    const retryBatches = requests.slice(requestsBeforeRetry).filter((items) =>
-      items.some((item) => item.intent.kind === 'selected_comparison') ||
-      items.some((item) => item.resource === 'demographie_selected_reading' &&
-        item.target?.kind === 'territory_cohort'))
-    expect(retryBatches).toHaveLength(2)
-    expect(retryBatches[0]!.filter((item) => item.intent.kind === 'selected_comparison')).toHaveLength(4)
-    expect(retryBatches.flat().some((item) =>
-      item.target?.kind === 'territory' && item.intent.kind === 'facts')).toBe(false)
-
-    expect(densiteFacts()).toHaveLength(densiteFactsBefore)
-    expect(wrapper.find('.cloud-read-warning').exists()).toBe(false)
-    expect(wrapper.find('.comparison-section-retry').exists()).toBe(false)
-    expect(cloudStories().length).toBeGreaterThan(0)
-    expect(wrapper.get('[data-clef="densite"] .figure-indicateur-comparaison').text()).toBe(densiteComparison.text())
-    wrapper.unmount()
-  })
 
 })
 

@@ -13,11 +13,9 @@ type Row = Record<string, unknown>
 const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const nullableText = (value: unknown): value is string | null => value === null || typeof value === 'string'
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
 export interface MapSemanticFacts {
   facts: Indicateur[]
-  stories: Array<Record<string, unknown>>
   memberships: Array<{ territoire: string; type: 'commune' | 'epci'; sigle: SigleProgramme;
     availability: 'observed' | 'no_record'; member: boolean | null; rider: string | null;
     relationships: Array<Record<string, unknown>>; summaries: Array<Record<string, unknown>> }>
@@ -30,25 +28,6 @@ export interface MapSemanticFacts {
    * independently of the projected observations — a sparse cohort may admit
    * zero rows while keeping its descriptor and publication identity. */
   nativeContracts: Record<string, NativeThemeFactContract>
-}
-
-export interface MapReadingBinding {
-  /** The producer subgroup identity in axis_values[groupe]. */
-  subgroup: string
-  /** App-presentation field candidates, later intersected with native fields. */
-  fields: readonly string[]
-}
-
-function readingGroups(declaration: SemanticResourceDeclaration): string[] {
-  return declaration.axis_values?.find(([axis]) => axis === 'groupe')?.[1] ?? []
-}
-
-function matchedReadingBindings(declaration: SemanticResourceDeclaration,
-  bindings: readonly MapReadingBinding[]): MapReadingBinding[] {
-  if (!declaration.shapes.includes('typed_reading')) return []
-  const groups = new Set(readingGroups(declaration))
-  return bindings.flatMap((binding) => groups.has(binding.subgroup) &&
-    binding.fields.some((field) => declaration.fields.includes(field)) ? [binding] : [])
 }
 
 function requireRecord(value: unknown, field: string): Row {
@@ -70,8 +49,7 @@ function sourceEvidence(value: unknown, declaration: SemanticResourceDeclaration
 
 /** Validate a bounded native cohort and adapt its producer-declared shape without synthesizing values. */
 export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDeclaration, raw: unknown,
-  territories: readonly Territoire[], readingParams: readonly MapReadingBinding[] = [],
-  pages?: Partial<Record<string, IndicatorPageMetadata>>): MapSemanticFacts {
+  territories: readonly Territoire[], pages?: Partial<Record<string, IndicatorPageMetadata>>): MapSemanticFacts {
   const data = requireRecord(raw, 'response')
   const target = requireRecord(data.target, 'target')
   const cohort = requireRecord(data.cohort, 'cohort')
@@ -104,7 +82,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
     const adapted = adapterCohorteScalairePourCarte({ data, declaration, indicator: declaration.indicator_id,
       theme: declaration.theme_id as Theme, page, level: target.type as TerritoireType,
       territories: [...territories] })
-    return { facts: adapted.facts, stories: [], memberships: [], grants: [], declarations: [declaration],
+    return { facts: adapted.facts, memberships: [], grants: [], declarations: [declaration],
       axes: {}, identity: { contentVersion: adapted.identity.contentVersion ?? '',
         referenceContentVersion: adapted.identity.referenceContentVersion ?? '' }, identities: {},
       nativeContracts: { [declaration.indicator_id]: adapted.nativeContract } }
@@ -115,7 +93,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
       territories: [...territories], cohort: data })
     const descriptor = adapted.descriptor
     const detailAxes = descriptor.axes.filter((axis) => axis.name === 'detail')
-    return { facts: adapted.facts, stories: [], memberships: [], grants: [], declarations: [declaration],
+    return { facts: adapted.facts, memberships: [], grants: [], declarations: [declaration],
       axes: { [declaration.indicator_id]: detailAxes.map((axis) => axis.key) },
       identity: { contentVersion: adapted.identity.contentVersion,
         referenceContentVersion: adapted.identity.referenceContentVersion }, identities: {},
@@ -131,7 +109,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
   }
   if (shape === 'period_detail') {
     const facts = periodDetailCohortFacts(data, declaration).map((fact) => ({ ...fact, theme: declaration.theme_id as Theme }))
-    return { facts, stories: [], memberships: [], grants: [], declarations: [declaration], axes: {}, identity: {
+    return { facts, memberships: [], grants: [], declarations: [declaration], axes: {}, identity: {
       contentVersion: String(data.content_version), referenceContentVersion: String(data.reference_content_version),
     }, identities: {}, nativeContracts: {} }
   }
@@ -167,7 +145,7 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
         return facts.filter((fact) => fact.detail === comparisonPoint)
       })() : []
     return { facts: declaration.theme_id === 'programmes' ? [] : facts,
-      stories: [], memberships: [], grants,
+      memberships: [], grants,
       declarations: [declaration], axes: { [declaration.indicator_id]:
         Array.isArray((data.descriptor as Row | undefined)?.axis_values)
           ? (data.descriptor as Row).axis_values as string[] : [] },
@@ -175,7 +153,6 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
       identities: {}, nativeContracts: {} }
   }
   const facts: Indicateur[] = []
-  const stories: Array<Record<string, unknown>> = []
   const memberships: MapSemanticFacts['memberships'] = []
   const grants: Indicateur[] = []
   if (shape === 'anchored_membership') {
@@ -222,60 +199,11 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
       }
       for (const entryValue of territory.entries) requireRecord(entryValue, 'collection entry')
     }
-  } else if (shape === 'typed_reading') {
-    if (!Array.isArray(data.territories)) throw new Error('Lectures typées natives absentes')
-    const descriptor = isRecord(data.descriptor) ? data.descriptor : null
-    const rateUnit = declaration.resource_id === 'demographie_selected_reading'
-      ? descriptor?.rate_unit : undefined
-    if (declaration.resource_id === 'demographie_selected_reading' && !text(rateUnit)) {
-      throw new Error('Unité native des taux démographiques absente')
-    }
-    const bindings = matchedReadingBindings(declaration, readingParams)
-    const nativeGroups = new Set(readingGroups(declaration))
-    for (const candidate of data.territories) {
-      const territory = requireRecord(candidate, 'typed-reading territory')
-      if (!Array.isArray(territory.facts) || !isRecord(territory.territory)) throw new Error('Faits de lecture typée absents')
-      for (const factValue of territory.facts) {
-        const fact = requireRecord(factValue, 'typed-reading fact')
-        if (!text(fact.groupe) || !nativeGroups.has(fact.groupe)) {
-          throw new Error('Groupe de lecture typée hors de l’axe natif déclaré')
-        }
-        if (!text(fact.story_key)) throw new Error('Identité de lecture typée absente')
-        const reading = bindings.find((entry) => entry.subgroup === fact.groupe)
-        if (!reading) continue
-        if (fact.status !== 'measured' && fact.status !== 'unavailable') {
-          throw new Error('Statut natif de lecture typée invalide')
-        }
-        const source = fact.source ? [fact.source] : []
-        const row: Record<string, unknown> = { territoire: territory.territory.id,
-          type: territory.territory.type, theme: declaration.theme_id, story_key: fact.story_key,
-          groupe: fact.groupe, status: fact.status, mapApiFact: true,
-          ...(text(rateUnit) ? { nativeUnits: Object.fromEntries(reading.fields
-            .filter((param) => param.startsWith('taux_')).map((param) => [param, rateUnit])) } : {}) }
-        for (const param of reading.fields) {
-          if (!declaration.fields.includes(param)) continue
-          const value = fact[param]
-          if (fact.status === 'measured' && finite(value)) {
-            row[param] = value
-          }
-        }
-        if (Object.keys(row).length > 4) {
-          const primary = sourceEvidence(source, declaration)[0]!
-          row.source_id = primary.sourceId
-          row.vintage_id = primary.vintageId
-          row.vintage_version = primary.version
-          row.vintage_source = primary.source
-          row.vintage_date_reference = primary.referenceDate
-          row.vintage_date_publication = primary.publicationDate
-          stories.push(row)
-        }
-      }
-    }
   } else {
     throw new Error(`La forme ${shape} nécessite son adaptateur sémantique dédié`)
   }
   const axes: Record<string, string[]> = {}
-  return { facts, stories, memberships, grants, declarations: [declaration], axes, identity: {
+  return { facts, memberships, grants, declarations: [declaration], axes, identity: {
     contentVersion: data.content_version, referenceContentVersion: data.reference_content_version,
   }, identities: {}, nativeContracts: {} }
 }
@@ -283,34 +211,23 @@ export function factsCarteDepuisLectureCohorte(declaration: SemanticResourceDecl
 /** Producer-discovered cohort reads are budgeted by the API, not client chunks. */
 export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
   territories: readonly Territoire[], layerIndicatorIds: readonly string[],
-  readingParams: readonly MapReadingBinding[] = [],
   onDiscovered?: (declarations: SemanticResourceDeclaration[]) => void,
   pages?: Partial<Record<string, IndicatorPageMetadata>>): Promise<MapSemanticFacts> {
   const catalogue = await chargerCatalogueRessources()
   const candidates = catalogue.filter((resource) => resource.theme_id === theme &&
     ((resource.resource_id === resource.indicator_id && layerIndicatorIds.includes(resource.resource_id)) ||
-      matchedReadingBindings(resource, readingParams).length > 0 ||
       resource.shapes.includes('anchored_membership') || (theme === 'programmes' && resource.shapes.includes('ordered_series'))) &&
     resource.allowed_levels.includes(level) &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts') &&
-      (resource.shapes.some((shape) => ['scalar', 'declared_profile', 'period_detail', 'anchored_membership', 'typed_reading', 'ordered_series'].includes(shape))))
+      (resource.shapes.some((shape) => ['scalar', 'declared_profile', 'period_detail', 'anchored_membership', 'ordered_series'].includes(shape))))
     .filter((resource) => {
-      // Selected-reading fields have their own declared numeric bindings. Map
-      // policy applies to indicator resources, not to these semantic groups.
-      if (resource.shapes.includes('typed_reading')) {
-        if (!matchedReadingBindings(resource, readingParams).length) return false
-        if (!readingGroups(resource).length || !resource.fields.length) {
-          throw new PayloadError('validation', '/api/resources', `Les axes de lecture typée de « ${resource.resource_id} » sont mal déclarés.`)
-        }
-        return true
-      }
       if (typeof resource.map_eligible !== 'boolean') {
         throw new PayloadError('validation', '/api/resources', `L’éligibilité carte de « ${resource.resource_id} » est mal déclarée.`)
       }
       return resource.map_eligible
     })
   onDiscovered?.(candidates)
-  const output: MapSemanticFacts = { facts: [], stories: [], memberships: [], grants: [], declarations: [], axes: {},
+  const output: MapSemanticFacts = { facts: [], memberships: [], grants: [], declarations: [], axes: {},
     identity: { contentVersion: '', referenceContentVersion: '' }, identities: {}, nativeContracts: {} }
   if (!candidates.length) return output
   {
@@ -322,16 +239,13 @@ export async function acquireMapThemeFacts(theme: Theme, level: TerritoireType,
       target: { kind: 'territory_cohort', type: level, department_id: null, epci_id: null },
       ...(resource.shapes.includes('anchored_membership') ? { fields: ['detail', 'label', 'rider', 'anchor_count', 'availability'] }
           : resource.shapes.includes('declared_profile') ? { fields: ['value'] }
-          : resource.shapes.includes('typed_reading') ? { fields: resource.fields,
-            coordinates: { groupe: matchedReadingBindings(resource, readingParams).map((binding) => binding.subgroup) } }
-            : { fields: ['value'] }),
+          : { fields: ['value'] }),
       intent: { kind: 'facts' } }))
     const responses = await lireRessourcesBatch(items)
     try {
       for (let index = 0; index < declarations.length; index++) {
-        const admitted = factsCarteDepuisLectureCohorte(declarations[index]!, responses[index], territories, readingParams, pages)
+        const admitted = factsCarteDepuisLectureCohorte(declarations[index]!, responses[index], territories, pages)
         output.facts.push(...admitted.facts)
-        output.stories.push(...admitted.stories)
         output.memberships.push(...admitted.memberships)
         output.grants.push(...admitted.grants)
         Object.assign(output.axes, admitted.axes)
