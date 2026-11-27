@@ -193,11 +193,11 @@ def cohort_http(canonical_db_env):
 
             publisher.execute("""INSERT INTO series_dataset_publication(
                 dataset_id,content_version,reference_content_version,row_count)
-                VALUES ('cohort_artif_states','cohort-artif-v1','cohort-reference-v1',2)""")
+                VALUES ('ocsge_artif_etats','cohort-artif-v1','cohort-reference-v1',2)""")
             publisher.execute("""INSERT INTO series_dataset_descriptor(
                 dataset_id,indicator_id,axis_kind,axis_values,completeness,label,unit,direction,
                 allowed_levels,descriptor_version)
-                VALUES ('cohort_artif_states','artif_par_habitant','state_role',ARRAY['M2','M3'],
+                VALUES ('ocsge_artif_etats','artif_par_habitant','state_role',ARRAY['M2','M3'],
                     'dense_complete','Artificialisation par habitant','m²/hab.','none',
                     ARRAY['commune'],'cohort-artif-desc-v1')""")
             publisher.execute("""INSERT INTO series_provenance_revision(
@@ -208,13 +208,13 @@ def cohort_http(canonical_db_env):
             publisher.execute("""INSERT INTO series_dataset_observation(
                 dataset_id,indicator_id,territory_id,territory_type,axis_value,state_role,
                 observation_period,value,status)
-                VALUES ('cohort_artif_states','artif_par_habitant','cohort-c1','commune','M2','M2',
+                VALUES ('ocsge_artif_etats','artif_par_habitant','cohort-c1','commune','M2','M2',
                     '2021',10,'measured'),
-                       ('cohort_artif_states','artif_par_habitant','cohort-c1','commune','M3','M3',
+                       ('ocsge_artif_etats','artif_par_habitant','cohort-c1','commune','M3','M3',
                     '2021',12,'measured')""")
             publisher.execute("""INSERT INTO series_observation_provenance
-                VALUES ('cohort_artif_states','artif_par_habitant','cohort-c1','M2','cohort-artif-revision'),
-                       ('cohort_artif_states','artif_par_habitant','cohort-c1','M3','cohort-artif-revision')""")
+                VALUES ('ocsge_artif_etats','artif_par_habitant','cohort-c1','M2','cohort-artif-revision'),
+                       ('ocsge_artif_etats','artif_par_habitant','cohort-c1','M3','cohort-artif-revision')""")
             publisher.execute("""INSERT INTO series_dataset_publication
                 (dataset_id,content_version,reference_content_version,row_count)
                 VALUES ('dvf_prix_m2','cohort-series-v1','cohort-reference-v1',3)""")
@@ -296,7 +296,7 @@ def cohort_http(canonical_db_env):
                               "cohort-membership-v1", reference_content_version="cohort-reference-v1")
             publish_indicator(publisher, "artif_par_habitant", "owned_series", "cohort-artif-v1",
                               reference_content_version="cohort-reference-v1",
-                              publication_id="cohort_artif_states")
+                              publication_id="ocsge_artif_etats")
             publish_indicator(publisher, "subventions_annuelles", "owned_series",
                               "cohort-legacy-series-v1", reference_content_version="cohort-reference-v1")
 
