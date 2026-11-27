@@ -538,16 +538,12 @@ connection.
 python -m pytest api/tests/integration/test_profile_resource_comparison_migration.py -q
 ```
 
-**Coexistence with the legacy full path (expand phase).** Once a per-resource
-apply has rebound the DPE profile's `required_scalar_version` to
-`part_passoires`'s **facts** version (the `scalar_content_version` of
-`scalar_resource_comparison_publication`), the legacy full publication path
-refuses atomically at the Habitat typed reading:
-`publish_typed_readings.R:356` compares that column against the **global**
-`table_publication['scalar_observation'].content_version`, which is a different
-token. The legacy path stays green until #1141 retires typed readings.
-Consequently **per-resource apply must not be used on the serving database
-before the #1143 rollout**; no worker applies it to `lusk`.
+**Retirement boundary (#1141).** The expand-phase coexistence ended with
+migration 049: typed readings and the global scalar/profile markers are gone,
+and every legacy whole-snapshot publisher refuses a post-049 schema before
+reading a dropped marker. Consequently **adopt must complete before 049**, and
+per-resource `apply` must not be used on the serving database before the #1143
+rollout; no worker applies it to `lusk`.
 
 The end-to-end cascade proof lives with the R code
 (`pipeline/tests/testthat/test-apply-profile-db.R`). It uses the
@@ -556,7 +552,7 @@ schema and fresh `api/schema.sql` (migrations 046/047 parity). It proves
 `apply part_passoires` republishes `part_passoires` and `distribution_dpe` in
 one transaction while every other resource stays byte-identical; that the DPE
 profile's `required_scalar_version` is rebound to the scalar's RESOURCE version
-and the global markers remain untouched (expand phase); that a forced failure
+and the retired global markers remain absent; that a forced failure
 while publishing the profile rolls the scalar back; and that applying an
 unrelated scalar or a profile with no scalar dependency does not touch the DPE
 profile. It never connects to `lusk` and skips without the guarded variables.

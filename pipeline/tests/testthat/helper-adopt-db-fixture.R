@@ -466,7 +466,7 @@
 #   * profile_reads.py `len(versions) != 1` ("Profile publication versions are not
 #     uniform"): uniformity of registry content_version across the profiles a REQUEST
 #     selects; it depends on the theme/indicator filter and equally constrains `apply`.
-#   * the typed-reading and HTTP layers (the end-to-end sweep is #1143's rehearsal).
+#   * the retired reading and HTTP layers (the end-to-end sweep is #1143's rehearsal).
 .adopt_db_predicats_api <- function(con, scalaires, profils, profils_scalaires = character(),
                                     dependances = c(distribution_dpe = "part_passoires")) {
   dans <- function(ids) in_params(ids)

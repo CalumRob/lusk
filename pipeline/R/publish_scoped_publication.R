@@ -2,10 +2,8 @@
 # A scoped scalar publication does not republish the whole retained backend. It
 # derives the registered dependency closure from the producer metadata:
 #   - the scalar snapshot + its comparison (whole-snapshot writer);
-#   - every declared profile that carries a `required_scalar_version` binding
-#     (the scalar snapshot token is global, so all bound profiles are affected);
-#   - every typed-reading resource whose declared `source_keys` intersect those
-#     profile `comparison_scalar` facets (the linked Habitat selected reading).
+#   - every declared profile whose `required_scalar_version` names a scalar
+#     resource in that scope (per-resource dependency closure).
 # The territory reference must match the target generation but is never
 # rewritten by this path.
 #

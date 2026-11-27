@@ -1076,7 +1076,7 @@ publish_owned_series_projection <- function(projection, db) {
 }
 
 # The OCS-GE state series remains a retained owned-series resource. Its canonical
-# publication no longer depends on a typed-reading owner.
+# publication is owned solely by the retained series adapter.
 publish_canonical_milieux_state_series <- function(con, sortie="../public/data") {
   projection <- read_owned_series_artifact(
     file.path(sortie, "series-serving", "artif_par_habitant"), "artif_par_habitant")
