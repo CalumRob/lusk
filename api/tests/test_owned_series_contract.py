@@ -100,6 +100,8 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "FROM scalar_descriptor WHERE indicator_id=%s" in sql:
                 return Cursor([("prix_m2", "habitat", "Pooled price", "€/m²", "low", "prix_m2",
                     ["commune"], "transactions", "sparse", "scalar-descriptor-v2")])
+            if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+                return Cursor([(territory_id, self.territory_type) for territory_id in params[0]])
             if "SELECT territory_type FROM territory_reference WHERE territory_id=%s" in sql:
                 return Cursor([(self.territory_type,)])
             if "SELECT count(*) FROM scalar_observation" in sql:

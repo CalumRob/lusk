@@ -129,7 +129,10 @@ recompute_scalar_comparison <- function(projection) {
 fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
   col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),
   show_col_types=FALSE)
-payload <- compute_payload(fixture)
+theme <- theme_demographie()
+territoires <- theme$construire_territoires(fixture)
+payload <- compute_payload(fixture, theme=theme,
+  reference=reference_territoires(territoires))
 metadata <- jsonlite::fromJSON("inst/extdata/theme-metadata/theme_demographie.json",
   simplifyVector=FALSE)
 scalar_projection <- project_fixture_scalar(payload, metadata, "dense_complete")

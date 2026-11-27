@@ -8,34 +8,91 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+from api.tests.integration.resource_publication_helper import publish_resource
+from api.tests.integration.guarded_database import retain_schema
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
 
 
-def test_dpe_profile_without_publication_is_unavailable_not_an_unknown_route(canonical_db_env):
-    from fastapi.testclient import TestClient
-    from psycopg_pool import ConnectionPool
-    from api import main
-
-    pool = ConnectionPool(conninfo=canonical_db_env['read_dsn'], min_size=0, max_size=1,
-                          open=True, kwargs={'autocommit': True})
-    previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-    try:
-        with TestClient(main.app) as client:
-            response = client.post('/api/resources/read', json={
-                "resource": "distribution_dpe",
-                "target": {"kind": "territory", "type": "commune", "id": "29001"},
-                "intent": {"kind": "facts"},
-            })
-        assert response.status_code == 503
-    finally:
-        if previous is None:
-            main.app.dependency_overrides.pop(main.get_repository, None)
+def _discovery_metadata(resource_id, *, theme_id, label, unit, direction, source_id,
+                        source_name, allowed_levels, shape, details=(), sexes=(),
+                        comparison_detail=None, comparison_scalar=None, detail_units=None,
+                        vintage_id="v1", version="2026", reference_date=None,
+                        publication_date=None):
+    """Build the producer declaration that the R writer attaches to a descriptor."""
+    page = {
+        "indicator": resource_id, "label": label, "unit": unit, "direction": direction,
+        "levels": list(allowed_levels), "sources": [source_id],
+    }
+    vintage = {"id": vintage_id, "version": version}
+    if reference_date is not None:
+        vintage["dateReference"] = reference_date
+    if publication_date is not None:
+        vintage["datePublication"] = publication_date
+    metadata = {
+        "theme": theme_id,
+        "indicator_keys": [resource_id],
+        "sources": {resource_id: source_id},
+        "source_records": {source_id: {
+            "name": source_name, "vintages": [vintage],
+        }},
+        "indicator_pages": {resource_id: page},
+    }
+    if shape == "scalar":
+        page["comparison"] = {"unit": unit, "direction": direction}
+        metadata["scalar_contracts"] = {resource_id: {
+            "allowed_levels": list(allowed_levels), "comparison_facet": resource_id,
+            "completeness": "dense_complete",
+        }}
+    elif shape == "declared_profile":
+        if comparison_scalar:
+            page["comparison"] = {
+                "indicator": comparison_scalar, "unit": unit, "direction": direction,
+            }
         else:
-            main.app.dependency_overrides[main.get_repository] = previous
-        pool.close()
+            page["comparison"] = {
+                "unit": unit, "direction": direction, "details": list(details),
+                "detail": comparison_detail or details[0],
+            }
+            if sexes:
+                page["comparison"].update(sexes=list(sexes), sex=sexes[0])
+        page["pyramid"] = {"dimensions": ["detail", *(["sex"] if sexes else [])]}
+        contract = {
+            "allowed_levels": list(allowed_levels), "completeness": "dense_complete",
+        }
+        if detail_units:
+            contract["detail_units"] = dict(detail_units)
+        metadata["profile_contracts"] = {resource_id: contract}
+        metadata["detail_labels"] = {
+            resource_id: {str(detail): str(detail) for detail in details},
+        }
+    else:
+        raise AssertionError(shape)
+    return {"kind": "indicator", "metadata": metadata}
+
+
+def _publish_fixture_resource(connection, resource_id, shape, version, metadata):
+    publish_resource(
+        connection, resource_id, shape, version, reference_content_version="ref-v1",
+        declarations={resource_id: metadata},
+    )
+
+
+def _scalar_comparison_marker(connection, resource_id, *, comparison_version,
+                              facts_version, group_rows, territory_rows, lineage_rows):
+    connection.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
+        content_version,scalar_content_version,reference_content_version,group_row_count,
+        territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',%s,%s,%s)""",
+        (resource_id, comparison_version, facts_version, group_rows, territory_rows, lineage_rows))
+
+
+def _profile_comparison_marker(connection, resource_id, *, comparison_version,
+                               facts_version, group_rows, territory_rows, lineage_rows):
+    connection.execute("""INSERT INTO profile_resource_comparison_publication(indicator_id,
+        content_version,profile_content_version,reference_content_version,group_row_count,
+        territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',%s,%s,%s)""",
+        (resource_id, comparison_version, facts_version, group_rows, territory_rows, lineage_rows))
 
 
 def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_db_env, monkeypatch):
@@ -87,6 +144,18 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
                     VALUES ('distribution_dpe',%s,'commune',%s,'',NULL,%s,'measured')""", (tid, detail, 0.1 if detail != 'G' else 0.4))
                 conn.execute("INSERT INTO profile_observation_source VALUES ('distribution_dpe',%s,%s,'','dpe','v1')", (tid, detail))
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profiles-v1',14,'ref-v1')")
+        _publish_fixture_resource(conn, "part_passoires", "scalar", "scalar-v1",
+            _discovery_metadata("part_passoires", theme_id="habitat", label="Passoires",
+                unit="%", direction="low", source_id="dpe", source_name="DPE fixture",
+                allowed_levels=["commune"], shape="scalar", version="2024"))
+        _scalar_comparison_marker(conn, "part_passoires",
+            comparison_version="scalar-comparison-v1", facts_version="scalar-v1",
+            group_rows=2, territory_rows=4, lineage_rows=2)
+        _publish_fixture_resource(conn, "distribution_dpe", "declared_profile", "profiles-v1",
+            _discovery_metadata("distribution_dpe", theme_id="habitat", label="DPE", unit="%",
+                direction="low", source_id="dpe", source_name="DPE fixture",
+                allowed_levels=["commune"], shape="declared_profile", details=tuple("ABCDEFG"),
+                comparison_scalar="part_passoires", version="2024"))
     pool = ConnectionPool(conninfo=canonical_db_env['read_dsn'], min_size=0, max_size=1,
                           open=True, kwargs={'autocommit': True})
     previous = main.app.dependency_overrides.get(main.get_repository)
@@ -128,6 +197,7 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
                     with writer.transaction():
                         writer.execute("UPDATE scalar_observation SET value=0.7 WHERE indicator_id='part_passoires' AND territory_id='29001'")
                         writer.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
+                        writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v2' WHERE indicator_id='part_passoires'")
                         writer.execute("UPDATE profile_descriptor SET required_scalar_version='scalar-v2' WHERE indicator_id='distribution_dpe'")
                         writer.execute("UPDATE table_publication SET content_version='profiles-v2' WHERE table_name='declared_profile'")
             return result
@@ -140,7 +210,9 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
             response = client.post('/api/resources/read', json=request)
             assert response.status_code == 200, response.text
             body = response.json()
-            assert counts == {"connections": 1, "transactions": 1}
+            # #1140 discovery reads its own registry/descriptor snapshot; the
+            # semantic read then opens one repeatable-read facts snapshot.
+            assert counts == {"connections": 2, "transactions": 2}
             assert wrote_concurrently
             assert body['content_version'] == 'profiles-v1'
             assert body['descriptor']['required_scalar_version'] == 'scalar-v1'
@@ -150,6 +222,7 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
                 with writer.transaction():
                     writer.execute("UPDATE scalar_observation SET value=0.3 WHERE indicator_id='part_passoires' AND territory_id='29001'")
                     writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
+                    writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v1' WHERE indicator_id='part_passoires'")
                     writer.execute("UPDATE profile_descriptor SET required_scalar_version='scalar-v1' WHERE indicator_id='distribution_dpe'")
                     writer.execute("UPDATE table_publication SET content_version='profiles-v1' WHERE table_name='declared_profile'")
             monkeypatch.setattr(semantic_resource_reader, "focal_profiles", original_focal_profiles)
@@ -171,9 +244,11 @@ def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_d
             assert profile_metadata['required_scalar_version'] == 'scalar-v1'
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                 writer.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
+                writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v2' WHERE indicator_id='part_passoires'")
             assert client.post('/api/resources/read', json=request).status_code == 503
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                 writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
+                writer.execute("UPDATE scalar_resource_comparison_publication SET scalar_content_version='scalar-v1' WHERE indicator_id='part_passoires'")
                 writer.execute("DELETE FROM profile_observation_source WHERE territory_id='29001' AND detail_key='A'")
             assert client.post('/api/resources/read', json=request).status_code == 503
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
@@ -234,6 +309,15 @@ def test_declared_profile_postgres_api_contract(installation):
                     ['git', 'show', '298831504f1a755d0f83fe919e9999616c98e8ce:api/schema.sql'],
                     cwd=schema_file.parent, text=True, encoding='utf-8')
                 conn.execute(previous_schema)
+                # The historical profile shape is upgraded through the additive
+                # per-resource registry, comparison-marker and descriptor contracts.
+                for migration in (
+                    "046_resource_publication.sql",
+                    "047_profile_resource_comparison.sql",
+                    "048_resource_publication_descriptor.sql",
+                ):
+                    conn.execute((schema_file.parent / "migrations" / migration).read_text(
+                        encoding="utf-8"))
             else:
                 conn.execute(schema_file.read_text(encoding="utf-8"))
             role = '"' + reader_role.replace('"', '""') + '"'
@@ -406,6 +490,40 @@ def test_declared_profile_postgres_api_contract(installation):
                     ('profile','epci','E1','commune','mix_logements','housing_detail','v1','profile-comparison-v1')""")
                 conn.execute("""UPDATE profile_comparison_publication SET group_row_count=group_row_count+6,
                     territory_row_count=territory_row_count+15 WHERE singleton""")
+
+            with conn.transaction():
+                _publish_fixture_resource(conn, "structure_age", "declared_profile", "profile-v1",
+                    _discovery_metadata("structure_age", theme_id="demographie",
+                        label="Structure par âge", unit="%", direction="high", source_id="age_detail",
+                        source_name="INSEE fixture", allowed_levels=["commune"],
+                        shape="declared_profile", details=("<15", "15-24"), sexes=("F", "M"),
+                        comparison_detail="<15", detail_units={"<15": "%", "15-24": "%"},
+                        version="2023", reference_date="2023-01-01"))
+                _publish_fixture_resource(conn, "one_axis_fixture", "declared_profile", "profile-v1",
+                    _discovery_metadata("one_axis_fixture", theme_id="demographie", label="One axis",
+                        unit="km", direction="low", source_id="one_axis_source",
+                        source_name="One axis fixture", allowed_levels=["commune"],
+                        shape="declared_profile", details=("length",), comparison_detail="length",
+                        detail_units={"length": "km"}, version="2025"))
+                _publish_fixture_resource(conn, "mix_logements", "declared_profile", "profile-v1",
+                    _discovery_metadata("mix_logements", theme_id="habitat", label="Housing mix",
+                        unit="%", direction="high", source_id="housing_detail",
+                        source_name="Housing detail fixture", allowed_levels=["commune"],
+                        shape="declared_profile", details=("principales", "secondaires", "vacants"),
+                        comparison_detail="principales",
+                        detail_units={detail: "%" for detail in
+                                      ("principales", "secondaires", "vacants")},
+                        version="2025", reference_date="2025-01-01"))
+                if installation == 'fresh':
+                    _profile_comparison_marker(conn, "structure_age",
+                        comparison_version="profile-comparison-v1", facts_version="profile-v1",
+                        group_rows=2, territory_rows=5, lineage_rows=0)
+                    _profile_comparison_marker(conn, "one_axis_fixture",
+                        comparison_version="profile-comparison-v1", facts_version="profile-v1",
+                        group_rows=2, territory_rows=5, lineage_rows=0)
+                    _profile_comparison_marker(conn, "mix_logements",
+                        comparison_version="profile-comparison-v1", facts_version="profile-v1",
+                        group_rows=6, territory_rows=15, lineage_rows=2)
 
         scoped = reader_dsn + ("&" if "?" in reader_dsn else "?") + "options=" + __import__('urllib.parse').parse.quote(f"-csearch_path={schema}")
         pool = ConnectionPool(conninfo=scoped, min_size=0, max_size=1, open=True, kwargs={"autocommit": True})
@@ -704,7 +822,7 @@ def test_declared_profile_postgres_api_contract(installation):
             pool.close()
         # The test schema is uniquely random and dropped only under the harness's
         # explicit cleanup opt-in; CASCADE cannot reach shared/public objects.
-        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and not retain_schema():
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
@@ -793,6 +911,21 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
                     (territory_id,detail))
         conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
             VALUES ('declared_profile','profiles-v1',28,'ref-v1')""")
+        _publish_fixture_resource(conn, "part_passoires", "scalar", "scalar-v1",
+            _discovery_metadata("part_passoires", theme_id="habitat",
+                label="Part de passoires thermiques", unit="%", direction="low", source_id="dpe_22",
+                source_name="DPE test fixture", allowed_levels=["commune"], shape="scalar",
+                vintage_id="dpe_22", version="2024", reference_date="2024-01-01",
+                publication_date="2026-08-06"))
+        _scalar_comparison_marker(conn, "part_passoires",
+            comparison_version="scalar-comparison-v1", facts_version="scalar-v1",
+            group_rows=3, territory_rows=5, lineage_rows=3)
+        _publish_fixture_resource(conn, "distribution_dpe", "declared_profile", "profiles-v1",
+            _discovery_metadata("distribution_dpe", theme_id="habitat", label="Distribution DPE",
+                unit="%", direction="low", source_id="dpe_22", source_name="DPE test fixture",
+                allowed_levels=["commune"], shape="declared_profile", details=tuple("ABCDEFG"),
+                comparison_scalar="part_passoires", vintage_id="dpe_22", version="2024",
+                reference_date="2024-01-01", publication_date="2026-08-06"))
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
@@ -954,6 +1087,13 @@ def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(
                    ('densite','29002','serie_historique','serie_historique')""")
         conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
             VALUES ('scalar_observation','densite-v1',2,'ref-v1')""")
+        _publish_fixture_resource(conn, "densite", "scalar", "densite-v1",
+            _discovery_metadata("densite", theme_id="demographie", label="Densité de population",
+                unit="hab/km²", direction="high", source_id="serie_historique",
+                source_name="Historical population",
+                allowed_levels=["commune", "epci", "departement", "region"], shape="scalar",
+                vintage_id="serie_historique", version="2023", reference_date="2023-01-01",
+                publication_date="2025-01-01"))
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
@@ -1057,6 +1197,15 @@ def test_ordinary_scalar_fixed_non_commune_comparison_projects_native_peer_ranks
             territory_type,facet_id,source_id,vintage_id,comparison_content_version)
             VALUES ('scalar','same_level','region-bretagne',%s,'densite','scalar_source','scalar_source-v1',
                     'scalar-comparison-v1')""", (territory_type,))
+        _publish_fixture_resource(conn, "densite", "scalar", "scalar-v1",
+            _discovery_metadata("densite", theme_id="demographie", label="Densité", unit="hab/km²",
+                direction="high", source_id="scalar_source", source_name="Scalar source fixture",
+                allowed_levels=["epci", "departement"], shape="scalar",
+                vintage_id="scalar_source-v1", version="v1", reference_date="2025-01-01",
+                publication_date="2025-02-01"))
+        _scalar_comparison_marker(conn, "densite",
+            comparison_version="scalar-comparison-v1", facts_version="scalar-v1",
+            group_rows=1, territory_rows=2, lineage_rows=1)
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
@@ -1235,6 +1384,17 @@ def test_fixed_profile_singleton_group_serves_published_median_without_rank(cano
             territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
             ('profile','density_class','D1','commune','mix_logements','housing_src','v1','profile-comparison-v1'),
             ('profile','epci','E1','commune','mix_logements','housing_src','v1','profile-comparison-v1')""")
+        _publish_fixture_resource(conn, "mix_logements", "declared_profile", "profiles-v1",
+            _discovery_metadata("mix_logements", theme_id="habitat", label="Mix des logements",
+                unit="%", direction="high", source_id="housing_src", source_name="Housing fixture",
+                allowed_levels=["commune"], shape="declared_profile",
+                details=("principales", "secondaires", "vacants"), comparison_detail="principales",
+                detail_units={detail: "%" for detail in
+                              ("principales", "secondaires", "vacants")},
+                reference_date="2026-01-01"))
+        _profile_comparison_marker(conn, "mix_logements",
+            comparison_version="profile-comparison-v1", facts_version="profiles-v1",
+            group_rows=2, territory_rows=4, lineage_rows=2)
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})

@@ -37,6 +37,11 @@ class Connection:
 
     def execute(self, sql, params=None):
         self.statements.append((sql, params))
+        if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+            return Cursor([(territory_id, "commune") for territory_id in params[0]])
+        if "FROM resource_publication" in sql:
+            resource_id = params[0][0]
+            return Cursor([(resource_id, "declared_profile", "profile-v1", "ref-v1")])
         if "SELECT comparison_detail,comparison_sex,comparison_scalar" in sql:
             return Cursor([self.default] if self.default is not None else [])
         if "SELECT axis_key FROM profile_axis" in sql:

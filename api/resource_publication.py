@@ -19,6 +19,19 @@ class PublishedResource:
     reference_content_version: str | None
 
 
+def publication_resource_id(resource) -> str | None:
+    """Return the registry identity declared by the producer grammar.
+
+    Most semantic identities publish themselves. A grammar alias (for example
+    an AEDAR summary) names the storage resource that owns its live row.
+    Typed readings remain on their legacy per-theme markers until #1141 and
+    therefore have no per-resource registry identity.
+    """
+    if getattr(resource, "resource_kind", None) == "typed_reading":
+        return None
+    return getattr(resource, "publication_resource_id", None) or resource.resource_id
+
+
 def live_resource_publications(conn, resource_ids, family, *, reference_content_version=None):
     """Return the live, non-retired rows for ``resource_ids`` on this snapshot.
 

@@ -422,10 +422,14 @@ def test_aedar_semantic_facts_read_bounds_results_for_all_territory_levels(monke
                 "2026-v1", "https://example.test", "ODbL",
                 "© OpenStreetMap contributors; données AEDAR — licence ODbL", None, "2026-09-30")
 
+    expected_level = ["commune"]
+
     class Connection:
         def execute(self, sql, params=None):
             if "FROM resource_publication" in sql:
                 return Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
+            if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+                return Cursor([(territory_id, expected_level[0]) for territory_id in params[0]])
             if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Cursor([("ref-v1", 1)])
             if "SELECT DISTINCT typequ" in sql:
@@ -451,6 +455,7 @@ def test_aedar_semantic_facts_read_bounds_results_for_all_territory_levels(monke
     monkeypatch.setattr(main, "pool", lambda: FakePool())
     client = TestClient(main.app)
     for level in ("commune", "epci", "departement", "region"):
+        expected_level[0] = level
         response = client.post("/api/resources/read", json={
             "resource": "aedar_territorial_aggregate",
             "target": {"kind": "territory", "type": level, "id": "id"},
@@ -582,6 +587,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
                 return None
             if "FROM resource_publication" in sql:
                 return Rows([("aedar", "aedar", "aedar-v1", "ref-v1")])
+            if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+                return Rows([(territory_id, "commune") for territory_id in _args[0][0]])
             if "SELECT content_version" in sql and "territory_reference" in sql:
                 return Rows([("ref-v1", 1)])
             if "SELECT DISTINCT typequ" in sql:

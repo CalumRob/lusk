@@ -52,6 +52,10 @@ class _Cursor:
 
 class _Connection:
     def execute(self, sql, params=None):
+        if "FROM resource_publication" in sql:
+            return _Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
+        if "territory_id=ANY" in sql:
+            return _Cursor([(territory_id, "commune") for territory_id in params[0]])
         if "SELECT DISTINCT typequ" in sql:
             return _Cursor([(code,) for code in (params[0] if params else ())])
         if "SELECT count(*)" in sql:
@@ -257,7 +261,7 @@ def test_fixed_summary_preflight_charges_the_peer_group(monkeypatch):
     captured = {}
     _wire_snapshots(monkeypatch, captured)
     item = _item(SUMMARY, {"horizon": ["15"], "mode": ["car"], "kind": ["diversity"]}, _fixed())
-    work = _reader().preflight(None, item, default_resource_catalogue.__wrapped__())
+    work = _reader().preflight(_Connection(), item, default_resource_catalogue.__wrapped__())
     assert work == 1 + len(captured["peers"][2])
 
 

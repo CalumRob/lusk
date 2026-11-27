@@ -117,6 +117,30 @@ def test_named_reference_alias_is_discovered_against_its_owner_registry_row():
     assert catalogue.resources[0].target_ids == ("national",)
 
 
+def test_owned_series_descriptor_binds_semantic_identity_to_dataset_registry():
+    owner, dataset = "series_owner", "series_dataset"
+    metadata = {
+        "theme": "fixture", "indicator_keys": [owner],
+        "sources": {owner: "source_a"},
+        "source_records": {"source_a": {"name": "Source A"}},
+        "indicator_pages": {owner: {
+            "indicator": owner, "label": "Owner", "unit": "count",
+            "levels": ["commune"], "axis_kind": "year", "axis_values": ["2026"],
+        }},
+        "owned_series_routes": {owner: {
+            "dataset_id": dataset, "axis_kind": "year", "axis_values": ["2026"],
+        }},
+    }
+    conn = Connection([(dataset, "series-v1", owner,
+                        {"kind": "indicator", "metadata": metadata}, True)])
+
+    catalogue = database_resource_catalogue(conn, default_resource_grammar())
+
+    assert [resource.resource_id for resource in catalogue.resources] == [owner]
+    assert catalogue.resources[0].publication_resource_id == dataset
+    assert catalogue.resources[0].shapes == ("ordered_series",)
+
+
 def test_retired_descriptor_is_admissible_but_not_discoverable():
     from api.resource_catalogue import validate_resource_item
     from api.resource_requests import ResourceReadItem

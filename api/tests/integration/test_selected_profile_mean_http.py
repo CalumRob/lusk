@@ -5,8 +5,9 @@ dedicated ``lusk_it_contract_pub`` / ``lusk_it_contract_read`` roles, a private
 ``PGPASSFILE`` and one random disposable schema. The named process mutex
 ``Local\\LuskIntegrationContractDb`` is acquired before the first connection and
 held through cleanup/verification, so this proof serializes with the concurrent
-pipeline worker. Every schema this module creates is dropped and the database is
-verified to hold zero user schemas and zero ``public`` relations before unlock.
+pipeline worker. Every schema this module creates is dropped before unlock. The
+proof verifies its own random schema's isolation and zero ``public`` relations;
+unrelated guarded schemas are neither required nor removed.
 
 The fixture is the real Mobilité network split: three equal-weight partitions
 whose eligible communes are identical, a measured zero, missing cells, and two
@@ -16,7 +17,6 @@ not. No fixed-mean publication, schema change or pipeline work is involved.
 
 from __future__ import annotations
 
-import ctypes
 import os
 import uuid
 from contextlib import contextmanager
@@ -28,11 +28,9 @@ import pytest
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _dsn_with_schema)
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 
 pytestmark = pytest.mark.integration
-
-MUTEX_NAME = r"Local\LuskIntegrationContractDb"
-MUTEX_TIMEOUT_MS = 600_000
 
 OFFRE = "offre_cyclable"
 RESEAUX_HABITANT = "reseaux_par_habitant"
@@ -42,26 +40,6 @@ OFFRE_DETAILS = ("protege_longueur", "protege_km_1000", "partage_longueur",
 OFFRE_UNITS = {"protege_longueur": "km", "protege_km_1000": "km / 1 000 hab",
                "partage_longueur": "km", "partage_km_1000": "km / 1 000 hab",
                "total_longueur": "km"}
-
-
-def _acquire_mutex():
-    if os.name != "nt":
-        pytest.skip("the guarded integration mutex is a Windows named mutex")
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
-    if not handle:
-        pytest.fail("could not create the integration database mutex")
-    result = kernel32.WaitForSingleObject(handle, MUTEX_TIMEOUT_MS)
-    if result not in (0, 0x80):  # WAIT_OBJECT_0 / WAIT_ABANDONED
-        kernel32.CloseHandle(handle)
-        pytest.fail("timed out waiting for Local\\LuskIntegrationContractDb")
-    return handle
-
-
-def _release_mutex(handle):
-    kernel32 = ctypes.windll.kernel32
-    kernel32.ReleaseMutex(handle)
-    kernel32.CloseHandle(handle)
 
 
 def _user_schemas(connection):
@@ -97,20 +75,6 @@ def _guarded_identity(publish_dsn, read_dsn):
         yield publisher, reader
 
 
-@pytest.fixture(scope="module", autouse=True)
-def integration_db_mutex():
-    if not all(os.environ.get(name) for name in (
-            "LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN",
-            "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")):
-        # Ordinary collection must not wait on the operator's guarded database.
-        pytest.skip("guarded integration database is not configured")
-    handle = _acquire_mutex()
-    try:
-        yield
-    finally:
-        _release_mutex(handle)
-
-
 def _guarded_configuration_or_skip():
     """Resolve the exact guarded target and require explicit cleanup opt-in.
 
@@ -138,8 +102,7 @@ def mean_db(integration_db_mutex):
     with _guarded_identity(publish_dsn, read_dsn) as (publisher, _reader):
         state_before = (_user_schemas(publisher), _public_relations(publisher),
                         _database_bytes(publisher))
-        if state_before[0]:
-            pytest.fail(f"guarded target is not empty before the run: {state_before[0]}")
+        assert schema not in state_before[0]
     try:
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.execute(f'CREATE SCHEMA "{schema}"')
@@ -165,8 +128,6 @@ def mean_db(integration_db_mutex):
                     pytest.fail("own guarded schema could not be removed before unlock")
                 if state_after[1] != 0:
                     pytest.fail("public relations exist after guarded cleanup")
-                if state_after[0]:
-                    pytest.fail(f"guarded target must be empty after the run: {state_after[0]}")
                 print(f"guarded database bytes: before={state_before[2]} "
                       f"after={state_after[2]} schemas_before={state_before[0]} "
                       f"schemas_after={state_after[0]}", flush=True)
@@ -262,6 +223,9 @@ def _seed(conn):
             {"t_longueur": "km", "b_longueur": "km", "c_longueur": "km"}, reseaux_values)
     conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
         reference_content_version) VALUES ('declared_profile','profiles-v1',120,'ref-v1')""")
+    for resource_id in (OFFRE, RESEAUX_HABITANT, RESEAUX):
+        publish_indicator(conn, resource_id, "declared_profile", "profiles-v1",
+                          reference_content_version="ref-v1")
     return {"focal": focal, "peers": peers}
 
 
@@ -596,8 +560,8 @@ def test_reference_mismatch_fails_closed_while_mean_reads_commit_snapshot(mean_d
     try:
         with psycopg.connect(mean_db["publisher_dsn"], autocommit=True) as writer:
             writer.execute(f'SET search_path TO "{mean_db["schema"]}"')
-            writer.execute("""UPDATE table_publication SET reference_content_version='ref-v2'
-                WHERE table_name='declared_profile'""")
+            writer.execute("""UPDATE resource_publication SET reference_content_version='ref-v2'
+                WHERE resource_id='offre_cyclable'""")
         try:
             stale = client.post("/api/resources/read", json=_selected(
                 OFFRE, mean_db["focal"], [mean_db["focal"], mean_db["peers"][0]],
@@ -605,9 +569,9 @@ def test_reference_mismatch_fails_closed_while_mean_reads_commit_snapshot(mean_d
         finally:
             with psycopg.connect(mean_db["publisher_dsn"], autocommit=True) as writer:
                 writer.execute(f'SET search_path TO "{mean_db["schema"]}"')
-                writer.execute("""UPDATE table_publication
+                writer.execute("""UPDATE resource_publication
                     SET reference_content_version='ref-v1'
-                    WHERE table_name='declared_profile'""")
+                    WHERE resource_id='offre_cyclable'""")
         restored = _mean(client, mean_db, OFFRE, detail="total_longueur")
     finally:
         _close(pool)

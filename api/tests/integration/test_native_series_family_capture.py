@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
@@ -122,6 +123,9 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                         (dataset, indicator, context, group, level, axis, territories[index-1]['territoire'], value, rank,len(indices)))
                 conn.execute("INSERT INTO ordered_series_comparison_lineage VALUES (%s,%s,%s,%s,%s,%s,'native-revision')",
                     (dataset, indicator, context, group, level, axis))
+        publish_indicator(conn, indicator, "owned_series", "native-series",
+                          reference_content_version="native-ref", publication_id=dataset,
+                          scalar_version="native-pooled" if indicator == "prix_m2" else None)
 
     pool = ConnectionPool(conninfo=canonical_db_env['read_dsn'], min_size=0, max_size=1, open=True,
                           kwargs={'autocommit': True})

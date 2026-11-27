@@ -52,14 +52,17 @@ def test_upgraded_profile_schema_publishes_and_serves_region_facts():
                 conn.execute("INSERT INTO profile_observation_source VALUES('age_du_bati','53','lt1919','','fixture','fixture-v1')")
                 conn.execute("UPDATE table_publication SET row_count=2 WHERE table_name='declared_profile'")
             assert conn.execute("SELECT * FROM profile_observation WHERE territory_id='22001'").fetchall()==old
-            role=sql.Identifier(os.environ['LUSK_TEST_READ_USER'])
+            reader_role=urlsplit(os.environ['LUSK_TEST_READ_DSN']).username
+            if not reader_role or not __import__('re').fullmatch(r'[A-Za-z0-9_$-]+',reader_role):
+                pytest.fail('Read DSN must identify a simple PostgreSQL role name')
+            role=sql.Identifier(reader_role)
             conn.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),role))
             conn.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}').format(sql.Identifier(schema),role))
             pool=ConnectionPool(os.environ['LUSK_TEST_READ_DSN'],min_size=1,max_size=1,open=True,
                 kwargs={'autocommit':True,'options':f'-csearch_path={schema}'})
             with pool.connection() as reader:
                 assert reader.execute('SELECT current_database(),current_user').fetchone()==(
-                    os.environ['LUSK_TEST_DATABASE_NAME'],os.environ['LUSK_TEST_READ_USER'])
+                    os.environ['LUSK_TEST_DATABASE_NAME'],reader_role)
                 assert reader.execute("SELECT value,status FROM profile_observation WHERE territory_type='region' AND territory_id='53'").fetchone()==(0.09,'measured')
         finally:
             if pool:pool.close()

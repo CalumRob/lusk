@@ -9,6 +9,9 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
+from api.tests.integration.guarded_database import retain_schema
+
 pytestmark = pytest.mark.integration
 
 
@@ -123,6 +126,11 @@ DBI::dbDisconnect(con)
         published = subprocess.run(["Rscript", str(publish), str(root), str(payload_path), str(metadata_path), schema],
                                    cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert published.returncode == 0, published.stdout + published.stderr
+        series_version = upgrade.execute(
+            "SELECT content_version FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'"
+        ).fetchone()[0]
+        publish_indicator(upgrade, "raccordement_courbe", "owned_series", series_version,
+                          reference_content_version="national-test-ref-v1")
         assert upgrade.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone() == (92637,)
         assert upgrade.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone() == (92564,)
         assert upgrade.execute("SELECT count(*) FROM series_named_reference WHERE reference_id='bretagne_all_assessed_communes_mean'").fetchone() == (73,)
@@ -133,25 +141,33 @@ DBI::dbDisconnect(con)
         bundle = tmp_path / "isolated-national-canonical"
         bundle.mkdir()
         scalar_publish = tmp_path / "publish-national-scalar.R"
-        scalar_publish.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; bundle<-args[[2]]; schema<-args[[3]]
+        scalar_publish.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; bundle<-args[[2]]; schema<-args[[3]]; prepared<-args[[4]]
 pkgload::load_all(file.path(root,"pipeline"),quiet=TRUE)
 a<-lusk:::lire_artefact_raccordement_national()
-national<-lusk:::lignes_indicateurs_raccordement_national(a$calculation,lusk:::vintages_mobilite())
-incumbent<-nanoparquet::read_parquet(file.path(root,"public/data/indicateurs_mobilite.parquet"))
+new_v<-lusk:::vintages_mobilite()
+national<-lusk:::lignes_indicateurs_raccordement_national(a$calculation,new_v)
+# A self-contained incumbent row proves unrelated canonical bytes survive the
+# national replacement without reading the owner's public/data checkout.
+incumbent<-national[1,setdiff(names(national),"code"),drop=FALSE]
+incumbent$key<-"fixture_unrelated"
+incumbent$detail<-NA_character_
+incumbent$value<-1
+incumbent$unit<-"count"
 keep<-!incumbent$key %in% c("raccordement_tc","raccordement_courbe","raccordement_reference")
 combined<-dplyr::bind_rows(incumbent[keep,],national[,setdiff(names(national),"code"),drop=FALSE])
 preserved<-as.data.frame(combined[seq_len(sum(keep)),names(incumbent)])
 original<-as.data.frame(incumbent[keep,]); rownames(preserved)<-rownames(original)<-NULL
-stopifnot(identical(preserved,original))
-v<-nanoparquet::read_parquet(file.path(root,"public/data/vintages.parquet"))
-# Rebind every retained scalar source to its producer-owned current vintage;
-# the incumbent snapshot may predate the BPE25 B316 owner-retained ratio.
-new_v<-lusk:::vintages_mobilite()
-v<-dplyr::bind_rows(v[!v$id %in% new_v$id,],new_v)
+stopifnot(isTRUE(all.equal(preserved,original,check.attributes=FALSE)))
 nanoparquet::write_parquet(combined,file.path(bundle,"indicateurs_mobilite.parquet"))
-nanoparquet::write_parquet(v,file.path(bundle,"vintages.parquet"))
+nanoparquet::write_parquet(new_v,file.path(bundle,"vintages.parquet"))
 stopifnot(file.copy(file.path(root,"pipeline/inst/extdata/theme-metadata/theme_mobilite.json"),file.path(bundle,"theme_mobilite.json")))
-refs<-nanoparquet::read_parquet(file.path(root,"public/data/territoires.parquet"))
+membership<-jsonlite::read_json(prepared,simplifyVector=TRUE)$membership
+refs<-data.frame(territoire=as.character(membership$code),type="commune",stringsAsFactors=FALSE)
+epci<-unique(membership$epci_code[!is.na(membership$epci_code)])
+departments<-unique(membership$department_code[!is.na(membership$department_code)])
+refs<-dplyr::bind_rows(refs,data.frame(territoire=as.character(epci),type="epci",stringsAsFactors=FALSE),
+ data.frame(territoire=as.character(departments),type="departement",stringsAsFactors=FALSE),
+ data.frame(territoire="53",type="region",stringsAsFactors=FALSE))
 eligible<-data.frame(territory_id=as.character(refs$territoire),territory_type=as.character(refs$type))
 registry<-lusk:::register_scalar_publisher(list(),"canonical_mobility",
  project=function(directory) lusk:::project_theme_scalar_cohort(directory,eligible,"mobilite"),
@@ -202,11 +218,13 @@ jsonlite::write_json(list(schema=schema,bundle=bundle,content_version=published$
  file.path(bundle,"publisher-receipt.json"),auto_unbox=TRUE,pretty=TRUE)
 DBI::dbDisconnect(con)
 ''', encoding="utf-8")
-        scalar_run = subprocess.run(["Rscript", str(scalar_publish), str(root), str(bundle), schema],
+        scalar_run = subprocess.run(["Rscript", str(scalar_publish), str(root), str(bundle), schema, str(prepared)],
                                     cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert scalar_run.returncode == 0, scalar_run.stdout + scalar_run.stderr
         scalar_receipt = json.loads((bundle / "publisher-receipt.json").read_text(encoding="utf-8"))
         assert set(scalar_receipt["rejected_refreshes"]) == {"value", "vintage_source", "vintage_date_reference"}
+        publish_indicator(upgrade, "raccordement_tc", "scalar", scalar_receipt["content_version"],
+                          reference_content_version="national-test-ref-v1")
 
         role = urlsplit(os.environ["LUSK_TEST_READ_DSN"]).username
         assert re.fullmatch(r"[A-Za-z0-9_$-]+", role)
@@ -366,7 +384,7 @@ DBI::dbDisconnect(con)
             row["key"] == "raccordement_courbe" and row["type"] == "commune" and
             row["territoire"] == combourg)]
         reject_owned_refresh(missing_member_rows,
-            "Dense-complete duration publication omits reference territory/territories: commune/35085",
+            "Raccordement comparison requires complete support for every declared member and axis",
             "missing-commune-curve")
 
         missing_point_rows = [row for row in data["indicators"] if not (
@@ -378,4 +396,6 @@ DBI::dbDisconnect(con)
     finally:
         app.dependency_overrides.pop(get_repository, None)
         pool.cache_clear()
+        if created and not retain_schema():
+            upgrade.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         upgrade.close()

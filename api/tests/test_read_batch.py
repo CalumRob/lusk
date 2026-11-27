@@ -107,13 +107,17 @@ def test_v1_single_and_batch_missing_dual_series_facet_preserve_base_detail(monk
         def fetchone(self):
             return self.row
         def fetchall(self):
-            return [self.row]
+            return self.row if isinstance(self.row, list) else [self.row]
 
     class DualConnection(Connection):
         def execute(self, sql, params=None):
             self.statements.append(sql)
             if sql.startswith("SET TRANSACTION"):
                 return None
+            if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+                return Cursor([(territory_id, "commune") for territory_id in params[0]])
+            if "FROM resource_publication" in sql:
+                return Cursor(("prix_m2", "owned_series", "series-v1", "ref-v1"))
             if "FROM series_descriptor WHERE indicator_id" in sql:
                 return Cursor((["2024"],))
             raise AssertionError(sql)

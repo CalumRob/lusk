@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 
 from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_publication_outcome_http import (
-    outcome_db, integration_db_mutex, _client, _close, _item, _v2,
+    outcome_db, _client, _close, _item, _v2,
 )
 
 pytestmark = pytest.mark.integration
@@ -59,6 +60,10 @@ def regional_db(outcome_db):
             for source_id in resource.sources:
                 publisher.execute("INSERT INTO scalar_observation_source VALUES (%s,'53',%s,%s)",
                                   (key, source_id, "regional-fixture"))
+            publish_indicator(
+                publisher, key, "owned_series" if key == "prix_m2" else "scalar",
+                "oc-scalar-v1", reference_content_version="oc-ref-v1",
+            )
     return outcome_db
 
 

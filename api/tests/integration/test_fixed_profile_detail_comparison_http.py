@@ -14,6 +14,7 @@ import uuid
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env  # noqa: F401
 
 pytestmark = pytest.mark.integration
@@ -156,6 +157,14 @@ def _seed(conn):
             group_id,territory_type,facet_id,source_id,vintage_id,comparison_content_version)
             VALUES ('profile','density_class','D960','commune',%s,%s,%s,'comparison-v1')""",
             (RESOURCE, source_id, vintage_id))
+    publish_indicator(conn, RESOURCE, "declared_profile", "profiles-v1",
+                      reference_content_version="ref-v1")
+    publish_indicator(conn, "offre_cyclable", "declared_profile", "profiles-v1",
+                      reference_content_version="ref-v1")
+    conn.execute("""INSERT INTO profile_resource_comparison_publication(indicator_id,
+        content_version,profile_content_version,reference_content_version,group_row_count,
+        territory_row_count,lineage_row_count) VALUES (%s,'comparison-v1','profiles-v1','ref-v1',1,5,2)""",
+        (RESOURCE,))
     return {
         "focal": focal, "peers": peers, "epci": epci,
         "unavailable_focal": unavailable_focal, "singleton": singleton,
@@ -416,7 +425,7 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
             # closed; the request-scoped coordinate read still uses the same
             # committed cells, exactly like an explicit selection.
             with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
-                writer.execute("UPDATE table_publication SET content_version='profiles-v2' WHERE table_name='declared_profile'")
+                writer.execute("UPDATE profile_resource_comparison_publication SET profile_content_version='profiles-v2' WHERE indicator_id=%s", (RESOURCE,))
             try:
                 assert read(fixed()).status_code == 503
                 still_served = read(fixed("t_km_1000"))
@@ -424,20 +433,20 @@ def test_fixed_declared_profile_detail_comparisons_http(canonical_db_env, monkey
                 assert still_served.json()["result"]["median"] == pytest.approx(4.0)
             finally:
                 with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
-                    writer.execute("UPDATE table_publication SET content_version='profiles-v1' WHERE table_name='declared_profile'")
+                    writer.execute("UPDATE profile_resource_comparison_publication SET profile_content_version='profiles-v1' WHERE indicator_id=%s", (RESOURCE,))
 
             # A missing published comparison generation fails the default closed
             # and leaves the cell-derived coordinate read intact.
             with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
-                writer.execute("DELETE FROM profile_comparison_publication")
+                writer.execute("DELETE FROM profile_resource_comparison_publication WHERE indicator_id=%s", (RESOURCE,))
             try:
                 assert read(fixed()).status_code == 503
                 assert read(fixed("c_km_1000")).status_code == 200
             finally:
                 with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
-                    writer.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
-                        profile_content_version,reference_content_version,group_row_count,
-                        territory_row_count) VALUES (true,'comparison-v1','profiles-v1','ref-v1',1,5)""")
+                    writer.execute("""INSERT INTO profile_resource_comparison_publication(indicator_id,
+                        content_version,profile_content_version,reference_content_version,group_row_count,
+                        territory_row_count,lineage_row_count) VALUES (%s,'comparison-v1','profiles-v1','ref-v1',1,5,2)""", (RESOURCE,))
 
             # Missing cell provenance is never fabricated or zero-filled.
             with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:

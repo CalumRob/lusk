@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env
 
 pytestmark = pytest.mark.integration
@@ -88,6 +89,9 @@ def test_capture_native_state_calendar_comparison_boundary(canonical_db_env, tmp
                 conn.execute("""INSERT INTO ordered_series_comparison_lineage VALUES
                     ('ocsge_artif_etats','artif_par_habitant','same_level','53','epci',%s,%s)""",
                     (axis, f"state-rev-{index}"))
+        publish_indicator(conn, "artif_par_habitant", "owned_series", "state-facts-v1",
+                          reference_content_version="state-ref-v1",
+                          publication_id="ocsge_artif_etats")
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})

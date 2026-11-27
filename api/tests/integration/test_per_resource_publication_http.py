@@ -16,10 +16,9 @@ from pathlib import Path
 
 import pytest
 
+from api.tests.integration.resource_publication_helper import publish_resource
 from api.tests.integration.test_postgres_publication import (
     _aedar_guarded_configuration, _assert_aedar_server_identity, _dsn_with_schema)
-from api.tests.integration.test_selected_profile_mean_http import (
-    _acquire_mutex, _release_mutex)
 
 pytestmark = pytest.mark.integration
 
@@ -58,16 +57,6 @@ def _metadata(resource_id, *, profile=False, comparison_scalar=None):
     return {"kind": "indicator", "metadata": metadata}
 
 
-def _descriptor(connection, resource_id, version, *, profile=False, comparison_scalar=None):
-    from psycopg.types.json import Jsonb
-
-    connection.execute("""INSERT INTO resource_publication_descriptor(
-        resource_id,publication_resource_id,content_version,descriptor)
-        VALUES (%s,%s,%s,%s)""", (resource_id, resource_id, version,
-                                  Jsonb(_metadata(resource_id, profile=profile,
-                                                  comparison_scalar=comparison_scalar))))
-
-
 def _seed_scalar(connection, resource_id, version, value, *, unit="count",
                  comparison_token=None, facts_token=None):
     comparison_token = comparison_token or version + "-comparison"
@@ -103,9 +92,9 @@ def _seed_scalar(connection, resource_id, version, value, *, unit="count",
         content_version,scalar_content_version,reference_content_version,group_row_count,
         territory_row_count,lineage_row_count) VALUES (%s,%s,%s,'ref-v1',1,2,1)""",
         (resource_id, comparison_token, facts_token))
-    connection.execute("""INSERT INTO resource_publication(resource_id,shape,content_version,
-        reference_content_version) VALUES (%s,'scalar',%s,'ref-v1')""", (resource_id, version))
-    _descriptor(connection, resource_id, version)
+    publish_resource(connection, resource_id, "scalar", version,
+                     reference_content_version="ref-v1",
+                     declarations={resource_id: _metadata(resource_id)})
 
 
 def _set_profile_comparison_tokens(connection, resource_id, comparison_token, facts_token):
@@ -170,11 +159,10 @@ def _seed_profile(connection, resource_id="profile_a", version="profile-v1", *,
             (resource_id, version + "-comparison", version))
         _set_profile_comparison_tokens(connection, resource_id,
             comparison_token or version + "-comparison", facts_token or version)
-    connection.execute("""INSERT INTO resource_publication(resource_id,shape,content_version,
-        reference_content_version) VALUES (%s,'declared_profile',%s,'ref-v1')""",
-        (resource_id, version))
-    _descriptor(connection, resource_id, version, profile=True,
-                comparison_scalar=comparison_scalar)
+    publish_resource(connection, resource_id, "declared_profile", version,
+                     reference_content_version="ref-v1",
+                     declarations={resource_id: _metadata(
+                         resource_id, profile=True, comparison_scalar=comparison_scalar)})
 
 
 def _republish_profile(connection, resource_id, version):
@@ -189,11 +177,9 @@ def _republish_profile(connection, resource_id, version):
         WHERE indicator_id=%s""", (resource_id,))
     _set_profile_comparison_tokens(connection, resource_id,
         version + "-comparison", version)
-    connection.execute("""UPDATE resource_publication SET content_version=%s
-        WHERE resource_id=%s""", (version, resource_id))
-    connection.execute("""DELETE FROM resource_publication_descriptor
-        WHERE publication_resource_id=%s""", (resource_id,))
-    _descriptor(connection, resource_id, version, profile=True)
+    publish_resource(connection, resource_id, "declared_profile", version,
+                     reference_content_version="ref-v1",
+                     declarations={resource_id: _metadata(resource_id, profile=True)})
 
 
 def _seed(connection):
@@ -249,7 +235,6 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
     from psycopg_pool import ConnectionPool
     from api import main
 
-    mutex = _acquire_mutex()
     schema = "it_resource_http_" + uuid.uuid4().hex[:12]
     pool = None
     try:
@@ -268,8 +253,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
 
         pool = ConnectionPool(conninfo=_dsn_with_schema(read_dsn, schema), min_size=0,
                               max_size=1, open=True, kwargs={"autocommit": True})
-        original = main.get_repository
-        main.app.dependency_overrides[original] = lambda: main.ReadRepository(pool)
+        original_overrides = dict(main.app.dependency_overrides)
+        main.app.dependency_overrides.clear()
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
         try:
             with TestClient(main.app) as client:
                 def read(resource_id, intent=None):
@@ -352,11 +338,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                     with publisher.transaction():
                         publisher.execute("""UPDATE scalar_observation SET value=99
                             WHERE indicator_id='resource_b' AND territory_id=%s""", (FOCAL,))
-                        publisher.execute("""UPDATE resource_publication SET content_version='b-v2'
-                            WHERE resource_id='resource_b'""")
-                        publisher.execute("""DELETE FROM resource_publication_descriptor
-                            WHERE publication_resource_id='resource_b'""")
-                        _descriptor(publisher, "resource_b", "b-v2")
+                        publish_resource(publisher, "resource_b", "scalar", "b-v2",
+                                         reference_content_version="ref-v1",
+                                         declarations={"resource_b": _metadata("resource_b")})
                         publisher.execute("""UPDATE table_publication SET content_version='global-stale-v1'
                             WHERE table_name='scalar_observation'""")
                 assert read("resource_a").status_code == 200
@@ -364,7 +348,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 # Retirement disappears from discovery immediately and fails closed on read.
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                     publisher.execute(f'SET search_path TO "{schema}"')
-                    publisher.execute("UPDATE resource_publication SET retired=true WHERE resource_id='resource_b'")
+                    publish_resource(publisher, "resource_b", "scalar", "b-v2",
+                                     reference_content_version="ref-v1", retired=True,
+                                     declarations={"resource_b": _metadata("resource_b")})
                 discovered = client.get("/api/resources").json()["resources"]
                 assert "resource_b" not in {row["resource_id"] for row in discovered}
                 retired = read("resource_b")
@@ -382,10 +368,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                     publisher.execute(f'SET search_path TO "{schema}"')
                     with publisher.transaction():
-                        publisher.execute("""INSERT INTO resource_publication(resource_id,shape,
-                            content_version,reference_content_version) VALUES
-                            ('resource_c','scalar','c-v1','ref-v1')""")
-                        _descriptor(publisher, "resource_c", "c-v1")
+                        publish_resource(publisher, "resource_c", "scalar", "c-v1",
+                                         reference_content_version="ref-v1",
+                                         declarations={"resource_c": _metadata("resource_c")})
                 assert "resource_c" in {row["resource_id"] for row in
                     client.get("/api/resources").json()["resources"]}
 
@@ -395,9 +380,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 assert missing.json()["detail"] == "Resource publication is unavailable"
         finally:
             main.app.dependency_overrides.clear()
+            main.app.dependency_overrides.update(original_overrides)
     finally:
         if pool is not None:
             pool.close()
         with psycopg.connect(publish_dsn, autocommit=True) as cleanup:
             cleanup.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
-        _release_mutex(mutex)

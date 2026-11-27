@@ -3,9 +3,34 @@ from __future__ import annotations
 
 import pytest
 
+from dataclasses import replace
+
+from api.tests.integration.resource_publication_helper import publish_resource
 from api.tests.integration.test_postgres_publication import canonical_db_env
+from api.tests.resource_catalogue_fixtures import default_resource_catalogue
 
 pytestmark = pytest.mark.integration
+
+
+def _declaration(resource_id, details, units, default_detail):
+    page = {
+        "indicator": resource_id, "label": resource_id, "unit": units[default_detail],
+        "direction": "high", "levels": ["commune"], "sources": ["unit-fixture"],
+        "comparison": {"unit": units[default_detail], "direction": "high",
+                       "details": list(details), "detail": default_detail},
+        "pyramid": {"dimensions": ["detail"]},
+    }
+    return {"kind": "indicator", "metadata": {
+        "theme": "compat", "indicator_keys": [resource_id],
+        "sources": {resource_id: "unit-fixture"},
+        "source_records": {"unit-fixture": {"name": "Unit fixture", "vintages": [
+            {"id": "v1", "version": "v1"}]}},
+        "indicator_pages": {resource_id: page},
+        "profile_contracts": {resource_id: {
+            "allowed_levels": ["commune"], "completeness": "dense_complete",
+            "detail_units": units}},
+        "detail_labels": {resource_id: {detail: detail for detail in details}},
+    }}
 
 
 def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(canonical_db_env):
@@ -31,22 +56,48 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
             VALUES ('legacy_uniform',%s,'commune','only','',NULL,7,'measured')""", (territory,))
         conn.execute("INSERT INTO profile_observation_source VALUES ('legacy_uniform',%s,'only','','unit-fixture','v1')", (territory,))
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','units-profile',1,'units-ref')")
+        publish_resource(conn, "legacy_uniform", "declared_profile", "units-profile",
+                         reference_content_version="units-ref",
+                         declarations={"legacy_uniform": _declaration(
+                             "legacy_uniform", ("only",), {"only": "widgets"}, "only")})
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
                           open=True, kwargs={"autocommit": True})
     previous = main.app.dependency_overrides.get(main.get_repository)
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    base_catalogue = default_resource_catalogue()
+    template = base_catalogue.resources_by_id["structure_age"]
+    fixture_resources = tuple(
+        replace(template, resource_id=resource_id, indicator_id=resource_id,
+                theme_id="compat", label=resource_id, unit=unit,
+                allowed_levels=("commune",), shapes=("declared_profile",),
+                axes=("detail",), dynamic_axes=("detail",),
+                axis_values=(("detail", tuple(details)),), cellule=None,
+                sources=("unit-fixture",), intents=("facts",),
+                publication_resource_id=None)
+        for resource_id, unit, details in (
+            ("legacy_uniform", "widgets", ("only",)),
+            ("mixed_contract", "km", ("network", "per_person")),
+        )
+    )
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: replace(
+        base_catalogue, resources=(*base_catalogue.resources, *fixture_resources))
     try:
         with TestClient(main.app) as client:
-            url = f"/api/territories/commune/{territory}/themes/compat/facts"
-            legacy = client.get(url)
+            def read(resource_id):
+                return client.post("/api/resources/read", json={
+                    "resource": resource_id,
+                    "target": {"kind": "territory", "type": "commune", "id": territory},
+                    "fields": ["value"], "intent": {"kind": "facts"},
+                })
+
+            legacy = read("legacy_uniform")
             assert legacy.status_code == 200, legacy.text
             legacy_body = legacy.json()
-            legacy_profile = [row for row in legacy_body["indicators"] if row["indicator_id"] == "legacy_uniform"]
-            legacy_meta = next(row for row in legacy_body["indicator_metadata"] if row["indicator_id"] == "legacy_uniform")
-            assert legacy_profile[0]["unit"] == "widgets"
-            assert legacy_meta["axes"][0]["unit"] == "widgets"
-            assert legacy_meta["comparison_point"]["unit"] == "widgets"
+            assert legacy_body["observations"][0]["unit"] == "widgets"
+            assert legacy_body["descriptor"]["axes"][0]["unit"] == "widgets"
+            assert legacy_body["descriptor"]["comparison_point"]["unit"] == "widgets"
 
             with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
                 conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
@@ -60,21 +111,28 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
                     conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,sex_axis_name,value,status)
                         VALUES ('mixed_contract',%s,'commune',%s,'',NULL,%s,'measured')""", (territory, detail, value))
                     conn.execute("INSERT INTO profile_observation_source VALUES ('mixed_contract',%s,%s,'','unit-fixture','v1')", (territory, detail))
+                publish_resource(conn, "mixed_contract", "declared_profile", "mixed-v1",
+                                 reference_content_version="units-ref",
+                                 declarations={"mixed_contract": _declaration(
+                                     "mixed_contract", ("network", "per_person"),
+                                     {"network": "km", "per_person": "km / 1 000 hab"}, "network")})
             # Per-detail contracts do not inherit the headline unit when one
             # declared axis is missing its own unit.
-            assert client.get(url).status_code == 503
+            assert read("mixed_contract").status_code == 503
             with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
                 conn.execute("UPDATE profile_axis SET unit='km / 1 000 hab' WHERE indicator_id='mixed_contract' AND axis_key='per_person'")
-            mixed = client.get(url)
+            mixed = read("mixed_contract")
             assert mixed.status_code == 200, mixed.text
-            mixed_profile = [row for row in mixed.json()["indicators"] if row["indicator_id"] == "mixed_contract"]
-            mixed_meta = next(row for row in mixed.json()["indicator_metadata"] if row["indicator_id"] == "mixed_contract")
-            assert [row["unit"] for row in mixed_profile] == ["km", "km / 1 000 hab"]
-            assert [axis["unit"] for axis in mixed_meta["axes"]] == ["km", "km / 1 000 hab"]
-            assert mixed_meta["comparison_point"]["unit"] == "km"
+            assert [row["unit"] for row in mixed.json()["observations"]] == ["km", "km / 1 000 hab"]
+            assert [axis["unit"] for axis in mixed.json()["descriptor"]["axes"]] == ["km", "km / 1 000 hab"]
+            assert mixed.json()["descriptor"]["comparison_point"]["unit"] == "km"
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
         else:
             main.app.dependency_overrides[main.get_repository] = previous
+        if previous_catalogue is None:
+            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
         pool.close()

@@ -277,6 +277,10 @@ def test_batch_items_share_the_declared_address_resolution(monkeypatch):
 
     class Connection:
         def execute(self, sql, params=None):
+            if "FROM resource_publication" in sql:
+                return Cursor([("aedar", "aedar", "aedar-v1", "ref-v1")])
+            if "territory_id=ANY" in sql:
+                return Cursor([(territory_id, "commune") for territory_id in params[0]])
             if "SELECT DISTINCT typequ" in sql:
                 return Cursor([(code,) for code in (params[0] if params else ())])
             return Cursor()

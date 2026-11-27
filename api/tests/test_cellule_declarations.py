@@ -379,6 +379,8 @@ class _ProfileConnection:
     def execute(self, sql, params=None):
         if sql.startswith("SET TRANSACTION"):
             return _Cursor([])
+        if "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY" in sql:
+            return _Cursor([(territory_id, "commune") for territory_id in params[0]])
         if "SELECT territory_type FROM territory_reference" in sql:
             return _Cursor([("commune",)])
         if "SELECT allowed_levels FROM profile_descriptor" in sql:

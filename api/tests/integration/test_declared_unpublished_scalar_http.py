@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 
+from api.tests.integration.resource_publication_fixtures import publish_indicator
 from api.tests.integration.test_postgres_publication import canonical_db_env  # noqa: F401
 
 pytestmark = pytest.mark.integration
@@ -28,7 +29,6 @@ PUBLISHED_LABEL = "Places de stationnement vélo pour 1 000 hab."
 PUBLISHED_UNIT = "places / 1 000 hab."
 FOCAL, PEER = "29001", "29002"
 DENSITY_CLASS = "D1"
-PUBLICATION_UNAVAILABLE = "Declared resource publication is unavailable"
 
 
 def _seed(conn):
@@ -89,6 +89,12 @@ def _seed(conn):
     conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
         scalar_content_version,reference_content_version,group_row_count,territory_row_count,
         lineage_row_count) VALUES (true,'comparison-v1','scalar-v1','territory-v1',1,2,2)""")
+    conn.execute("""INSERT INTO scalar_resource_comparison_publication(indicator_id,
+        content_version,scalar_content_version,reference_content_version,group_row_count,
+        territory_row_count,lineage_row_count) VALUES (%s,'comparison-v1','scalar-v1','territory-v1',1,2,2)""",
+        (PUBLISHED_RESOURCE,))
+    publish_indicator(conn, PUBLISHED_RESOURCE, "scalar", "scalar-v1",
+                      reference_content_version="territory-v1")
 
 
 def _territory(target_id=FOCAL):
@@ -132,49 +138,27 @@ def test_declared_unpublished_scalar_comparisons_fail_closed_http(canonical_db_e
             def read_batch(items):
                 return client.post("/api/resources/read-batch", json={"items": items})
 
-            def assert_publication_unavailable(response, label):
-                assert response.status_code == 503, f"{label}: {response.status_code} {response.text}"
-                assert response.json()["detail"] == PUBLICATION_UNAVAILABLE, label
-
-            def assert_no_partial(response, label):
-                assert_publication_unavailable(response, label)
+            def assert_unknown(response, label):
+                assert response.status_code == 422, f"{label}: {response.status_code} {response.text}"
+                assert response.json()["detail"] == "unknown semantic resource", label
                 assert "results" not in response.json(), label
 
-            # (1) A producer-declared scalar with no publication fails closed for
-            # facts, fixed and selected comparison — single and batch alike.
+            # (1) These producer-theme declarations have no version-bound DB
+            # descriptor, so they are not admitted by the image grammar. They stay
+            # request-wide 422 for facts and comparisons; grammar-declared but
+            # unpublished resources are covered separately in the five-shape suite.
             for resource in UNPUBLISHED_RESOURCES:
-                assert_publication_unavailable(read(_facts(resource)), f"{resource} facts")
-                assert_publication_unavailable(read(_fixed(resource)), f"{resource} fixed")
-                assert_publication_unavailable(read(_selected(resource)), f"{resource} selected")
-
-                # Comparison-only batches prove the new declared-resource admission
-                # on the batch route itself: no facts item can short-circuit on the
-                # older facts guard before the comparison intent is preflighted.
-                assert_no_partial(read_batch([{"id": "fixed", **_fixed(resource)}]),
-                                  f"{resource} fixed-only batch")
-                assert_no_partial(read_batch([{"id": "selected", **_selected(resource)}]),
-                                  f"{resource} selected-only batch")
-                assert_no_partial(read_batch([
-                    {"id": "fixed", **_fixed(resource)},
-                    {"id": "selected", **_selected(resource)},
-                ]), f"{resource} comparison-only batch")
-
-                # Beside a genuinely published item read in the same request, the
-                # whole batch still fails atomically: no successful prefix.
-                for intent, item in (("fixed", _fixed(resource)),
-                                     ("selected", _selected(resource))):
-                    assert_no_partial(read_batch([
-                        {"id": "published", **_facts(PUBLISHED_RESOURCE)},
-                        {"id": "unpublished", **item},
-                    ]), f"{resource} published+{intent} batch")
-
-            # (2) The older facts guard keeps its own atomicity proof, which the
-            # comparison-only batches above deliberately do not rely on.
-            mixed = read_batch([
-                {"id": "published", **_facts(PUBLISHED_RESOURCE)},
-                {"id": "unpublished", **_facts(UNPUBLISHED_RESOURCES[0])},
-            ])
-            assert_no_partial(mixed, "mixed facts batch")
+                assert_unknown(read(_facts(resource)), f"{resource} facts")
+                assert_unknown(read(_fixed(resource)), f"{resource} fixed")
+                assert_unknown(read(_selected(resource)), f"{resource} selected")
+                assert_unknown(read_batch([{"id": "fixed", **_fixed(resource)}]),
+                               f"{resource} fixed-only batch")
+                assert_unknown(read_batch([{"id": "selected", **_selected(resource)}]),
+                               f"{resource} selected-only batch")
+                assert_unknown(read_batch([
+                    {"id": "published", **_facts(PUBLISHED_RESOURCE)},
+                    {"id": "unpublished", **_facts(resource)},
+                ]), f"{resource} published+facts batch")
 
             # (3) The published declared scalar is unchanged: exact facts,
             # descriptor, sources and versions, computed independently of the
@@ -261,11 +245,11 @@ def test_declared_unpublished_scalar_comparisons_fail_closed_http(canonical_db_e
             assert unknown_member.status_code == 404, unknown_member.text
             unknown_member_unpublished = read(
                 _selected(UNPUBLISHED_RESOURCES[0], members=(FOCAL, "99999")))
-            assert unknown_member_unpublished.status_code == 404, unknown_member_unpublished.text
+            assert unknown_member_unpublished.status_code == 422, unknown_member_unpublished.text
             unknown_focal = read(_fixed(PUBLISHED_RESOURCE, "99999"))
             assert unknown_focal.status_code == 404, unknown_focal.text
             unknown_focal_unpublished = read(_fixed(UNPUBLISHED_RESOURCES[0], "99999"))
-            assert unknown_focal_unpublished.status_code == 404, unknown_focal_unpublished.text
+            assert unknown_focal_unpublished.status_code == 422, unknown_focal_unpublished.text
             malformed_context = read({**_fixed(PUBLISHED_RESOURCE),
                                       "intent": {"kind": "fixed_comparison", "context": "epci"}})
             assert malformed_context.status_code == 422, malformed_context.text
@@ -322,10 +306,10 @@ def test_declared_unpublished_scalar_comparisons_fail_closed_http(canonical_db_e
                 assert read(_selected(PUBLISHED_RESOURCE, members=(FOCAL,))).status_code == 503
                 stale_batch = read_batch([{"id": "facts", **_facts(PUBLISHED_RESOURCE)}])
                 assert stale_batch.status_code == 503, stale_batch.text
-                # The unpublished declarations keep the same publication-gap
-                # status under a stale reference clock.
-                assert_publication_unavailable(read(_fixed(UNPUBLISHED_RESOURCES[0])),
-                                               "unpublished under stale reference")
+                # An identity absent from the grammar stays unknown even when the
+                # shared reference clock is stale.
+                assert_unknown(read(_fixed(UNPUBLISHED_RESOURCES[0])),
+                               "unpublished under stale reference")
             finally:
                 with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
                     writer.execute("UPDATE table_publication SET content_version='territory-v1' "
