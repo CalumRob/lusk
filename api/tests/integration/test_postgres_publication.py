@@ -938,6 +938,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             publisher.execute("UPDATE resource_publication SET reference_content_version='obsolete' WHERE resource_id='fixture_scalar'")
         stale = client.post("/api/resources/read", json=facts)
         assert stale.status_code == 503
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("DROP TABLE scalar_comparison_territory CASCADE")
+        missing_storage = client.post("/api/resources/read", json=comparison)
+        assert missing_storage.status_code == 503, missing_storage.text
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
