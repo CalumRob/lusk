@@ -253,8 +253,9 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
 
         pool = ConnectionPool(conninfo=_dsn_with_schema(read_dsn, schema), min_size=0,
                               max_size=1, open=True, kwargs={"autocommit": True})
-        original = main.get_repository
-        main.app.dependency_overrides[original] = lambda: main.ReadRepository(pool)
+        original_overrides = dict(main.app.dependency_overrides)
+        main.app.dependency_overrides.clear()
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
         try:
             with TestClient(main.app) as client:
                 def read(resource_id, intent=None):
@@ -379,6 +380,7 @@ def test_registry_and_old_global_markers_coexist_over_real_http_sql():
                 assert missing.json()["detail"] == "Resource publication is unavailable"
         finally:
             main.app.dependency_overrides.clear()
+            main.app.dependency_overrides.update(original_overrides)
     finally:
         if pool is not None:
             pool.close()
