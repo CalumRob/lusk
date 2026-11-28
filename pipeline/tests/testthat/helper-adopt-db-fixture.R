@@ -168,7 +168,8 @@
     vintages_milieux(), metadata)
 }
 
-.adopt_db_aedar_manifest <- function(projection, reference) {
+.adopt_db_aedar_manifest <- function(projection, reference,
+                                     directory = tempfile("adopt-aedar-")) {
   comparison <- adaptateur_aedar_comparaison(projection, with_littoral = FALSE,
     reference_version = reference$content_version)
   comparison$membership <- aedar_comparison_membership_rows(
@@ -185,7 +186,7 @@
   hashes[["density_reference_vintage"]] <- MANIFEST_CLASSES_DENSITE$vintage[[1L]]
   identity <- as.character(jsonlite::toJSON(as.list(hashes), auto_unbox = TRUE))
   input_version <- paste(as.character(openssl::sha256(charToRaw(identity))), collapse = "")
-  directory <- tempfile("adopt-aedar-")
+  write_aedar_canonical(projection, directory)
   metadata <- list(source_snapshot_id = comparison$source_snapshot_id,
     aedar_content_version = comparison$aedar_content_version,
     reference_content_version = comparison$reference_content_version,
