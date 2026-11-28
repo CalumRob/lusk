@@ -33,6 +33,7 @@ class FakeConnection:
 
     def __init__(self, *, unavailable=()):
         self.unavailable = set(unavailable)
+        self.statements = []
         self.littoral = {"c-alpha": "C", "c-beta": "NC", "c-gamma": "C"}
         self.territories = [
             ("commune", "c-alpha", "Arc"),
@@ -49,6 +50,7 @@ class FakeConnection:
 
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split())
+        self.statements.append(normalized)
         if normalized.startswith("SET TRANSACTION"):
             assert "READ ONLY" in normalized
             return Cursor()
@@ -104,7 +106,8 @@ class FakeReader:
         return {"resource": item.resource, "target": item.target.model_dump(), **data}
 
 
-def _resource(resource_id, *, context_values=()):
+def _resource(resource_id, *, context_values=(), resource_kind="indicator",
+              target_kinds=("territory",), target_ids=(), intents=None):
     return IndicatorResource(
         resource_id=resource_id,
         theme_id="fixture",
@@ -117,11 +120,12 @@ def _resource(resource_id, *, context_values=()):
         shapes=("scalar",),
         axes=("point",),
         axis_values=(("point", ("p",)),),
-        target_kinds=("territory",),
-        target_ids=(),
+        target_kinds=tuple(target_kinds),
+        target_ids=tuple(target_ids),
         dynamic_axes=(),
         fields=("value",),
-        intents=("facts", "fixed_comparison", "selected_comparison"),
+        intents=tuple(intents or ("facts", "fixed_comparison", "selected_comparison")),
+        resource_kind=resource_kind,
         context_values=tuple(context_values),
         cellule={
             "coordinates": [{"name": "point", "values": [{"value": "p", "label": "P"}]}],
@@ -136,7 +140,14 @@ def sweep_client(*, unavailable=()):
     connection = FakeConnection(unavailable=unavailable)
     catalogue = ResourceCatalogue(
         declarations=(),
-        resources=(_resource("alpha"), _resource("classifier", context_values=("littoral",))),
+        resources=(
+            _resource("alpha"),
+            _resource(
+                "classifier", context_values=("density_class", "littoral", "same_level", "bretagne"),
+                resource_kind="fixture_littoral"),
+            _resource("reference", target_kinds=("named_reference",),
+                      target_ids=("declared-reference",), intents=("facts",)),
+        ),
         excluded=(),
     )
 
@@ -158,7 +169,7 @@ def sweep_client(*, unavailable=()):
             main.app.dependency_overrides.pop(dependency, None)
 
 
-class TestClientTransport:
+class ClientTransport:
     def __init__(self, client):
         self.client = client
         self.calls = []
@@ -180,7 +191,7 @@ class TestClientTransport:
 
 
 def _run(client, **kwargs):
-    transport = TestClientTransport(client)
+    transport = ClientTransport(client)
     report = http_sweep.run_sweep(
         transport,
         concurrency=kwargs.pop("concurrency", 3),
@@ -220,11 +231,13 @@ def test_discovery_drives_targets_matrix_both_routes_and_bounded_concurrency():
     assert {row["route"] for row in rows} == {
         "/api/resources/read", "/api/resources/read-batch",
     }
-    assert len([row for row in rows if row["purpose"] == "single_route_check"]) == 2
+    assert len([row for row in rows if row["purpose"] == "single_route_check"]) == 3
+    reference = next(row for row in rows if row["resource"] == "reference")
+    assert reference["target"] == {"kind": "named_reference", "id": "declared-reference"}
+    assert reference["level"] == "named_reference"
     assert transport.max_active <= 2
     assert {call[3] for call in transport.calls} == {7}
-    assert all("READ ONLY" in " ".join(sql.split()) for sql, _ in [
-        ("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY", None)])
+    assert any("READ ONLY" in statement for statement in connection.statements)
     assert connection.littoral["c-alpha"] == "C"
 
 
@@ -274,6 +287,35 @@ def test_non_200_is_reported_as_other_and_exits_nonzero():
     ]
 
 
+def test_malformed_typed_outcome_is_not_accepted():
+    class MalformedTransport:
+        def __init__(self, client):
+            self.client = client
+
+        def request(self, method, path, body=None, *, timeout):
+            response = self.client.request(method, path, json=body)
+            raw = response.content
+            if path == "/api/resources/read-batch" and body["items"][0]["resource"] == "alpha":
+                payload = response.json()
+                payload["results"][0] = {
+                    "id": payload["results"][0]["id"], "resource": "alpha",
+                    "status": "publication_unavailable", "reason": "invented", "family": "scalar",
+                }
+                raw = json.dumps(payload).encode("utf-8")
+            return SimpleNamespace(status=response.status_code, body=raw, error=None)
+
+    with sweep_client() as (client, _connection):
+        report = http_sweep.run_sweep(
+            MalformedTransport(client), concurrency=2, timeout=7,
+            search_query_limit=26, max_littoral_probes=8)
+
+    malformed = [row for row in report["results"] if row["resource"] == "alpha"]
+    assert malformed
+    assert all(row["http_status"] == 200 for row in malformed)
+    assert all(row["outcome"] == "invalid_response" for row in malformed)
+    assert http_sweep.report_exit_code(report) == 1
+
+
 def test_missing_littoral_evidence_fails_instead_of_inventing_targets():
     class NoLittoralReader(FakeReader):
         def read(self, conn, item, catalogue, *, snapshot_state=None):
@@ -306,7 +348,7 @@ def test_compare_reports_status_version_added_and_removed_changes():
     first["identifiers"]["content_version"] = "changed-version"
     second = next(row for row in after["results"] if row["id"] != first["id"])
     after["results"].remove(second)
-    added = dict(second, id="added-row")
+    added = dict(second, id="added-row", key="added-key")
     after["results"].append(added)
 
     comparison = http_sweep.compare_reports(before, after)
@@ -331,6 +373,24 @@ def test_compare_cli_exit_codes_and_summary_line(tmp_path, capsys):
     assert http_sweep.main(["--compare", str(before), str(after)]) == 1
 
 
+def test_sweep_cli_writes_json_and_prints_exact_summary(tmp_path, capsys, monkeypatch):
+    output = tmp_path / "sweep.json"
+    with sweep_client() as (client, _connection):
+        monkeypatch.setattr(http_sweep, "UrllibClient", lambda *_args, **_kwargs: ClientTransport(client))
+        exit_code = http_sweep.main([
+            "http://testserver", "--output", str(output), "--concurrency", "2",
+            "--timeout", "7", "--search-query-limit", "26", "--max-littoral-probes", "8",
+        ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err.startswith("SWEEP: ")
+    assert captured.out == ""
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["contract"] == "lusk-http-sweep-v1"
+    assert captured.err.strip() == http_sweep.summary_line(report)
+
+
 def test_summary_line_has_exact_operator_format():
     report = {"summary": {"requests": 5, "http_200": 2, "typed_unavailable": 1, "other": 2}}
     assert http_sweep.summary_line(report) == "SWEEP: 5 requests | 200: 2 | typed-unavailable: 1 | other: 2"
@@ -344,3 +404,11 @@ def test_script_has_no_fixture_ids_database_driver_or_credentials():
     assert "DATABASE_URL" not in source
     assert "Authorization" not in source
     assert "PGPASSFILE" not in source
+
+
+def test_url_credentials_are_rejected_and_proxy_credentials_are_disabled():
+    with pytest.raises(http_sweep.SweepError):
+        http_sweep.UrllibClient("https://user:secret@example.test")
+    client = http_sweep.UrllibClient("https://example.test")
+    assert not any(isinstance(handler, http_sweep.urllib.request.ProxyHandler)
+                   for handler in client._opener.handlers)
