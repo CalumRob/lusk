@@ -54,6 +54,7 @@ test_that("le splitter produit le descripteur AEDAR depuis le chemin canonique r
   declarations <- extraire_declaration_ressource(descriptor)
   expect_identical(descriptor$indicator_id, "aedar")
   expect_identical(descriptor$semantic_resources, names(declarations))
+  expect_identical(declarations, declarations_decouverte_ressource("aedar"))
   expect_setequal(names(declarations), c("aedar_territorial_aggregate",
     "aedar_territory_summary"))
   expect_identical(descriptor$source_id, AEDAR_AGGREGATE_SOURCE_ID)
