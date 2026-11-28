@@ -283,7 +283,7 @@ adaptateur_aedar_artefact <- function(root, with_littoral = FALSE) {
   projection <- adaptateur_aedar_projection()
   comparaison <- adaptateur_aedar_comparaison(projection, with_littoral)
   faits <- faits_forme(REGISTRE_FORMES_RESSOURCE[["aedar"]], projection)
-  contenu <- contenu_artefact(faits, list(indicator_id = "aedar", theme_id = "mobilite"),
+  contenu <- contenu_artefact(faits, projection$descriptor,
     projection$source, comparaison)
   ecrit <- ecrire_artefact_ressource("aedar", "aedar", contenu,
     digests_lignage = digests_lignage_ressource("aedar_bretagne",

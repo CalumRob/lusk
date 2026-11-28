@@ -1,6 +1,7 @@
 # The AEDAR producer's four dense 2026-v1 territorial aggregates. These are
 # authoritative precomputed aggregates: never derive them from address rows.
 AEDAR_AGGREGATE_LEVELS <- c("commune", "epci", "departement", "region")
+AEDAR_RESOURCE_ID <- "aedar"
 AEDAR_AGGREGATE_SOURCE_ID <- "aedar_bretagne"
 AEDAR_AGGREGATE_VINTAGE <- "2026-v1"
 # Les trois fichiers du répertoire canonique AEDAR : contrat unique du
@@ -1130,7 +1131,23 @@ validate_aedar_aggregates <- function(inputs, measure_columns=AEDAR_AGGREGATE_ME
   out
 }
 
-project_aedar_aggregates <- function(inputs, typequ_metadata=NULL) {
+# The AEDAR Artefact de ressource descriptor is produced by the same projector as
+# the facts consumed by the shape adapter and adoption. Its grammar identities
+# come from the discovery contract itself, never from a second hand-written list.
+descripteur_aedar <- function(source, metadata_directory=NULL) {
+  declarations <- declarations_semantiques_publication(AEDAR_RESOURCE_ID, metadata_directory)
+  semantic_resources <- names(declarations)
+  if (!length(semantic_resources))
+    stop("AEDAR producer has no declared semantic grammar identities",call.=FALSE)
+  declared_sources <- unique(vapply(declarations,function(declaration)
+    as.character(declaration$declaration$source_id),character(1)))
+  if (!identical(declared_sources,as.character(source$source_id)))
+    stop("AEDAR descriptor source identity differs from its semantic grammar",call.=FALSE)
+  list(indicator_id=AEDAR_RESOURCE_ID,semantic_resources=semantic_resources,
+    source_id=as.character(source$source_id),vintage=as.character(source$vintage))
+}
+
+project_aedar_aggregates <- function(inputs, typequ_metadata=NULL, metadata_directory=NULL) {
   facts <- dplyr::bind_rows(validate_aedar_aggregates(inputs)); rownames(facts)<-NULL
   if (!is.null(typequ_metadata)) typequ_metadata <- validate_aedar_published_typequ_metadata(typequ_metadata)
   if (!is.null(typequ_metadata)) {
@@ -1139,11 +1156,13 @@ project_aedar_aggregates <- function(inputs, typequ_metadata=NULL) {
         label_check,facts$TYPEQU)))
       stop("AEDAR aggregate labels disagree with published TYPEQU metadata",call.=FALSE)
   }
-  list(facts=facts,typequ_metadata=typequ_metadata,measures=AEDAR_AGGREGATE_MEASURES,source=list(
+  source <- list(
     source_id=AEDAR_AGGREGATE_SOURCE_ID,name="Accès aux équipements depuis les adresses résidentielles — Bretagne",
     vintage=AEDAR_AGGREGATE_VINTAGE,url="https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne",
     licence="ODbL",attribution="© OpenStreetMap contributors; données AEDAR — licence ODbL",
-    reference_date=NA_character_,publication_date=AEDAR_AGGREGATE_RESOURCES$published_on[[1L]]))
+    reference_date=NA_character_,publication_date=AEDAR_AGGREGATE_RESOURCES$published_on[[1L]])
+  list(facts=facts,typequ_metadata=typequ_metadata,measures=AEDAR_AGGREGATE_MEASURES,
+    source=source,descriptor=descripteur_aedar(source,metadata_directory))
 }
 
 write_aedar_canonical <- function(projection, directory=file.path("data","processed","aedar")) {
@@ -1157,7 +1176,8 @@ write_aedar_canonical <- function(projection, directory=file.path("data","proces
   invisible(directory)
 }
 
-read_aedar_canonical <- function(directory=file.path("data","processed","aedar")) {
+read_aedar_canonical <- function(directory=file.path("data","processed","aedar"),
+                                  metadata_directory=NULL) {
   facts_path <- file.path(directory,AEDAR_CANONICAL_FILES[["facts"]])
   source_path <- file.path(directory,AEDAR_CANONICAL_FILES[["source"]])
   metadata_path <- file.path(directory,AEDAR_CANONICAL_FILES[["typequ_metadata"]])
@@ -1170,7 +1190,7 @@ read_aedar_canonical <- function(directory=file.path("data","processed","aedar")
     x <- facts[facts$territory_type==level,,drop=FALSE]
     x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
   }); names(inputs)<-AEDAR_AGGREGATE_LEVELS
-  projection <- project_aedar_aggregates(inputs,typequ_metadata)
+  projection <- project_aedar_aggregates(inputs,typequ_metadata,metadata_directory)
   # Extract scalar values from the one-row Parquet table. as.list(data.frame)
   # retains each column as a vector; downstream provenance projection expects
   # ordinary scalar source fields (not one-element/list columns).

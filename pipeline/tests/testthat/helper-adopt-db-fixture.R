@@ -289,16 +289,11 @@
   period$provenance <- .adopt_db_collection_lineage(period)
   membres <- .adopt_db_anchored_collection(reference)
   membres$provenance <- .adopt_db_collection_lineage(membres)
-  aedar <- adaptateur_aedar_projection()
-  # AEDAR producers carry `source` as scalar list fields; the splitter derives
-  # `digests_lignage` from a provenance DATA.FRAME's source_id column. Coerce it
-  # to the one-row frame the canonical sortie reader yields so this resource
-  # gets the same attested lineage as the other shapes.
-  if (is.list(aedar$source) && "source_id" %in% names(aedar$source))
-    aedar$source <- as.data.frame(aedar$source, stringsAsFactors = FALSE)
-  aedar$descriptor <- list(indicator_id = "aedar",
-    theme_id = lire_theme_metadata("mobilite")$theme)
-  aedar_manifest <- .adopt_db_aedar_manifest(aedar, reference)
+  aedar_manifest <- .adopt_db_aedar_manifest(adaptateur_aedar_projection(), reference)
+  # Exercise the same canonical writer/reader boundary as a kept sortie. The
+  # reader owns the descriptor and scalar source fields; no fixture supplies either.
+  aedar <- read_aedar_canonical(aedar_manifest$directory,
+    metadata_directory = metadata_directory)
   # The splitter takes the comparison from the projection itself; without this
   # the AEDAR artefact has none and projeter_artefact_aedar() refuses it.
   aedar$comparison <- aedar_manifest$comparison
