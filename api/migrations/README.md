@@ -1112,39 +1112,45 @@ credential environment variable/passfile, sends no authorization header, and
 writes only the requested local JSON report. Run the whole sequence on the
 restored rehearsal API first, then repeat it against the live API. Capture a
 `before` report, perform exactly one approved rollout step, capture its `after`
-report, and compare them; repeat around the API deploy, app rebuild/deploy and
-049 (at minimum, retain the required before/after-049 pair).
+report, and compare them; repeat around any adopt checkpoint, the API deploy,
+app rebuild/deploy and 049 (at minimum, retain the required before/after-049
+pair). Every sweep command uses `--strict` so the #1143 gate is genuinely
+“all 200”: a `publication_unavailable` / `publication_absent` item, or any other
+non-`available` per-item status, is listed in `errors` and exits 1.
 
 ```powershell
 $rehearsalApi = 'http://127.0.0.1:8001'
 $liveApi = 'https://<live-api-origin>'
 
 # Rehearsal: around the new API + app deployment.
-python api/scripts/http_sweep.py $rehearsalApi --output rehearsal-before-api-deploy.json
+python api/scripts/http_sweep.py $rehearsalApi --strict --output rehearsal-before-api-deploy.json
 # Perform only the approved API deploy and app rebuild/deploy.
-python api/scripts/http_sweep.py $rehearsalApi --output rehearsal-after-api-deploy.json
+python api/scripts/http_sweep.py $rehearsalApi --strict --output rehearsal-after-api-deploy.json
 python api/scripts/http_sweep.py --compare rehearsal-before-api-deploy.json rehearsal-after-api-deploy.json
 
 # Rehearsal: required immediately before and after contract migration 049.
-python api/scripts/http_sweep.py $rehearsalApi --output rehearsal-before-049.json
+python api/scripts/http_sweep.py $rehearsalApi --strict --output rehearsal-before-049.json
 # Apply 049 using the approved pre-checks, backup and rehearsal above.
-python api/scripts/http_sweep.py $rehearsalApi --output rehearsal-after-049.json
+python api/scripts/http_sweep.py $rehearsalApi --strict --output rehearsal-after-049.json
 python api/scripts/http_sweep.py --compare rehearsal-before-049.json rehearsal-after-049.json
 
 # Live: repeat the same before/after pairs only inside the approved window.
-python api/scripts/http_sweep.py $liveApi --output live-before-api-deploy.json
+python api/scripts/http_sweep.py $liveApi --strict --concurrency 2 --output live-before-api-deploy.json
 # Perform only the approved API deploy and app rebuild/deploy.
-python api/scripts/http_sweep.py $liveApi --output live-after-api-deploy.json
+python api/scripts/http_sweep.py $liveApi --strict --concurrency 2 --output live-after-api-deploy.json
 python api/scripts/http_sweep.py --compare live-before-api-deploy.json live-after-api-deploy.json
-python api/scripts/http_sweep.py $liveApi --output live-before-049.json
+python api/scripts/http_sweep.py $liveApi --strict --concurrency 2 --output live-before-049.json
 # Apply 049 using the approved live pre-checks and backup.
-python api/scripts/http_sweep.py $liveApi --output live-after-049.json
+python api/scripts/http_sweep.py $liveApi --strict --concurrency 2 --output live-after-049.json
 python api/scripts/http_sweep.py --compare live-before-049.json live-after-049.json
 ```
 
 `--concurrency 4` and `--timeout 45` are the defaults (bounded to 1–32 concurrent
-requests and one timeout per request). `--search-query-limit` and
-`--max-littoral-probes` bound discovery. A report contains the selected targets
+requests and one timeout per request). A full sweep with the current catalogue
+is approximately **650–700 HTTP requests** (matrix items, single-route checks
+and bounded discovery/probes). Use **`--concurrency 2` against the live Pi**, as
+in the commands above; rehearsal may keep the default. `--search-query-limit`
+and `--max-littoral-probes` bound discovery. A report contains the selected targets
 and their evidence, the discovered resource declarations, discovery/search/probe
 requests, one result per resource × level × intent (both C and NC communes, one
 EPCI, one département and one région), named-reference reads, and a single-route
@@ -1157,11 +1163,15 @@ exactly:
 SWEEP: N requests | 200: a | typed-unavailable: b | other: c
 ```
 
-A documented per-item `publication_unavailable` is accepted; any other status,
-malformed outcome, transport failure or failed target discovery is listed in
-`errors` and exits non-zero. Compare mode ignores timestamps/timings and reports
-status, typed-classification, version, added/removed-result and target changes;
-it exits 0 for no change, 1 for differences, and 2 for invalid input.
+Without `--strict`, a documented per-item `publication_unavailable` is accepted;
+any other status, malformed outcome, transport failure or failed target discovery
+is listed in `errors` and exits non-zero. With `--strict`, every typed-unavailable
+item is also listed in `errors` and exits 1. Compare mode ignores timestamps/timings
+and reports status, typed-classification, version, added/removed-result and target
+changes. Its JSON summary and stderr line include `typed_unavailable_in_both`, the
+number of stable results unavailable in both reports, so persistent absence cannot
+hide inside `unchanged`. Compare exits 0 for no status/version/target change, 1 for
+differences, and 2 for invalid input.
 
 **C/NC target derivation.** No public route exposes `territory_reference.littoral_code`.
 The sweep therefore discovers a resource that declares the `littoral` fixed
