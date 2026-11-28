@@ -203,11 +203,37 @@ def _run(client, **kwargs):
     return report, transport
 
 
+def test_every_planned_item_satisfies_the_current_producer_grammar():
+    from api.resource_catalogue import validate_resource_item
+    from api.resource_requests import ResourceBatchItem
+    from api.tests.resource_catalogue_fixtures import default_resource_catalogue
+
+    catalogue = default_resource_catalogue.__wrapped__()
+    resources = catalogue.discovery_payload()["resources"]
+    candidates = [
+        {"type": level, "id": f"{level}-{index}", "name": level}
+        for level in ("commune", "epci", "departement", "region")
+        for index in range(3)
+    ]
+    targets = {level: {"type": level, "id": f"{level}-0"}
+               for level in ("commune", "epci", "departement", "region")}
+    targets["commune:C"] = {"type": "commune", "id": "commune-0", "selection": "littoral:C"}
+    targets["commune:NC"] = {"type": "commune", "id": "commune-1", "selection": "littoral:NC"}
+
+    plan = http_sweep._plan_reads(resources, candidates, targets)
+    assert plan
+    for spec in plan:
+        item = {key: value for key, value in spec.items() if key != "level"}
+        validate_resource_item(ResourceBatchItem.model_validate(item), catalogue)
+
+
 def test_discovery_drives_targets_matrix_both_routes_and_bounded_concurrency():
     with sweep_client() as (client, connection):
         report, transport = _run(client, concurrency=2)
 
     assert report["contract"] == "lusk-http-sweep-v1"
+    assert {resource["resource_id"] for resource in report["discovered_resources"]} == {
+        "alpha", "classifier", "reference"}
     assert report["errors"] == []
     assert report["targets"]["commune:C"]["id"] == "c-alpha"
     assert report["targets"]["commune:NC"]["id"] == "c-beta"
@@ -250,6 +276,7 @@ def test_typed_unavailable_is_accepted_and_single_route_check_is_not_guessed():
     assert all(row["outcome"] == "typed_unavailable" for row in alpha)
     assert all(row["http_status"] == 200 for row in alpha)
     assert all(row["reason"] == "publication_absent" for row in alpha)
+    assert all(row["typed_status"] == "publication_unavailable" for row in alpha)
     assert all(row["family"] == "scalar" for row in alpha)
     assert all(row["identifiers"] == {} for row in alpha)
     assert http_sweep.report_exit_code(report) == 0

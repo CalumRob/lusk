@@ -234,6 +234,7 @@ def _batch_read(transport, spec, timeout):
         "request": body,
         "http_status": response["http_status"],
         "outcome": "http_error",
+        "typed_status": None,
         "reason": None,
         "family": None,
         "identifiers": {},
@@ -270,12 +271,14 @@ def _parse_batch_payload(payload, spec, row):
     status = result.get("status")
     if status == "available" and isinstance(result.get("data"), dict):
         row["outcome"] = "available"
+        row["typed_status"] = "available"
         row["error"] = None
         row["identifiers"] = _identifiers(result["data"])
         return result["data"]
     if (status == "publication_unavailable" and result.get("reason") == "publication_absent"
             and result.get("family") in UNAVAILABLE_FAMILIES and "data" not in result):
         row["outcome"] = "typed_unavailable"
+        row["typed_status"] = "publication_unavailable"
         row["reason"] = result["reason"]
         row["family"] = result["family"]
         row["error"] = None
@@ -303,6 +306,7 @@ def _single_read(transport, spec, timeout, request_id):
         "request": body,
         "http_status": response["http_status"],
         "outcome": "http_error",
+        "typed_status": None,
         "reason": None,
         "family": None,
         "identifiers": {},
@@ -676,6 +680,7 @@ def run_sweep(transport, *, base_url="http://testserver", concurrency=DEFAULT_CO
             "Every matrix row is one semantic item request through the v2 batch route; available resources also receive one single-route facts check.",
         ],
         "targets": {},
+        "discovered_resources": [],
         "discovery_requests": [],
         "target_probes": [],
         "results": [],
@@ -689,6 +694,12 @@ def run_sweep(transport, *, base_url="http://testserver", concurrency=DEFAULT_CO
             if row["outcome"] != "available":
                 raise SweepError(f"Resource discovery failed: {row['error']}")
             resources = _validate_resources(payload)
+            report["discovered_resources"] = [
+                {key: resource.get(key) for key in (
+                    "resource_id", "allowed_levels", "target_kinds", "target_ids", "intents",
+                    "context_values", "axes")}
+                for resource in resources
+            ]
             candidates = _discover_candidates(
                 transport, executor, timeout, search_query_limit, max_littoral_probes, report)
             littoral = _select_littoral_targets(
@@ -747,7 +758,7 @@ def _report_index(report):
 
 def _comparison_snapshot(row):
     return {key: row.get(key) for key in (
-        "http_status", "outcome", "reason", "family", "identifiers")}
+        "http_status", "outcome", "typed_status", "reason", "family", "identifiers")}
 
 
 def compare_reports(before, after):
@@ -768,8 +779,8 @@ def compare_reports(before, after):
         old_snapshot = _comparison_snapshot(old)
         new_snapshot = _comparison_snapshot(new)
         kinds = []
-        if (old_snapshot["http_status"], old_snapshot["outcome"]) != (
-                new_snapshot["http_status"], new_snapshot["outcome"]):
+        if (old_snapshot["http_status"], old_snapshot["outcome"], old_snapshot["typed_status"]) != (
+                new_snapshot["http_status"], new_snapshot["outcome"], new_snapshot["typed_status"]):
             kinds.append("status_changed")
         if (old_snapshot["reason"], old_snapshot["family"]) != (
                 new_snapshot["reason"], new_snapshot["family"]):
