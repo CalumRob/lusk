@@ -269,6 +269,8 @@ def _parse_batch_payload(payload, spec, row):
         row["error"] = "Batch result correlation does not match the request"
         return None
     status = result.get("status")
+    if isinstance(status, str):
+        row["typed_status"] = status
     if status == "available" and isinstance(result.get("data"), dict):
         row["outcome"] = "available"
         row["typed_status"] = "available"
@@ -628,6 +630,21 @@ def _plan_reads(resources, candidates, targets):
     return plan
 
 
+def _is_typed_unavailable(row):
+    """Recognize a per-item non-available status without parsing detail text."""
+    status = row.get("typed_status")
+    return (row.get("outcome") == "typed_unavailable"
+            or row.get("reason") == "publication_absent"
+            or (isinstance(status, str) and status != "available"))
+
+
+def _strict_unavailable_error(row):
+    status = row.get("typed_status") or "publication_unavailable"
+    reason = row.get("reason") or "unknown"
+    family = row.get("family") or "unknown"
+    return f"Strict mode rejects {status} (reason={reason}, family={family})"
+
+
 def _summarize(results, discovery_requests, target_probes):
     summary = {
         "requests": len(results),
@@ -650,8 +667,10 @@ def _finish(report):
 
 def run_sweep(transport, *, base_url="http://testserver", concurrency=DEFAULT_CONCURRENCY,
               timeout=DEFAULT_TIMEOUT, search_query_limit=DEFAULT_SEARCH_QUERY_LIMIT,
-              max_littoral_probes=DEFAULT_MAX_LITTORAL_PROBES):
+              max_littoral_probes=DEFAULT_MAX_LITTORAL_PROBES, strict=False):
     """Run one sweep and return its JSON-safe report (HTTP errors do not raise)."""
+    if not isinstance(strict, bool):
+        raise SweepError("strict must be a boolean")
     if isinstance(concurrency, bool) or not isinstance(concurrency, int) or not 1 <= concurrency <= 32:
         raise SweepError("concurrency must be an integer from 1 to 32")
     if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
@@ -665,6 +684,7 @@ def run_sweep(transport, *, base_url="http://testserver", concurrency=DEFAULT_CO
         raise SweepError("littoral probe limit must be an integer from 1 to 512")
     report = {
         "contract": REPORT_CONTRACT,
+        "strict": strict,
         "base_url": _validate_base_url(base_url),
         "started_at": _utc_now(),
         "finished_at": None,
@@ -724,9 +744,11 @@ def run_sweep(transport, *, base_url="http://testserver", concurrency=DEFAULT_CO
             report["single_route_checks_skipped_publication_unavailable"] = skipped
         except SweepError as exc:
             report["errors"].append({"id": "discovery", "reason": str(exc)})
-    report["errors"].extend(
-        {"id": row["id"], "reason": row["error"]}
-        for row in report["results"] if row["outcome"] not in PASSING_OUTCOMES)
+    for row in report["results"]:
+        if row["outcome"] not in PASSING_OUTCOMES:
+            report["errors"].append({"id": row["id"], "reason": row["error"]})
+        elif strict and _is_typed_unavailable(row):
+            report["errors"].append({"id": row["id"], "reason": _strict_unavailable_error(row)})
     return _finish(report)
 
 
@@ -765,6 +787,9 @@ def compare_reports(before, after):
     """Diff stable result identities; timing, batch IDs and base URLs are ignored."""
     before_index = _report_index(before)
     after_index = _report_index(after)
+    typed_unavailable_in_both = sum(
+        _is_typed_unavailable(before_index[key]) and _is_typed_unavailable(after_index[key])
+        for key in set(before_index) & set(after_index))
     changes = []
     unchanged = 0
     for key in sorted(set(before_index) | set(after_index)):
@@ -818,6 +843,7 @@ def compare_reports(before, after):
             "before_requests": len(before_index),
             "after_requests": len(after_index),
             "unchanged": unchanged,
+            "typed_unavailable_in_both": typed_unavailable_in_both,
             "changes": len(changes),
             "target_changes": len(target_changes),
         },
@@ -838,6 +864,8 @@ def _parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("base_url", nargs="?", help="HTTP(S) API origin, without credentials")
     parser.add_argument("--output", help="write the JSON report/diff to this UTF-8 file")
+    parser.add_argument("--strict", action="store_true",
+                        help="fail the sweep on every per-item non-available status")
     parser.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"),
                         help="compare two sweep reports instead of making requests")
     parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY,
@@ -861,7 +889,11 @@ def main(argv=None):
             after = json.loads(Path(args.compare[1]).read_text(encoding="utf-8"))
             comparison = compare_reports(before, after)
             _write_or_print(comparison, args.output)
-            print(f"COMPARE: {comparison['summary']['changes']} changes", file=sys.stderr)
+            print(
+                f"COMPARE: {comparison['summary']['changes']} changes | "
+                f"typed-unavailable in both: {comparison['summary']['typed_unavailable_in_both']}",
+                file=sys.stderr,
+            )
             return 1 if comparison["changes"] or comparison["target_changes"] else 0
         if not args.base_url:
             raise SweepError("provide a base URL or --compare BEFORE AFTER")
@@ -870,6 +902,7 @@ def main(argv=None):
             concurrency=args.concurrency, timeout=args.timeout,
             search_query_limit=args.search_query_limit,
             max_littoral_probes=args.max_littoral_probes,
+            strict=args.strict,
         )
         _write_or_print(report, args.output)
         print(summary_line(report), file=sys.stderr)

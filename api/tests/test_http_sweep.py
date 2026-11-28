@@ -287,6 +287,35 @@ def test_typed_unavailable_is_accepted_and_single_route_check_is_not_guessed():
         summary[key] for key in ("http_200", "typed_unavailable", "other"))
 
 
+def test_strict_lists_every_typed_unavailable_result_and_exits_nonzero():
+    with sweep_client(unavailable=("alpha",)) as (client, _connection):
+        report, _transport = _run(client, strict=True)
+
+    alpha = [row for row in report["results"] if row["resource"] == "alpha"]
+    assert alpha and all(row["outcome"] == "typed_unavailable" for row in alpha)
+    assert report["strict"] is True
+    assert {error["id"] for error in report["errors"]} == {row["id"] for row in alpha}
+    assert all("publication_unavailable" in error["reason"] for error in report["errors"])
+    assert http_sweep.report_exit_code(report) == 1
+
+
+def test_strict_cli_returns_one_and_prints_each_unavailable_failure(tmp_path, capsys, monkeypatch):
+    output = tmp_path / "strict.json"
+    with sweep_client(unavailable=("alpha",)) as (client, _connection):
+        monkeypatch.setattr(http_sweep, "UrllibClient", lambda *_args, **_kwargs: ClientTransport(client))
+        exit_code = http_sweep.main([
+            "http://testserver", "--strict", "--output", str(output), "--concurrency", "2",
+            "--timeout", "7", "--search-query-limit", "26", "--max-littoral-probes", "8",
+        ])
+
+    report = json.loads(output.read_text(encoding="utf-8"))
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err.count("FAIL: ") == len(report["errors"])
+    assert all("publication_unavailable" in failure for failure in captured.err.splitlines()
+               if failure.startswith("FAIL: "))
+
+
 def test_non_200_is_reported_as_other_and_exits_nonzero():
     class FailingTransport:
         def __init__(self, client):
@@ -384,6 +413,18 @@ def test_compare_reports_status_version_added_and_removed_changes():
     assert by_key[second["key"]]["kind"] == "removed"
     assert by_key[added["key"]]["kind"] == "added"
     assert comparison["summary"]["unchanged"] == len(before["results"]) - 2
+
+
+def test_compare_counts_typed_unavailable_results_present_in_both_reports():
+    with sweep_client(unavailable=("alpha",)) as (client, _connection):
+        before, _transport = _run(client)
+        after, _transport = _run(client)
+
+    comparison = http_sweep.compare_reports(before, after)
+    unavailable = [row for row in before["results"] if row["resource"] == "alpha"]
+    assert comparison["changes"] == []
+    assert comparison["summary"]["typed_unavailable_in_both"] == len(unavailable)
+    assert comparison["summary"]["unchanged"] == len(before["results"])
 
 
 def test_compare_cli_exit_codes_and_summary_line(tmp_path, capsys):
