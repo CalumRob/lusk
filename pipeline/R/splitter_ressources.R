@@ -123,10 +123,10 @@ localiser_aedar_sortie <- function(sortie) {
   NULL
 }
 
-lire_projection_aedar_sortie <- function(sortie, reference = NULL) {
+lire_projection_aedar_sortie <- function(sortie, reference = NULL, metadata_directory = NULL) {
   candidat <- localiser_aedar_sortie(sortie)
   if (is.null(candidat)) return(NULL)
-  projection <- read_aedar_canonical(candidat)
+  projection <- read_aedar_canonical(candidat, metadata_directory = metadata_directory)
   # L'Artefact de ressource aedar porte sa comparaison (immuable, liée à la
   # référence de la sortie) : `apply` n'a jamais besoin de relire le
   # territory_reference vivant pour la publier (#1139).
@@ -444,7 +444,7 @@ REGISTRE_FORMES_RESSOURCE <- list(
       observed_collection_category = "anchor_levels")),
   aedar = list(
     lire = function(sortie, reference, metadata_directory) {
-      projection <- lire_projection_aedar_sortie(sortie, reference)
+      projection <- lire_projection_aedar_sortie(sortie, reference, metadata_directory)
       if (is.null(projection)) list() else list(aedar = projection)
     },
     champs_faits = NULL,
@@ -472,9 +472,17 @@ lire_projections_sortie <- function(sortie, metadata_directory = NULL, reference
 }
 
 sources_provenance_ressource <- function(provenance) {
-  if (is.null(provenance) || !is.data.frame(provenance) || !"source_id" %in% names(provenance))
-    return(character())
-  unique(as.character(provenance$source_id[!is.na(provenance$source_id)]))
+  if (is.null(provenance)) return(character())
+  if (is.data.frame(provenance)) {
+    if (!"source_id" %in% names(provenance)) return(character())
+    ids <- as.character(provenance$source_id)
+  } else if (is.list(provenance) && !is.null(provenance$source_id)) {
+    # AEDAR's canonical reader keeps source as scalar list fields, exactly as the
+    # adapter and adoption row builder consume it. Do not require a fixture-only
+    # data.frame coercion to retain the resource's lineage digest.
+    ids <- as.character(unlist(provenance$source_id, use.names = FALSE))
+  } else return(character())
+  unique(ids[!is.na(ids) & nzchar(ids)])
 }
 
 splitter_sortie <- function(sortie, root = NULL, projections = NULL, reference = NULL,

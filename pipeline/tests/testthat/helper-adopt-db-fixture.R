@@ -168,7 +168,8 @@
     vintages_milieux(), metadata)
 }
 
-.adopt_db_aedar_manifest <- function(projection, reference) {
+.adopt_db_aedar_manifest <- function(projection, reference,
+                                     directory = tempfile("adopt-aedar-")) {
   comparison <- adaptateur_aedar_comparaison(projection, with_littoral = FALSE,
     reference_version = reference$content_version)
   comparison$membership <- aedar_comparison_membership_rows(
@@ -185,7 +186,7 @@
   hashes[["density_reference_vintage"]] <- MANIFEST_CLASSES_DENSITE$vintage[[1L]]
   identity <- as.character(jsonlite::toJSON(as.list(hashes), auto_unbox = TRUE))
   input_version <- paste(as.character(openssl::sha256(charToRaw(identity))), collapse = "")
-  directory <- tempfile("adopt-aedar-")
+  write_aedar_canonical(projection, directory)
   metadata <- list(source_snapshot_id = comparison$source_snapshot_id,
     aedar_content_version = comparison$aedar_content_version,
     reference_content_version = comparison$reference_content_version,
@@ -288,16 +289,11 @@
   period$provenance <- .adopt_db_collection_lineage(period)
   membres <- .adopt_db_anchored_collection(reference)
   membres$provenance <- .adopt_db_collection_lineage(membres)
-  aedar <- adaptateur_aedar_projection()
-  # AEDAR producers carry `source` as scalar list fields; the splitter derives
-  # `digests_lignage` from a provenance DATA.FRAME's source_id column. Coerce it
-  # to the one-row frame the canonical sortie reader yields so this resource
-  # gets the same attested lineage as the other shapes.
-  if (is.list(aedar$source) && "source_id" %in% names(aedar$source))
-    aedar$source <- as.data.frame(aedar$source, stringsAsFactors = FALSE)
-  aedar$descriptor <- list(indicator_id = "aedar",
-    theme_id = lire_theme_metadata("mobilite")$theme)
-  aedar_manifest <- .adopt_db_aedar_manifest(aedar, reference)
+  aedar_manifest <- .adopt_db_aedar_manifest(adaptateur_aedar_projection(), reference)
+  # Exercise the same canonical writer/reader boundary as a kept sortie. The
+  # reader owns the descriptor and scalar source fields; no fixture supplies either.
+  aedar <- read_aedar_canonical(aedar_manifest$directory,
+    metadata_directory = metadata_directory)
   # The splitter takes the comparison from the projection itself; without this
   # the AEDAR artefact has none and projeter_artefact_aedar() refuses it.
   aedar$comparison <- aedar_manifest$comparison
